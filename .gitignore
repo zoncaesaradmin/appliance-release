@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# make verify's own per-stage logs
+.run/
+
 # Editor/IDE
 # .idea/
 # .vscode/

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://appliance-release/schemas/platform-manifest.v1.schema.json",
+  "title": "PlatformManifest",
+  "description": "Manifest-driven description of one Zon platform release for online installation: the platform version pins the supported K3s/chart/image versions; each service carries its own independent version. The installer (zonctl) reads this rather than hardcoding these values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "platformVersion",
+    "releaseId",
+    "k3sVersion",
+    "k3sBinaryUrl",
+    "k3sBinaryDigest",
+    "chartRepository",
+    "chartName",
+    "chartVersion",
+    "crdsUrl",
+    "crdsDigest",
+    "configurationUrl",
+    "configurationDigest",
+    "argoVersion"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "platformVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$",
+      "description": "The complete tested platform release version, distinct from any individual service's version."
+    },
+    "releaseId": { "type": "string", "minLength": 1 },
+
+    "k3sVersion": { "type": "string", "minLength": 1 },
+    "k3sBinaryUrl": { "type": "string", "format": "uri" },
+    "k3sBinaryDigest": { "$ref": "#/$defs/digest" },
+
+    "chartRepository": {
+      "type": "string",
+      "pattern": "^oci://",
+      "description": "Must be an OCI registry reference; `helm pull` resolves chartName/chartVersion from it. Classic (non-OCI) Helm chart repos are not supported in v1 online mode."
+    },
+    "chartName": { "type": "string", "minLength": 1 },
+    "chartVersion": { "type": "string", "minLength": 1 },
+
+    "crdsUrl": { "type": "string", "format": "uri" },
+    "crdsDigest": { "$ref": "#/$defs/digest" },
+
+    "configurationUrl": { "type": "string", "format": "uri" },
+    "configurationDigest": { "$ref": "#/$defs/digest" },
+
+    "argoVersion": { "type": "string", "minLength": 1 },
+    "supportedUpgradeSources": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Platform versions this release is permitted to upgrade from (the N-1 policy)."
+    },
+
+    "services": {
+      "type": "object",
+      "description": "Per-service versions (e.g. zon-core, zon-api, zon-ui, zon-registry, zon-observability, zon-agent), independent of platformVersion. Services may evolve independently while remaining compatible with this platform release.",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "enabledComponents": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Which optional platform components this release enables by default (e.g. \"zon-observability\", \"zon-registry\")."
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  }
+}
