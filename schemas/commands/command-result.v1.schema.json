@@ -35,10 +35,12 @@
     }
   },
   "allOf": [
+    { "$ref": "#/$defs/dataFor/assemble-bundle" },
     { "$ref": "#/$defs/dataFor/preflight" },
     { "$ref": "#/$defs/dataFor/install" },
     { "$ref": "#/$defs/dataFor/status" },
     { "$ref": "#/$defs/dataFor/verify" },
+    { "$ref": "#/$defs/dataFor/verify-bundle" },
     { "$ref": "#/$defs/dataFor/backup" },
     { "$ref": "#/$defs/dataFor/restore" },
     { "$ref": "#/$defs/dataFor/upgrade" },
@@ -51,10 +53,12 @@
   "$defs": {
     "command": {
       "enum": [
+        "assemble-bundle",
         "preflight",
         "install",
         "status",
         "verify",
+        "verify-bundle",
         "backup",
         "restore",
         "upgrade",
@@ -97,10 +101,12 @@
       }
     },
     "dataFor": {
+      "assemble-bundle": { "$ref": "#/$defs/commandDataShape/assemble-bundle" },
       "preflight": { "$ref": "#/$defs/commandDataShape/preflight" },
       "install": { "$ref": "#/$defs/commandDataShape/install" },
       "status": { "$ref": "#/$defs/commandDataShape/status" },
       "verify": { "$ref": "#/$defs/commandDataShape/verify" },
+      "verify-bundle": { "$ref": "#/$defs/commandDataShape/verify-bundle" },
       "backup": { "$ref": "#/$defs/commandDataShape/backup" },
       "restore": { "$ref": "#/$defs/commandDataShape/restore" },
       "upgrade": { "$ref": "#/$defs/commandDataShape/upgrade" },
@@ -110,6 +116,27 @@
       "factory-reset": { "$ref": "#/$defs/commandDataShape/factory-reset" }
     },
     "commandDataShape": {
+      "assemble-bundle": {
+        "if": { "properties": { "command": { "const": "assemble-bundle" } }, "required": ["command"] },
+        "then": {
+          "properties": {
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["bundleDir", "bundleVersion", "releaseId", "manifestPath", "signaturePath", "publicKeyPath", "entryCount"],
+              "properties": {
+                "bundleDir": { "type": "string", "minLength": 1 },
+                "bundleVersion": { "type": "string", "minLength": 1 },
+                "releaseId": { "type": "string", "minLength": 1 },
+                "manifestPath": { "type": "string", "minLength": 1 },
+                "signaturePath": { "type": "string", "minLength": 1 },
+                "publicKeyPath": { "type": "string", "minLength": 1 },
+                "entryCount": { "type": "integer", "minimum": 1 }
+              }
+            }
+          }
+        }
+      },
       "preflight": {
         "if": { "properties": { "command": { "const": "preflight" } }, "required": ["command"] },
         "then": {
@@ -187,6 +214,26 @@
                   "type": "array",
                   "items": { "type": "string" }
                 }
+              }
+            }
+          }
+        }
+      },
+      "verify-bundle": {
+        "if": { "properties": { "command": { "const": "verify-bundle" } }, "required": ["command"] },
+        "then": {
+          "properties": {
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["bundleDir", "bundleVersion", "releaseId", "k3sVersion", "chartVersion", "argoVersion"],
+              "properties": {
+                "bundleDir": { "type": "string", "minLength": 1 },
+                "bundleVersion": { "type": "string", "minLength": 1 },
+                "releaseId": { "type": "string", "minLength": 1 },
+                "k3sVersion": { "type": "string", "minLength": 1 },
+                "chartVersion": { "type": "string", "minLength": 1 },
+                "argoVersion": { "type": "string", "minLength": 1 }
               }
             }
           }

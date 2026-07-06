@@ -12,12 +12,11 @@ import (
 // the repository root. Every JSON file under valid/ must pass validation;
 // every JSON file under invalid/ must fail it.
 var fixtureDirs = map[manifest.Kind]string{
-	manifest.KindReleaseInput:     "release-input",
-	manifest.KindReleaseManifest:  "release-manifest",
-	manifest.KindPlatformManifest: "platform-manifest",
-	manifest.KindInstalledState:   "installed-state",
-	manifest.KindEvidence:         "evidence",
-	manifest.KindCommandResult:    "command",
+	manifest.KindReleaseInput:    "release-input",
+	manifest.KindReleaseManifest: "release-manifest",
+	manifest.KindInstalledState:  "installed-state",
+	manifest.KindEvidence:        "evidence",
+	manifest.KindCommandResult:   "command",
 }
 
 func repoRoot(t *testing.T) string {

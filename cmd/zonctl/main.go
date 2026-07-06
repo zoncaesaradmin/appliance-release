@@ -38,8 +38,8 @@ type cliOptions struct {
 	dryRun              bool
 	output              string
 	stateDir            string
+	configPath          string
 	bundleDir           string
-	manifestURL         string
 	publicKey           string
 	nodeName            string
 	backupID            string
@@ -51,17 +51,19 @@ type cliOptions struct {
 
 type commandSpec struct {
 	name string
-	// mutating commands take the host-wide lock and record a transaction
-	// in the journal; read-only commands (preflight, status, verify,
-	// support-bundle) do not.
+	// hostMutating commands take the host-wide lock and record a
+	// transaction in the journal. Read-only and release-engineering
+	// commands do not touch the live host and therefore skip that path.
 	mutating bool
 }
 
 var commands = []commandSpec{
+	{"assemble-bundle", false},
 	{"preflight", false},
 	{"install", true},
 	{"status", false},
 	{"verify", false},
+	{"verify-bundle", false},
 	{"backup", true},
 	{"restore", true},
 	{"upgrade", true},
@@ -109,9 +111,9 @@ func run(args []string) int {
 	dryRun := fs.Bool("dry-run", false, "show what would happen without making changes")
 	output := fs.String("output", "text", `output format: "text" or "json"`)
 	stateDir := fs.String("state-dir", defaultStateDir, "directory holding the installer lock, transaction journal, and installed-state record")
-	bundleDir := fs.String("bundle-dir", "", "path to an extracted offline bundle directory (opts into offline install/upgrade instead of the default online mode)")
-	manifestURL := fs.String("manifest-url", "", "URL of the platform manifest to install/upgrade from (online mode; required unless --bundle-dir is given)")
-	publicKey := fs.String("public-key", defaultPublicKeyPath, "path to the pinned release-signing public key (offline mode)")
+	configPath := fs.String("config", "", "path to a bundle assembly config JSON file (required for assemble-bundle)")
+	bundleDir := fs.String("bundle-dir", "", "path to an extracted signed appliance bundle directory (required for install/upgrade)")
+	publicKey := fs.String("public-key", defaultPublicKeyPath, "path to the pinned release-signing public key for bundle verification")
 	nodeName := fs.String("node-name", "", "K3s node name (defaults to the host's hostname)")
 	backupID := fs.String("backup-id", "", "backup identifier to restore from (required for restore; optionally the verified recovery point for factory-reset)")
 	confirm := fs.String("confirm", "", "confirmation token acknowledging this destructive operation (required for uninstall/factory-reset)")
@@ -135,8 +137,8 @@ func run(args []string) int {
 		dryRun:              *dryRun,
 		output:              *output,
 		stateDir:            *stateDir,
+		configPath:          *configPath,
 		bundleDir:           *bundleDir,
-		manifestURL:         *manifestURL,
 		publicKey:           *publicKey,
 		nodeName:            *nodeName,
 		backupID:            *backupID,

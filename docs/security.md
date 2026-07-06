@@ -18,23 +18,13 @@ Everything traces back to one pinned ed25519 public key
    (`internal/verify`). There is no per-file signature — the manifest's
    own signature covers every digest it lists, so a single verified
    signature binds the entire bundle.
-3. **Platform manifest (online mode).** The manifest fetched from
-   `--manifest-url` is schema-validated
-   (`schemas/platform-manifest.v1.schema.json`) before it's trusted for
-   anything. It isn't itself digest-pinned (its own digest can't be known
-   in advance), but every artifact it then points at — the K3s binary,
-   CRDs, and default configuration — is individually fetched and
-   SHA-256-verified (`internal/fetch.DownloadVerified`) before use; the
-   chart is pulled via `helm pull` from the manifest's OCI registry
-   reference (`internal/install.OnlineSource`).
-4. **Backups.** Every backed-up file's digest is recorded in the backup's
+3. **Backups.** Every backed-up file's digest is recorded in the backup's
    own manifest and re-verified before any restore (`internal/backup.Verify`).
    A backup that fails verification is never restored from.
 
 All of this fails closed: a missing file, a digest mismatch, or a
 signature that doesn't verify is an error, never a warning or a silent
-fallback. There is no remote fallback endpoint anywhere in this chain —
-every check operates on local files.
+fallback. There is no remote fallback endpoint anywhere in this chain.
 
 ## K3s Ownership
 
@@ -94,16 +84,11 @@ the "controlled non-interactive operation" the release plan calls for.
 
 ## Offline Operation
 
-Offline mode (`--bundle-dir`) never performs a network call. Every
-verification, install, upgrade, backup, and restore step in that mode
-operates on local files, the local K3s API, and locally-invoked binaries
+V1 lifecycle operation never performs a public-network call. Every
+verification, install, upgrade, backup, and restore step operates on
+local files, the local K3s API, and locally-invoked binaries
 (`ctr`, `helm`, `kubectl`). This is exercised directly: several packages
 (`internal/verify`, `internal/images`, `internal/helm`, `internal/install`)
 include a regression test that points the process's DNS resolver at a
 dialer which always errors and proves the relevant offline operation
 still succeeds.
-
-Online mode (the default) fetches the platform manifest and every
-artifact it references over the network, verifying each one (see
-Verification Chain above) before use; backup and restore are unaffected
-by installation mode and never touch the network in either case.

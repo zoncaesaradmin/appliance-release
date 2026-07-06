@@ -19,11 +19,9 @@ import (
 )
 
 // Options fully parameterizes an upgrade. Every path is explicit, as in
-// internal/install, so tests can redirect every mutating operation. Where
-// the target release's artifacts come from (a local bundle or the
-// network) is the caller's install.Source, not part of Options — the
-// same abstraction internal/install uses, so upgrade supports online mode
-// for free.
+// internal/install, so tests can redirect every mutating operation.
+// Target release artifact resolution is the caller's install.Source, not
+// part of Options.
 type Options struct {
 	TargetApplianceVersion string
 

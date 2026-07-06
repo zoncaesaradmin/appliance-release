@@ -9,9 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/zoncaesaradmin/appliance-release/internal/cli"
 	"github.com/zoncaesaradmin/appliance-release/internal/evidence"
-	"github.com/zoncaesaradmin/appliance-release/internal/fetch"
 	"github.com/zoncaesaradmin/appliance-release/internal/host"
 	"github.com/zoncaesaradmin/appliance-release/internal/install"
 	"github.com/zoncaesaradmin/appliance-release/internal/lifecycle"
@@ -57,12 +55,16 @@ func dispatch(spec commandSpec, opts cliOptions, logger *slog.Logger) commandRes
 
 	if !spec.mutating {
 		switch spec.name {
+		case "assemble-bundle":
+			return runAssembleBundle(opts, logger, result)
 		case "preflight":
 			return runPreflight(opts, logger, result)
 		case "status":
 			return runStatus(opts, logger, result)
 		case "verify":
 			return runVerify(opts, logger, result)
+		case "verify-bundle":
+			return runVerifyBundle(opts, logger, result)
 		case "support-bundle":
 			return runSupportBundle(opts, logger, result)
 		}
@@ -180,30 +182,21 @@ func runPreflight(opts cliOptions, logger *slog.Logger, result commandResult) co
 	return finish(result, status, exitCode, message, data)
 }
 
-// resolveInstallSource builds the Source install/upgrade actually reads
-// artifacts from: an offline bundle if --bundle-dir was given (opt-in),
-// otherwise the default online path fetching from --manifest-url.
-func resolveInstallSource(opts cliOptions, workDir string) (install.Source, error) {
-	if opts.bundleDir != "" {
-		pub, err := verify.LoadPublicKey("release-signing-key", opts.publicKey)
-		if err != nil {
-			return nil, fmt.Errorf("load release signing public key: %w", err)
-		}
-		return install.OfflineSource{BundleDir: opts.bundleDir, PublicKey: &pub}, nil
+// resolveInstallSource builds the verified bundle source install/upgrade
+// read artifacts from in v1.
+func resolveInstallSource(opts cliOptions) (install.Source, error) {
+	if opts.bundleDir == "" {
+		return nil, fmt.Errorf("--bundle-dir is required for v1 install/upgrade; connected installs are not supported")
 	}
-
-	if opts.manifestURL == "" {
-		return nil, fmt.Errorf("--manifest-url is required (or pass --bundle-dir for offline install)")
-	}
-	m, err := install.LoadPlatformManifest(context.Background(), fetch.HTTPGet, opts.manifestURL)
+	pub, err := verify.LoadPublicKey("release-signing-key", opts.publicKey)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load release signing public key: %w", err)
 	}
-	return install.OnlineSource{Manifest: m, Get: fetch.HTTPGet, HelmRun: cli.Exec, WorkDir: workDir}, nil
+	return install.OfflineSource{BundleDir: opts.bundleDir, PublicKey: &pub}, nil
 }
 
 func runInstall(ctx context.Context, opts cliOptions, txn *lifecycle.Transaction, priorInstallAttempted bool, logger *slog.Logger, result commandResult) commandResult {
-	source, err := resolveInstallSource(opts, filepath.Join(opts.stateDir, "online-cache"))
+	source, err := resolveInstallSource(opts)
 	if err != nil {
 		logger.Error("failed to resolve install source", "error", err)
 		return finish(result, "failed", 1, "install: "+err.Error(), nil)

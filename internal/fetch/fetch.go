@@ -1,8 +1,7 @@
-// Package fetch downloads and verifies artifacts over the network for
-// online installation. This is the only part of the codebase that makes
-// a real outbound network call as part of normal operation — offline
-// installation (internal/bundle) never does, and neither does anything
-// else in the install/upgrade/backup/restore/uninstall sequences.
+// Package fetch downloads and verifies remote artifacts when release
+// engineering or future non-v1 workflows need controlled network
+// acquisition. No normal v1 lifecycle command should rely on public
+// network access.
 package fetch
 
 import (

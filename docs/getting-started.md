@@ -9,28 +9,19 @@ matches what you're trying to do.
 ## For Operators: Installing Zon
 
 On a supported Ubuntu Server host (22.04 or 24.04 LTS), installing Zon is
-one command. The default v1 path is **online**:
+one command from the signed appliance bundle:
 
 ```
-zonctl install --manifest-url https://releases.example.com/zon/2.4.0/platform-manifest.json
+zonctl install --bundle-dir /path/to/extracted/bundle --public-key /path/to/release-signing.pub
 ```
 
-`zonctl` fetches and digest-verifies the K3s binary, CRDs, and default
-configuration, pulls the chart from an OCI registry via `helm pull`, runs
-host preflight, installs and starts K3s (or adopts a compatible existing
-cluster), and applies the chart — see [install.md](install.md) for
+`zonctl` verifies the signed bundle, re-checks every artifact digest,
+runs host preflight, installs and starts K3s (or adopts a compatible
+existing cluster), preloads the bundled images, and applies the chart —
+see [install.md](install.md) for
 exactly what happens at each step.
 
-**Offline (air-gapped) installation is a planned future phase** that
-reuses this identical workflow from a local signed bundle instead
-(`--bundle-dir` + `--public-key`); see [install.md](install.md#online-vs-offline).
-
-**The online one-liner above doesn't point at anything real yet** —
-there is no public Zon releases server publishing platform manifests.
-Everything downstream of "have a manifest" is implemented and tested
-(`internal/install.OnlineSource`); see the developer section below for
-how to exercise it today with a local fake HTTP server instead of a real
-releases endpoint.
+Public egress is not required during install or runtime.
 
 ## For Developers: Working On This Repository
 
@@ -74,26 +65,37 @@ combined log — the failing stage's message names the exact log path.
 `make clean` at the end means a passing `make verify` always leaves the
 working tree free of build/test artifacts, not just the code checked out.
 
-### Makefile targets that intentionally fail today
+### Real-bundle and VM targets
 
-`test-preflight`, `test-installer`, `assemble-airgap`, `verify-bundle`,
-`test-install-airgap`, `test-upgrade`, `test-restore`, and `test-uninstall`
-all print a message and exit non-zero. This is deliberate, not broken:
-they're placeholders for privileged VM lanes (running the real CLI
-against a real host with a real K3s) and, for the two `*-airgap` targets,
-for the bundle assembly pipeline — neither exists yet. The underlying
-capability each one is named after (preflight, install, upgrade, backup,
-restore, uninstall) **is** implemented and covered by `make unit-test`
-against fakes; only the "run it for real on a VM" harness is missing. See
-the comment block above them in the [Makefile](../Makefile).
+`assemble-bundle` and `verify-bundle` are now real targets. They use
+`zonctl` directly for producing and verifying a signed extracted bundle:
 
-### Exercising the CLI without a real bundle
+```bash
+BUNDLE_CONFIG=/abs/path/to/bundle-assembly.json make assemble-bundle
+BUNDLE_DIR=/abs/path/to/bundle PUBLIC_KEY=/abs/path/to/release-signing.pub make verify-bundle
+```
+
+The remaining host/VM lanes still intentionally fail today:
+
+- `test-preflight`
+- `test-installer`
+- `test-install-airgap`
+- `test-upgrade`
+- `test-restore`
+- `test-uninstall`
+
+Those are still placeholders for privileged real-host automation. The
+underlying lifecycle logic each one represents **is** implemented and
+covered by `make unit-test`; only the fully automated live-host harness
+is still missing.
+
+### Exercising the CLI without a real product bundle
 
 You can build and run `zonctl` against a small hand-built fixture
 bundle to see the full flow without needing a real `appliance-code`
-product input. This mirrors what
-`internal/install/install_test.go`'s `buildFixtureBundle` does
-automatically for tests; the same shape works from a shell:
+product input. This mirrors what `internal/install/install_test.go`'s
+fixture builder does automatically for tests; the same shape works from a
+shell:
 
 ```
 make build

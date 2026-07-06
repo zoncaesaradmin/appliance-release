@@ -4,9 +4,9 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 
 ## Installation Model
 
-- V1 supports **online installation**: `zonctl install` fetches K3s, Helm, the platform chart, and images over the network as needed on a supported host.
-- **Offline (air-gapped) installation is a planned future phase** that must reuse the identical installation workflow — the only difference between online and offline modes is where resources are obtained (network fetch vs. a local signed bundle), never the installation logic itself.
-- Do not hardcode online-only or offline-only assumptions into the install sequence. Resource acquisition (K3s binary, Helm, chart, images) must sit behind a single pluggable source abstraction so both modes share one code path.
+- V1 has one production package: the complete signed air-gapped appliance bundle produced from pinned `appliance-code` inputs.
+- Installation, startup, normal operation, authentication, builds, registry use, backup, restore, diagnostics, and upgrade must not require public internet access.
+- Do not add a connected installer, install-time downloader, remote package repository requirement, phone-home behavior, external license check, dynamic plugin fetch, or background internet updater.
 
 ## Supported Operating System
 
@@ -27,11 +27,11 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 
 - Helm is the standard deployment mechanism. Each major platform component (`zon-core`, `zon-api`, `zon-ui`, `zon-registry`, `zon-observability`, ...) ships as its own Helm chart.
 - Maintain two independent version levels: a **platform version** (the complete tested release, pinning the supported K3s version and every chart/image version) and independent **per-service versions** that may evolve while remaining compatible with a given platform release.
-- The installer is **manifest-driven**, not hardcoded: a platform manifest defines the platform version, supported K3s version, chart versions, image versions, enabled components, default configuration, and migration information. `zonctl` reads this manifest rather than embedding these values in code.
+- The installer is **manifest-driven**, not hardcoded: the signed release manifest and bundle entries define the platform version, supported K3s version, chart/image versions, enabled components, default configuration, and migration information. `zonctl` reads these verified inputs rather than embedding release values in code.
 
 ## Verification
 
-- Every artifact the installer selects — fetched online or read from a future offline bundle — is checked against the platform manifest's pinned digest/version before use.
+- Every artifact the installer selects must be present in the signed bundle and is checked against the release manifest's pinned digest/version before use.
 - The installer fails closed: it never silently proceeds when a required artifact is missing, invalid, or fails verification, and it never falls back to an unpinned or unverified source.
 - Secrets are generated on the target or supplied through protected files/descriptors. They never appear in Git, release artifacts, command arguments, logs, or support bundles.
 

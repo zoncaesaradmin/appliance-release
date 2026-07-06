@@ -116,31 +116,30 @@ func TestRun_MutatingCommandWritesJournal(t *testing.T) {
 	}
 }
 
-// Online is the default install mode; with neither --manifest-url nor
-// --bundle-dir given, install must refuse with a clear message rather
-// than silently doing nothing.
-func TestRun_InstallRequiresManifestURLOrBundleDir(t *testing.T) {
+// The signed bundle is the only supported v1 install source.
+func TestRun_InstallRequiresBundleDir(t *testing.T) {
 	out, code := captureStdout(t, func() int {
 		return run([]string{"install", "--output", "json", "--state-dir", t.TempDir()})
 	})
 	if code != 1 {
 		t.Errorf("expected exit code 1, got %d", code)
 	}
-	if !strings.Contains(out, "--manifest-url is required") {
-		t.Errorf("expected a clear missing --manifest-url error, got: %s", out)
+	if !strings.Contains(out, "--bundle-dir is required") {
+		t.Errorf("expected a clear missing --bundle-dir error, got: %s", out)
 	}
 }
 
-// --bundle-dir opts into offline mode explicitly.
-func TestRun_InstallBundleDirOptsIntoOfflineMode(t *testing.T) {
+// With --bundle-dir present, install should advance to bundle loading
+// rather than failing the upfront source-selection gate.
+func TestRun_InstallBundleDirAdvancesToBundleLoad(t *testing.T) {
 	out, code := captureStdout(t, func() int {
 		return run([]string{"install", "--output", "json", "--state-dir", t.TempDir(), "--bundle-dir", filepath.Join(t.TempDir(), "missing-bundle")})
 	})
 	if code != 1 {
 		t.Errorf("expected exit code 1, got %d", code)
 	}
-	if strings.Contains(out, "--manifest-url is required") {
-		t.Errorf("expected --bundle-dir to avoid the online-mode error entirely, got: %s", out)
+	if strings.Contains(out, "--bundle-dir is required") {
+		t.Errorf("expected --bundle-dir to avoid the missing-bundle-dir error entirely, got: %s", out)
 	}
 }
 
@@ -297,28 +296,28 @@ func TestRun_BackupRequiresInstalledState(t *testing.T) {
 	}
 }
 
-func TestRun_UpgradeRequiresManifestURLOrBundleDir(t *testing.T) {
+func TestRun_UpgradeRequiresBundleDir(t *testing.T) {
 	out, code := captureStdout(t, func() int {
 		return run([]string{"upgrade", "--output", "json", "--state-dir", t.TempDir()})
 	})
 	if code != 1 {
 		t.Errorf("expected exit code 1, got %d", code)
 	}
-	if !strings.Contains(out, "--manifest-url is required") {
-		t.Errorf("expected a clear missing --manifest-url error, got: %s", out)
+	if !strings.Contains(out, "--bundle-dir is required") {
+		t.Errorf("expected a clear missing --bundle-dir error, got: %s", out)
 	}
 }
 
-// --bundle-dir opts into offline mode explicitly for upgrade too.
-func TestRun_UpgradeBundleDirOptsIntoOfflineMode(t *testing.T) {
+// With --bundle-dir present, upgrade should advance to bundle loading.
+func TestRun_UpgradeBundleDirAdvancesToBundleLoad(t *testing.T) {
 	out, code := captureStdout(t, func() int {
 		return run([]string{"upgrade", "--output", "json", "--state-dir", t.TempDir(), "--bundle-dir", filepath.Join(t.TempDir(), "missing-bundle")})
 	})
 	if code != 1 {
 		t.Errorf("expected exit code 1, got %d", code)
 	}
-	if strings.Contains(out, "--manifest-url is required") {
-		t.Errorf("expected --bundle-dir to avoid the online-mode error entirely, got: %s", out)
+	if strings.Contains(out, "--bundle-dir is required") {
+		t.Errorf("expected --bundle-dir to avoid the missing-bundle-dir error entirely, got: %s", out)
 	}
 }
 

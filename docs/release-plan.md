@@ -10,17 +10,13 @@ This repository turns one signed, immutable product input set into one complete 
 
 It is a distribution and lifecycle repository. It does not contain or rebuild private application source.
 
-## Strategy Update: Online-First Zon Platform
+## Strategy Update: Offline-First Zon Platform
 
 This plan has pivoted to the Zon platform strategy. The CLI is `zonctl`.
-**V1 supports online installation** — `zonctl install` fetches K3s, Helm,
-the platform chart, and images over the network as needed. **Offline
-(air-gapped) installation is a planned future phase that reuses the
-identical installation workflow**; the only difference between the two
-modes is where resources are obtained (network fetch vs. a local signed
-bundle), not the installation logic itself. This supersedes the prior
-"one production package: the air-gap bundle only" decision below.
-Concretely, relative to the original air-gap-only plan:
+**V1 uses one complete signed air-gap bundle** — `zonctl install`
+verifies a local bundle containing K3s, the platform chart, CRDs,
+configuration, and all required images. Installation and runtime must
+work with public egress denied. Concretely:
 
 - **Supported OS** is Ubuntu Server **22.04 LTS and 24.04 LTS** (not 24.04
   only).
@@ -33,28 +29,25 @@ Concretely, relative to the original air-gap-only plan:
   version, chart versions, and image versions for a complete tested
   release; each service (`zon-core`, `zon-api`, `zon-ui`, `zon-registry`,
   `zon-observability`, ...) carries its own independent version.
-- **The installer is manifest-driven**: a platform manifest defines the
-  platform version, supported K3s version, chart/image versions, enabled
-  components, default configuration, and migration information, rather
-  than hardcoding these values.
+- **The installer is manifest-driven**: the signed release manifest and
+  bundle entries define the platform version, supported K3s version,
+  chart/image versions, enabled components, default configuration, and
+  migration information, rather than hardcoding these values.
 
 Everything below describing schemas, verification, the lifecycle CLI
 skeleton, the K3s/Helm/image adapters, and the command set (`preflight`,
 `install`, `status`, `verify`, `backup`, `restore`, `upgrade`, `repair`,
 `support-bundle`, `uninstall`, `factory-reset`) remains the
-implementation foundation; it is being adapted to serve both the online
-and (future) offline install paths rather than air-gap alone.
-"Accepted Decisions" bullets that explicitly assumed air-gap-only or
-single-OS-version scope are marked below as they're revised.
+implementation foundation for the bundle-only appliance lifecycle.
 
 ## Accepted Decisions
 
 - V1 supports a dedicated single-node Linux appliance with product-managed K3s.
 - The supported host baseline is Ubuntu Server **22.04 LTS and 24.04 LTS** on `amd64` with local `ext4` storage. Additional platforms require their own complete qualification evidence. *(Revised: was 24.04-only.)*
 - The primary installation path is an installer wrapper around a versioned Helm chart.
-- **V1's primary installation path is online** (network-fetched K3s/Helm/chart/images); a future offline/air-gap package reuses the identical installation workflow behind a different resource source. *(Revised: was "one production package: the air-gap bundle... no connected installer.")*
-- The bundle (online or offline) resolves to pinned K3s, K3s platform images, all platform OCI images, the Helm chart, Argo CRDs, scanner data, and every required verification artifact — fetched over the network in v1, or physically included in a future offline bundle.
-- Installation and runtime use the identical installation workflow regardless of resource source; only how K3s/Helm/chart/images are obtained differs between online and (future) offline modes. *(Revised: previously required the offline path unconditionally.)*
+- **V1's only production installation path is the signed air-gap bundle.**
+- The bundle resolves to pinned K3s, K3s platform images, all platform OCI images, the Helm chart, Argo CRDs, scanner data, and every required verification artifact.
+- Installation and runtime must operate without public network dependency.
 - Installing only the workload chart onto an arbitrary existing Kubernetes/K3s cluster (bypassing `zonctl`'s K3s ownership and adoption flow entirely) is not a supported v1 production mode. The chart remains independently renderable for development, CI, and future qualification.
 - `appliance-release` consumes immutable signed outputs from `appliance-code`; it never clones private source, rebuilds the control plane, forks the canonical chart, or changes product security policy.
 - OCI tooling terminology and implementation use Buildah, Podman, Skopeo, ORAS, zot, and Helm explicitly.
@@ -307,7 +300,7 @@ make lint
 make verify
 make test-preflight
 make test-installer
-make assemble-airgap
+make assemble-bundle
 make verify-bundle
 make test-install-airgap
 make test-upgrade
@@ -363,4 +356,4 @@ A release is complete only when:
 - Argo workflow archive database
 - External identity-provider installation
 - Package/profile variants of the complete v1 topology
-- Offline/air-gapped installation (planned future phase reusing the identical installation workflow; not implemented in the current online-first v1)
+- Connected or alternate installer profiles

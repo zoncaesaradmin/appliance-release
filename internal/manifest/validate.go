@@ -17,21 +17,19 @@ import (
 type Kind string
 
 const (
-	KindReleaseInput     Kind = "release-input"
-	KindReleaseManifest  Kind = "release-manifest"
-	KindPlatformManifest Kind = "platform-manifest"
-	KindInstalledState   Kind = "installed-state"
-	KindEvidence         Kind = "evidence"
-	KindCommandResult    Kind = "command-result"
+	KindReleaseInput    Kind = "release-input"
+	KindReleaseManifest Kind = "release-manifest"
+	KindInstalledState  Kind = "installed-state"
+	KindEvidence        Kind = "evidence"
+	KindCommandResult   Kind = "command-result"
 )
 
 var schemaPaths = map[Kind]string{
-	KindReleaseInput:     "release-input.v1.schema.json",
-	KindReleaseManifest:  "release-manifest.v1.schema.json",
-	KindPlatformManifest: "platform-manifest.v1.schema.json",
-	KindInstalledState:   "installed-state.v1.schema.json",
-	KindEvidence:         "evidence.v1.schema.json",
-	KindCommandResult:    "commands/command-result.v1.schema.json",
+	KindReleaseInput:    "release-input.v1.schema.json",
+	KindReleaseManifest: "release-manifest.v1.schema.json",
+	KindInstalledState:  "installed-state.v1.schema.json",
+	KindEvidence:        "evidence.v1.schema.json",
+	KindCommandResult:   "commands/command-result.v1.schema.json",
 }
 
 // Compile loads and compiles the JSON Schema for the given document kind.

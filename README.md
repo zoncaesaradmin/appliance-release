@@ -7,11 +7,13 @@ Zon installs onto a supported Ubuntu Server host with one command, owning the co
 The executable ownership and delivery plan is in [docs/release-plan.md](docs/release-plan.md).
 
 This repository consumes signed, immutable product inputs. It does not contain or rebuild private application source.
+`release-input` is the signed handoff from `appliance-code`; this repo verifies that handoff and turns it into the final installable bundle.
 
 ## Documentation
 
 - [Getting started (operators and developers)](docs/getting-started.md)
 - [Installing Zon](docs/install.md)
+- [Real setup and bundle assembly](docs/real-setup.md)
 - [Upgrading Zon](docs/upgrade.md)
 - [Backup and restore](docs/backup-restore.md)
 - [Security model](docs/security.md)

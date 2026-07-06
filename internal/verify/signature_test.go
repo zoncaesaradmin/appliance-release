@@ -2,6 +2,7 @@ package verify_test
 
 import (
 	"crypto/ed25519"
+	"crypto/x509"
 	"encoding/pem"
 	"os"
 	"path/filepath"
@@ -57,9 +58,13 @@ func TestLoadPublicKey_PEM(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	der, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	path := filepath.Join(t.TempDir(), "release-signing.pub")
-	block := &pem.Block{Type: "PUBLIC KEY", Bytes: pub}
+	block := &pem.Block{Type: "PUBLIC KEY", Bytes: der}
 	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -79,5 +84,35 @@ func TestLoadPublicKey_PEM(t *testing.T) {
 func TestLoadPublicKey_MissingEvidence(t *testing.T) {
 	if _, err := verify.LoadPublicKey("release-signing-key", filepath.Join(t.TempDir(), "missing.pub")); err == nil {
 		t.Error("expected missing public key file to fail")
+	}
+}
+
+func TestLoadPrivateKey_PKCS8PEM(t *testing.T) {
+	_, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(t.TempDir(), "release-signing.key")
+	block := &pem.Block{Type: "PRIVATE KEY", Bytes: der}
+	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := verify.LoadPrivateKey(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := []byte("release manifest bytes")
+	sig, err := verify.Sign(loaded, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verify.VerifySignature(verify.PublicKey{ID: "release-signing-key", Key: priv.Public().(ed25519.PublicKey)}, data, sig); err != nil {
+		t.Fatalf("expected loaded private key to sign validly, got: %v", err)
 	}
 }

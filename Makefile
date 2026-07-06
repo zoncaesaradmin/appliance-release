@@ -141,10 +141,9 @@ verify:
 # install/upgrade/backup/restore/uninstall orchestration) is implemented
 # and covered by `make unit-test` against fakes. These targets are for
 # running the *same* commands for real against a live host/VM with a
-# real K3s and a real assembled bundle — that harness (and, for the
-# assemble/verify-bundle targets, the bundle assembly pipeline itself)
-# is not wired up yet. Each corresponds to a future execution ledger
-# item in docs/release-plan.md and will fail loudly until then.
+# real K3s and a real assembled bundle. The VM harness targets are still
+# explicit/manual, but bundle assembly and verification are implemented
+# below so operators can produce and inspect a signed extracted bundle.
 
 .PHONY: test-preflight
 test-preflight:
@@ -156,15 +155,21 @@ test-installer:
 	@echo "test-installer: no VM harness wired up yet to run the lifecycle CLI against a real host" >&2
 	@exit 1
 
-.PHONY: assemble-airgap
-assemble-airgap:
-	@echo "assemble-airgap: bundle assembly pipeline (R2-01) is not implemented yet" >&2
-	@exit 1
+.PHONY: assemble-bundle
+assemble-bundle:
+	@if [ -z "$${BUNDLE_CONFIG:-}" ]; then \
+		echo "assemble-bundle: set BUNDLE_CONFIG=/abs/path/to/bundle-assembly.json" >&2; \
+		exit 2; \
+	fi
+	$(GO) run ./cmd/zonctl assemble-bundle --config "$${BUNDLE_CONFIG}"
 
 .PHONY: verify-bundle
 verify-bundle:
-	@echo "verify-bundle: requires a bundle produced by assemble-airgap, which is not implemented yet" >&2
-	@exit 1
+	@if [ -z "$${BUNDLE_DIR:-}" ] || [ -z "$${PUBLIC_KEY:-}" ]; then \
+		echo "verify-bundle: set BUNDLE_DIR=/abs/path/to/bundle and PUBLIC_KEY=/abs/path/to/release-signing.pub" >&2; \
+		exit 2; \
+	fi
+	$(GO) run ./cmd/zonctl verify-bundle --bundle-dir "$${BUNDLE_DIR}" --public-key "$${PUBLIC_KEY}"
 
 .PHONY: test-install-airgap
 test-install-airgap:

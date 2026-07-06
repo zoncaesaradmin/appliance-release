@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,7 +13,7 @@ import (
 )
 
 func runUpgrade(ctx context.Context, opts cliOptions, txn *lifecycle.Transaction, logger *slog.Logger, result commandResult) commandResult {
-	source, err := resolveInstallSource(opts, filepath.Join(opts.stateDir, "online-cache"))
+	source, err := resolveInstallSource(opts)
 	if err != nil {
 		logger.Error("failed to resolve upgrade source", "error", err)
 		return finish(result, "failed", 1, "upgrade: "+err.Error(), nil)

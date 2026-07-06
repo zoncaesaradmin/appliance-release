@@ -5,39 +5,25 @@ covers what ships today; see [release-plan.md](release-plan.md) for the
 overall plan and execution ledger, and [security.md](security.md) for the
 trust model behind every verification step mentioned here.
 
-## Online vs. Offline
+## Bundle-Only V1
 
-`zonctl install` runs one identical installation sequence regardless of
-where K3s, the chart, CRDs, and default configuration come from
-(`internal/install.Source`):
-
-- **Online (default in v1).** Pass `--manifest-url <url>` pointing at a
-  platform manifest. Every artifact it references is fetched over HTTPS
-  and digest-verified before use; the chart is pulled via `helm pull`
-  from an OCI registry. K3s images are *not* preloaded in this mode —
-  K3s/containerd pulls them itself, since the network is already
-  available.
-- **Offline.** Pass `--bundle-dir <path>` to opt into installing from an
-  extracted, signed air-gap bundle instead (see [Prerequisites](#prerequisites)
-  below). Every image is preloaded directly into the K3s image store so
-  no pod ever needs to pull from a registry.
-
-If both flags are given, `--bundle-dir` takes precedence.
+`zonctl install` runs from one verified source in v1: an extracted,
+signed appliance bundle passed via `--bundle-dir`. The bundle contains
+the pinned K3s binary, K3s platform images, application OCI images, the
+Helm chart, Argo CRDs, default configuration, and the signed
+`release-manifest.json` that binds them together.
 
 ## Prerequisites
 
 - A host that passes `zonctl preflight` (see [Host Requirements](#host-requirements)
   below). Installation refuses to proceed if preflight reports `unsupported`
   or `operator-action` findings.
-- **Online:** a reachable platform manifest URL (`--manifest-url`). The
-  manifest itself is fetched directly (its own digest can't be known in
-  advance); every artifact it then points at is individually verified
-  against a pinned digest before use.
-- **Offline:** the extracted air-gap release bundle directory (contains
+- The extracted air-gap release bundle directory (contains
   `release-manifest.json`, `release-manifest.sig`, and every artifact the
-  manifest lists) and the pinned release-signing public key (`--public-key`).
-  This is the root of trust for offline mode: every other verification
-  step chains from a valid signature against this key.
+  manifest lists).
+- The pinned release-signing public key (`--public-key`). This is the
+  root of trust for installation: every other verification step chains
+  from a valid signature against this key.
 
 ## Host Requirements
 
@@ -63,19 +49,6 @@ report before installing.
 
 ## Running Install
 
-Online (default):
-
-```
-zonctl install \
-  --manifest-url https://releases.example.com/zon/2.4.0/platform-manifest.json \
-  --state-dir /var/lib/zon \
-  [--node-name my-node] \
-  [--dry-run] \
-  [--output text|json]
-```
-
-Offline:
-
 ```
 zonctl install \
   --bundle-dir /path/to/extracted/bundle \
@@ -87,8 +60,8 @@ zonctl install \
 ```
 
 `--state-dir` defaults to `/var/lib/zon` and holds the installer lock,
-transaction journal, `installed-state.json`, evidence reports, and (online
-mode) a download cache. `--public-key` defaults to
+transaction journal, `installed-state.json`, and evidence reports.
+`--public-key` defaults to
 `/etc/zon/keys/release-signing.pub`. `--node-name` defaults to the host's
 hostname. `--force-adopt` takes ownership of an existing K3s cluster that
 isn't obviously safe to adopt — see [K3s Ownership](security.md#k3s-ownership).
@@ -97,14 +70,12 @@ isn't obviously safe to adopt — see [K3s Ownership](security.md#k3s-ownership)
 
 `zonctl install` (`internal/install.Orchestrator.Install`) runs, in order:
 
-1. **Resolve artifacts** (`internal/install.Source`). Offline:
+1. **Resolve artifacts** (`internal/install.Source`).
    `release-manifest.json` is schema-checked, its detached signature
    (`release-manifest.sig`) is verified against `--public-key`, and every
    entry's digest and size are re-verified against the files on disk.
-   Online: the K3s binary, CRDs, and default configuration are fetched
-   over HTTPS and digest-verified, and the chart is pulled via `helm pull`
-   from the manifest's OCI registry. Either way, any mismatch, missing
-   artifact, or bad signature fails closed before anything else happens.
+   Any mismatch, missing artifact, or bad signature fails closed before
+   anything else happens.
 2. **Preflight.** The real host is detected and evaluated; an `unsupported`
    or `operator-action` overall status blocks the install.
 3. **K3s ownership decision.** installed-state and the actual K3s service on
@@ -117,11 +88,10 @@ isn't obviously safe to adopt — see [K3s Ownership](security.md#k3s-ownership)
 4. **K3s install.** The release-owned `config.yaml` and systemd unit are
    written, the verified K3s binary is installed, and the service is
    started.
-5. **Image preload (offline only).** Every `k3s-images` and `oci-images`
+5. **Image preload.** Every `k3s-images` and `oci-images`
    bundle entry is digest-verified and imported directly into the K3s
    (containerd) image store — K3s platform images first, then application
-   images — so no pod ever needs to pull from a registry. Online mode
-   resolves no images here; K3s/containerd pulls them itself.
+   images — so no pod ever needs to pull from a registry.
 6. **CRDs and chart.** The bundled Argo CRDs are applied, then the exact
    Zon Helm chart is installed via `helm upgrade --install` against
    the bundle's schema-validated values file.
@@ -130,10 +100,9 @@ isn't obviously safe to adopt — see [K3s Ownership](security.md#k3s-ownership)
 
 If any step from image preload onward fails, install rolls back exactly
 what it did this run: newly imported images are removed, a failed chart
-apply is uninstalled, and K3s is stopped. Neither mode ever silently
-substitutes an unpinned or unverified artifact for one that failed to
-resolve — offline mode never falls back to the network at all, and online
-mode never falls back to an artifact that failed digest verification.
+apply is uninstalled, and K3s is stopped. V1 never silently substitutes
+an unpinned or unverified artifact for one that failed to resolve, and
+it never falls back to the network.
 
 ## Evidence
 

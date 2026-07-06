@@ -8,20 +8,7 @@ rolled back rather than left in an unclear state.
 ## Running Upgrade
 
 Like `install`, `upgrade` reads the target release's artifacts through an
-`install.Source` — online by default, offline as an explicit opt-in. Both
-modes run the identical sequence below; only where the artifacts come
-from differs.
-
-Online (default):
-
-```
-zonctl upgrade \
-  --manifest-url https://releases.example.com/zon/2.4.0/platform-manifest.json \
-  --state-dir /var/lib/zon \
-  [--output text|json]
-```
-
-Offline:
+`install.Source`, which in v1 means a verified local bundle:
 
 ```
 zonctl upgrade \
@@ -37,10 +24,8 @@ zonctl upgrade \
    K3s ownership; there is nothing to upgrade from otherwise (`install`
    is what you want for a fresh host).
 2. **Resolve and verify the target release's artifacts** via the same
-   `install.Source` abstraction `install` uses: the offline bundle's
-   schema/signature/per-entry digest chain, or the online platform
-   manifest's schema validation plus per-artifact digest verification and
-   `helm pull` from its OCI chart reference (see
+   `install.Source` abstraction `install` uses: the bundle's
+   schema/signature/per-entry digest chain (see
    [security.md](security.md#verification-chain)).
 3. **Compatibility checks, both fail closed:**
    - The installed version must appear in the target release's
@@ -54,10 +39,9 @@ zonctl upgrade \
    is taken and its integrity is immediately verified (see
    [backup-restore.md](backup-restore.md)). This is the recovery point
    every later failure in this sequence rolls back to.
-5. **Stage new images (offline mode only).** The bundle's K3s and
-   application images are digest-verified and preloaded, in the same
-   K3s-platform-first order `install` uses. Online mode preloads nothing
-   here — K3s pulls images itself once the new chart references them.
+5. **Stage new images.** The bundle's K3s and application images are
+   digest-verified and preloaded, in the same K3s-platform-first order
+   `install` uses.
 6. **K3s binary swap — only if the K3s version actually changed.** If the
    target's K3s version matches what's installed, the binary, config, and
    unit are left untouched. If it differs, the current binary/config/unit

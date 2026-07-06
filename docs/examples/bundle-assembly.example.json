@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "releaseInputDir": "/absolute/path/to/release-input",
+  "bundleDir": "/absolute/path/to/out/appliance-2.4.0-bundle",
+  "signingKeyId": "release-signing-key",
+  "signingPrivateKeyPath": "/absolute/path/to/keys/release-signing.key",
+  "hostBaseline": {
+    "os": "ubuntu",
+    "osVersion": "24.04",
+    "arch": "amd64"
+  },
+  "entries": [
+    {
+      "sourcePath": "/absolute/path/to/bin/zonctl",
+      "targetPath": "zonctl",
+      "component": "appliance",
+      "executable": true
+    },
+    {
+      "sourcePath": "/absolute/path/to/staging/k3s",
+      "targetPath": "k3s/binary/k3s",
+      "component": "k3s-binary",
+      "executable": true
+    },
+    {
+      "sourcePath": "/absolute/path/to/staging/install.sh",
+      "targetPath": "k3s/install/install.sh",
+      "component": "k3s-install",
+      "executable": true
+    },
+    {
+      "sourcePath": "/absolute/path/to/staging/k3s-airgap-images-amd64.tar.zst",
+      "targetPath": "k3s/images/k3s-airgap-images-amd64.tar.zst",
+      "component": "k3s-images"
+    },
+    {
+      "sourcePath": "/absolute/path/to/staging/control-plane.tar",
+      "targetPath": "oci-images/control-plane.tar",
+      "component": "oci-images",
+      "imageReference": "internal/control-plane:2.4.0"
+    },
+    {
+      "sourcePath": "/absolute/path/to/staging/zot.tar",
+      "targetPath": "oci-images/zot.tar",
+      "component": "oci-images",
+      "imageReference": "internal/zot:pin-me"
+    },
+    {
+      "sourcePath": "/absolute/path/to/staging/argo-controller.tar",
+      "targetPath": "oci-images/argo-controller.tar",
+      "component": "oci-images",
+      "imageReference": "internal/argo-controller:pin-me"
+    },
+    {
+      "sourcePath": "/absolute/path/to/release-input/appliance-chart-2.4.0.tgz",
+      "targetPath": "charts/appliance-chart-2.4.0.tgz",
+      "component": "chart"
+    },
+    {
+      "sourcePath": "/absolute/path/to/staging/argo-crds.yaml",
+      "targetPath": "crds/argo-crds.yaml",
+      "component": "crds"
+    },
+    {
+      "sourcePath": "/absolute/path/to/staging/values.yaml",
+      "targetPath": "configuration/values.yaml",
+      "component": "configuration"
+    },
+    {
+      "sourcePath": "/absolute/path/to/staging/grype-db.tar.zst",
+      "targetPath": "scanner-data/grype-db.tar.zst",
+      "component": "scanner-data"
+    }
+  ]
+}

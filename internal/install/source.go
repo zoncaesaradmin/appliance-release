@@ -3,6 +3,8 @@ package install
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/zoncaesaradmin/appliance-release/internal/bundle"
 	"github.com/zoncaesaradmin/appliance-release/internal/evidence"
@@ -10,11 +12,10 @@ import (
 	"github.com/zoncaesaradmin/appliance-release/internal/verify"
 )
 
-// Resolved is every artifact the install sequence needs, as local
-// filesystem paths, regardless of whether a Source acquired them from a
-// verified offline bundle or fetched them from the network. This is what
-// lets Install run one identical sequence for both online and offline
-// installation — see docs/release-plan.md's Strategy Update.
+// Resolved is every artifact the install sequence needs, as verified
+// local filesystem paths loaded from the signed appliance bundle.
+// Install and Upgrade consume these paths without caring about bundle
+// layout details.
 type Resolved struct {
 	ReleaseID     string
 	Compatibility bundle.Compatibility
@@ -25,17 +26,15 @@ type Resolved struct {
 	ConfigurationPath string
 
 	// K3sImages and OCIImages are preloaded directly into the K3s image
-	// store when non-empty (the offline path). A Source that doesn't
-	// preload images (the online path, where K3s pulls images itself
-	// over the network it already has) simply returns them empty.
+	// store before chart application so the appliance can run with public
+	// egress denied.
 	K3sImages []images.Image
 	OCIImages []images.Image
 }
 
 // Source acquires and verifies every artifact Install needs, returning
-// local paths. OfflineSource reads a signed local bundle; OnlineSource
-// fetches from the network. Both fail closed on any missing artifact,
-// digest mismatch, or bad signature.
+// local paths. V1 uses a signed local bundle only, but the interface
+// keeps the orchestration logic decoupled from bundle layout details.
 type Source interface {
 	Resolve(ctx context.Context) (Resolved, []evidence.Check, error)
 }
@@ -64,9 +63,9 @@ func (s OfflineSource) Resolve(ctx context.Context) (Resolved, []evidence.Check,
 	if !ok {
 		return Resolved{}, checks, fmt.Errorf("install: bundle has no crds entry")
 	}
-	configurationPath, ok := b.Path("configuration")
-	if !ok {
-		return Resolved{}, checks, fmt.Errorf("install: bundle has no configuration entry")
+	configurationPath, err := configurationPath(b)
+	if err != nil {
+		return Resolved{}, checks, fmt.Errorf("install: %w", err)
 	}
 
 	var k3sImages, ociImages []images.Image
@@ -94,4 +93,21 @@ func imageName(e bundle.Entry) string {
 		return e.ImageReference
 	}
 	return e.Path
+}
+
+func configurationPath(b *bundle.Bundle) (string, error) {
+	entries := b.Entries("configuration")
+	if len(entries) == 0 {
+		return "", fmt.Errorf("bundle has no configuration entry")
+	}
+	if len(entries) == 1 {
+		return entries[0].Path, nil
+	}
+	for _, e := range entries {
+		base := strings.ToLower(filepath.Base(e.Path))
+		if base == "values.yaml" || base == "values.yml" {
+			return e.Path, nil
+		}
+	}
+	return "", fmt.Errorf("bundle has multiple configuration entries but none is values.yaml/values.yml")
 }

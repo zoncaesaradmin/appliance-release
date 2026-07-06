@@ -20,8 +20,8 @@ import (
 // Options fully parameterizes a fresh install. Every path is explicit
 // (no hidden defaults inside this package) so tests can point every
 // mutating operation at a temp directory; cmd/zonctl is responsible for
-// filling in the real system paths. Where artifacts come from (a local
-// bundle or the network) is the caller's Source, not part of Options.
+// filling in the real system paths. Artifact resolution is the caller's
+// Source, not part of Options.
 type Options struct {
 	ApplianceVersion string
 
@@ -75,13 +75,11 @@ func NewOrchestrator() *Orchestrator {
 	return &Orchestrator{K3s: k3s.DefaultOps(), ImagesRun: cli.Exec, HelmRun: cli.Exec, ClusterRun: cli.Exec, DetectHost: host.Detect}
 }
 
-// Install runs the fresh-install sequence end to end against whatever
-// source resolves artifacts from (a verified offline bundle or a
-// network fetch — see Source). It returns the full evidence check set
-// gathered along the way even on failure, and leaves no more installed
-// than there was before it started: every mutating step past K3s
-// startup registers a rollback that runs, in reverse order, on any
-// later failure.
+// Install runs the fresh-install sequence end to end against a verified
+// release source. It returns the full evidence check set gathered along
+// the way even on failure, and leaves no more installed than there was
+// before it started: every mutating step past K3s startup registers a
+// rollback that runs, in reverse order, on any later failure.
 func (o *Orchestrator) Install(ctx context.Context, source Source, opts Options) (*state.InstalledState, []evidence.Check, error) {
 	var checks []evidence.Check
 	var rollbacks []func()
