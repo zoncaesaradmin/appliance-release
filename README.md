@@ -13,8 +13,8 @@ binary while assembling a product bundle.
 The primary bundle automation lives here:
 
 - `make verify` runs the local pre-commit checks for this repo
-- `make sample-product-bundle` builds a complete sample bundle with generated placeholder inputs
 - `make product-bundle CONFIG=/abs/path/to/product-bundle.env` runs the real config-driven flow
+- `make product-bundle CONFIG=$(pwd)/configs/product-bundle.sample.env` runs the sample end-to-end smoke flow with generated placeholder inputs
 
 That flow uses the configured `appliance-code` and `appliance-ctl`
 sources directly for local-path development inputs, or clones them when

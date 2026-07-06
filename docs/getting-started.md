@@ -41,7 +41,6 @@ here. This repo is now the packaging/orchestration layer.
 
 ```
 make verify
-make sample-product-bundle
 make product-bundle CONFIG=/abs/path/to/product-bundle.env
 make clean
 ```
@@ -50,9 +49,10 @@ Use `make verify` before committing. It runs the local repo checks that
 do not require a real host or a full product bundle, and finishes with
 `make clean`.
 
-Use `make sample-product-bundle` when you want a fully automated local
-smoke run with generated placeholder inputs. Use `make product-bundle`
-when you have real artifacts and versions to package.
+Use `make product-bundle CONFIG="$(pwd)/configs/product-bundle.sample.env"`
+when you want a fully automated local smoke run with generated placeholder
+inputs. Use `make product-bundle` with your own config when you have real
+artifacts and versions to package.
 
 ### Repo Boundary
 
@@ -90,8 +90,8 @@ make -C ../appliance-ctl build
 ### Before merging changes
 
 1. Run `make verify`.
-2. Run `make sample-product-bundle` if you changed packaging flow and
-   want a full local smoke test.
+2. Run `make product-bundle CONFIG="$(pwd)/configs/product-bundle.sample.env"`
+   if you changed packaging flow and want a full local smoke test.
 3. If you changed bundle examples or config shape, review the generated
    workspace files and JSON examples.
 4. If you changed `zonctl`, validate those changes in `appliance-ctl`.

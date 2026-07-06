@@ -297,7 +297,7 @@ make prepare-simple-workspace
 make assemble-simple-bundle
 make verify-bundle
 make product-bundle
-make sample-product-bundle
+make product-bundle CONFIG="$(pwd)/configs/product-bundle.sample.env"
 make clean
 ```
 

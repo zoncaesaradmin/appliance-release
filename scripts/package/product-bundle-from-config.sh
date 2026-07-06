@@ -56,14 +56,18 @@ require_var CTL_REPO_SOURCE
 require_var PRODUCT_VERSION
 require_var K3S_VERSION
 require_var CONTROL_PLANE_IMAGE_REF
-require_var CONTROL_PLANE_IMAGE
-require_var ARGO_CRDS
-require_var K3S_BINARY
-require_var K3S_INSTALL_SCRIPT
-require_var K3S_AIRGAP_IMAGES
 
 WORKDIR="$(cd "$(dirname "${WORKDIR}")" && pwd)/$(basename "${WORKDIR}")"
+SAMPLE_MODE="${SAMPLE_MODE:-0}"
 INPUTS_DIR="${INPUTS_DIR:-${WORKDIR}/inputs}"
+CHART_VERSION="${CHART_VERSION:-${PRODUCT_VERSION}}"
+ARGO_VERSION="${ARGO_VERSION:-deferred}"
+OS_VERSION="${OS_VERSION:-24.04}"
+CONTROL_PLANE_IMAGE="${CONTROL_PLANE_IMAGE:-${INPUTS_DIR}/control-plane-api-${PRODUCT_VERSION}.tar}"
+ARGO_CRDS="${ARGO_CRDS:-${INPUTS_DIR}/argo-crds.yaml}"
+K3S_BINARY="${K3S_BINARY:-${INPUTS_DIR}/k3s}"
+K3S_INSTALL_SCRIPT="${K3S_INSTALL_SCRIPT:-${INPUTS_DIR}/install.sh}"
+K3S_AIRGAP_IMAGES="${K3S_AIRGAP_IMAGES:-${INPUTS_DIR}/k3s-airgap-images-amd64.tar.zst}"
 DOWNLOADS_DIR="${WORKDIR}/downloads"
 STAGING_DIR="${WORKDIR}/staging"
 RELEASE_INPUT_TAR="${DOWNLOADS_DIR}/release-input-${PRODUCT_VERSION}.tar.gz"
@@ -71,7 +75,7 @@ BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-bundle"
 
 mkdir -p "${WORKDIR}" "${INPUTS_DIR}" "${DOWNLOADS_DIR}"
 
-if [[ "${SAMPLE_MODE:-0}" == "1" ]]; then
+if [[ "${SAMPLE_MODE}" == "1" ]]; then
   mkdir -p "$(dirname "${CONTROL_PLANE_IMAGE}")" "$(dirname "${ARGO_CRDS}")" "$(dirname "${K3S_BINARY}")" "$(dirname "${K3S_INSTALL_SCRIPT}")" "$(dirname "${K3S_AIRGAP_IMAGES}")"
   printf 'control-plane-image\n' > "${CONTROL_PLANE_IMAGE}"
   cat >"${ARGO_CRDS}" <<'EOF'
@@ -161,8 +165,8 @@ make -C "${CLONE_DIR}" package-release-input-tar \
   CONTROL_PLANE_IMAGE="${CONTROL_PLANE_IMAGE}" \
   ARGO_CRDS="${ARGO_CRDS}" \
   K3S_VERSION="${K3S_VERSION}" \
-  ${CHART_VERSION:+CHART_VERSION="${CHART_VERSION}"} \
-  ${ARGO_VERSION:+ARGO_VERSION="${ARGO_VERSION}"} \
+  CHART_VERSION="${CHART_VERSION}" \
+  ARGO_VERSION="${ARGO_VERSION}" \
   ${SUPPORTED_UPGRADE_SOURCE:+SUPPORTED_UPGRADE_SOURCE="${SUPPORTED_UPGRADE_SOURCE}"} \
   ${SBOM_DIR:+SBOM_DIR="${SBOM_DIR}"} \
   ${PROVENANCE_DIR:+PROVENANCE_DIR="${PROVENANCE_DIR}"} \
@@ -175,7 +179,7 @@ make -C "${REPO_ROOT}" prepare-simple-workspace \
   RELEASE_INPUT_SOURCE="${RELEASE_INPUT_TAR}" \
   PRODUCT_VERSION="${PRODUCT_VERSION}" \
   CONTROL_PLANE_IMAGE_REF="${CONTROL_PLANE_IMAGE_REF}" \
-  OS_VERSION="${OS_VERSION:-24.04}"
+  OS_VERSION="${OS_VERSION}"
 
 mkdir -p "${STAGING_DIR}"
 cp "${K3S_BINARY}" "${STAGING_DIR}/k3s"

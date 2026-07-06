@@ -14,7 +14,7 @@ building block underneath that main command.
 Run:
 
 ```bash
-make sample-product-bundle
+make product-bundle CONFIG="$(pwd)/configs/product-bundle.sample.env"
 ```
 
 That one command will:
@@ -34,10 +34,11 @@ The sample output lands at:
 
 ## Real Automated Run
 
-Copy [product-bundle.sample.env](/Users/zoncaesar/ws/appliance-release/configs/product-bundle.sample.env)
+Copy [product-bundle.ci.env](/Users/zoncaesar/ws/appliance-release/configs/product-bundle.ci.env)
 to your own file and change only the small set of inputs:
 
 - `WORKDIR`
+- `INPUTS_DIR` if your prepared artifacts do not live under `${WORKDIR}/inputs`
 - `CODE_REPO_SOURCE`
 - `CODE_REPO_REF` if you want a specific branch or tag
 - `CTL_REPO_SOURCE`
@@ -45,7 +46,6 @@ to your own file and change only the small set of inputs:
 - `PRODUCT_VERSION`
 - `K3S_VERSION`
 - `CONTROL_PLANE_IMAGE_REF`
-- the file paths under `INPUTS_DIR`, or point them somewhere else
 
 Then run:
 
@@ -68,8 +68,11 @@ The command will:
 
 ## Sample Config Meaning
 
-The sample config is at
+The runnable sample config is at
 [configs/product-bundle.sample.env](/Users/zoncaesar/ws/appliance-release/configs/product-bundle.sample.env).
+
+The lean real-build template is at
+[configs/product-bundle.ci.env](/Users/zoncaesar/ws/appliance-release/configs/product-bundle.ci.env).
 
 Important values:
 
@@ -83,10 +86,15 @@ Important values:
   cloned CLI repo pinned
 - `CONTROL_PLANE_IMAGE_REF` is the image reference written into the bundle
   manifest and install values
+- `INPUTS_DIR` is the default base directory for the real prepared inputs
 - `VALUES_FILE` is optional; if omitted, the generated minimal values file is
   used
+- `CONTROL_PLANE_IMAGE`, `ARGO_CRDS`, `K3S_BINARY`, `K3S_INSTALL_SCRIPT`,
+  and `K3S_AIRGAP_IMAGES` are optional per-file overrides; if blank, the
+  workflow derives them from `INPUTS_DIR`
 
-For a real run, set `SAMPLE_MODE=0` or remove it and point the input paths at:
+For a real run, set `SAMPLE_MODE=0` or use the CI template and ensure the
+inputs directory contains:
 
 - a real control-plane image tar
 - a real `argo-crds.yaml`

@@ -12,6 +12,7 @@ VERIFY_JSON_LOG := $(VERIFY_LOG_DIR)/verify-json.log
 verify-shell:
 	@bash -n $$(find scripts -type f -name '*.sh' | LC_ALL=C sort)
 	@bash -n configs/product-bundle.sample.env
+	@bash -n configs/product-bundle.ci.env
 
 .PHONY: verify-help
 verify-help:
@@ -137,10 +138,6 @@ product-bundle:
 		exit 2; \
 	fi
 	bash ./scripts/package/product-bundle-from-config.sh --config "$${CONFIG}"
-
-.PHONY: sample-product-bundle
-sample-product-bundle:
-	$(MAKE) --no-print-directory product-bundle CONFIG="$(CURDIR)/configs/product-bundle.sample.env"
 
 .PHONY: verify-bundle
 verify-bundle:
