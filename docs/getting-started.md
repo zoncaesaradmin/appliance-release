@@ -31,8 +31,6 @@ Public egress is not required during install or runtime.
 - `bash`
 - a local `appliance-ctl` checkout if you want to assemble bundles
   locally; that repo owns the `zonctl` source and binary
-- a local `appliance-code` checkout if you want to run the sample
-  product-bundle flow end to end
 
 If you want to change `zonctl` itself, work in `appliance-ctl`, not
 here. This repo is now the packaging/orchestration layer.
@@ -41,6 +39,7 @@ here. This repo is now the packaging/orchestration layer.
 
 ```
 make verify
+make ci-product-bundle WORKDIR=... PRODUCT_VERSION=... K3S_VERSION=... CONTROL_PLANE_IMAGE_REF=... CTL_REPO_SOURCE=... RELEASE_INPUT_SOURCE=...
 make product-bundle CONFIG=/abs/path/to/product-bundle.env
 make clean
 ```
@@ -54,10 +53,15 @@ when you want a fully automated local smoke run with generated placeholder
 inputs. Use `make product-bundle` with your own config when you have real
 artifacts and versions to package.
 
+For CAE/CI, prefer `make ci-product-bundle ...`. That single command writes a
+resolved config file into `WORKDIR`, builds or reuses `zonctl` from
+`appliance-ctl`, imports the prepared `release-input`, builds the bundle,
+and verifies it.
+
 ### Repo Boundary
 
 - `appliance-code` owns product artifacts such as the control-plane
-  chart, image handoff, schema, and release-input metadata
+  chart, schema, and signed `release-input` handoff
 - `appliance-ctl` owns the `zonctl` source, tests, and binary
 - `appliance-release` owns packaging automation, bundle assembly
   workspace setup, signing material generation, and final bundle

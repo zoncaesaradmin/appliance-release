@@ -13,15 +13,17 @@ binary while assembling a product bundle.
 The primary bundle automation lives here:
 
 - `make verify` runs the local pre-commit checks for this repo
+- `bash ./scripts/ci/run-product-bundle.sh ...` is the single full CI workflow that uses this repo as the driver, clones `appliance-ctl`, writes the env file, and builds the bundle from a prepared `release-input` artifact
+- `make ci-product-bundle ...` is the single CAE/CI entrypoint for a real bundle build
 - `make product-bundle CONFIG=/abs/path/to/product-bundle.env` runs the real config-driven flow
 - `make product-bundle CONFIG=$(pwd)/configs/product-bundle.sample.env` runs the sample end-to-end smoke flow with generated placeholder inputs
 
-That flow uses the configured `appliance-code` and `appliance-ctl`
-sources directly for local-path development inputs, or clones them when
-you provide a remote URL or a pinned ref. It then builds the external
-`zonctl` binary, packages the product-side handoff for the selected
-version, stages the K3s-side artifacts, assembles the final signed
-bundle, and verifies it.
+Repo-source defaults for the CI bootstrap script live in
+[configs/ci-bootstrap.defaults.env](/Users/zoncaesar/ws/appliance-release/configs/ci-bootstrap.defaults.env).
+
+That flow consumes the prepared product-side `release-input` handoff,
+builds the external `zonctl` binary from `appliance-ctl`, stages the
+K3s-side artifacts, assembles the final signed bundle, and verifies it.
 
 ## Documentation
 
