@@ -4,6 +4,9 @@ This describes what is actually implemented today. See
 [release-plan.md](release-plan.md) for the full Security And Supply Chain
 policy this repository is working toward.
 
+Implementation package names referenced below now live in the
+`appliance-ctl` repo, which owns the `zonctl` source tree.
+
 ## Verification Chain
 
 Everything traces back to one pinned ed25519 public key

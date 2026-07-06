@@ -1,5 +1,8 @@
 # Support Matrix
 
+Implementation package names referenced below now live in the
+`appliance-ctl` repo, which owns the `zonctl` source tree.
+
 ## Qualified Host Baseline (v1)
 
 | Requirement | Value | Enforced by |

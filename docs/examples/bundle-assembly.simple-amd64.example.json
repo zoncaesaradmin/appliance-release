@@ -34,22 +34,10 @@
       "component": "k3s-images"
     },
     {
-      "sourcePath": "/absolute/path/to/staging/control-plane.tar",
-      "targetPath": "oci-images/control-plane.tar",
+      "sourcePath": "/absolute/path/to/staging/control-plane-api-<version>.tar",
+      "targetPath": "oci-images/control-plane-api-<version>.tar",
       "component": "oci-images",
-      "imageReference": "internal/control-plane:2.4.0"
-    },
-    {
-      "sourcePath": "/absolute/path/to/staging/zot.tar",
-      "targetPath": "oci-images/zot.tar",
-      "component": "oci-images",
-      "imageReference": "internal/zot:pin-me"
-    },
-    {
-      "sourcePath": "/absolute/path/to/staging/argo-controller.tar",
-      "targetPath": "oci-images/argo-controller.tar",
-      "component": "oci-images",
-      "imageReference": "internal/argo-controller:pin-me"
+      "imageReference": "internal/control-plane-api:<version>"
     },
     {
       "sourcePath": "/absolute/path/to/release-input/appliance-chart-2.4.0.tgz",
@@ -62,14 +50,9 @@
       "component": "crds"
     },
     {
-      "sourcePath": "/absolute/path/to/staging/values.yaml",
+      "sourcePath": "/absolute/path/to/staging/values-minimal.yaml",
       "targetPath": "configuration/values.yaml",
       "component": "configuration"
-    },
-    {
-      "sourcePath": "/absolute/path/to/staging/grype-db.tar.zst",
-      "targetPath": "scanner-data/grype-db.tar.zst",
-      "component": "scanner-data"
     }
   ]
 }

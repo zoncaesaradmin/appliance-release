@@ -7,6 +7,7 @@
 *.dll
 *.so
 *.dylib
+*.swp
 
 # Test binary, built with `go test -c`
 *.test
@@ -29,6 +30,7 @@ go.work.sum
 
 # make verify's own per-stage logs
 .run/
+bin/
 
 # Editor/IDE
 # .idea/

@@ -27,103 +27,71 @@ Public egress is not required during install or runtime.
 
 ### Prerequisites
 
-- Go 1.24+ (`go.mod` pins the toolchain version)
 - `make`
-- macOS or Linux to build and run unit tests. Only Linux gets the real
-  host-detection, K3s-service, and OCI/Helm adapters — on macOS those
-  adapters fall back to safe no-op stubs so the code still builds and
-  tests still run (see the `internal/host`, `internal/k3s` build-tagged
-  files), but you won't get real preflight or service results locally.
+- `bash`
+- a local `appliance-ctl` checkout if you want to assemble bundles
+  locally; that repo owns the `zonctl` source and binary
+- a local `appliance-code` checkout if you want to run the sample
+  product-bundle flow end to end
+
+If you want to change `zonctl` itself, work in `appliance-ctl`, not
+here. This repo is now the packaging/orchestration layer.
 
 ### Day-to-day loop
 
 ```
-make build          # compiles cmd/zonctl to bin/zonctl
-make unit-test       # go test ./... — no root, no K3s, no network required
-make lint            # gofmt -l -s + go vet
-make verify-schemas  # schema/fixture validation only (a subset of unit-test)
-make clean           # remove bin/, make verify's logs, and any stray test/coverage artifacts
+make verify
+make sample-product-bundle
+make product-bundle CONFIG=/abs/path/to/product-bundle.env
+make clean
 ```
 
-Use these individually while iterating — `make unit-test` is the
-fastest inner-loop check, running all 135+ tests across every package.
+Use `make verify` before committing. It runs the local repo checks that
+do not require a real host or a full product bundle, and finishes with
+`make clean`.
 
-### `make verify`: the single pre-merge gate
+Use `make sample-product-bundle` when you want a fully automated local
+smoke run with generated placeholder inputs. Use `make product-bundle`
+when you have real artifacts and versions to package.
 
-`make verify` composes everything above into one command and is what you
-should actually run before merging or opening a PR — see "Before merging
-changes" below. It runs, in order, until the first failure: native build,
-`GOOS=linux GOARCH=amd64` build (the only supported target host is
-Ubuntu/amd64, even though development happens on macOS), lint, `GOOS=linux
-GOARCH=amd64 go vet`, unit tests, `go test ./... -race` (the
-race-detector-clean concurrency tests in `internal/lifecycle` and
-`internal/redact`), schema/fixture validation, a `go mod tidy` no-op
-check, and finally `make clean`. Each stage's full output is logged to
-its own file under `.run/logs/` (gitignored), so a failure points
-straight at what to inspect instead of scrolling back through one
-combined log — the failing stage's message names the exact log path.
-`make clean` at the end means a passing `make verify` always leaves the
-working tree free of build/test artifacts, not just the code checked out.
+### Repo Boundary
 
-### Real-bundle and VM targets
+- `appliance-code` owns product artifacts such as the control-plane
+  chart, image handoff, schema, and release-input metadata
+- `appliance-ctl` owns the `zonctl` source, tests, and binary
+- `appliance-release` owns packaging automation, bundle assembly
+  workspace setup, signing material generation, and final bundle
+  composition
+
+### Real-bundle targets
 
 `assemble-bundle` and `verify-bundle` are now real targets. They use
-`zonctl` directly for producing and verifying a signed extracted bundle:
+an external `zonctl` binary for producing and verifying a signed
+extracted bundle:
 
 ```bash
 BUNDLE_CONFIG=/abs/path/to/bundle-assembly.json make assemble-bundle
 BUNDLE_DIR=/abs/path/to/bundle PUBLIC_KEY=/abs/path/to/release-signing.pub make verify-bundle
 ```
 
-The remaining host/VM lanes still intentionally fail today:
+By default these targets look for `../appliance-ctl/bin/zonctl`. If
+your binary lives elsewhere, set `ZONCTL_BINARY=/abs/path/to/zonctl`.
 
-- `test-preflight`
-- `test-installer`
-- `test-install-airgap`
-- `test-upgrade`
-- `test-restore`
-- `test-uninstall`
+### Exercising The CLI Directly
 
-Those are still placeholders for privileged real-host automation. The
-underlying lifecycle logic each one represents **is** implemented and
-covered by `make unit-test`; only the fully automated live-host harness
-is still missing.
-
-### Exercising the CLI without a real product bundle
-
-You can build and run `zonctl` against a small hand-built fixture
-bundle to see the full flow without needing a real `appliance-code`
-product input. This mirrors what `internal/install/install_test.go`'s
-fixture builder does automatically for tests; the same shape works from a
-shell:
+If you want to build and run `zonctl` directly, do that in
+`appliance-ctl`:
 
 ```
-make build
-mkdir -p /tmp/fixture-bundle
-# ...write release-manifest.json, release-manifest.sig, and the files it
-# references (see internal/bundle/bundle_test.go for the exact shape and
-# internal/verify for how to generate an ed25519 keypair and sign it)
-./bin/zonctl install --bundle-dir /tmp/fixture-bundle --public-key /tmp/release-signing.pub --state-dir /tmp/zon-state
+make -C ../appliance-ctl build
+../appliance-ctl/bin/zonctl --help
 ```
-
-On a non-Linux machine this will get past bundle verification and
-preflight (if the fixture host facts pass) and then fail at the K3s
-service step, since there's no real `systemctl`/K3s to drive — that's
-expected. `zonctl preflight --output json` and `zonctl status
---output json` work standalone on any machine and are the fastest way to
-see real command output without building a fixture bundle at all.
 
 ### Before merging changes
 
-1. `make verify` — must pass. This single command is every check listed
-   above (build, cross-compile, lint, unit tests, race tests,
-   schema/fixture validation, `go mod tidy` drift check) plus a final
-   `make clean`; nothing else needs to be run separately.
-2. If you touched a schema in `schemas/`, add or update fixtures under
-   `tests/fixtures/` — every schema change should be paired with at
-   least one valid and one invalid fixture — then `make verify` (or
-   `make verify-schemas` alone, while iterating) confirms they pass.
-3. Everything in this repository as of this writing is uncommitted on
-   `main` on top of a single "Initial commit" — there is no open PR yet.
-   Review the diff, then commit or open a PR through your normal process;
-   nothing here commits or pushes on your behalf.
+1. Run `make verify`.
+2. Run `make sample-product-bundle` if you changed packaging flow and
+   want a full local smoke test.
+3. If you changed bundle examples or config shape, review the generated
+   workspace files and JSON examples.
+4. If you changed `zonctl`, validate those changes in `appliance-ctl`.

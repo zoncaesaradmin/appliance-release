@@ -5,6 +5,9 @@ covers what ships today; see [release-plan.md](release-plan.md) for the
 overall plan and execution ledger, and [security.md](security.md) for the
 trust model behind every verification step mentioned here.
 
+Implementation package names referenced below now live in the
+`appliance-ctl` repo, which owns the `zonctl` source tree.
+
 ## Bundle-Only V1
 
 `zonctl install` runs from one verified source in v1: an extracted,

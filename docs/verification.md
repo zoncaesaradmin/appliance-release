@@ -5,6 +5,9 @@ and requires no network access — that's a hard invariant of this
 repository (see [security.md](security.md#offline-operation)), not just
 this guide's recommendation.
 
+Implementation package names referenced below now live in the
+`appliance-ctl` repo, which owns the `zonctl` source tree.
+
 ## Verifying a Bundle Before Installing
 
 `zonctl install` and `zonctl upgrade` already perform every check

@@ -4,17 +4,21 @@ This is the practical path to build an installable extracted appliance
 bundle from local staged artifacts, verify it, copy it to a supported
 Ubuntu host, and install it there with `zonctl`.
 
+For the one-command automated path, see [automation.md](automation.md).
+
 The bundle assembly flow is now implemented in this repository via:
 
 - `make assemble-bundle`
 - `make verify-bundle`
-- `cmd/zonctl`
+- an external `zonctl` binary, usually from `appliance-ctl`
 
 ## What You Need
 
 On the build workstation:
 
 - this repository checked out locally
+- the `appliance-ctl` repository checked out locally, or another built
+  `zonctl` binary available on disk
 - a release-input directory from `appliance-code`
 - staged install-ready artifacts for the final bundle
 - an Ed25519 signing key pair for the final release manifest
@@ -25,15 +29,15 @@ On the target host:
 - root or sudo access
 - enough disk and memory to satisfy `zonctl preflight`
 
-## 1. Build The Local Tools
+## 1. Build `zonctl`
 
 ```bash
-make build
+make -C ../appliance-ctl build
 ```
 
 This produces:
 
-- `bin/zonctl`
+- `../appliance-ctl/bin/zonctl`
 
 ## 2. Prepare The Inputs
 
@@ -84,14 +88,28 @@ bundle verification.
 
 ## 4. Create The Bundle Assembly Config
 
-Start from [bundle-assembly.example.json](/Users/zoncaesar/ws/appliance-release/docs/examples/bundle-assembly.example.json)
-and write your own local config, for example:
+Start from one of these examples and write your own local config:
+
+- [bundle-assembly.example.json](/Users/zoncaesar/ws/appliance-release/docs/examples/bundle-assembly.example.json) for the fuller staging layout
+- [bundle-assembly.simple-amd64.example.json](/Users/zoncaesar/ws/appliance-release/docs/examples/bundle-assembly.simple-amd64.example.json) for the current minimal `amd64` base-package flow
+
+For the simplified base-package path, copy the minimal example:
 
 ```bash
-cp docs/examples/bundle-assembly.example.json /tmp/bundle-assembly.json
+cp docs/examples/bundle-assembly.simple-amd64.example.json /tmp/bundle-assembly.json
 ```
 
 Then replace every placeholder path with your real local paths.
+
+For the minimal `amd64` example, the intent is:
+
+- keep `zonctl`, K3s, the K3s air-gap archive, one control-plane API image archive, the product chart, a single staged CRD file, and one install values file
+- leave Zot, registry-sidecar trees, scanner data, and other secondary OCI archives out of the bundle for now
+- use `values-minimal.yaml` to keep the in-cluster deployment focused on the base flow only
+
+The current assembler still requires a `crds` component, so the simple
+flow keeps a staged `argo-crds.yaml` in the bundle even if the broader
+controller story is deferred.
 
 The required install components are:
 
@@ -102,6 +120,11 @@ The required install components are:
 - one `chart` entry
 - one `crds` entry
 - one `configuration` entry for `values.yaml`
+
+For the control-plane API server image, pick the exact staged archive and
+set `imageReference` to the same versioned image you intend this bundle
+to install. In the minimal example that is the only application OCI
+archive carried into the bundle.
 
 The assembler automatically also carries forward:
 
@@ -121,7 +144,7 @@ BUNDLE_CONFIG=/tmp/bundle-assembly.json make assemble-bundle
 Or directly:
 
 ```bash
-./bin/zonctl assemble-bundle --config /tmp/bundle-assembly.json
+../appliance-ctl/bin/zonctl assemble-bundle --config /tmp/bundle-assembly.json
 ```
 
 This creates an extracted bundle directory containing:
@@ -143,7 +166,7 @@ make verify-bundle
 Or directly:
 
 ```bash
-./bin/zonctl verify-bundle \
+../appliance-ctl/bin/zonctl verify-bundle \
   --bundle-dir /absolute/path/to/out/appliance-2.4.0-bundle \
   --public-key ./keys/release-signing.pub
 ```

@@ -284,32 +284,26 @@ Prefer a small compiled Go lifecycle CLI over an expanding shell installer. Shel
 
 ## Make Targets
 
-The initial Makefile should provide:
-
-*(Revised: `make verify` has since become the comprehensive pre-merge
-gate — build, cross-compile, lint, unit tests, race tests,
-schema/fixture validation, `go mod tidy` drift check, then `make clean`
-— rather than schema validation alone. The original narrower schema
-check now lives at `make verify-schemas`. See
-[getting-started.md](getting-started.md#make-verify-the-single-pre-merge-gate).)*
+The current packaging-only repo keeps a much smaller target surface than
+the original plan. `zonctl` now lives in `appliance-ctl`, so this repo
+focuses on bundle assembly and local packaging checks.
 
 ```text
-make build
-make unit-test
-make lint
 make verify
-make test-preflight
-make test-installer
 make assemble-bundle
+make init-simple-workspace
+make fetch-release-input
+make prepare-simple-workspace
+make assemble-simple-bundle
 make verify-bundle
-make test-install-airgap
-make test-upgrade
-make test-restore
-make test-uninstall
+make product-bundle
+make sample-product-bundle
 make clean
 ```
 
-Normal unit tests must not require root, K3s, or network access. Privileged VM tests are explicit lanes and publish their machine-readable evidence.
+`make verify` is the pre-commit gate for this repo. It runs local shell
+syntax checks, script `--help` smoke checks, JSON example validation,
+and then `make clean`.
 
 ## Execution Ledger
 
