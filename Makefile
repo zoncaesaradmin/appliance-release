@@ -13,7 +13,6 @@ verify-shell:
 	@bash -n $$(find scripts -type f -name '*.sh' | LC_ALL=C sort)
 	@bash -n configs/product-bundle.sample.env
 	@bash -n configs/product-bundle.ci.env
-	@bash -n configs/ci-bootstrap.defaults.env
 
 .PHONY: verify-help
 verify-help:

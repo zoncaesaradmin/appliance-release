@@ -13,11 +13,11 @@ Bootstraps a clean CI workspace for appliance bundle creation:
 5. rewrites the required values in that env file
 6. runs make product-bundle from the current appliance-release repo
 
-Required:
-  --workspace PATH
+Required unless set in configs/product-bundle.ci.env:
   --product-version VERSION
-  --k3s-version VERSION
-  --control-plane-image-ref REF
+  and either:
+    --control-plane-version VERSION
+    --control-plane-image-ref REF
 
 Required unless --sample-mode 1:
   --release-input-source PATH_OR_URL
@@ -29,8 +29,12 @@ Required unless --sample-mode 1:
   --k3s-airgap-images-source PATH_OR_URL
 
 Optional:
-  --ctl-repo-source PATH_OR_URL       Defaults come from
-                                      configs/ci-bootstrap.defaults.env,
+  --workspace PATH                    Defaults to WORKDIR from
+                                      configs/product-bundle.ci.env.
+  --k3s-version VERSION               Defaults from
+                                      configs/product-bundle.ci.env.
+  --ctl-repo-source PATH_OR_URL       Defaults from
+                                      configs/product-bundle.ci.env,
                                       then ../appliance-ctl.
   --ctl-repo-ref REF
   --chart-version VERSION             Defaults to PRODUCT_VERSION.
@@ -51,14 +55,16 @@ EOF
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-DEFAULTS_FILE="${REPO_ROOT}/configs/ci-bootstrap.defaults.env"
+DEFAULTS_FILE="${REPO_ROOT}/configs/product-bundle.ci.env"
 
 WORKSPACE=""
 CTL_REPO_SOURCE=""
 CTL_REPO_REF=""
 PRODUCT_VERSION=""
 K3S_VERSION=""
+CONTROL_PLANE_VERSION=""
 CONTROL_PLANE_IMAGE_REF=""
+CONTROL_PLANE_IMAGE_REPOSITORY=""
 RELEASE_INPUT_SOURCE=""
 RELEASE_INPUT_VERSION=""
 RELEASE_INPUT_FETCH_TEMPLATE=""
@@ -71,9 +77,6 @@ ARGO_VERSION="deferred"
 OS_VERSION="24.04"
 SAMPLE_MODE="0"
 KEEP_WORKSPACE="0"
-
-CTL_REPO_SOURCE_DEFAULT=""
-CTL_REPO_REF_DEFAULT=""
 
 if [[ -f "${DEFAULTS_FILE}" ]]; then
   set -a
@@ -89,6 +92,7 @@ while [[ $# -gt 0 ]]; do
     --ctl-repo-ref) CTL_REPO_REF="${2:-}"; shift 2 ;;
     --product-version) PRODUCT_VERSION="${2:-}"; shift 2 ;;
     --k3s-version) K3S_VERSION="${2:-}"; shift 2 ;;
+    --control-plane-version) CONTROL_PLANE_VERSION="${2:-}"; shift 2 ;;
     --control-plane-image-ref) CONTROL_PLANE_IMAGE_REF="${2:-}"; shift 2 ;;
     --release-input-source) RELEASE_INPUT_SOURCE="${2:-}"; shift 2 ;;
     --release-input-version) RELEASE_INPUT_VERSION="${2:-}"; shift 2 ;;
@@ -121,14 +125,19 @@ require_arg() {
   fi
 }
 
-require_arg --workspace "${WORKSPACE}"
 require_arg --product-version "${PRODUCT_VERSION}"
+WORKSPACE="${WORKSPACE:-${WORKDIR:-}}"
+CTL_REPO_SOURCE="${CTL_REPO_SOURCE:-${REPO_ROOT}/../appliance-ctl}"
+CTL_REPO_REF="${CTL_REPO_REF:-}"
+CHART_VERSION="${CHART_VERSION:-${PRODUCT_VERSION}}"
+
+if [[ -z "${CONTROL_PLANE_IMAGE_REF}" && -n "${CONTROL_PLANE_VERSION}" && -n "${CONTROL_PLANE_IMAGE_REPOSITORY}" ]]; then
+  CONTROL_PLANE_IMAGE_REF="${CONTROL_PLANE_IMAGE_REPOSITORY}:${CONTROL_PLANE_VERSION}"
+fi
+
+require_arg --workspace "${WORKSPACE}"
 require_arg --k3s-version "${K3S_VERSION}"
 require_arg --control-plane-image-ref "${CONTROL_PLANE_IMAGE_REF}"
-
-CTL_REPO_SOURCE="${CTL_REPO_SOURCE:-${CTL_REPO_SOURCE_DEFAULT:-${REPO_ROOT}/../appliance-ctl}}"
-CTL_REPO_REF="${CTL_REPO_REF:-${CTL_REPO_REF_DEFAULT}}"
-
 require_arg --ctl-repo-source "${CTL_REPO_SOURCE}"
 
 if [[ "${SAMPLE_MODE}" != "1" ]]; then
@@ -143,7 +152,6 @@ if [[ "${SAMPLE_MODE}" != "1" ]]; then
 fi
 
 WORKSPACE="$(cd "$(dirname "${WORKSPACE}")" && pwd)/$(basename "${WORKSPACE}")"
-CHART_VERSION="${CHART_VERSION:-${PRODUCT_VERSION}}"
 
 REPOS_DIR="${WORKSPACE}/repos"
 CTL_DIR="${REPOS_DIR}/appliance-ctl"
@@ -257,6 +265,7 @@ cp "${REPO_ROOT}/configs/product-bundle.ci.env" "${CONFIG_OUT}"
 set_env_var "${CONFIG_OUT}" WORKDIR "${WORKSPACE}"
 set_env_var "${CONFIG_OUT}" PRODUCT_VERSION "${PRODUCT_VERSION}"
 set_env_var "${CONFIG_OUT}" K3S_VERSION "${K3S_VERSION}"
+set_env_var "${CONFIG_OUT}" CONTROL_PLANE_VERSION "${CONTROL_PLANE_VERSION}"
 set_env_var "${CONFIG_OUT}" CONTROL_PLANE_IMAGE_REF "${CONTROL_PLANE_IMAGE_REF}"
 if [[ -n "${RELEASE_INPUT_SOURCE}" ]]; then
   set_env_var "${CONFIG_OUT}" RELEASE_INPUT_SOURCE "${RELEASE_INPUT_SOURCE}"

@@ -21,10 +21,8 @@ After CI checks out `appliance-release`, the single command to run is:
 
 ```bash
 bash ./scripts/ci/run-product-bundle.sh \
-  --workspace /private/tmp/appliance-product-ci \
   --product-version 0.1.0 \
-  --k3s-version v1.30.4+k3s1 \
-  --control-plane-image-ref internal/control-plane-api:0.1.0 \
+  --control-plane-version 0.1.0 \
   --release-input-source /ci/inputs/release-input-0.1.0.tar.gz \
   --k3s-binary-source /ci/inputs/k3s \
   --k3s-install-script-source /ci/inputs/install.sh \
@@ -41,9 +39,11 @@ That command will:
 - assemble the final signed extracted bundle
 - verify the bundle
 
-Repo defaults for the outer script live in
-[configs/ci-bootstrap.defaults.env](/Users/zoncaesar/ws/appliance-release/configs/ci-bootstrap.defaults.env).
-Today that file only carries the default `appliance-ctl` source/ref.
+The single CI defaults file is
+[configs/product-bundle.ci.env](/Users/zoncaesar/ws/appliance-release/configs/product-bundle.ci.env).
+That file carries the stable values like the pinned K3s version, the control
+plane image repository, the default workspace, and the default `appliance-ctl`
+source. The outer script is the one thing that should drive runtime inputs.
 
 The generated config file is left on disk as rerun/audit evidence:
 
