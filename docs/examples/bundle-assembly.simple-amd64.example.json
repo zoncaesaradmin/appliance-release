@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "bundleVersion": "2.4.0",
   "releaseInputDir": "/absolute/path/to/release-input",
   "bundleDir": "/absolute/path/to/out/appliance-2.4.0-bundle",
   "signingKeyId": "release-signing-key",
@@ -43,11 +44,6 @@
       "sourcePath": "/absolute/path/to/release-input/appliance-chart-2.4.0.tgz",
       "targetPath": "charts/appliance-chart-2.4.0.tgz",
       "component": "chart"
-    },
-    {
-      "sourcePath": "/absolute/path/to/staging/argo-crds.yaml",
-      "targetPath": "crds/argo-crds.yaml",
-      "component": "crds"
     },
     {
       "sourcePath": "/absolute/path/to/staging/values-minimal.yaml",

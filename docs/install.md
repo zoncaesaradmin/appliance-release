@@ -13,7 +13,7 @@ Implementation package names referenced below now live in the
 `zonctl install` runs from one verified source in v1: an extracted,
 signed appliance bundle passed via `--bundle-dir`. The bundle contains
 the pinned K3s binary, K3s platform images, application OCI images, the
-Helm chart, Argo CRDs, default configuration, and the signed
+Helm chart, default configuration, and the signed
 `release-manifest.json` that binds them together.
 
 ## Prerequisites
@@ -95,9 +95,9 @@ isn't obviously safe to adopt — see [K3s Ownership](security.md#k3s-ownership)
    bundle entry is digest-verified and imported directly into the K3s
    (containerd) image store — K3s platform images first, then application
    images — so no pod ever needs to pull from a registry.
-6. **CRDs and chart.** The bundled Argo CRDs are applied, then the exact
-   Zon Helm chart is installed via `helm upgrade --install` against
-   the bundle's schema-validated values file.
+6. **Chart apply.** The exact Zon Helm chart is installed via
+   `helm upgrade --install` against the bundle's schema-validated values
+   file.
 7. **Persist installed-state.** On success, `installed-state.json` records
    the installed version, component versions, and K3s ownership.
 
@@ -111,7 +111,7 @@ it never falls back to the network.
 
 Every install run persists an `evidence.v1` report under
 `<state-dir>/evidence/evidence-<transaction-id>.json`, combining the
-bundle-verification checks, the preflight checks, and the image/CRD/chart
+bundle-verification checks, the preflight checks, and the image/chart
 checks from this run. `zonctl support-bundle` collects this alongside
 `installed-state.json` into a single redacted archive; see
 [troubleshooting.md](troubleshooting.md).

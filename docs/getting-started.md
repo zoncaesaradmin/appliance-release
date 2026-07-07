@@ -39,7 +39,7 @@ here. This repo is now the packaging/orchestration layer.
 
 ```
 make verify
-bash ./scripts/ci/run-product-bundle.sh --product-version ... --control-plane-version ... --release-input-source ... --k3s-binary-source ... --k3s-install-script-source ... --k3s-airgap-images-source ...
+bash ./scripts/ci/run-product-bundle.sh --product-version ... --release-input-source ... --k3s-binary-source ... --k3s-install-script-source ... --k3s-airgap-images-source ...
 make product-bundle CONFIG=/abs/path/to/product-bundle.env
 make clean
 ```

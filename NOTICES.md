@@ -25,7 +25,6 @@ currently only enumerates by category:
   Traefik)
 - **zot** — OCI registry, used as the product data-plane registry after
   rollout (never a bootstrap dependency)
-- **Argo Workflows** — controller, executor images, and CRDs
 - **Buildah, Skopeo, ORAS** — OCI build/copy/artifact tooling used during
   release assembly, not at install time
 - **Syft, Grype** — SBOM generation and vulnerability scanning, plus the

@@ -54,19 +54,16 @@ require_var WORKDIR
 require_var CTL_REPO_SOURCE
 require_var PRODUCT_VERSION
 require_var K3S_VERSION
-require_var CONTROL_PLANE_IMAGE_REF
 
 WORKDIR="$(cd "$(dirname "${WORKDIR}")" && pwd)/$(basename "${WORKDIR}")"
 SAMPLE_MODE="${SAMPLE_MODE:-0}"
 INPUTS_DIR="${INPUTS_DIR:-${WORKDIR}/inputs}"
 CHART_VERSION="${CHART_VERSION:-${PRODUCT_VERSION}}"
-ARGO_VERSION="${ARGO_VERSION:-deferred}"
 OS_VERSION="${OS_VERSION:-24.04}"
 RELEASE_INPUT_SOURCE="${RELEASE_INPUT_SOURCE:-}"
 RELEASE_INPUT_VERSION="${RELEASE_INPUT_VERSION:-}"
 RELEASE_INPUT_FETCH_TEMPLATE="${RELEASE_INPUT_FETCH_TEMPLATE:-}"
 CONTROL_PLANE_IMAGE="${CONTROL_PLANE_IMAGE:-}"
-ARGO_CRDS="${ARGO_CRDS:-}"
 K3S_BINARY="${K3S_BINARY:-${INPUTS_DIR}/k3s}"
 K3S_INSTALL_SCRIPT="${K3S_INSTALL_SCRIPT:-${INPUTS_DIR}/install.sh}"
 K3S_AIRGAP_IMAGES="${K3S_AIRGAP_IMAGES:-${INPUTS_DIR}/k3s-airgap-images-amd64.tar.zst}"
@@ -81,7 +78,11 @@ create_sample_release_input() {
   local sample_root="${DOWNLOADS_DIR}/sample-release-input"
   local archive_path="${DOWNLOADS_DIR}/release-input-${PRODUCT_VERSION}.tar.gz"
 
-  python3 - "${sample_root}" "${archive_path}" "${PRODUCT_VERSION}" "${CHART_VERSION}" "${K3S_VERSION}" "${ARGO_VERSION}" "${CONTROL_PLANE_IMAGE_REF}" <<'PY'
+  if [[ -z "${CONTROL_PLANE_IMAGE_REF}" ]]; then
+    CONTROL_PLANE_IMAGE_REF="internal/control-plane-api:${PRODUCT_VERSION}"
+  fi
+
+  python3 - "${sample_root}" "${archive_path}" "${PRODUCT_VERSION}" "${CHART_VERSION}" "${K3S_VERSION}" "${CONTROL_PLANE_IMAGE_REF}" <<'PY'
 import hashlib
 import json
 import shutil
@@ -94,8 +95,7 @@ archive_path = Path(sys.argv[2])
 product_version = sys.argv[3]
 chart_version = sys.argv[4]
 k3s_version = sys.argv[5]
-argo_version = sys.argv[6]
-control_plane_image_ref = sys.argv[7]
+control_plane_image_ref = sys.argv[6]
 
 if sample_root.exists():
     shutil.rmtree(sample_root)
@@ -103,7 +103,6 @@ sample_root.mkdir(parents=True)
 
 control_plane_name = f"control-plane-api-{product_version}.tar"
 chart_name = f"appliance-chart-{product_version}.tgz"
-argo_name = "argo-crds.yaml"
 schema_name = "configuration.schema.json"
 compatibility_name = "compatibility.json"
 checksums_name = "checksums.txt"
@@ -111,36 +110,15 @@ checksums_name = "checksums.txt"
 compatibility = {
     "k3sVersion": k3s_version,
     "chartVersion": chart_version,
-    "argoVersion": argo_version,
     "supportedUpgradeSources": [],
 }
 
 control_plane_bytes = b"control-plane-image\n"
-argo_crds_bytes = b"""apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: workflows.argoproj.io
-spec:
-  group: argoproj.io
-  scope: Namespaced
-  names:
-    plural: workflows
-    singular: workflow
-    kind: Workflow
-  versions:
-    - name: v1alpha1
-      served: true
-      storage: true
-      schema:
-        openAPIV3Schema:
-          type: object
-"""
 schema_bytes = b'{\n  "$schema": "https://json-schema.org/draft/2020-12/schema",\n  "type": "object"\n}\n'
 compatibility_bytes = (json.dumps(compatibility, indent=2) + "\n").encode("utf-8")
 checksums_bytes = b"sample checksums placeholder\n"
 
 (sample_root / control_plane_name).write_bytes(control_plane_bytes)
-(sample_root / argo_name).write_bytes(argo_crds_bytes)
 (sample_root / schema_name).write_bytes(schema_bytes)
 (sample_root / compatibility_name).write_bytes(compatibility_bytes)
 (sample_root / checksums_name).write_bytes(checksums_bytes)
@@ -205,13 +183,12 @@ def file_artifact(rel_path: str) -> dict:
 
 release_input = {
     "schemaVersion": 1,
-    "productVersion": product_version,
+    "codeVersion": product_version,
     "releaseId": f"sample-{product_version}",
     "generatedAt": "2026-07-06T00:00:00Z",
     "artifacts": {
         "controlPlaneImage": file_artifact(control_plane_name),
         "applianceChart": file_artifact(chart_name),
-        "argoCrds": file_artifact(argo_name),
         "configurationSchema": file_artifact(schema_name),
         "compatibility": file_artifact(compatibility_name),
         "checksums": file_artifact(checksums_name),
@@ -327,15 +304,18 @@ else
     RELEASE_INPUT_FETCH_TEMPLATE="${RELEASE_INPUT_FETCH_TEMPLATE}"
 fi
 
+make -C "${REPO_ROOT}" init-simple-workspace \
+  WORKDIR="${WORKDIR}" \
+  ZONCTL_BINARY="${ZONCTL_BINARY}" \
+  PRODUCT_VERSION="${PRODUCT_VERSION}" \
+  CONTROL_PLANE_IMAGE_REF="${CONTROL_PLANE_IMAGE_REF}" \
+  OS_VERSION="${OS_VERSION}"
+
 if [[ -z "${CONTROL_PLANE_IMAGE}" ]]; then
   CONTROL_PLANE_IMAGE="${RELEASE_INPUT_DIR}/$(json_artifact_path "${RELEASE_INPUT_DIR}/release-input.json" controlPlaneImage)"
 fi
-if [[ -z "${ARGO_CRDS}" ]]; then
-  ARGO_CRDS="${RELEASE_INPUT_DIR}/$(json_artifact_path "${RELEASE_INPUT_DIR}/release-input.json" argoCrds)"
-fi
 
 require_file "${CONTROL_PLANE_IMAGE}" "control-plane image"
-require_file "${ARGO_CRDS}" "argo CRDs"
 
 mkdir -p "${STAGING_DIR}"
 cp "${K3S_BINARY}" "${STAGING_DIR}/k3s"
@@ -343,8 +323,11 @@ chmod +x "${STAGING_DIR}/k3s"
 cp "${K3S_INSTALL_SCRIPT}" "${STAGING_DIR}/install.sh"
 chmod +x "${STAGING_DIR}/install.sh"
 cp "${K3S_AIRGAP_IMAGES}" "${STAGING_DIR}/k3s-airgap-images-amd64.tar.zst"
-cp "${CONTROL_PLANE_IMAGE}" "${STAGING_DIR}/control-plane-api-${PRODUCT_VERSION}.tar"
-cp "${ARGO_CRDS}" "${STAGING_DIR}/argo-crds.yaml"
+control_plane_staging_name="$(basename "$(json_artifact_path "${RELEASE_INPUT_DIR}/release-input.json" controlPlaneImage)")"
+if [[ -z "${control_plane_staging_name}" ]]; then
+  control_plane_staging_name="$(basename "${CONTROL_PLANE_IMAGE}")"
+fi
+cp "${CONTROL_PLANE_IMAGE}" "${STAGING_DIR}/${control_plane_staging_name}"
 if [[ -n "${VALUES_FILE:-}" ]]; then
   cp "${VALUES_FILE}" "${STAGING_DIR}/values-minimal.yaml"
 fi

@@ -36,8 +36,6 @@ zonctl upgrade \
      mutation happens — this is the N-1 policy in practice: a release
      only declares itself compatible with the version(s) it was actually
      tested against.
-   - The target's Argo version must not be older than the installed one.
-     A CRD downgrade is refused outright.
 4. **Mandatory pre-upgrade backup.** Before anything is changed, a backup
    is taken and its integrity is immediately verified (see
    [backup-restore.md](backup-restore.md)). This is the recovery point
@@ -50,7 +48,7 @@ zonctl upgrade \
    unit are left untouched. If it differs, the current binary/config/unit
    are each snapshotted (`<path>.previous`) before being replaced, so a
    later failure can restore them exactly.
-7. **Apply the new CRDs and chart.**
+7. **Apply the new chart.**
 8. **Persist the updated installed-state**, recording the source and
    target versions on the upgrade's `lastOperation`.
 
@@ -71,9 +69,9 @@ failed and rollback executed" at a glance.
 
 ## What's Not Yet Wired
 
-Coordinating in-flight Argo Workflows before an upgrade and running
+Coordinating in-flight workflow activity before an upgrade and running
 product-supplied migration hooks (`release-plan.md`'s "supported
 application mechanism") depend on `appliance-code` capabilities not yet
 integrated into this orchestrator. This is a known scope boundary — the
-upgrade sequence today covers K3s, CRDs, images, and the chart, not
+upgrade sequence today covers K3s, images, and the chart, not
 in-cluster application state migration.

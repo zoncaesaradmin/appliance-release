@@ -11,11 +11,12 @@ Options:
   --workdir DIR                 Workspace root to create/update. Required.
   --zonctl-binary PATH          Path to the zonctl binary that will be bundled.
                                 Required.
-  --product-version VERSION     Product version for filenames and bundle output.
-                                Defaults to productVersion from release-input.json
-                                when present, otherwise 0.1.0.
+  --product-version VERSION     Final bundle/product version for bundle output.
+                                Defaults to 0.1.0.
   --control-plane-image-ref REF Control-plane image reference to write into
                                 values and bundle config. Defaults to
+                                internal/control-plane-api:<code-version> when
+                                release-input.json is present, otherwise
                                 internal/control-plane-api:<product-version>.
   --os-version VERSION          Supported Ubuntu version. Default: 24.04.
   --help                        Show this help.
@@ -78,19 +79,59 @@ WORKDIR="$(cd "$(dirname "${WORKDIR}")" && pwd)/$(basename "${WORKDIR}")"
 ZONCTL_BINARY="$(cd "$(dirname "${ZONCTL_BINARY}")" && pwd)/$(basename "${ZONCTL_BINARY}")"
 RELEASE_INPUT_DIR="${WORKDIR}/release-input"
 
-extract_product_version() {
+json_string() {
   local manifest_path="$1"
-  sed -nE 's/.*"productVersion"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "${manifest_path}" | head -n 1
+  local key="$2"
+  python3 - "${manifest_path}" "${key}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    data = json.load(handle)
+
+value = data.get(sys.argv[2], "")
+if isinstance(value, str):
+    print(value)
+PY
 }
 
-if [[ -z "${PRODUCT_VERSION}" && -f "${RELEASE_INPUT_DIR}/release-input.json" ]]; then
-  PRODUCT_VERSION="$(extract_product_version "${RELEASE_INPUT_DIR}/release-input.json")"
+json_artifact_basename() {
+  local manifest_path="$1"
+  local key="$2"
+  python3 - "${manifest_path}" "${key}" <<'PY'
+import json
+import os
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    data = json.load(handle)
+
+artifact = data.get("artifacts", {}).get(sys.argv[2], {})
+path = artifact.get("path", "")
+if isinstance(path, str) and path:
+    print(os.path.basename(path))
+PY
+}
+
+RELEASE_INPUT_MANIFEST="${RELEASE_INPUT_DIR}/release-input.json"
+CODE_VERSION=""
+CONTROL_PLANE_ARCHIVE_NAME=""
+CHART_ARCHIVE_NAME=""
+if [[ -f "${RELEASE_INPUT_MANIFEST}" ]]; then
+  CODE_VERSION="$(json_string "${RELEASE_INPUT_MANIFEST}" codeVersion)"
+  CONTROL_PLANE_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" controlPlaneImage)"
+  CHART_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" applianceChart)"
 fi
-if [[ -z "${PRODUCT_VERSION}" ]]; then
-  PRODUCT_VERSION="0.1.0"
-fi
+
+PRODUCT_VERSION="${PRODUCT_VERSION:-0.1.0}"
 if [[ -z "${CONTROL_PLANE_IMAGE_REF}" ]]; then
-  CONTROL_PLANE_IMAGE_REF="internal/control-plane-api:${PRODUCT_VERSION}"
+  CONTROL_PLANE_IMAGE_REF="internal/control-plane-api:${CODE_VERSION:-${PRODUCT_VERSION}}"
+fi
+if [[ -z "${CONTROL_PLANE_ARCHIVE_NAME}" ]]; then
+  CONTROL_PLANE_ARCHIVE_NAME="control-plane-api-${CONTROL_PLANE_IMAGE_REF##*:}.tar"
+fi
+if [[ -z "${CHART_ARCHIVE_NAME}" ]]; then
+  CHART_ARCHIVE_NAME="appliance-chart-${CODE_VERSION:-${PRODUCT_VERSION}}.tgz"
 fi
 
 STAGING_DIR="${WORKDIR}/staging"
@@ -103,7 +144,7 @@ STAGING_README="${STAGING_DIR}/REQUIRED-FILES.md"
 WORKSPACE_README="${WORKDIR}/README.md"
 PRIVATE_KEY_PATH="${KEYS_DIR}/release-signing.key"
 PUBLIC_KEY_PATH="${KEYS_DIR}/release-signing.pub"
-CONTROL_PLANE_TAR="${STAGING_DIR}/control-plane-api-${PRODUCT_VERSION}.tar"
+CONTROL_PLANE_TAR="${STAGING_DIR}/${CONTROL_PLANE_ARCHIVE_NAME}"
 
 mkdir -p "${WORKDIR}" "${RELEASE_INPUT_DIR}" "${STAGING_DIR}" "${OUT_DIR}" "${KEYS_DIR}"
 
@@ -179,14 +220,13 @@ Place the remaining release-side artifacts in this directory before assembly:
 - \`k3s\`
 - \`install.sh\`
 - \`k3s-airgap-images-amd64.tar.zst\`
-- \`control-plane-api-${PRODUCT_VERSION}.tar\`
-- \`argo-crds.yaml\`
+- \`${CONTROL_PLANE_ARCHIVE_NAME}\`
 - \`values-minimal.yaml\` (generated for you; edit as needed)
 
 The \`release-input\` directory is produced by \`appliance-code\` and must contain:
 
 - \`release-input.json\`
-- \`appliance-chart-${PRODUCT_VERSION}.tgz\`
+- \`${CHART_ARCHIVE_NAME}\`
 - \`configuration.schema.json\`
 - \`checksums.txt\`
 - \`sbom/\`
@@ -198,6 +238,7 @@ EOF
 cat >"${CONFIG_PATH}" <<EOF
 {
   "schemaVersion": 1,
+  "bundleVersion": "${PRODUCT_VERSION}",
   "releaseInputDir": "${RELEASE_INPUT_DIR}",
   "bundleDir": "${BUNDLE_DIR}",
   "signingKeyId": "release-signing-key",
@@ -233,19 +274,14 @@ cat >"${CONFIG_PATH}" <<EOF
     },
     {
       "sourcePath": "${CONTROL_PLANE_TAR}",
-      "targetPath": "oci-images/control-plane-api-${PRODUCT_VERSION}.tar",
+      "targetPath": "oci-images/${CONTROL_PLANE_ARCHIVE_NAME}",
       "component": "oci-images",
       "imageReference": "${CONTROL_PLANE_IMAGE_REF}"
     },
     {
-      "sourcePath": "${RELEASE_INPUT_DIR}/appliance-chart-${PRODUCT_VERSION}.tgz",
-      "targetPath": "charts/appliance-chart-${PRODUCT_VERSION}.tgz",
+      "sourcePath": "${RELEASE_INPUT_DIR}/${CHART_ARCHIVE_NAME}",
+      "targetPath": "charts/${CHART_ARCHIVE_NAME}",
       "component": "chart"
-    },
-    {
-      "sourcePath": "${STAGING_DIR}/argo-crds.yaml",
-      "targetPath": "crds/argo-crds.yaml",
-      "component": "crds"
     },
     {
       "sourcePath": "${VALUES_PATH}",

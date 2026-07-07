@@ -13,7 +13,7 @@ The supported model is:
 - `appliance-code` produces a prepared `release-input` artifact
 - `appliance-ctl` provides the `zonctl` source and binary
 - `appliance-release` consumes that `release-input`, stages the remaining
-  K3s/control-plane artifacts, and assembles the final signed bundle
+  K3s installer artifacts, and assembles the final signed bundle
 
 ## Single CI Command
 
@@ -22,7 +22,6 @@ After CI checks out `appliance-release`, the single command to run is:
 ```bash
 bash ./scripts/ci/run-product-bundle.sh \
   --product-version 0.1.0 \
-  --control-plane-version 0.1.0 \
   --release-input-source /ci/inputs/release-input-0.1.0.tar.gz \
   --k3s-binary-source /ci/inputs/k3s \
   --k3s-install-script-source /ci/inputs/install.sh \
@@ -58,9 +57,9 @@ Real bundle builds still need these inputs:
 - `install.sh`
 - `k3s-airgap-images-amd64.tar.zst`
 
-By default, the control-plane image and CRD artifact are taken from the
-prepared `release-input`. Only override them if you are intentionally
-substituting a different local file for debugging.
+By default, the control-plane image is taken from the prepared `release-input`.
+Only override the control-plane image if you are intentionally substituting a
+different local file for debugging.
 
 The outer CI script can take the `release-input` either as:
 
@@ -70,7 +69,6 @@ The outer CI script can take the `release-input` either as:
 The other staged files can be overridden in the config-driven flow with:
 
 - `CONTROL_PLANE_IMAGE`
-- `ARGO_CRDS`
 - `K3S_BINARY`
 - `K3S_INSTALL_SCRIPT`
 - `K3S_AIRGAP_IMAGES`
@@ -84,7 +82,6 @@ make ci-product-bundle \
   WORKDIR=/private/tmp/appliance-product-ci \
   PRODUCT_VERSION=0.1.0 \
   K3S_VERSION=v1.30.4+k3s1 \
-  CONTROL_PLANE_IMAGE_REF=internal/control-plane-api:0.1.0 \
   CTL_REPO_SOURCE=/abs/path/to/appliance-ctl \
   RELEASE_INPUT_SOURCE=/ci/inputs/release-input-0.1.0.tar.gz
 ```

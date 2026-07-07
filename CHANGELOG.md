@@ -24,7 +24,7 @@ and publication) actually happens.
   dry-run support.
 - K3s install/configuration/ownership adapter, enforcing that an
   unrelated pre-existing cluster is never adopted.
-- Offline OCI image preload into the K3s image store, and Helm/CRD
+- Offline OCI image preload into the K3s image store, and Helm
   application adapters.
 - End-to-end `zonctl install`, verifying a signed bundle and running
   the full fresh-install sequence with bounded rollback on failure.
@@ -48,7 +48,7 @@ and publication) actually happens.
   K3s health; it does not yet re-verify every installed artifact's digest
   against the original release manifest (the manifest isn't retained
   post-install yet).
-- Upgrade does not yet coordinate in-flight Argo Workflows or run
+- Upgrade does not yet coordinate in-flight workflow activity or run
   product-supplied migration hooks — see [docs/upgrade.md](docs/upgrade.md#whats-not-yet-wired).
 - No component generates real secrets or TLS material yet (Fresh Install
   Sequence step 10), so the redaction pipeline is wired but has nothing

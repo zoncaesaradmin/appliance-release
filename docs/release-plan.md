@@ -6,7 +6,7 @@
 
 ## Purpose
 
-This repository turns one signed, immutable product input set into one complete air-gapped Linux appliance bundle that an operator can install, upgrade, repair, back up, restore, diagnose, and safely remove without manually operating K3s, Helm, zot, or Argo Workflows and without public internet access.
+This repository turns one signed, immutable product input set into one complete air-gapped Linux appliance bundle that an operator can install, upgrade, repair, back up, restore, diagnose, and safely remove without manually operating K3s or Helm and without public internet access.
 
 It is a distribution and lifecycle repository. It does not contain or rebuild private application source.
 
@@ -14,7 +14,7 @@ It is a distribution and lifecycle repository. It does not contain or rebuild pr
 
 This plan has pivoted to the Zon platform strategy. The CLI is `zonctl`.
 **V1 uses one complete signed air-gap bundle** — `zonctl install`
-verifies a local bundle containing K3s, the platform chart, CRDs,
+verifies a local bundle containing K3s, the platform chart,
 configuration, and all required images. Installation and runtime must
 work with public egress denied. Concretely:
 
@@ -46,7 +46,7 @@ implementation foundation for the bundle-only appliance lifecycle.
 - The supported host baseline is Ubuntu Server **22.04 LTS and 24.04 LTS** on `amd64` with local `ext4` storage. Additional platforms require their own complete qualification evidence. *(Revised: was 24.04-only.)*
 - The primary installation path is an installer wrapper around a versioned Helm chart.
 - **V1's only production installation path is the signed air-gap bundle.**
-- The bundle resolves to pinned K3s, K3s platform images, all platform OCI images, the Helm chart, Argo CRDs, scanner data, and every required verification artifact.
+- The bundle resolves to pinned K3s, K3s platform images, all platform OCI images, the Helm chart, scanner data, and every required verification artifact.
 - Installation and runtime must operate without public network dependency.
 - Installing only the workload chart onto an arbitrary existing Kubernetes/K3s cluster (bypassing `zonctl`'s K3s ownership and adoption flow entirely) is not a supported v1 production mode. The chart remains independently renderable for development, CI, and future qualification.
 - `appliance-release` consumes immutable signed outputs from `appliance-code`; it never clones private source, rebuilds the control plane, forks the canonical chart, or changes product security policy.
@@ -58,7 +58,7 @@ implementation foundation for the bundle-only appliance lifecycle.
 | --- | --- |
 | Host detection, preflight, and safe remediation | Control-plane OCI image |
 | K3s installation, configuration, pinning, and lifecycle | Canonical appliance Helm chart and values schema |
-| Complete air-gap artifact acquisition and closure | Argo CRD bundle and compatibility tuple |
+| Complete air-gap artifact acquisition and closure | Compatibility tuple and immutable product inputs |
 | Final release manifest and bundle assembly | Workflow templates embedded in/versioned with product inputs |
 | Installer, upgrader, repair, backup, restore, diagnostics, and uninstall UX | Configuration schema and bootstrap contract |
 | Public support matrix, notices, release notes, and verification guide | Migration compatibility and application lifecycle hooks |
@@ -90,7 +90,6 @@ release-input/
   release-input.json
   control-plane.oci.tar.zst
   appliance-chart-<version>.tgz
-  argo-crds-<version>.tar.zst
   configuration.schema.json
   compatibility.json
   checksums.txt
@@ -105,7 +104,7 @@ Intake fails closed when:
 - the manifest schema is unsupported
 - a digest, signature, provenance identity, or size does not match
 - an artifact uses a mutable tag without an immutable digest
-- the K3s/Kubernetes, chart, Argo CRD/controller/executor, zot, or OCI toolchain tuple is incompatible
+- the K3s/Kubernetes, chart, zot, or OCI toolchain tuple is incompatible
 - required license notices or SBOMs are missing
 - vulnerability policy fails without a signed, scoped, expiring exception
 - migration metadata does not support the declared upgrade source
@@ -117,7 +116,6 @@ The release manifest pins and verifies:
 - K3s binary, install script, checksums/signatures, and official air-gap image archive
 - K3s-bundled Traefik and platform component identities
 - zot
-- Argo Workflow Controller and executor images plus CRDs
 - Buildah task image
 - Skopeo and ORAS utility images
 - Syft and Grype images plus the separately identified offline Grype database bundle
@@ -188,12 +186,11 @@ Destructive commands require an explicit confirmation mechanism suitable for bot
 6. Install the pinned K3s binary as a system service using the release-owned configuration file and disable unattended K3s advancement.
 7. Import every bundled image by digest into the K3s image store and verify that no image pull can fall through to a public registry.
 8. Wait for and verify K3s, CoreDNS, storage provisioner, Traefik, networking, and metrics dependencies.
-9. Apply the bundled versioned Argo CRDs before the chart.
-10. Generate purpose-separated secrets and TLS material, or validate operator-supplied certificates, without command-line leakage.
-11. Install the exact Helm chart with schema-validated values and wait for rollout.
-12. Run bootstrap through the supported application mechanism and disable replay.
-13. Run product-supplied black-box REST, MCP, OCI, auth, and dependency-health smoke tests.
-14. Persist the verified installed-state record and print access, backup, and recovery instructions.
+9. Generate purpose-separated secrets and TLS material, or validate operator-supplied certificates, without command-line leakage.
+10. Install the exact Helm chart with schema-validated values and wait for rollout.
+11. Run bootstrap through the supported application mechanism and disable replay.
+12. Run product-supplied black-box REST, MCP, OCI, auth, and dependency-health smoke tests.
+13. Persist the verified installed-state record and print access, backup, and recovery instructions.
 
 Failure before completion performs a bounded rollback only for changes proven safe to reverse. Once durable state has been created or migrated, recovery follows the recorded transaction journal and backup policy rather than deleting data.
 
@@ -204,10 +201,9 @@ Failure before completion performs a bounded rollback only for changes proven sa
 3. Quiesce new builds/workflows and reconcile or stop in-flight operations according to policy.
 4. Stage K3s and OCI artifacts without replacing the active version.
 5. Upgrade K3s only when required by the accepted compatibility tuple.
-6. Upgrade Argo CRDs before its controller/chart and refuse unsupported CRD downgrade.
-7. Apply the chart and run application migrations through supported hooks.
-8. Run health and conformance checks, then resume workflow submission.
-9. On failure, use the declared N-1 rollback or restore the complete pre-upgrade recovery set.
+6. Apply the chart and run application migrations through supported hooks.
+7. Run health and conformance checks, then resume workflow submission.
+8. On failure, use the declared N-1 rollback or restore the complete pre-upgrade recovery set.
 
 ## Host Preflight Policy
 
@@ -237,7 +233,7 @@ Checks are machine-readable, individually testable, idempotent, and included in 
 ## Security And Supply Chain
 
 - Bootstrap trust starts from a small pinned public verification key distributed independently or embedded in the versioned installer.
-- Verify before execution or import: installer updates, K3s, OCI image archives, charts, CRDs, scanner data, configuration schemas, and conformance tests.
+- Verify before execution or import: installer updates, K3s, OCI image archives, charts, scanner data, configuration schemas, and conformance tests.
 - Privileged host operations are minimal, logged, and separated from unprivileged verification and bundle inspection.
 - Secrets are generated on the target or accepted through protected files/descriptors. They never appear in Git, release bundles, command arguments, logs, or support bundles.
 - Installation is tested with public egress denied and has no remote fallback endpoints.

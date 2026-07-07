@@ -106,7 +106,7 @@ prepare-simple-workspace:
 	$(MAKE) --no-print-directory init-simple-workspace \
 		WORKDIR="$${WORKDIR}" \
 		ZONCTL_BINARY="$${ZONCTL_BINARY:-$(ZONCTL_BINARY)}" \
-		PRODUCT_VERSION="$${PRODUCT_VERSION:-$${RELEASE_INPUT_VERSION:-}}" \
+		PRODUCT_VERSION="$${PRODUCT_VERSION:-}" \
 		CONTROL_PLANE_IMAGE_REF="$${CONTROL_PLANE_IMAGE_REF:-}" \
 		OS_VERSION="$${OS_VERSION:-}"
 	$(MAKE) --no-print-directory fetch-release-input \
@@ -141,16 +141,16 @@ product-bundle:
 
 .PHONY: ci-product-bundle
 ci-product-bundle:
-	@if [ -z "$${WORKDIR:-}" ] || [ -z "$${PRODUCT_VERSION:-}" ] || [ -z "$${K3S_VERSION:-}" ] || [ -z "$${CONTROL_PLANE_IMAGE_REF:-}" ] || [ -z "$${CTL_REPO_SOURCE:-}" ]; then \
-		echo "ci-product-bundle: set WORKDIR, PRODUCT_VERSION, K3S_VERSION, CONTROL_PLANE_IMAGE_REF, and CTL_REPO_SOURCE" >&2; \
+	@if [ -z "$${WORKDIR:-}" ] || [ -z "$${PRODUCT_VERSION:-}" ] || [ -z "$${K3S_VERSION:-}" ] || [ -z "$${CTL_REPO_SOURCE:-}" ]; then \
+		echo "ci-product-bundle: set WORKDIR, PRODUCT_VERSION, K3S_VERSION, and CTL_REPO_SOURCE" >&2; \
 		exit 2; \
 	fi
 	bash ./scripts/package/ci-product-bundle.sh \
 		--workdir "$${WORKDIR}" \
 		--product-version "$${PRODUCT_VERSION}" \
 		--k3s-version "$${K3S_VERSION}" \
-		--control-plane-image-ref "$${CONTROL_PLANE_IMAGE_REF}" \
 		--ctl-repo-source "$${CTL_REPO_SOURCE}" \
+		$${CONTROL_PLANE_IMAGE_REF:+--control-plane-image-ref "$${CONTROL_PLANE_IMAGE_REF}"} \
 		$${RELEASE_INPUT_SOURCE:+--release-input-source "$${RELEASE_INPUT_SOURCE}"} \
 		$${RELEASE_INPUT_VERSION:+--release-input-version "$${RELEASE_INPUT_VERSION}"} \
 		$${RELEASE_INPUT_FETCH_TEMPLATE:+--release-input-fetch-template "$${RELEASE_INPUT_FETCH_TEMPLATE}"} \
@@ -158,11 +158,9 @@ ci-product-bundle:
 		$${INPUTS_DIR:+--inputs-dir "$${INPUTS_DIR}"} \
 		$${CTL_REPO_REF:+--ctl-repo-ref "$${CTL_REPO_REF}"} \
 		$${CHART_VERSION:+--chart-version "$${CHART_VERSION}"} \
-		$${ARGO_VERSION:+--argo-version "$${ARGO_VERSION}"} \
 		$${OS_VERSION:+--os-version "$${OS_VERSION}"} \
 		$${VALUES_FILE:+--values-file "$${VALUES_FILE}"} \
 		$${CONTROL_PLANE_IMAGE:+--control-plane-image "$${CONTROL_PLANE_IMAGE}"} \
-		$${ARGO_CRDS:+--argo-crds "$${ARGO_CRDS}"} \
 		$${K3S_BINARY:+--k3s-binary "$${K3S_BINARY}"} \
 		$${K3S_INSTALL_SCRIPT:+--k3s-install-script "$${K3S_INSTALL_SCRIPT}"} \
 		$${K3S_AIRGAP_IMAGES:+--k3s-airgap-images "$${K3S_AIRGAP_IMAGES}"} \

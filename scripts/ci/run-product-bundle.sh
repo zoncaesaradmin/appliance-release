@@ -15,9 +15,6 @@ Bootstraps a clean CI workspace for appliance bundle creation:
 
 Required unless set in configs/product-bundle.ci.env:
   --product-version VERSION
-  and either:
-    --control-plane-version VERSION
-    --control-plane-image-ref REF
 
 Required unless --sample-mode 1:
   --release-input-source PATH_OR_URL
@@ -37,8 +34,11 @@ Optional:
                                       configs/product-bundle.ci.env,
                                       then ../appliance-ctl.
   --ctl-repo-ref REF
+  --control-plane-version VERSION     Optional control-plane image tag override.
+                                      Normally derived from release-input.
+  --control-plane-image-ref REF       Optional full control-plane image
+                                      reference override.
   --chart-version VERSION             Defaults to PRODUCT_VERSION.
-  --argo-version VERSION              Defaults to deferred.
   --os-version VERSION                Defaults to 24.04.
   --values-file-source PATH_OR_URL
   --sample-mode 0|1                   Defaults to 0.
@@ -73,7 +73,6 @@ K3S_INSTALL_SCRIPT_SOURCE=""
 K3S_AIRGAP_IMAGES_SOURCE=""
 VALUES_FILE_SOURCE=""
 CHART_VERSION=""
-ARGO_VERSION="deferred"
 OS_VERSION="24.04"
 SAMPLE_MODE="0"
 KEEP_WORKSPACE="0"
@@ -102,7 +101,6 @@ while [[ $# -gt 0 ]]; do
     --k3s-airgap-images-source) K3S_AIRGAP_IMAGES_SOURCE="${2:-}"; shift 2 ;;
     --values-file-source) VALUES_FILE_SOURCE="${2:-}"; shift 2 ;;
     --chart-version) CHART_VERSION="${2:-}"; shift 2 ;;
-    --argo-version) ARGO_VERSION="${2:-}"; shift 2 ;;
     --os-version) OS_VERSION="${2:-}"; shift 2 ;;
     --sample-mode) SAMPLE_MODE="${2:-}"; shift 2 ;;
     --keep-workspace) KEEP_WORKSPACE="1"; shift 1 ;;
@@ -137,7 +135,6 @@ fi
 
 require_arg --workspace "${WORKSPACE}"
 require_arg --k3s-version "${K3S_VERSION}"
-require_arg --control-plane-image-ref "${CONTROL_PLANE_IMAGE_REF}"
 require_arg --ctl-repo-source "${CTL_REPO_SOURCE}"
 
 if [[ "${SAMPLE_MODE}" != "1" ]]; then
@@ -279,7 +276,6 @@ set_env_var "${CONFIG_OUT}" SAMPLE_MODE "${SAMPLE_MODE}"
 set_env_var "${CONFIG_OUT}" INPUTS_DIR "${INPUTS_DIR}"
 set_env_var "${CONFIG_OUT}" CTL_REPO_REF ""
 set_env_var "${CONFIG_OUT}" CHART_VERSION "${CHART_VERSION}"
-set_env_var "${CONFIG_OUT}" ARGO_VERSION "${ARGO_VERSION}"
 set_env_var "${CONFIG_OUT}" OS_VERSION "${OS_VERSION}"
 
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then

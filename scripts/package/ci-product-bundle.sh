@@ -12,7 +12,6 @@ Required:
   --workdir PATH
   --product-version VERSION
   --k3s-version VERSION
-  --control-plane-image-ref REF
   --ctl-repo-source PATH_OR_URL
 
 Optional:
@@ -23,11 +22,9 @@ Optional:
   --inputs-dir PATH                 Defaults to WORKDIR/inputs.
   --ctl-repo-ref REF
   --chart-version VERSION           Defaults to PRODUCT_VERSION.
-  --argo-version VERSION            Defaults to deferred.
   --os-version VERSION              Defaults to 24.04.
   --values-file PATH
   --control-plane-image PATH
-  --argo-crds PATH
   --k3s-binary PATH
   --k3s-install-script PATH
   --k3s-airgap-images PATH
@@ -54,11 +51,9 @@ RELEASE_INPUT_FETCH_TEMPLATE=""
 CTL_REPO_SOURCE=""
 CTL_REPO_REF=""
 CHART_VERSION=""
-ARGO_VERSION="deferred"
 OS_VERSION="24.04"
 VALUES_FILE=""
 CONTROL_PLANE_IMAGE=""
-ARGO_CRDS=""
 K3S_BINARY=""
 K3S_INSTALL_SCRIPT=""
 K3S_AIRGAP_IMAGES=""
@@ -79,11 +74,9 @@ while [[ $# -gt 0 ]]; do
     --ctl-repo-source) CTL_REPO_SOURCE="${2:-}"; shift 2 ;;
     --ctl-repo-ref) CTL_REPO_REF="${2:-}"; shift 2 ;;
     --chart-version) CHART_VERSION="${2:-}"; shift 2 ;;
-    --argo-version) ARGO_VERSION="${2:-}"; shift 2 ;;
     --os-version) OS_VERSION="${2:-}"; shift 2 ;;
     --values-file) VALUES_FILE="${2:-}"; shift 2 ;;
     --control-plane-image) CONTROL_PLANE_IMAGE="${2:-}"; shift 2 ;;
-    --argo-crds) ARGO_CRDS="${2:-}"; shift 2 ;;
     --k3s-binary) K3S_BINARY="${2:-}"; shift 2 ;;
     --k3s-install-script) K3S_INSTALL_SCRIPT="${2:-}"; shift 2 ;;
     --k3s-airgap-images) K3S_AIRGAP_IMAGES="${2:-}"; shift 2 ;;
@@ -111,7 +104,6 @@ require_arg() {
 require_arg --workdir "${WORKDIR}"
 require_arg --product-version "${PRODUCT_VERSION}"
 require_arg --k3s-version "${K3S_VERSION}"
-require_arg --control-plane-image-ref "${CONTROL_PLANE_IMAGE_REF}"
 require_arg --ctl-repo-source "${CTL_REPO_SOURCE}"
 
 if [[ "${SAMPLE_MODE}" != "1" ]]; then
@@ -154,11 +146,9 @@ EOF
   write_var INPUTS_DIR "${INPUTS_DIR}"
   write_var CTL_REPO_REF "${CTL_REPO_REF}"
   write_var CHART_VERSION "${CHART_VERSION}"
-  write_var ARGO_VERSION "${ARGO_VERSION}"
   write_var OS_VERSION "${OS_VERSION}"
   write_var VALUES_FILE "${VALUES_FILE}"
   write_var CONTROL_PLANE_IMAGE "${CONTROL_PLANE_IMAGE}"
-  write_var ARGO_CRDS "${ARGO_CRDS}"
   write_var K3S_BINARY "${K3S_BINARY}"
   write_var K3S_INSTALL_SCRIPT "${K3S_INSTALL_SCRIPT}"
   write_var K3S_AIRGAP_IMAGES "${K3S_AIRGAP_IMAGES}"

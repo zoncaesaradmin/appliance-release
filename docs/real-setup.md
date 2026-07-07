@@ -54,7 +54,6 @@ At minimum, stage these install-ready artifacts somewhere local:
 - K3s air-gap image archive
 - application/dependency OCI image archives
 - chart archive
-- CRD manifest file or extracted CRD directory input collapsed to a file
 - installable Helm values file, usually `values.yaml`
 - optional scanner database archive
 
@@ -62,9 +61,6 @@ Important notes:
 
 - The `release-input` chart archive is already bundle-ready and can be
   referenced directly.
-- The `release-input` CRD artifact may be a compressed handoff artifact;
-  the installer itself needs a local file path that `kubectl apply -f`
-  can consume, so stage an extracted manifest for the final bundle.
 - The final bundle should contain a real `values.yaml`, even if it is an
   intentionally small file that relies on chart defaults. This repo now
   carries the product `configuration.schema.json` alongside that
@@ -103,13 +99,9 @@ Then replace every placeholder path with your real local paths.
 
 For the minimal `amd64` example, the intent is:
 
-- keep `zonctl`, K3s, the K3s air-gap archive, one control-plane API image archive, the product chart, a single staged CRD file, and one install values file
+- keep `zonctl`, K3s, the K3s air-gap archive, one control-plane API image archive, the product chart, and one install values file
 - leave Zot, registry-sidecar trees, scanner data, and other secondary OCI archives out of the bundle for now
 - use `values-minimal.yaml` to keep the in-cluster deployment focused on the base flow only
-
-The current assembler still requires a `crds` component, so the simple
-flow keeps a staged `argo-crds.yaml` in the bundle even if the broader
-controller story is deferred.
 
 The required install components are:
 
@@ -118,7 +110,6 @@ The required install components are:
 - at least one `k3s-images` entry
 - at least one `oci-images` entry
 - one `chart` entry
-- one `crds` entry
 - one `configuration` entry for `values.yaml`
 
 For the control-plane API server image, pick the exact staged archive and
