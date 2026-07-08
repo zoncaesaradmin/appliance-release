@@ -102,7 +102,7 @@ That flow auto-generates a placeholder `release-input`, placeholder control
 plane/K3s artifacts, assembles a sample bundle, and verifies it. The sample
 output lands at:
 
-- `/private/tmp/appliance-product-sample/out/appliance-0.1.0-bundle`
+- `${TMPDIR:-/tmp}/appliance-product-sample/out/appliance-0.1.0-bundle`
 
 ## Lower-Level Targets
 

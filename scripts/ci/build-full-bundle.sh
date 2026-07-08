@@ -31,7 +31,7 @@ Configuration is taken from environment variables. The most common pattern is:
 Optional overrides:
   CODE_REPO_REF=main
   CTL_REPO_REF=main
-  WORK_ROOT=/private/tmp/appliance-build
+  WORK_ROOT=${TMPDIR:-/tmp}/appliance-build
   K3S_VERSION_OVERRIDE=v1.30.4+k3s1
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
   KEEP_WORK_ROOT=1   # reuse WORK_ROOT and refresh the two dependency repos
@@ -74,7 +74,7 @@ K3S_BINARY_SOURCE="${USER_K3S_BINARY_SOURCE:-${K3S_BINARY_SOURCE:-}}"
 K3S_INSTALL_SCRIPT_SOURCE="${USER_K3S_INSTALL_SCRIPT_SOURCE:-${K3S_INSTALL_SCRIPT_SOURCE:-}}"
 K3S_AIRGAP_IMAGES_SOURCE="${USER_K3S_AIRGAP_IMAGES_SOURCE:-${K3S_AIRGAP_IMAGES_SOURCE:-}}"
 VALUES_FILE_SOURCE="${USER_VALUES_FILE_SOURCE:-${VALUES_FILE:-}}"
-WORK_ROOT="${USER_WORK_ROOT:-${WORKDIR:-/private/tmp/appliance-build}}"
+WORK_ROOT="${USER_WORK_ROOT:-${WORKDIR:-${TMPDIR:-/tmp}/appliance-build}}"
 K3S_VERSION_OVERRIDE="${USER_K3S_VERSION_OVERRIDE:-}"
 KEEP_WORK_ROOT="${USER_KEEP_WORK_ROOT:-0}"
 
