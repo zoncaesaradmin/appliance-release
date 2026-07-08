@@ -3,6 +3,7 @@
 This repo exposes one primary CI entrypoint and two lower-level wrappers:
 
 ```bash
+bash ./scripts/ci/build-full-bundle.sh
 bash ./scripts/ci/run-product-bundle.sh ...
 make ci-product-bundle ...
 make product-bundle CONFIG=/abs/path/to/product-bundle.env
@@ -15,7 +16,35 @@ The supported model is:
 - `appliance-release` consumes that `release-input`, stages the remaining
   K3s installer artifacts, and assembles the final signed bundle
 
-## Single CI Command
+## Single Build-Machine Command
+
+If your build machine already checked out `appliance-release`, the preferred
+single command is:
+
+```bash
+PRODUCT_VERSION=0.1.0 \
+CODE_REPO_SOURCE=https://git.example.invalid/zon/appliance-code.git \
+CTL_REPO_SOURCE=https://git.example.invalid/zon/appliance-ctl.git \
+K3S_BINARY_SOURCE=/ci/inputs/k3s \
+K3S_INSTALL_SCRIPT_SOURCE=/ci/inputs/install.sh \
+K3S_AIRGAP_IMAGES_SOURCE=/ci/inputs/k3s-airgap-images-amd64.tar.zst \
+bash ./scripts/ci/build-full-bundle.sh
+```
+
+That script will:
+
+- source the stable defaults from [configs/product-bundle.ci.env](/Users/zoncaesar/ws/appliance-release/configs/product-bundle.ci.env)
+- use the current `appliance-release` checkout as the driver repo
+- clone or refresh only `appliance-code` and `appliance-ctl` under `WORK_ROOT/repos`
+- build `release-input-${PRODUCT_VERSION}.tar.gz` from `appliance-code`
+- call the lower-level bundle entrypoint in this repo
+- assemble and verify the final signed bundle
+
+The final extracted bundle lands at:
+
+- `${WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-bundle`
+
+## Lower-Level CI Command
 
 After CI checks out `appliance-release`, the single command to run is:
 

@@ -39,6 +39,7 @@ here. This repo is now the packaging/orchestration layer.
 
 ```
 make verify
+bash ./scripts/ci/build-full-bundle.sh
 bash ./scripts/ci/run-product-bundle.sh --product-version ... --release-input-source ... --k3s-binary-source ... --k3s-install-script-source ... --k3s-airgap-images-source ...
 make product-bundle CONFIG=/abs/path/to/product-bundle.env
 make clean
@@ -53,11 +54,12 @@ when you want a fully automated local smoke run with generated placeholder
 inputs. Use `make product-bundle` with your own config when you have real
 artifacts and versions to package.
 
-For CAE/CI, prefer `bash ./scripts/ci/run-product-bundle.sh ...`. That single
-command reads stable defaults from `configs/product-bundle.ci.env`, writes a
-resolved config file into `WORKDIR`, builds or reuses `zonctl` from
-`appliance-ctl`, imports the prepared `release-input`, builds the bundle, and
-verifies it.
+For CAE/CI, prefer `bash ./scripts/ci/build-full-bundle.sh` from the checked-out
+`appliance-release` repo root. That checked-in wrapper reads stable defaults
+from `configs/product-bundle.ci.env`, uses the current `appliance-release`
+checkout directly, clones or refreshes `appliance-code` and `appliance-ctl`,
+builds the prepared `release-input`, calls the lower-level bundle entrypoint,
+and verifies the final bundle.
 
 ### Repo Boundary
 
