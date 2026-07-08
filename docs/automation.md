@@ -37,10 +37,21 @@ That script will:
 - ask `appliance-code` to build `release-input-${PRODUCT_VERSION}.tar.gz` from inside its dev container
 - write the resolved bundle config into `WORK_ROOT/workspace/generated`
 - assemble and verify the final signed bundle
+- export the customer delivery files into `EXPORT_DIR` or `WORK_ROOT/export`
+
+On every run, the script rebuilds the generated state from scratch. It keeps
+only the cloned dependency repos when `KEEP_WORK_ROOT=1`; the workspace,
+artifacts, and exported delivery files are cleared and recreated so reruns do
+not inherit stale bundle outputs.
 
 The final extracted bundle lands at:
 
 - `${WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-bundle`
+
+The customer-facing handoff files land at:
+
+- `${WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-bundle.tar.gz`
+- `${WORK_ROOT}/export/release-signing.pub`
 
 The single CI defaults file is
 [configs/product-bundle.ci.env](/Users/zoncaesar/ws/appliance-release/configs/product-bundle.ci.env).
@@ -56,6 +67,14 @@ to work, especially Podman plus the one-time dev-container registry auth/bootstr
 The generated config file is left on disk as rerun/audit evidence:
 
 - `${WORKSPACE}/generated/product-bundle.env`
+
+What to publish to a customer or downstream deployment team:
+
+- the exported bundle archive
+- the exported `release-signing.pub`
+
+The customer does not need any of the three source repos. They only need those
+two exported files on the target Ubuntu host.
 
 ## Real Inputs
 

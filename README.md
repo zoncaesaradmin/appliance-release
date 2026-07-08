@@ -22,7 +22,15 @@ The single CI defaults file is
 
 That flow consumes the prepared product-side `release-input` handoff,
 builds the external `zonctl` binary from `appliance-ctl`, stages the
-K3s-side artifacts, assembles the final signed bundle, and verifies it.
+K3s-side artifacts, assembles the final signed bundle, verifies it, and
+exports the two customer delivery files:
+
+- `appliance-<product-version>-bundle.tar.gz`
+- `release-signing.pub`
+
+Rerunning the CI script is safe: it recreates the generated workspace,
+artifacts, and exported delivery files from scratch each time. If
+`KEEP_WORK_ROOT=1` is used, only the cloned dependency repos are reused.
 
 ## Documentation
 

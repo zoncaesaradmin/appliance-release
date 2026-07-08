@@ -13,6 +13,7 @@ Expected model:
 3. appliance-code produces the prepared release-input tarball
 4. this script writes the resolved bundle config
 5. appliance-release assembles and verifies the final bundle
+6. this script exports the customer-facing delivery files
 
 Run this from the checked-out appliance-release repo root:
 
@@ -32,9 +33,10 @@ Optional overrides:
   CODE_REPO_REF=main
   CTL_REPO_REF=main
   WORK_ROOT=${TMPDIR:-/tmp}/appliance-build
+  EXPORT_DIR=\$WORK_ROOT/export
   K3S_VERSION_OVERRIDE=v1.30.4+k3s1
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
-  KEEP_WORK_ROOT=1   # reuse WORK_ROOT and refresh the two dependency repos
+  KEEP_WORK_ROOT=1   # reuse only the cloned repos; all generated outputs are rebuilt from scratch
 EOF
 }
 
@@ -57,6 +59,7 @@ USER_K3S_INSTALL_SCRIPT_SOURCE="${K3S_INSTALL_SCRIPT_SOURCE-}"
 USER_K3S_AIRGAP_IMAGES_SOURCE="${K3S_AIRGAP_IMAGES_SOURCE-}"
 USER_VALUES_FILE_SOURCE="${VALUES_FILE_SOURCE-}"
 USER_WORK_ROOT="${WORK_ROOT-}"
+USER_EXPORT_DIR="${EXPORT_DIR-}"
 USER_K3S_VERSION_OVERRIDE="${K3S_VERSION_OVERRIDE-}"
 USER_KEEP_WORK_ROOT="${KEEP_WORK_ROOT-}"
 
@@ -75,6 +78,7 @@ K3S_INSTALL_SCRIPT_SOURCE="${USER_K3S_INSTALL_SCRIPT_SOURCE:-${K3S_INSTALL_SCRIP
 K3S_AIRGAP_IMAGES_SOURCE="${USER_K3S_AIRGAP_IMAGES_SOURCE:-${K3S_AIRGAP_IMAGES_SOURCE:-}}"
 VALUES_FILE_SOURCE="${USER_VALUES_FILE_SOURCE:-${VALUES_FILE:-}}"
 WORK_ROOT="${USER_WORK_ROOT:-${WORKDIR:-${TMPDIR:-/tmp}/appliance-build}}"
+EXPORT_DIR="${USER_EXPORT_DIR:-${EXPORT_DIR:-${WORK_ROOT}/export}}"
 K3S_VERSION_OVERRIDE="${USER_K3S_VERSION_OVERRIDE:-}"
 KEEP_WORK_ROOT="${USER_KEEP_WORK_ROOT:-0}"
 
@@ -88,6 +92,9 @@ WORKSPACE="${WORK_ROOT}/workspace"
 INPUTS_DIR="${WORKSPACE}/inputs"
 GENERATED_DIR="${WORKSPACE}/generated"
 CONFIG_OUT="${GENERATED_DIR}/product-bundle.env"
+BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-bundle"
+BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-bundle.tar.gz"
+PUBLIC_KEY_EXPORT="${EXPORT_DIR}/release-signing.pub"
 
 CODE_REPO_DIR="${REPOS_DIR}/appliance-code"
 CTL_REPO_DIR="${REPOS_DIR}/appliance-ctl"
@@ -172,6 +179,19 @@ normalize_clone_source() {
   fi
 }
 
+is_within_dir() {
+  local path="$1"
+  local root="$2"
+
+  path="$(cd "$(dirname "${path}")" && pwd)/$(basename "${path}")"
+  root="$(cd "$(dirname "${root}")" && pwd)/$(basename "${root}")"
+
+  case "${path}" in
+    "${root}"|"${root}"/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 clone_repo() {
   local source="$1"
   local ref="$2"
@@ -218,7 +238,13 @@ fi
 if [[ "${KEEP_WORK_ROOT}" != "1" ]]; then
   rm -rf "${WORK_ROOT}"
 fi
-mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}"
+rm -rf "${ARTIFACTS_DIR}" "${WORKSPACE}"
+if is_within_dir "${EXPORT_DIR}" "${WORK_ROOT}"; then
+  rm -rf "${EXPORT_DIR}"
+else
+  rm -f "${BUNDLE_ARCHIVE}" "${PUBLIC_KEY_EXPORT}"
+fi
+mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}" "${EXPORT_DIR}"
 
 clone_repo "${CODE_REPO_SOURCE}" "${CODE_REPO_REF}" "${CODE_REPO_DIR}"
 clone_repo "${CTL_REPO_SOURCE}" "${CTL_REPO_REF}" "${CTL_REPO_DIR}"
@@ -270,12 +296,19 @@ echo "  ${CONFIG_OUT}"
 
 make -C "${RELEASE_REPO_DIR}" product-bundle CONFIG="${CONFIG_OUT}"
 
+tar -C "$(dirname "${BUNDLE_DIR}")" -czf "${BUNDLE_ARCHIVE}" "$(basename "${BUNDLE_DIR}")"
+cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
+
 echo
 echo "release-input tarball:"
 echo "  ${RELEASE_INPUT_TAR}"
 echo
 echo "final bundle:"
-echo "  ${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-bundle"
+echo "  ${BUNDLE_DIR}"
 echo
 echo "generated bundle config:"
 echo "  ${WORKSPACE}/generated/product-bundle.env"
+echo
+echo "exported customer delivery files:"
+echo "  ${BUNDLE_ARCHIVE}"
+echo "  ${PUBLIC_KEY_EXPORT}"
