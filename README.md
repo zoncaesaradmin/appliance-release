@@ -40,6 +40,7 @@ dependency repo clones under the build root are reused and refreshed.
 
 - [Getting started (operators and developers)](docs/getting-started.md)
 - [Automation and one-command bundle build](docs/automation.md)
+- [HTTP distribution of exported release files](docs/distribution-http.md)
 - [Installing Zon](docs/install.md)
 - [Real setup and bundle assembly](docs/real-setup.md)
 - [Upgrading Zon](docs/upgrade.md)

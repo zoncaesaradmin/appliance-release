@@ -91,6 +91,11 @@ What to publish to a customer or downstream deployment team:
 The customer does not need any of the three source repos. They only need those
 two exported files on the target Ubuntu host.
 
+For the current simple distribution model, see
+[HTTP Distribution](distribution-http.md). That page shows how to put the
+exported files onto a separate HTTP/HTTPS download server with the new
+publish script.
+
 ## Real Inputs
 
 Real bundle builds still need these inputs:
