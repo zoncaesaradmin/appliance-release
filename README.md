@@ -13,7 +13,7 @@ binary while assembling a product bundle.
 The primary bundle automation lives here:
 
 - `make verify` runs the local pre-commit checks for this repo
-- `bash ./scripts/ci/build-full-bundle.sh` is the primary build-machine workflow; it uses this checked-out repo as the driver, clones only `appliance-code` and `appliance-ctl`, produces `release-input`, and builds the final bundle
+- `bash ./scripts/ci/build-full-bundle.sh` is the primary build-machine workflow; it uses this checked-out repo as the driver, clones only `appliance-code` and `appliance-ctl`, asks `appliance-code` to produce `release-input` from inside its dev container, and builds the final bundle
 - `make product-bundle CONFIG=/abs/path/to/product-bundle.env` runs the real config-driven flow
 - `make product-bundle CONFIG=$(pwd)/configs/product-bundle.sample.env` runs the sample end-to-end smoke flow with generated placeholder inputs
 

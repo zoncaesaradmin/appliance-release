@@ -92,6 +92,9 @@ CONFIG_OUT="${GENERATED_DIR}/product-bundle.env"
 CODE_REPO_DIR="${REPOS_DIR}/appliance-code"
 CTL_REPO_DIR="${REPOS_DIR}/appliance-ctl"
 RELEASE_INPUT_TAR="${ARTIFACTS_DIR}/release-input-${PRODUCT_VERSION}.tar.gz"
+CODE_RELEASE_INPUT_TAR="${CODE_REPO_DIR}/.run/release-input-${PRODUCT_VERSION}.tar.gz"
+CODE_DEV_SCRIPT_REL=".run/package-release-input-in-dev-container.sh"
+CODE_DEV_SCRIPT_PATH="${CODE_REPO_DIR}/${CODE_DEV_SCRIPT_REL}"
 
 require_var() {
   local name="$1"
@@ -220,9 +223,19 @@ mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}"
 clone_repo "${CODE_REPO_SOURCE}" "${CODE_REPO_REF}" "${CODE_REPO_DIR}"
 clone_repo "${CTL_REPO_SOURCE}" "${CTL_REPO_REF}" "${CTL_REPO_DIR}"
 
-make -C "${CODE_REPO_DIR}" package-release-input-tar \
-  OUT_FILE="${RELEASE_INPUT_TAR}" \
+mkdir -p "${CODE_REPO_DIR}/.run"
+cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd /workspace
+make package-release-input-tar \
+  OUT_FILE="/workspace/.run/release-input-${PRODUCT_VERSION}.tar.gz" \
   K3S_VERSION="${K3S_VERSION}"
+EOF
+chmod +x "${CODE_DEV_SCRIPT_PATH}"
+
+make -C "${CODE_REPO_DIR}" dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}"
+cp "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"
 
 stage_file "${K3S_BINARY_SOURCE}" "${INPUTS_DIR}/k3s" "k3s binary"
 stage_file "${K3S_INSTALL_SCRIPT_SOURCE}" "${INPUTS_DIR}/install.sh" "k3s install script"

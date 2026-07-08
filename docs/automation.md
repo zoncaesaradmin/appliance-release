@@ -34,7 +34,7 @@ That script will:
 - source the stable defaults from [configs/product-bundle.ci.env](/Users/zoncaesar/ws/appliance-release/configs/product-bundle.ci.env)
 - use the current `appliance-release` checkout as the driver repo
 - clone or refresh only `appliance-code` and `appliance-ctl` under `WORK_ROOT/repos`
-- build `release-input-${PRODUCT_VERSION}.tar.gz` from `appliance-code`
+- ask `appliance-code` to build `release-input-${PRODUCT_VERSION}.tar.gz` from inside its dev container
 - write the resolved bundle config into `WORK_ROOT/workspace/generated`
 - assemble and verify the final signed bundle
 
@@ -47,6 +47,11 @@ The single CI defaults file is
 That file carries the stable values like the pinned K3s version, the control
 plane image repository, the default workspace, and the default `appliance-ctl`
 source. The outer script is the one thing that should drive runtime inputs.
+
+Because the `release-input` producer path in `appliance-code` builds the
+control-plane image inside that repo's shared dev container, the Linux build
+host needs the prerequisites documented by `appliance-code` for `make dev-run`
+to work, especially Podman plus the one-time dev-container registry auth/bootstrap.
 
 The generated config file is left on disk as rerun/audit evidence:
 

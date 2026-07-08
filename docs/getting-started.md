@@ -56,6 +56,11 @@ artifacts and versions to package.
 For CAE/CI, prefer `bash ./scripts/ci/build-full-bundle.sh` from the checked-out
 `appliance-release` repo root. That is the primary entrypoint.
 
+That flow uses `appliance-code`'s `make dev-run` path to produce the
+`release-input` artifact inside the shared dev container, so the Linux build
+host should satisfy the `appliance-code` dev-container prerequisites rather
+than installing the control-plane image-build toolchain directly on the host.
+
 ### Repo Boundary
 
 - `appliance-code` owns product artifacts such as the control-plane
