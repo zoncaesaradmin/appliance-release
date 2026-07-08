@@ -36,7 +36,6 @@ Optional overrides:
   EXPORT_DIR=\$WORK_ROOT/export
   K3S_VERSION_OVERRIDE=v1.30.4+k3s1
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
-  KEEP_WORK_ROOT=1   # reuse only the cloned repos; all generated outputs are rebuilt from scratch
 EOF
 }
 
@@ -61,7 +60,6 @@ USER_VALUES_FILE_SOURCE="${VALUES_FILE_SOURCE-}"
 USER_WORK_ROOT="${WORK_ROOT-}"
 USER_EXPORT_DIR="${EXPORT_DIR-}"
 USER_K3S_VERSION_OVERRIDE="${K3S_VERSION_OVERRIDE-}"
-USER_KEEP_WORK_ROOT="${KEEP_WORK_ROOT-}"
 
 set -a
 # shellcheck disable=SC1090
@@ -80,7 +78,6 @@ VALUES_FILE_SOURCE="${USER_VALUES_FILE_SOURCE:-${VALUES_FILE:-}}"
 WORK_ROOT="${USER_WORK_ROOT:-${WORKDIR:-${TMPDIR:-/tmp}/appliance-build}}"
 EXPORT_DIR="${USER_EXPORT_DIR:-${EXPORT_DIR:-${WORK_ROOT}/export}}"
 K3S_VERSION_OVERRIDE="${USER_K3S_VERSION_OVERRIDE:-}"
-KEEP_WORK_ROOT="${USER_KEEP_WORK_ROOT:-0}"
 
 if [[ -n "${K3S_VERSION_OVERRIDE}" ]]; then
   K3S_VERSION="${K3S_VERSION_OVERRIDE}"
@@ -179,12 +176,27 @@ normalize_clone_source() {
   fi
 }
 
+to_abs_lexical_path() {
+  local path="$1"
+
+  case "${path}" in
+    /*) ;;
+    *) path="${PWD}/${path}" ;;
+  esac
+
+  while [[ "${path}" != "/" && "${path}" == */ ]]; do
+    path="${path%/}"
+  done
+
+  printf '%s\n' "${path}"
+}
+
 is_within_dir() {
   local path="$1"
   local root="$2"
 
-  path="$(cd "$(dirname "${path}")" && pwd)/$(basename "${path}")"
-  root="$(cd "$(dirname "${root}")" && pwd)/$(basename "${root}")"
+  path="$(to_abs_lexical_path "${path}")"
+  root="$(to_abs_lexical_path "${root}")"
 
   case "${path}" in
     "${root}"|"${root}"/*) return 0 ;;
@@ -201,12 +213,13 @@ clone_repo() {
   clone_source="$(normalize_clone_source "${source}")"
   mkdir -p "$(dirname "${dest}")"
 
-  if [[ "${KEEP_WORK_ROOT}" == "1" && -d "${dest}/.git" ]]; then
+  if [[ -d "${dest}/.git" ]]; then
+    git -C "${dest}" remote set-url origin "${clone_source}"
     if [[ -n "${ref}" ]]; then
-      git -C "${dest}" fetch --depth 1 origin "${ref}"
+      git -C "${dest}" fetch --prune --depth 1 origin "${ref}"
       git -C "${dest}" checkout --detach FETCH_HEAD
     else
-      git -C "${dest}" fetch --depth 1 origin
+      git -C "${dest}" fetch --prune --depth 1 origin
       git -C "${dest}" checkout --detach origin/HEAD
     fi
     return 0
@@ -235,14 +248,12 @@ if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   require_file "${VALUES_FILE_SOURCE}" "values file"
 fi
 
-if [[ "${KEEP_WORK_ROOT}" != "1" ]]; then
-  rm -rf "${WORK_ROOT}"
-fi
 rm -rf "${ARTIFACTS_DIR}" "${WORKSPACE}"
 if is_within_dir "${EXPORT_DIR}" "${WORK_ROOT}"; then
   rm -rf "${EXPORT_DIR}"
 else
-  rm -f "${BUNDLE_ARCHIVE}" "${PUBLIC_KEY_EXPORT}"
+  mkdir -p "${EXPORT_DIR}"
+  find "${EXPORT_DIR}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 fi
 mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}" "${EXPORT_DIR}"
 

@@ -33,16 +33,16 @@ That script will:
 
 - source the stable defaults from [configs/product-bundle.ci.env](/Users/zoncaesar/ws/appliance-release/configs/product-bundle.ci.env)
 - use the current `appliance-release` checkout as the driver repo
-- clone or refresh only `appliance-code` and `appliance-ctl` under `WORK_ROOT/repos`
+- clone `appliance-code` and `appliance-ctl` on the first run, then refresh those same clones under `WORK_ROOT/repos` on later runs
 - ask `appliance-code` to build `release-input-${PRODUCT_VERSION}.tar.gz` from inside its dev container
 - write the resolved bundle config into `WORK_ROOT/workspace/generated`
 - assemble and verify the final signed bundle
 - export the customer delivery files into `EXPORT_DIR` or `WORK_ROOT/export`
 
-On every run, the script rebuilds the generated state from scratch. It keeps
-only the cloned dependency repos when `KEEP_WORK_ROOT=1`; the workspace,
-artifacts, and exported delivery files are cleared and recreated so reruns do
-not inherit stale bundle outputs.
+On every run, the script rebuilds the generated state from scratch. The repo
+clones are reused and refreshed, while the workspace, artifacts, and exported
+delivery files are cleared and recreated so reruns do not inherit stale bundle
+outputs.
 
 The final extracted bundle lands at:
 

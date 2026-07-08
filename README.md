@@ -29,8 +29,8 @@ exports the two customer delivery files:
 - `release-signing.pub`
 
 Rerunning the CI script is safe: it recreates the generated workspace,
-artifacts, and exported delivery files from scratch each time. If
-`KEEP_WORK_ROOT=1` is used, only the cloned dependency repos are reused.
+artifacts, and exported delivery files from scratch each time, while the
+dependency repo clones under the build root are reused and refreshed.
 
 ## Documentation
 
