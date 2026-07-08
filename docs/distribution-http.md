@@ -115,34 +115,52 @@ bash ./scripts/publish/publish-release.sh \
   --latest-alias
 ```
 
-## What The Customer Downloads
+## What The Customer Runs
 
-From the versioned path:
-
-- `appliance-<version>-bundle.tar.gz`
-- `release-signing.pub`
-- optionally `sha256sum.txt`
-
-Example:
+The simplest path is now the fetch helper in this repo:
 
 ```bash
-mkdir -p ~/downloads/appliance-0.1.0
-cd ~/downloads/appliance-0.1.0
-curl -fLO http://downloads.example.internal/releases/appliance/0.1.0/appliance-0.1.0-bundle.tar.gz
-curl -fLO http://downloads.example.internal/releases/appliance/0.1.0/release-signing.pub
-curl -fLO http://downloads.example.internal/releases/appliance/0.1.0/sha256sum.txt
-sha256sum -c sha256sum.txt
-tar -xzf appliance-0.1.0-bundle.tar.gz
+make fetch-http-release \
+  FETCH_BASE_URL=http://downloads.example.internal/releases \
+  PRODUCT_VERSION=0.1.0 \
+  FETCH_OUT_DIR=/tmp/appliance-0.1.0
+```
+
+Equivalent direct script invocation:
+
+```bash
+bash ./scripts/publish/fetch-http-release.sh \
+  --base-url http://downloads.example.internal/releases \
+  --product-version 0.1.0 \
+  --out-dir /tmp/appliance-0.1.0
+```
+
+That command downloads:
+
+- `appliance-0.1.0-bundle.tar.gz`
+- `release-signing.pub`
+- `sha256sum.txt`
+
+then verifies the checksums and extracts the bundle locally.
+
+If you published a `latest/` alias, the fetch side can use that too:
+
+```bash
+make fetch-http-release \
+  FETCH_BASE_URL=http://downloads.example.internal/releases \
+  PRODUCT_VERSION=0.1.0 \
+  FETCH_OUT_DIR=/tmp/appliance-0.1.0 \
+  FETCH_USE_LATEST=1
 ```
 
 Then install from the extracted local directory:
 
 ```bash
-chmod +x ./appliance-0.1.0-bundle/zonctl
-sudo ./appliance-0.1.0-bundle/zonctl preflight --output json
-sudo ./appliance-0.1.0-bundle/zonctl install \
-  --bundle-dir ./appliance-0.1.0-bundle \
-  --public-key ./release-signing.pub \
+chmod +x /tmp/appliance-0.1.0/appliance-0.1.0-bundle/zonctl
+sudo /tmp/appliance-0.1.0/appliance-0.1.0-bundle/zonctl preflight --output json
+sudo /tmp/appliance-0.1.0/appliance-0.1.0-bundle/zonctl install \
+  --bundle-dir /tmp/appliance-0.1.0/appliance-0.1.0-bundle \
+  --public-key /tmp/appliance-0.1.0/release-signing.pub \
   --state-dir /var/lib/zon \
   --output json
 ```
