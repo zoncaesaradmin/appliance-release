@@ -289,7 +289,6 @@ make verify
 make assemble-bundle
 make init-simple-workspace
 make fetch-release-input
-make prepare-simple-workspace
 make assemble-simple-bundle
 make verify-bundle
 make product-bundle

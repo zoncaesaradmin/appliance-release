@@ -93,34 +93,6 @@ fetch-release-input:
 		$${RELEASE_INPUT_VERSION:+--version "$${RELEASE_INPUT_VERSION}"} \
 		$${RELEASE_INPUT_FETCH_TEMPLATE:+--template "$${RELEASE_INPUT_FETCH_TEMPLATE}"}
 
-.PHONY: prepare-simple-workspace
-prepare-simple-workspace:
-	@if [ -z "$${WORKDIR:-}" ]; then \
-		echo "prepare-simple-workspace: set WORKDIR=/abs/path/to/workspace" >&2; \
-		exit 2; \
-	fi
-	@if [ -z "$${RELEASE_INPUT_SOURCE:-}" ] && { [ -z "$${RELEASE_INPUT_VERSION:-}" ] || [ -z "$${RELEASE_INPUT_FETCH_TEMPLATE:-}" ]; }; then \
-		echo "prepare-simple-workspace: set RELEASE_INPUT_SOURCE=/path-or-url or both RELEASE_INPUT_VERSION=... and RELEASE_INPUT_FETCH_TEMPLATE=..." >&2; \
-		exit 2; \
-	fi
-	$(MAKE) --no-print-directory init-simple-workspace \
-		WORKDIR="$${WORKDIR}" \
-		ZONCTL_BINARY="$${ZONCTL_BINARY:-$(ZONCTL_BINARY)}" \
-		PRODUCT_VERSION="$${PRODUCT_VERSION:-}" \
-		CONTROL_PLANE_IMAGE_REF="$${CONTROL_PLANE_IMAGE_REF:-}" \
-		OS_VERSION="$${OS_VERSION:-}"
-	$(MAKE) --no-print-directory fetch-release-input \
-		WORKDIR="$${WORKDIR}" \
-		RELEASE_INPUT_SOURCE="$${RELEASE_INPUT_SOURCE:-}" \
-		RELEASE_INPUT_VERSION="$${RELEASE_INPUT_VERSION:-}" \
-		RELEASE_INPUT_FETCH_TEMPLATE="$${RELEASE_INPUT_FETCH_TEMPLATE:-}"
-	$(MAKE) --no-print-directory init-simple-workspace \
-		WORKDIR="$${WORKDIR}" \
-		ZONCTL_BINARY="$${ZONCTL_BINARY:-$(ZONCTL_BINARY)}" \
-		PRODUCT_VERSION="$${PRODUCT_VERSION:-}" \
-		CONTROL_PLANE_IMAGE_REF="$${CONTROL_PLANE_IMAGE_REF:-}" \
-		OS_VERSION="$${OS_VERSION:-}"
-
 .PHONY: assemble-simple-bundle
 assemble-simple-bundle:
 	@if [ -z "$${WORKDIR:-}" ]; then \
@@ -138,34 +110,6 @@ product-bundle:
 		exit 2; \
 	fi
 	bash ./scripts/package/product-bundle-from-config.sh --config "$${CONFIG}"
-
-.PHONY: ci-product-bundle
-ci-product-bundle:
-	@if [ -z "$${WORKDIR:-}" ] || [ -z "$${PRODUCT_VERSION:-}" ] || [ -z "$${K3S_VERSION:-}" ] || [ -z "$${CTL_REPO_SOURCE:-}" ]; then \
-		echo "ci-product-bundle: set WORKDIR, PRODUCT_VERSION, K3S_VERSION, and CTL_REPO_SOURCE" >&2; \
-		exit 2; \
-	fi
-	bash ./scripts/package/ci-product-bundle.sh \
-		--workdir "$${WORKDIR}" \
-		--product-version "$${PRODUCT_VERSION}" \
-		--k3s-version "$${K3S_VERSION}" \
-		--ctl-repo-source "$${CTL_REPO_SOURCE}" \
-		$${CONTROL_PLANE_IMAGE_REF:+--control-plane-image-ref "$${CONTROL_PLANE_IMAGE_REF}"} \
-		$${RELEASE_INPUT_SOURCE:+--release-input-source "$${RELEASE_INPUT_SOURCE}"} \
-		$${RELEASE_INPUT_VERSION:+--release-input-version "$${RELEASE_INPUT_VERSION}"} \
-		$${RELEASE_INPUT_FETCH_TEMPLATE:+--release-input-fetch-template "$${RELEASE_INPUT_FETCH_TEMPLATE}"} \
-		$${CONFIG_OUT:+--config-out "$${CONFIG_OUT}"} \
-		$${INPUTS_DIR:+--inputs-dir "$${INPUTS_DIR}"} \
-		$${CTL_REPO_REF:+--ctl-repo-ref "$${CTL_REPO_REF}"} \
-		$${CHART_VERSION:+--chart-version "$${CHART_VERSION}"} \
-		$${OS_VERSION:+--os-version "$${OS_VERSION}"} \
-		$${VALUES_FILE:+--values-file "$${VALUES_FILE}"} \
-		$${CONTROL_PLANE_IMAGE:+--control-plane-image "$${CONTROL_PLANE_IMAGE}"} \
-		$${K3S_BINARY:+--k3s-binary "$${K3S_BINARY}"} \
-		$${K3S_INSTALL_SCRIPT:+--k3s-install-script "$${K3S_INSTALL_SCRIPT}"} \
-		$${K3S_AIRGAP_IMAGES:+--k3s-airgap-images "$${K3S_AIRGAP_IMAGES}"} \
-		$${SAMPLE_MODE:+--sample-mode "$${SAMPLE_MODE}"} \
-		$${WRITE_CONFIG_ONLY:+--write-config-only}
 
 .PHONY: verify-bundle
 verify-bundle:

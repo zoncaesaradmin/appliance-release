@@ -1,11 +1,9 @@
 # Bundle Automation
 
-This repo exposes one primary CI entrypoint and two lower-level wrappers:
+This repo exposes one primary CI entrypoint and one lower-level debug path:
 
 ```bash
 bash ./scripts/ci/build-full-bundle.sh
-bash ./scripts/ci/run-product-bundle.sh ...
-make ci-product-bundle ...
 make product-bundle CONFIG=/abs/path/to/product-bundle.env
 ```
 
@@ -37,35 +35,12 @@ That script will:
 - use the current `appliance-release` checkout as the driver repo
 - clone or refresh only `appliance-code` and `appliance-ctl` under `WORK_ROOT/repos`
 - build `release-input-${PRODUCT_VERSION}.tar.gz` from `appliance-code`
-- call the lower-level bundle entrypoint in this repo
+- write the resolved bundle config into `WORK_ROOT/workspace/generated`
 - assemble and verify the final signed bundle
 
 The final extracted bundle lands at:
 
 - `${WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-bundle`
-
-## Lower-Level CI Command
-
-After CI checks out `appliance-release`, the single command to run is:
-
-```bash
-bash ./scripts/ci/run-product-bundle.sh \
-  --product-version 0.1.0 \
-  --release-input-source /ci/inputs/release-input-0.1.0.tar.gz \
-  --k3s-binary-source /ci/inputs/k3s \
-  --k3s-install-script-source /ci/inputs/install.sh \
-  --k3s-airgap-images-source /ci/inputs/k3s-airgap-images-amd64.tar.zst
-```
-
-That command will:
-
-- clone `appliance-ctl` into `WORKSPACE/repos/appliance-ctl`
-- stage the install-side inputs into `WORKSPACE/inputs`
-- write `${WORKSPACE}/generated/product-bundle.env`
-- build `zonctl`
-- import the prepared `release-input`
-- assemble the final signed extracted bundle
-- verify the bundle
 
 The single CI defaults file is
 [configs/product-bundle.ci.env](/Users/zoncaesar/ws/appliance-release/configs/product-bundle.ci.env).
@@ -104,17 +79,6 @@ The other staged files can be overridden in the config-driven flow with:
 
 ## Config-Driven Flow
 
-If you want to drive the lower-level wrapper directly:
-
-```bash
-make ci-product-bundle \
-  WORKDIR=/private/tmp/appliance-product-ci \
-  PRODUCT_VERSION=0.1.0 \
-  K3S_VERSION=v1.30.4+k3s1 \
-  CTL_REPO_SOURCE=/abs/path/to/appliance-ctl \
-  RELEASE_INPUT_SOURCE=/ci/inputs/release-input-0.1.0.tar.gz
-```
-
 If you already have a fully written env file, run:
 
 ```bash
@@ -142,7 +106,7 @@ output lands at:
 
 ## Lower-Level Targets
 
-If you need to debug a specific stage, these lower-level targets still exist:
+If you need to debug a specific stage, these low-level targets still exist:
 
 - `make init-simple-workspace`
 - `make fetch-release-input`

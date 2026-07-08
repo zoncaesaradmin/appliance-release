@@ -5,13 +5,14 @@ usage() {
   cat <<'EOF'
 usage: build-full-bundle.sh
 
-Build-machine wrapper for the full appliance bundle flow.
+Single build-machine entrypoint for the full appliance bundle flow.
 
 Expected model:
 1. appliance-release is already checked out
 2. this script clones appliance-code and appliance-ctl
 3. appliance-code produces the prepared release-input tarball
-4. appliance-release assembles and verifies the final bundle
+4. this script writes the resolved bundle config
+5. appliance-release assembles and verifies the final bundle
 
 Run this from the checked-out appliance-release repo root:
 
@@ -71,6 +72,9 @@ fi
 REPOS_DIR="${WORK_ROOT}/repos"
 ARTIFACTS_DIR="${WORK_ROOT}/artifacts"
 WORKSPACE="${WORK_ROOT}/workspace"
+INPUTS_DIR="${WORKSPACE}/inputs"
+GENERATED_DIR="${WORKSPACE}/generated"
+CONFIG_OUT="${GENERATED_DIR}/product-bundle.env"
 
 CODE_REPO_DIR="${REPOS_DIR}/appliance-code"
 CTL_REPO_DIR="${REPOS_DIR}/appliance-ctl"
@@ -92,6 +96,55 @@ require_file() {
     echo "build-full-bundle: missing ${label}: ${path}" >&2
     exit 1
   fi
+}
+
+stage_file() {
+  local source="$1"
+  local dest="$2"
+  local label="$3"
+
+  mkdir -p "$(dirname "${dest}")"
+
+  if [[ -f "${source}" ]]; then
+    cp "${source}" "${dest}"
+    return 0
+  fi
+
+  case "${source}" in
+    http://*|https://*)
+      curl -fsSL "${source}" -o "${dest}"
+      return 0
+      ;;
+    file://*)
+      cp "${source#file://}" "${dest}"
+      return 0
+      ;;
+  esac
+
+  echo "build-full-bundle: unsupported ${label} source: ${source}" >&2
+  exit 1
+}
+
+set_env_var() {
+  local file="$1"
+  local name="$2"
+  local value="$3"
+  local escaped
+  local tmp
+
+  printf -v escaped '%q' "${value}"
+  tmp="${file}.tmp"
+  awk -v key="${name}" -v val="${escaped}" '
+    BEGIN { done = 0 }
+    $0 ~ ("^" key "=") { print key "=" val; done = 1; next }
+    { print }
+    END {
+      if (!done) {
+        print key "=" val
+      }
+    }
+  ' "${file}" >"${tmp}"
+  mv "${tmp}" "${file}"
 }
 
 normalize_clone_source() {
@@ -149,7 +202,7 @@ fi
 if [[ "${KEEP_WORK_ROOT}" != "1" ]]; then
   rm -rf "${WORK_ROOT}"
 fi
-mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}"
+mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}"
 
 clone_repo "${CODE_REPO_SOURCE}" "${CODE_REPO_REF}" "${CODE_REPO_DIR}"
 clone_repo "${CTL_REPO_SOURCE}" "${CTL_REPO_REF}" "${CTL_REPO_DIR}"
@@ -158,23 +211,38 @@ make -C "${CODE_REPO_DIR}" package-release-input-tar \
   OUT_FILE="${RELEASE_INPUT_TAR}" \
   K3S_VERSION="${K3S_VERSION}"
 
-RUN_PRODUCT_BUNDLE_CMD=(
-  bash "${RELEASE_REPO_DIR}/scripts/ci/run-product-bundle.sh"
-  --workspace "${WORKSPACE}"
-  --product-version "${PRODUCT_VERSION}"
-  --k3s-version "${K3S_VERSION}"
-  --release-input-source "${RELEASE_INPUT_TAR}"
-  --k3s-binary-source "${K3S_BINARY_SOURCE}"
-  --k3s-install-script-source "${K3S_INSTALL_SCRIPT_SOURCE}"
-  --k3s-airgap-images-source "${K3S_AIRGAP_IMAGES_SOURCE}"
-  --ctl-repo-source "${CTL_REPO_DIR}"
-)
-
+stage_file "${K3S_BINARY_SOURCE}" "${INPUTS_DIR}/k3s" "k3s binary"
+stage_file "${K3S_INSTALL_SCRIPT_SOURCE}" "${INPUTS_DIR}/install.sh" "k3s install script"
+stage_file "${K3S_AIRGAP_IMAGES_SOURCE}" "${INPUTS_DIR}/k3s-airgap-images-amd64.tar.zst" "k3s airgap images"
+chmod +x "${INPUTS_DIR}/k3s" "${INPUTS_DIR}/install.sh" 2>/dev/null || true
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
-  RUN_PRODUCT_BUNDLE_CMD+=(--values-file-source "${VALUES_FILE_SOURCE}")
+  stage_file "${VALUES_FILE_SOURCE}" "${INPUTS_DIR}/values-minimal.yaml" "values file"
 fi
 
-"${RUN_PRODUCT_BUNDLE_CMD[@]}"
+cp "${DEFAULTS_FILE}" "${CONFIG_OUT}"
+set_env_var "${CONFIG_OUT}" WORKDIR "${WORKSPACE}"
+set_env_var "${CONFIG_OUT}" PRODUCT_VERSION "${PRODUCT_VERSION}"
+set_env_var "${CONFIG_OUT}" K3S_VERSION "${K3S_VERSION}"
+set_env_var "${CONFIG_OUT}" RELEASE_INPUT_SOURCE "${RELEASE_INPUT_TAR}"
+set_env_var "${CONFIG_OUT}" RELEASE_INPUT_VERSION ""
+set_env_var "${CONFIG_OUT}" RELEASE_INPUT_FETCH_TEMPLATE ""
+set_env_var "${CONFIG_OUT}" CTL_REPO_SOURCE "${CTL_REPO_DIR}"
+set_env_var "${CONFIG_OUT}" CTL_REPO_REF ""
+set_env_var "${CONFIG_OUT}" INPUTS_DIR "${INPUTS_DIR}"
+set_env_var "${CONFIG_OUT}" SAMPLE_MODE "0"
+set_env_var "${CONFIG_OUT}" K3S_BINARY "${INPUTS_DIR}/k3s"
+set_env_var "${CONFIG_OUT}" K3S_INSTALL_SCRIPT "${INPUTS_DIR}/install.sh"
+set_env_var "${CONFIG_OUT}" K3S_AIRGAP_IMAGES "${INPUTS_DIR}/k3s-airgap-images-amd64.tar.zst"
+if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
+  set_env_var "${CONFIG_OUT}" VALUES_FILE "${INPUTS_DIR}/values-minimal.yaml"
+else
+  set_env_var "${CONFIG_OUT}" VALUES_FILE ""
+fi
+
+echo "generated bundle config:"
+echo "  ${CONFIG_OUT}"
+
+make -C "${RELEASE_REPO_DIR}" product-bundle CONFIG="${CONFIG_OUT}"
 
 echo
 echo "release-input tarball:"
