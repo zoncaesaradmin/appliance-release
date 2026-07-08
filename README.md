@@ -28,6 +28,10 @@ exports the two customer delivery files:
 - `appliance-<product-version>-bundle.tar.gz`
 - `release-signing.pub`
 
+The build-machine workflow is meant to stay non-interactive. If the Linux host
+has not yet been prepared for `appliance-code`'s rootful Podman dev-container
+path, the script now fails clearly instead of stopping on a sudo prompt.
+
 Rerunning the CI script is safe: it recreates the generated workspace,
 artifacts, and exported delivery files from scratch each time, while the
 dependency repo clones under the build root are reused and refreshed.

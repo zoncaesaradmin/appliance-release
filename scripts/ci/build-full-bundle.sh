@@ -145,6 +145,46 @@ stage_file() {
   exit 1
 }
 
+require_appliance_code_bootstrap() {
+  local code_repo_dir="$1"
+  local podman_path
+  local probe_user="build-full-bundle-user-probe-$$"
+  local probe_tag="build-full-bundle-tag-probe-$$"
+
+  if ! command -v podman >/dev/null 2>&1; then
+    echo "build-full-bundle: podman is required on PATH for appliance-code dev-run" >&2
+    exit 1
+  fi
+  podman_path="$(command -v podman)"
+
+  if sudo -n "${podman_path}" --version >/dev/null 2>&1 \
+    && [[ "$(REGISTRY_USER="${probe_user}" sudo -n env 2>/dev/null | sed -n 's/^REGISTRY_USER=//p')" == "${probe_user}" ]] \
+    && [[ "$(IMAGE_TAG="${probe_tag}" sudo -n env 2>/dev/null | sed -n 's/^IMAGE_TAG=//p')" == "${probe_tag}" ]]; then
+    return 0
+  fi
+
+  cat >&2 <<EOF
+build-full-bundle: appliance-code host bootstrap is missing for non-interactive CI
+build-full-bundle: this script will not prompt for sudo in CI
+build-full-bundle:
+build-full-bundle: run these commands once on this Linux host, outside CI:
+build-full-bundle:   cd ${code_repo_dir}
+build-full-bundle:   export REGISTRY_USER=<github-username>
+build-full-bundle:   export REGISTRY_TOKEN=<PAT with read:packages>
+build-full-bundle:   make dev-registry-login
+build-full-bundle:   make dev-sudo-setup
+build-full-bundle:
+build-full-bundle: if your token rotated later, rerun only:
+build-full-bundle:   cd ${code_repo_dir}
+build-full-bundle:   export REGISTRY_USER=<github-username>
+build-full-bundle:   export REGISTRY_TOKEN=<new-PAT with read:packages>
+build-full-bundle:   make dev-registry-login
+build-full-bundle:
+build-full-bundle: after that, rerun this script and it should stay non-interactive.
+EOF
+  exit 1
+}
+
 set_env_var() {
   local file="$1"
   local name="$2"
@@ -259,6 +299,8 @@ mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}" "$
 
 clone_repo "${CODE_REPO_SOURCE}" "${CODE_REPO_REF}" "${CODE_REPO_DIR}"
 clone_repo "${CTL_REPO_SOURCE}" "${CTL_REPO_REF}" "${CTL_REPO_DIR}"
+
+require_appliance_code_bootstrap "${CODE_REPO_DIR}"
 
 mkdir -p "${CODE_REPO_DIR}/.run"
 cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF

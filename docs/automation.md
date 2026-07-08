@@ -64,6 +64,21 @@ control-plane image inside that repo's shared dev container, the Linux build
 host needs the prerequisites documented by `appliance-code` for `make dev-run`
 to work, especially Podman plus the one-time dev-container registry auth/bootstrap.
 
+This CI script is intentionally non-interactive. If the Linux build host has
+not yet been bootstrapped for `appliance-code`'s rootful Podman flow, the
+script now fails with a clear message instead of pausing on a sudo password
+prompt. Prepare the host once, outside CI:
+
+```bash
+cd /path/to/appliance-code
+export REGISTRY_USER=<github-username>
+export REGISTRY_TOKEN=<PAT with read:packages>
+make dev-registry-login
+make dev-sudo-setup
+```
+
+After that one-time host bootstrap, later CI runs should stay non-interactive.
+
 The generated config file is left on disk as rerun/audit evidence:
 
 - `${WORKSPACE}/generated/product-bundle.env`
