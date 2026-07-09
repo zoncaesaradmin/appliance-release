@@ -157,8 +157,6 @@ That command:
   - `appliance-0.1.0-bundle.tar.gz`
   - `release-signing.pub`
   - `sha256sum.txt`
-  - `fetch-http-release.sh`
-  - `install-http-release.sh`
   - `fetch-http-release-0.1.0.sh`
   - `install-http-release-0.1.0.sh`
 - optionally updates `latest/`
@@ -228,9 +226,8 @@ bash /tmp/install-http-release-0.1.0.sh \
   --use-latest
 ```
 
-The versioned helper names are the recommended entrypoint because the script can
-infer the product version from its own filename. The unversioned helper names
-are still published for compatibility, but they require `--product-version`.
+The versioned helper names are the published entrypoint. The script infers the
+product version from its own filename.
 
 If you used only the fetch helper, then install from the extracted local directory:
 

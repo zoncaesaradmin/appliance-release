@@ -175,15 +175,13 @@ case "${MODE}" in
       "${BUNDLE_ARCHIVE}" \
       "${PUBLIC_KEY_FILE}" \
       "${CHECKSUM_FILE}" \
-      "${FETCH_HELPER}" \
-      "${INSTALL_HELPER}" \
       "${PUBLISH_STAGE_DIR}/${FETCH_HELPER_VERSIONED}" \
       "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_VERSIONED}" \
       "${SERVER_TARGET}:${REMOTE_VERSION_DIR}/"
 
     if [[ "${LATEST_ALIAS}" == "1" ]]; then
       ssh -p "${SSH_PORT}" "${SERVER_TARGET}" \
-        "mkdir -p '${REMOTE_LATEST_DIR}' && cp '${REMOTE_VERSION_DIR}/$(basename "${BUNDLE_ARCHIVE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${PUBLIC_KEY_FILE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${CHECKSUM_FILE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${FETCH_HELPER}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${INSTALL_HELPER}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/${FETCH_HELPER_VERSIONED}' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/${INSTALL_HELPER_VERSIONED}' '${REMOTE_LATEST_DIR}/'"
+        "mkdir -p '${REMOTE_LATEST_DIR}' && cp '${REMOTE_VERSION_DIR}/$(basename "${BUNDLE_ARCHIVE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${PUBLIC_KEY_FILE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${CHECKSUM_FILE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/${FETCH_HELPER_VERSIONED}' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/${INSTALL_HELPER_VERSIONED}' '${REMOTE_LATEST_DIR}/'"
     fi
 
     echo "published release files:"
@@ -192,8 +190,6 @@ case "${MODE}" in
     echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${CHECKSUM_FILE}")"
     echo
     echo "published helper scripts:"
-    echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${FETCH_HELPER}")"
-    echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${INSTALL_HELPER}")"
     echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/${FETCH_HELPER_VERSIONED}"
     echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/${INSTALL_HELPER_VERSIONED}"
 
@@ -205,10 +201,6 @@ case "${MODE}" in
       echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${CHECKSUM_FILE}")"
       echo
       echo "helper script URLs:"
-      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${FETCH_HELPER}")"
-      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${INSTALL_HELPER}")"
-      echo
-      echo "recommended versioned helper URLs:"
       echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${FETCH_HELPER_VERSIONED}"
       echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_VERSIONED}"
       if [[ "${LATEST_ALIAS}" == "1" ]]; then
@@ -217,8 +209,6 @@ case "${MODE}" in
         echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${BUNDLE_ARCHIVE}")"
         echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${PUBLIC_KEY_FILE}")"
         echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${CHECKSUM_FILE}")"
-        echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${FETCH_HELPER}")"
-        echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${INSTALL_HELPER}")"
         echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${FETCH_HELPER_VERSIONED}"
         echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${INSTALL_HELPER_VERSIONED}"
       fi
