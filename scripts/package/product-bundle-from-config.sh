@@ -236,9 +236,40 @@ require_file() {
   fi
 }
 
+# Confirms the k3s airgap images file is actually a readable zstd-compressed
+# tar, not just present. `require_file` alone only checks existence — a
+# truncated download, a bad copy, or (in SAMPLE_MODE) the placeholder text
+# written below would otherwise sail through unnoticed and only fail much
+# later, cryptically, during `zonctl install` on a real target host (`ctr:
+# archive/tar: invalid tar header`). Skipped in SAMPLE_MODE, where the
+# placeholder is expected and the bundle is never meant to be installed for
+# real. Warns (does not fail) if zstd isn't on PATH, rather than blocking a
+# build host that's otherwise fine.
+require_valid_k3s_airgap_images() {
+  local path="$1"
+  if [[ "${SAMPLE_MODE}" == "1" ]]; then
+    return 0
+  fi
+  if ! command -v zstd >/dev/null 2>&1; then
+    echo "product-bundle-from-config: warning: zstd not found on PATH, skipping k3s airgap images integrity check for ${path}" >&2
+    return 0
+  fi
+  if ! zstd -t "${path}" >/dev/null 2>&1; then
+    echo "product-bundle-from-config: k3s airgap images file is not a valid zstd archive: ${path}" >&2
+    echo "product-bundle-from-config: re-check the K3S_AIRGAP_IMAGES/K3S_AIRGAP_IMAGES_SOURCE input before rebuilding the bundle" >&2
+    exit 1
+  fi
+  if ! zstd -dc "${path}" 2>/dev/null | tar -tf - >/dev/null 2>&1; then
+    echo "product-bundle-from-config: k3s airgap images file decompresses but is not a valid tar archive: ${path}" >&2
+    echo "product-bundle-from-config: re-check the K3S_AIRGAP_IMAGES/K3S_AIRGAP_IMAGES_SOURCE input before rebuilding the bundle" >&2
+    exit 1
+  fi
+}
+
 require_file "${K3S_BINARY}" "k3s binary"
 require_file "${K3S_INSTALL_SCRIPT}" "k3s install script"
 require_file "${K3S_AIRGAP_IMAGES}" "k3s airgap images"
+require_valid_k3s_airgap_images "${K3S_AIRGAP_IMAGES}"
 if [[ -n "${VALUES_FILE:-}" ]]; then
   require_file "${VALUES_FILE}" "values file"
 fi
