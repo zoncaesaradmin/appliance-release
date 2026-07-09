@@ -146,7 +146,6 @@ stage_file() {
 }
 
 require_appliance_code_bootstrap() {
-  local code_repo_dir="$1"
   local podman_path
   local probe_user="build-full-bundle-user-probe-$$"
   local probe_tag="build-full-bundle-tag-probe-$$"
@@ -167,30 +166,15 @@ require_appliance_code_bootstrap() {
 build-full-bundle: appliance-code host bootstrap is missing for non-interactive CI
 build-full-bundle: this script will not prompt for sudo in CI
 build-full-bundle:
-build-full-bundle: easiest fix from this repo:
+build-full-bundle: run this once on the build host:
 build-full-bundle:   export REGISTRY_USER=<github-username>
 build-full-bundle:   export REGISTRY_TOKEN=<PAT with read:packages>
 build-full-bundle:   bash ${RELEASE_REPO_DIR}/scripts/ci/bootstrap-build-host.sh
 build-full-bundle:
-build-full-bundle: equivalent manual commands:
-build-full-bundle:   cd ${code_repo_dir}
-build-full-bundle:   export REGISTRY_USER=<github-username>
-build-full-bundle:   export REGISTRY_TOKEN=<PAT with read:packages>
-build-full-bundle:   make dev-registry-login
-build-full-bundle:   make dev-sudo-setup
+build-full-bundle: if the registry token changes later, rerun the same bootstrap script with the new token.
 build-full-bundle:
-build-full-bundle: if your token rotated later, rerun only:
-build-full-bundle:   export REGISTRY_USER=<github-username>
-build-full-bundle:   export REGISTRY_TOKEN=<new-PAT with read:packages>
-build-full-bundle:   bash ${RELEASE_REPO_DIR}/scripts/ci/bootstrap-build-host.sh
-build-full-bundle:
-build-full-bundle: or manually:
-build-full-bundle:   cd ${code_repo_dir}
-build-full-bundle:   export REGISTRY_USER=<github-username>
-build-full-bundle:   export REGISTRY_TOKEN=<new-PAT with read:packages>
-build-full-bundle:   make dev-registry-login
-build-full-bundle:
-build-full-bundle: after that, rerun this script and it should stay non-interactive.
+build-full-bundle: then rerun:
+build-full-bundle:   bash ${RELEASE_REPO_DIR}/scripts/ci/build-full-bundle.sh
 EOF
   exit 1
 }
@@ -310,7 +294,7 @@ mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}" "$
 clone_repo "${CODE_REPO_SOURCE}" "${CODE_REPO_REF}" "${CODE_REPO_DIR}"
 clone_repo "${CTL_REPO_SOURCE}" "${CTL_REPO_REF}" "${CTL_REPO_DIR}"
 
-require_appliance_code_bootstrap "${CODE_REPO_DIR}"
+require_appliance_code_bootstrap
 
 mkdir -p "${CODE_REPO_DIR}/.run"
 cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF
