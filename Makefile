@@ -127,7 +127,8 @@ verify-bundle:
 .PHONY: publish-release
 publish-release:
 	@if [ -z "$${EXPORT_DIR:-}" ] || [ -z "$${PRODUCT_VERSION:-}" ] || [ -z "$${PUBLISH_SERVER:-}" ] || [ -z "$${PUBLISH_REMOTE_ROOT:-}" ]; then \
-		echo "publish-release: mandatory vars are EXPORT_DIR=/abs/path/to/export PRODUCT_VERSION=... PUBLISH_SERVER=user@host PUBLISH_REMOTE_ROOT=/remote/root" >&2; \
+		echo "publish-release: required env vars are EXPORT_DIR=/abs/path/to/export PRODUCT_VERSION=... PUBLISH_SERVER=user@host PUBLISH_REMOTE_ROOT=/remote/root" >&2; \
+		echo "publish-release: PRODUCT_VERSION may already be exported in your shell; it does not need to be passed inline if already set" >&2; \
 		exit 2; \
 	fi
 	bash ./scripts/publish/publish-release.sh \

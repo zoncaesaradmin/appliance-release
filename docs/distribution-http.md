@@ -111,19 +111,29 @@ After `build-full-bundle.sh` finishes, publish the exported files:
 Temporary Python-server style:
 
 ```bash
+export PRODUCT_VERSION=0.1.0
 make publish-release \
   EXPORT_DIR=/home/zonsys/appliance-build/export \
-  PRODUCT_VERSION=0.1.0 \
   PUBLISH_SERVER=zonsys@192.168.1.103 \
   PUBLISH_REMOTE_ROOT=/home/zonsys/releases
 ```
 
+Without `PUBLISH_PUBLIC_BASE_URL`, the script now auto-derives:
+
+```text
+http://192.168.1.103
+```
+
+from `PUBLISH_SERVER=zonsys@192.168.1.103` and prints commands using that base
+URL. If your HTTP server uses a non-default port such as `28081`, or serves
+from an extra base path, set `PUBLISH_PUBLIC_BASE_URL` explicitly.
+
 Longer-lived NGINX-style:
 
 ```bash
+export PRODUCT_VERSION=0.1.0
 make publish-release \
   EXPORT_DIR=/home/zonsys/appliance-build/export \
-  PRODUCT_VERSION=0.1.0 \
   PUBLISH_SERVER=release@downloads.example.internal \
   PUBLISH_REMOTE_ROOT=/srv/www/releases \
   PUBLISH_PUBLIC_BASE_URL=http://downloads.example.internal/releases
@@ -135,6 +145,7 @@ Mandatory variables for `make publish-release`:
   This is where `build-full-bundle.sh` left the local exported files.
 - `PRODUCT_VERSION`
   Used to pick `appliance-<version>-bundle.tar.gz` and create the remote version path.
+  It can be passed inline or already exported in the shell.
 - `PUBLISH_SERVER`
   The SSH target in `user@host` form.
 - `PUBLISH_REMOTE_ROOT`
@@ -143,8 +154,9 @@ Mandatory variables for `make publish-release`:
 Optional variables:
 
 - `PUBLISH_PUBLIC_BASE_URL`
-  If set, the script prints final download URLs and the exact target-host
-  `curl` and `bash` commands for that published version.
+  Optional override for the public HTTP/HTTPS base URL. If omitted, the script
+  derives `http://<host>` from `PUBLISH_SERVER` and prints commands using that
+  derived value.
 - `PUBLISH_LATEST_ALIAS=1`
   Also copies the same files under `latest/`.
 - `PUBLISH_PATH_PREFIX`
@@ -152,12 +164,14 @@ Optional variables:
 - `PUBLISH_SSH_PORT`
   Defaults to `22`.
 
-With `PUBLISH_PUBLIC_BASE_URL` set, `make publish-release` also prints the
-exact target-host commands for:
+`make publish-release` prints the exact target-host commands for:
 
 - install
 - fetch only
 - latest alias install, if `PUBLISH_LATEST_ALIAS=1` is enabled
+
+If the derived base URL is not the real public URL, rerun with
+`PUBLISH_PUBLIC_BASE_URL=...`.
 
 That command:
 

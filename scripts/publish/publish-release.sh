@@ -23,8 +23,8 @@ http-static mode options:
   --remote-root DIR          Remote root directory to publish under. Required.
   --path-prefix PATH         Prefix under remote root. Default: appliance
   --ssh-port PORT            SSH port. Default: 22
-  --public-base-url URL      Optional public base URL. If set, prints final
-                             download URLs.
+  --public-base-url URL      Optional public base URL override. If omitted,
+                             the script derives http://<host> from --server.
   --latest-alias             Also update <remote-root>/<path-prefix>/latest/
                              to point at this version's files.
 
@@ -49,6 +49,7 @@ PATH_PREFIX="appliance"
 SSH_PORT="22"
 PUBLIC_BASE_URL=""
 LATEST_ALIAS="0"
+PUBLIC_BASE_URL_DERIVED="0"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -122,6 +123,14 @@ trim_trailing_slashes() {
   printf '%s\n' "${value}"
 }
 
+extract_host_from_target() {
+  local target="$1"
+  target="${target##*@}"
+  target="${target#\[}"
+  target="${target%\]}"
+  printf '%s\n' "${target}"
+}
+
 require_var EXPORT_DIR
 require_var PRODUCT_VERSION
 
@@ -160,6 +169,9 @@ case "${MODE}" in
     PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"
     if [[ -n "${PUBLIC_BASE_URL}" ]]; then
       PUBLIC_BASE_URL="$(trim_trailing_slashes "${PUBLIC_BASE_URL}")"
+    else
+      PUBLIC_BASE_URL="http://$(extract_host_from_target "${SERVER_TARGET}")"
+      PUBLIC_BASE_URL_DERIVED="1"
     fi
 
     REMOTE_VERSION_DIR="${REMOTE_ROOT}/${PATH_PREFIX}/${PRODUCT_VERSION}"
@@ -193,37 +205,41 @@ case "${MODE}" in
     echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/${FETCH_HELPER_VERSIONED}"
     echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/${INSTALL_HELPER_VERSIONED}"
 
-    if [[ -n "${PUBLIC_BASE_URL}" ]]; then
+    echo
+    echo "public base URL used for commands:"
+    echo "  ${PUBLIC_BASE_URL}"
+    if [[ "${PUBLIC_BASE_URL_DERIVED}" == "1" ]]; then
+      echo "  note: derived automatically from PUBLISH_SERVER; override with PUBLISH_PUBLIC_BASE_URL if your HTTP server uses a non-default port or extra base path."
+    fi
+    echo
+    echo "download URLs:"
+    echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${BUNDLE_ARCHIVE}")"
+    echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${PUBLIC_KEY_FILE}")"
+    echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${CHECKSUM_FILE}")"
+    echo
+    echo "helper script URLs:"
+    echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${FETCH_HELPER_VERSIONED}"
+    echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_VERSIONED}"
+    echo
+    echo "target host install commands:"
+    echo "  curl -fLo /tmp/${INSTALL_HELPER_VERSIONED} ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_VERSIONED}"
+    echo "  bash /tmp/${INSTALL_HELPER_VERSIONED} --base-url ${PUBLIC_BASE_URL}"
+    echo
+    echo "target host fetch-only commands:"
+    echo "  curl -fLo /tmp/${FETCH_HELPER_VERSIONED} ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${FETCH_HELPER_VERSIONED}"
+    echo "  bash /tmp/${FETCH_HELPER_VERSIONED} --base-url ${PUBLIC_BASE_URL} --out-dir /tmp/appliance-${PRODUCT_VERSION}"
+    if [[ "${LATEST_ALIAS}" == "1" ]]; then
       echo
-      echo "download URLs:"
-      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${BUNDLE_ARCHIVE}")"
-      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${PUBLIC_KEY_FILE}")"
-      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${CHECKSUM_FILE}")"
+      echo "latest alias URLs:"
+      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${BUNDLE_ARCHIVE}")"
+      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${PUBLIC_KEY_FILE}")"
+      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${CHECKSUM_FILE}")"
+      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${FETCH_HELPER_VERSIONED}"
+      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${INSTALL_HELPER_VERSIONED}"
       echo
-      echo "helper script URLs:"
-      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${FETCH_HELPER_VERSIONED}"
-      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_VERSIONED}"
-      echo
-      echo "target host install commands:"
-      echo "  curl -fLo /tmp/${INSTALL_HELPER_VERSIONED} ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_VERSIONED}"
-      echo "  bash /tmp/${INSTALL_HELPER_VERSIONED} --base-url ${PUBLIC_BASE_URL}"
-      echo
-      echo "target host fetch-only commands:"
-      echo "  curl -fLo /tmp/${FETCH_HELPER_VERSIONED} ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${FETCH_HELPER_VERSIONED}"
-      echo "  bash /tmp/${FETCH_HELPER_VERSIONED} --base-url ${PUBLIC_BASE_URL} --out-dir /tmp/appliance-${PRODUCT_VERSION}"
-      if [[ "${LATEST_ALIAS}" == "1" ]]; then
-        echo
-        echo "latest alias URLs:"
-        echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${BUNDLE_ARCHIVE}")"
-        echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${PUBLIC_KEY_FILE}")"
-        echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${CHECKSUM_FILE}")"
-        echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${FETCH_HELPER_VERSIONED}"
-        echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${INSTALL_HELPER_VERSIONED}"
-        echo
-        echo "target host latest-install commands:"
-        echo "  curl -fLo /tmp/${INSTALL_HELPER_VERSIONED} ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${INSTALL_HELPER_VERSIONED}"
-        echo "  bash /tmp/${INSTALL_HELPER_VERSIONED} --base-url ${PUBLIC_BASE_URL} --use-latest"
-      fi
+      echo "target host latest-install commands:"
+      echo "  curl -fLo /tmp/${INSTALL_HELPER_VERSIONED} ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${INSTALL_HELPER_VERSIONED}"
+      echo "  bash /tmp/${INSTALL_HELPER_VERSIONED} --base-url ${PUBLIC_BASE_URL} --use-latest"
     fi
     ;;
   *)
