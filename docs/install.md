@@ -34,16 +34,18 @@ The qualified v1 baseline (see [support-matrix.md](support-matrix.md) and
 `internal/preflight`) is:
 
 - Ubuntu Server 22.04 LTS or 24.04 LTS, `amd64`
-- At least 4 CPUs and 8 GiB RAM
+- At least 4 CPUs and 4 GiB RAM
 - A local `ext4` filesystem for the platform data directory, with at least
   50 GiB free space and 200,000 free inodes
 - cgroup v2, kernel user namespaces, and IPv4 forwarding enabled (IPv4
   forwarding is auto-fixed by the installer if disabled; the rest are
   operator-action findings that must be resolved before install proceeds)
 - A synchronized system clock, an internally resolvable hostname, and ports
-  `6443`, `10250`, and `8472` free (the K3s single-node baseline; additional
-  product-specific ports are added once `appliance-code`'s configuration
-  schema pins them)
+  `6443`, `10250`, and `8472` available on a fresh host. If an existing K3s
+  instance is already running, those ports may already be occupied by K3s and
+  the installer then treats the host as a reuse/adoption candidate instead of
+  a fresh-port-conflict case. Additional product-specific ports are added once
+  `appliance-code`'s configuration schema pins them.
 - No conflicting `docker`, `microk8s`, or unrelated `kubelet` service, and no
   active host firewall blocking the required ports
 

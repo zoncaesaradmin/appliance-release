@@ -10,7 +10,7 @@ Implementation package names referenced below now live in the
 | Operating system | Ubuntu Server 22.04 LTS or 24.04 LTS | `os-arch-supported` preflight check |
 | Architecture | `amd64` | `os-arch-supported` preflight check |
 | CPU | 4 cores minimum | `cpu-count-min` preflight check |
-| Memory | 8 GiB minimum | `memory-min` preflight check |
+| Memory | 4 GiB minimum | `memory-min` preflight check |
 | Appliance data filesystem | Local `ext4` | `data-dir-filesystem-ext4` preflight check |
 | Appliance data free space | 50 GiB minimum | `data-dir-free-space` preflight check |
 | Appliance data free inodes | 200,000 minimum | `data-dir-free-inodes` preflight check |
@@ -19,7 +19,7 @@ Implementation package names referenced below now live in the
 | IPv4 forwarding | Enabled (auto-fixed if not) | `ipv4-forwarding-enabled` preflight check |
 | Time synchronization | Active (systemd-timesyncd/chrony) | `time-sync-active` preflight check |
 | Hostname | Internally resolvable, valid TLS SAN | `internal-dns-resolvable`, `hostname-valid-tls-san` |
-| Ports | `6443`, `10250`, `8472` free | `required-ports-available` preflight check |
+| Ports | `6443`, `10250`, `8472` free on a fresh host; an already-running K3s instance may legitimately occupy them and is then evaluated by the K3s ownership/adoption path | `required-ports-available` preflight check + K3s ownership decision |
 | Conflicting services | None (`docker`, `microk8s`, unrelated `kubelet`) | `no-conflicting-services` preflight check |
 | Existing K3s | Only if installed and owned by this Zon installation | K3s ownership decision (`internal/k3s.DecideOwnership`) |
 
