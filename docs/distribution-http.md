@@ -125,7 +125,8 @@ make publish-release \
   EXPORT_DIR=/home/zonsys/appliance-build/export \
   PRODUCT_VERSION=0.1.0 \
   PUBLISH_SERVER=release@downloads.example.internal \
-  PUBLISH_REMOTE_ROOT=/srv/www/releases
+  PUBLISH_REMOTE_ROOT=/srv/www/releases \
+  PUBLISH_PUBLIC_BASE_URL=http://downloads.example.internal/releases
 ```
 
 Mandatory variables for `make publish-release`:
@@ -142,13 +143,21 @@ Mandatory variables for `make publish-release`:
 Optional variables:
 
 - `PUBLISH_PUBLIC_BASE_URL`
-  If set, the script prints final download URLs.
+  If set, the script prints final download URLs and the exact target-host
+  `curl` and `bash` commands for that published version.
 - `PUBLISH_LATEST_ALIAS=1`
   Also copies the same files under `latest/`.
 - `PUBLISH_PATH_PREFIX`
   Defaults to `appliance`.
 - `PUBLISH_SSH_PORT`
   Defaults to `22`.
+
+With `PUBLISH_PUBLIC_BASE_URL` set, `make publish-release` also prints the
+exact target-host commands for:
+
+- install
+- fetch only
+- latest alias install, if `PUBLISH_LATEST_ALIAS=1` is enabled
 
 That command:
 

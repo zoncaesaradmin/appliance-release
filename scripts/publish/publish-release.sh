@@ -203,6 +203,14 @@ case "${MODE}" in
       echo "helper script URLs:"
       echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${FETCH_HELPER_VERSIONED}"
       echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_VERSIONED}"
+      echo
+      echo "target host install commands:"
+      echo "  curl -fLo /tmp/${INSTALL_HELPER_VERSIONED} ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_VERSIONED}"
+      echo "  bash /tmp/${INSTALL_HELPER_VERSIONED} --base-url ${PUBLIC_BASE_URL}"
+      echo
+      echo "target host fetch-only commands:"
+      echo "  curl -fLo /tmp/${FETCH_HELPER_VERSIONED} ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${FETCH_HELPER_VERSIONED}"
+      echo "  bash /tmp/${FETCH_HELPER_VERSIONED} --base-url ${PUBLIC_BASE_URL} --out-dir /tmp/appliance-${PRODUCT_VERSION}"
       if [[ "${LATEST_ALIAS}" == "1" ]]; then
         echo
         echo "latest alias URLs:"
@@ -211,6 +219,10 @@ case "${MODE}" in
         echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${CHECKSUM_FILE}")"
         echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${FETCH_HELPER_VERSIONED}"
         echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${INSTALL_HELPER_VERSIONED}"
+        echo
+        echo "target host latest-install commands:"
+        echo "  curl -fLo /tmp/${INSTALL_HELPER_VERSIONED} ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${INSTALL_HELPER_VERSIONED}"
+        echo "  bash /tmp/${INSTALL_HELPER_VERSIONED} --base-url ${PUBLIC_BASE_URL} --use-latest"
       fi
     fi
     ;;
