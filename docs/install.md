@@ -47,7 +47,10 @@ The qualified v1 baseline (see [support-matrix.md](support-matrix.md) and
   a fresh-port-conflict case. Additional product-specific ports are added once
   `appliance-code`'s configuration schema pins them.
 - No conflicting `docker`, `microk8s`, or unrelated `kubelet` service, and no
-  active host firewall blocking the required ports
+  active host firewall blocking the required ports. For `ufw`, the current
+  implementation passes preflight when the required baseline rules are already
+  allowed; other active firewall managers remain conservative operator-action
+  findings for now.
 
 Run `zonctl preflight --output json` to get a full machine-readable
 report before installing.

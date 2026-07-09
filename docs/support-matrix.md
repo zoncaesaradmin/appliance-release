@@ -20,6 +20,7 @@ Implementation package names referenced below now live in the
 | Time synchronization | Active (systemd-timesyncd/chrony) | `time-sync-active` preflight check |
 | Hostname | Internally resolvable, valid TLS SAN | `internal-dns-resolvable`, `hostname-valid-tls-san` |
 | Ports | `6443`, `10250`, `8472` free on a fresh host; an already-running K3s instance may legitimately occupy them and is then evaluated by the K3s ownership/adoption path | `required-ports-available` preflight check + K3s ownership decision |
+| Firewall | If `ufw` is active, required baseline rules must be allowed; other active firewalls remain conservative operator-action findings for now | `firewall-detected` preflight check |
 | Conflicting services | None (`docker`, `microk8s`, unrelated `kubelet`) | `no-conflicting-services` preflight check |
 | Existing K3s | Only if installed and owned by this Zon installation | K3s ownership decision (`internal/k3s.DecideOwnership`) |
 
