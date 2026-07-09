@@ -365,3 +365,9 @@ echo
 echo "exported customer delivery files:"
 echo "  ${BUNDLE_ARCHIVE}"
 echo "  ${PUBLIC_KEY_EXPORT}"
+echo
+echo "next publish step on the build machine:"
+echo "  make publish-release EXPORT_DIR=${EXPORT_DIR} PRODUCT_VERSION=${PRODUCT_VERSION} PUBLISH_SERVER=<user@host> PUBLISH_REMOTE_ROOT=/srv/www/releases"
+echo "optional publish vars:"
+echo "  PUBLISH_PUBLIC_BASE_URL=http://downloads.example.internal/releases"
+echo "  PUBLISH_LATEST_ALIAS=1"

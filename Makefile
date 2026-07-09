@@ -126,16 +126,15 @@ verify-bundle:
 
 .PHONY: publish-release
 publish-release:
-	@if [ -z "$${PUBLISH_MODE:-}" ] || [ -z "$${EXPORT_DIR:-}" ] || [ -z "$${PRODUCT_VERSION:-}" ]; then \
-		echo "publish-release: set PUBLISH_MODE=..., EXPORT_DIR=/abs/path/to/export, and PRODUCT_VERSION=..." >&2; \
+	@if [ -z "$${EXPORT_DIR:-}" ] || [ -z "$${PRODUCT_VERSION:-}" ] || [ -z "$${PUBLISH_SERVER:-}" ] || [ -z "$${PUBLISH_REMOTE_ROOT:-}" ]; then \
+		echo "publish-release: mandatory vars are EXPORT_DIR=/abs/path/to/export PRODUCT_VERSION=... PUBLISH_SERVER=user@host PUBLISH_REMOTE_ROOT=/remote/root" >&2; \
 		exit 2; \
 	fi
 	bash ./scripts/publish/publish-release.sh \
-		--mode "$${PUBLISH_MODE}" \
 		--export-dir "$${EXPORT_DIR}" \
 		--product-version "$${PRODUCT_VERSION}" \
-		$${PUBLISH_SERVER:+--server "$${PUBLISH_SERVER}"} \
-		$${PUBLISH_REMOTE_ROOT:+--remote-root "$${PUBLISH_REMOTE_ROOT}"} \
+		--server "$${PUBLISH_SERVER}" \
+		--remote-root "$${PUBLISH_REMOTE_ROOT}" \
 		$${PUBLISH_PATH_PREFIX:+--path-prefix "$${PUBLISH_PATH_PREFIX}"} \
 		$${PUBLISH_SSH_PORT:+--ssh-port "$${PUBLISH_SSH_PORT}"} \
 		$${PUBLISH_PUBLIC_BASE_URL:+--public-base-url "$${PUBLISH_PUBLIC_BASE_URL}"} \

@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: publish-release.sh --mode MODE --export-dir DIR --product-version VERSION [options]
+usage: publish-release.sh --export-dir DIR --product-version VERSION [options]
 
 Publish the already-built customer delivery files from scripts/ci/build-full-bundle.sh.
 
@@ -12,7 +12,6 @@ Implemented modes:
                 they are then served by a plain HTTP/HTTPS server such as NGINX.
 
 Options:
-  --mode MODE                Publishing mode. Required. Current: http-static
   --export-dir DIR           Directory containing:
                                appliance-<version>-bundle.tar.gz
                                release-signing.pub
@@ -31,7 +30,6 @@ http-static mode options:
 
 Examples:
   bash ./scripts/publish/publish-release.sh \
-    --mode http-static \
     --export-dir /tmp/appliance-build/export \
     --product-version 0.1.0 \
     --server release@downloads.internal \
@@ -41,7 +39,7 @@ Examples:
 EOF
 }
 
-MODE=""
+MODE="http-static"
 EXPORT_DIR=""
 PRODUCT_VERSION=""
 SERVER_TARGET=""
@@ -53,10 +51,6 @@ LATEST_ALIAS="0"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --mode)
-      MODE="${2:-}"
-      shift 2
-      ;;
     --export-dir)
       EXPORT_DIR="${2:-}"
       shift 2
@@ -127,7 +121,6 @@ trim_trailing_slashes() {
   printf '%s\n' "${value}"
 }
 
-require_var MODE
 require_var EXPORT_DIR
 require_var PRODUCT_VERSION
 

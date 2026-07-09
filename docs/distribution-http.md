@@ -84,14 +84,33 @@ After `build-full-bundle.sh` finishes, publish the exported files:
 
 ```bash
 make publish-release \
-  PUBLISH_MODE=http-static \
   EXPORT_DIR=/home/zonsys/appliance-build/export \
   PRODUCT_VERSION=0.1.0 \
   PUBLISH_SERVER=release@downloads.example.internal \
-  PUBLISH_REMOTE_ROOT=/srv/www/releases \
-  PUBLISH_PUBLIC_BASE_URL=http://downloads.example.internal/releases \
-  PUBLISH_LATEST_ALIAS=1
+  PUBLISH_REMOTE_ROOT=/srv/www/releases
 ```
+
+Mandatory variables for `make publish-release`:
+
+- `EXPORT_DIR`
+  This is where `build-full-bundle.sh` left the local exported files.
+- `PRODUCT_VERSION`
+  Used to pick `appliance-<version>-bundle.tar.gz` and create the remote version path.
+- `PUBLISH_SERVER`
+  The SSH target in `user@host` form.
+- `PUBLISH_REMOTE_ROOT`
+  The remote filesystem root where the published files should be copied.
+
+Optional variables:
+
+- `PUBLISH_PUBLIC_BASE_URL`
+  If set, the script prints final download URLs.
+- `PUBLISH_LATEST_ALIAS=1`
+  Also copies the same files under `latest/`.
+- `PUBLISH_PATH_PREFIX`
+  Defaults to `appliance`.
+- `PUBLISH_SSH_PORT`
+  Defaults to `22`.
 
 That command:
 
@@ -106,13 +125,10 @@ Equivalent direct script invocation:
 
 ```bash
 bash ./scripts/publish/publish-release.sh \
-  --mode http-static \
   --export-dir /home/zonsys/appliance-build/export \
   --product-version 0.1.0 \
   --server release@downloads.example.internal \
-  --remote-root /srv/www/releases \
-  --public-base-url http://downloads.example.internal/releases \
-  --latest-alias
+  --remote-root /srv/www/releases
 ```
 
 ## What The Customer Runs
