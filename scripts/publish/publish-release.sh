@@ -40,6 +40,7 @@ EOF
 }
 
 MODE="http-static"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPORT_DIR=""
 PRODUCT_VERSION=""
 SERVER_TARGET=""
@@ -128,9 +129,13 @@ EXPORT_DIR="$(cd "$(dirname "${EXPORT_DIR}")" && pwd)/$(basename "${EXPORT_DIR}"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-bundle.tar.gz"
 PUBLIC_KEY_FILE="${EXPORT_DIR}/release-signing.pub"
 CHECKSUM_FILE="${EXPORT_DIR}/sha256sum.txt"
+FETCH_HELPER="${SCRIPT_DIR}/fetch-http-release.sh"
+INSTALL_HELPER="${SCRIPT_DIR}/install-http-release.sh"
 
 require_file "${BUNDLE_ARCHIVE}" "bundle archive"
 require_file "${PUBLIC_KEY_FILE}" "release signing public key"
+require_file "${FETCH_HELPER}" "fetch helper script"
+require_file "${INSTALL_HELPER}" "install helper script"
 
 if command -v shasum >/dev/null 2>&1; then
   (
@@ -163,17 +168,23 @@ case "${MODE}" in
       "${BUNDLE_ARCHIVE}" \
       "${PUBLIC_KEY_FILE}" \
       "${CHECKSUM_FILE}" \
+      "${FETCH_HELPER}" \
+      "${INSTALL_HELPER}" \
       "${SERVER_TARGET}:${REMOTE_VERSION_DIR}/"
 
     if [[ "${LATEST_ALIAS}" == "1" ]]; then
       ssh -p "${SSH_PORT}" "${SERVER_TARGET}" \
-        "mkdir -p '${REMOTE_LATEST_DIR}' && cp '${REMOTE_VERSION_DIR}/$(basename "${BUNDLE_ARCHIVE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${PUBLIC_KEY_FILE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${CHECKSUM_FILE}")' '${REMOTE_LATEST_DIR}/'"
+        "mkdir -p '${REMOTE_LATEST_DIR}' && cp '${REMOTE_VERSION_DIR}/$(basename "${BUNDLE_ARCHIVE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${PUBLIC_KEY_FILE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${CHECKSUM_FILE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${FETCH_HELPER}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${INSTALL_HELPER}")' '${REMOTE_LATEST_DIR}/'"
     fi
 
     echo "published release files:"
     echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${BUNDLE_ARCHIVE}")"
     echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${PUBLIC_KEY_FILE}")"
     echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${CHECKSUM_FILE}")"
+    echo
+    echo "published helper scripts:"
+    echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${FETCH_HELPER}")"
+    echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${INSTALL_HELPER}")"
 
     if [[ -n "${PUBLIC_BASE_URL}" ]]; then
       echo
@@ -181,12 +192,18 @@ case "${MODE}" in
       echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${BUNDLE_ARCHIVE}")"
       echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${PUBLIC_KEY_FILE}")"
       echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${CHECKSUM_FILE}")"
+      echo
+      echo "helper script URLs:"
+      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${FETCH_HELPER}")"
+      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${INSTALL_HELPER}")"
       if [[ "${LATEST_ALIAS}" == "1" ]]; then
         echo
         echo "latest alias URLs:"
         echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${BUNDLE_ARCHIVE}")"
         echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${PUBLIC_KEY_FILE}")"
         echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${CHECKSUM_FILE}")"
+        echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${FETCH_HELPER}")"
+        echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${INSTALL_HELPER}")"
       fi
     fi
     ;;

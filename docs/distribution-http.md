@@ -18,7 +18,10 @@ offline.
 
 ## Recommendation
 
-Use a small NGINX server on the distribution machine.
+For a temporary setup, the simplest distribution server is just a plain file
+directory served over Python's built-in HTTP server.
+
+For a longer-lived internal setup, use NGINX.
 
 - Keep the build machine responsible only for producing files.
 - Keep the distribution machine responsible only for storing and serving files.
@@ -32,7 +35,30 @@ Example versioned paths:
 - `/releases/appliance/0.1.0/release-signing.pub`
 - `/releases/appliance/0.1.0/sha256sum.txt`
 
-## Server Setup
+## Temporary Server Setup
+
+On the distribution server:
+
+```bash
+mkdir -p ~/releases
+cd ~/releases
+python3 -m http.server 8080
+```
+
+If port `8080` is already in use, pick another port such as `8081`.
+
+This is enough for short-lived LAN testing once the published files exist under
+that directory tree.
+
+If you publish to:
+
+- `PUBLISH_REMOTE_ROOT=/home/zonsys/releases`
+
+then the matching temporary fetch/install base URL is:
+
+- `http://<server>:8080`
+
+## Longer-Lived Server Setup
 
 On the distribution server:
 
@@ -82,6 +108,18 @@ this later.
 
 After `build-full-bundle.sh` finishes, publish the exported files:
 
+Temporary Python-server style:
+
+```bash
+make publish-release \
+  EXPORT_DIR=/home/zonsys/appliance-build/export \
+  PRODUCT_VERSION=0.1.0 \
+  PUBLISH_SERVER=zonsys@192.168.1.103 \
+  PUBLISH_REMOTE_ROOT=/home/zonsys/releases
+```
+
+Longer-lived NGINX-style:
+
 ```bash
 make publish-release \
   EXPORT_DIR=/home/zonsys/appliance-build/export \
@@ -119,6 +157,8 @@ That command:
   - `appliance-0.1.0-bundle.tar.gz`
   - `release-signing.pub`
   - `sha256sum.txt`
+  - `fetch-http-release.sh`
+  - `install-http-release.sh`
 - optionally updates `latest/`
 
 Equivalent direct script invocation:
@@ -131,45 +171,66 @@ bash ./scripts/publish/publish-release.sh \
   --remote-root /srv/www/releases
 ```
 
-## What The Customer Runs
+## What The Target Host Runs
 
-The simplest path is now the fetch helper in this repo:
+The target host does not need this repo.
+
+Temporary Python-server style:
 
 ```bash
-make fetch-http-release \
-  FETCH_BASE_URL=http://downloads.example.internal/releases \
-  PRODUCT_VERSION=0.1.0 \
-  FETCH_OUT_DIR=/tmp/appliance-0.1.0
+curl -fLo /tmp/install-http-release.sh \
+  http://192.168.1.103:8080/appliance/0.1.0/install-http-release.sh
+bash /tmp/install-http-release.sh \
+  --base-url http://192.168.1.103:8080 \
+  --product-version 0.1.0
 ```
 
-Equivalent direct script invocation:
+Longer-lived NGINX-style:
 
 ```bash
-bash ./scripts/publish/fetch-http-release.sh \
+curl -fLo /tmp/install-http-release.sh \
+  http://downloads.example.internal/releases/appliance/0.1.0/install-http-release.sh
+bash /tmp/install-http-release.sh \
+  --base-url http://downloads.example.internal/releases \
+  --product-version 0.1.0
+```
+
+If you only want to download and extract without installing yet:
+
+```bash
+curl -fLo /tmp/fetch-http-release.sh \
+  http://downloads.example.internal/releases/appliance/0.1.0/fetch-http-release.sh
+bash /tmp/fetch-http-release.sh \
   --base-url http://downloads.example.internal/releases \
   --product-version 0.1.0 \
   --out-dir /tmp/appliance-0.1.0
 ```
 
-That command downloads:
+Those helper scripts download:
 
 - `appliance-0.1.0-bundle.tar.gz`
 - `release-signing.pub`
 - `sha256sum.txt`
 
-then verifies the checksums and extracts the bundle locally.
+The fetch helper verifies checksums and extracts locally.
+
+The install helper does the same, then runs:
+
+- `zonctl preflight`
+- `zonctl install`
 
 If you published a `latest/` alias, the fetch side can use that too:
 
 ```bash
-make fetch-http-release \
-  FETCH_BASE_URL=http://downloads.example.internal/releases \
-  PRODUCT_VERSION=0.1.0 \
-  FETCH_OUT_DIR=/tmp/appliance-0.1.0 \
-  FETCH_USE_LATEST=1
+curl -fLo /tmp/install-http-release.sh \
+  http://downloads.example.internal/releases/appliance/latest/install-http-release.sh
+bash /tmp/install-http-release.sh \
+  --base-url http://downloads.example.internal/releases \
+  --product-version 0.1.0 \
+  --use-latest
 ```
 
-Then install from the extracted local directory:
+If you used only the fetch helper, then install from the extracted local directory:
 
 ```bash
 chmod +x /tmp/appliance-0.1.0/appliance-0.1.0-bundle/zonctl
