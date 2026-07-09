@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: install-http-release.sh --base-url URL --product-version VERSION [options]
+usage: install-http-release.sh --base-url URL [options]
 
 Download a published release bundle from a plain HTTP/HTTPS location, verify
 checksums, extract it locally, run zonctl preflight, and then install it.
@@ -12,9 +12,11 @@ Required:
   --base-url URL               Base URL that serves the appliance path, for
                                example:
                                http://downloads.example.internal/releases
-  --product-version VERSION    Product version to install, for example: 0.1.0
 
 Optional:
+  --product-version VERSION    Product version to install. If omitted, the
+                               script infers it from a versioned filename such
+                               as install-http-release-0.1.0.sh
   --out-dir DIR                Local download/extract directory.
                                Default: /tmp/appliance-<version>
   --path-prefix PATH           Path under base URL. Default: appliance
@@ -27,9 +29,8 @@ Optional:
   --help                       Show this help
 
 Example:
-  bash ./install-http-release.sh \
+  bash ./install-http-release-0.1.0.sh \
     --base-url http://downloads.example.internal/releases \
-    --product-version 0.1.0
 EOF
 }
 
@@ -42,6 +43,25 @@ STATE_DIR="/var/lib/zon"
 NODE_NAME=""
 DRY_RUN="0"
 OUTPUT_FORMAT="json"
+FETCH_SCRIPT_TEMP=""
+
+infer_product_version_from_script() {
+  local script_name
+  script_name="$(basename "${BASH_SOURCE[0]}")"
+  if [[ "${script_name}" =~ ^install-http-release-([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)\.sh$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
+
+cleanup() {
+  if [[ -n "${FETCH_SCRIPT_TEMP}" && -f "${FETCH_SCRIPT_TEMP}" ]]; then
+    rm -f "${FETCH_SCRIPT_TEMP}"
+  fi
+}
+
+trap cleanup EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -111,6 +131,10 @@ trim_trailing_slashes() {
 }
 
 require_var BASE_URL
+
+if [[ -z "${PRODUCT_VERSION}" ]]; then
+  PRODUCT_VERSION="$(infer_product_version_from_script || true)"
+fi
 require_var PRODUCT_VERSION
 
 if [[ -z "${OUT_DIR}" ]]; then
@@ -118,16 +142,29 @@ if [[ -z "${OUT_DIR}" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FETCH_SCRIPT="${SCRIPT_DIR}/fetch-http-release.sh"
-
-if [[ ! -f "${FETCH_SCRIPT}" ]]; then
-  echo "install-http-release: missing companion fetch helper: ${FETCH_SCRIPT}" >&2
-  exit 1
-fi
 
 BASE_URL="$(trim_trailing_slashes "${BASE_URL}")"
 PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"
 STATE_DIR="$(trim_trailing_slashes "${STATE_DIR}")"
+mkdir -p "${OUT_DIR}"
+
+REMOTE_DIR="${BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}"
+if [[ "${USE_LATEST}" == "1" ]]; then
+  REMOTE_DIR="${BASE_URL}/${PATH_PREFIX}/latest"
+fi
+
+FETCH_SCRIPT="${SCRIPT_DIR}/fetch-http-release-${PRODUCT_VERSION}.sh"
+if [[ ! -f "${FETCH_SCRIPT}" ]]; then
+  FETCH_SCRIPT="${SCRIPT_DIR}/fetch-http-release.sh"
+fi
+if [[ ! -f "${FETCH_SCRIPT}" ]]; then
+  FETCH_SCRIPT_TEMP="${OUT_DIR}/.fetch-http-release-${PRODUCT_VERSION}.sh"
+  if ! curl -fsLo "${FETCH_SCRIPT_TEMP}" "${REMOTE_DIR}/fetch-http-release-${PRODUCT_VERSION}.sh"; then
+    curl -fsLo "${FETCH_SCRIPT_TEMP}" "${REMOTE_DIR}/fetch-http-release.sh"
+  fi
+  chmod +x "${FETCH_SCRIPT_TEMP}"
+  FETCH_SCRIPT="${FETCH_SCRIPT_TEMP}"
+fi
 
 fetch_args=(
   --base-url "${BASE_URL}"

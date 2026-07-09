@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: fetch-http-release.sh --base-url URL --product-version VERSION --out-dir DIR [options]
+usage: fetch-http-release.sh --base-url URL --out-dir DIR [options]
 
 Fetch the published bundle archive, public key, and checksum file from a plain
 HTTP/HTTPS release location, verify checksums, and extract the bundle locally.
@@ -12,19 +12,20 @@ Required:
   --base-url URL               Base URL that serves the appliance path, for
                                example:
                                http://downloads.example.internal/releases
-  --product-version VERSION    Product version to fetch, for example: 0.1.0
   --out-dir DIR                Local directory to download into
 
 Optional:
+  --product-version VERSION    Product version to fetch. If omitted, the script
+                               infers it from a versioned filename such as
+                               fetch-http-release-0.1.0.sh
   --path-prefix PATH           Path under base URL. Default: appliance
   --use-latest                 Fetch from <base-url>/<path-prefix>/latest/
                                instead of the explicit version directory
   --help                       Show this help
 
 Example:
-  bash ./scripts/publish/fetch-http-release.sh \
+  bash ./fetch-http-release-0.1.0.sh \
     --base-url http://downloads.example.internal/releases \
-    --product-version 0.1.0 \
     --out-dir /tmp/appliance-0.1.0
 EOF
 }
@@ -34,6 +35,16 @@ PRODUCT_VERSION=""
 OUT_DIR=""
 PATH_PREFIX="appliance"
 USE_LATEST="0"
+
+infer_product_version_from_script() {
+  local script_name
+  script_name="$(basename "${BASH_SOURCE[0]}")"
+  if [[ "${script_name}" =~ ^fetch-http-release-([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)\.sh$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -87,8 +98,12 @@ trim_trailing_slashes() {
 }
 
 require_var BASE_URL
-require_var PRODUCT_VERSION
 require_var OUT_DIR
+
+if [[ -z "${PRODUCT_VERSION}" ]]; then
+  PRODUCT_VERSION="$(infer_product_version_from_script || true)"
+fi
+require_var PRODUCT_VERSION
 
 BASE_URL="$(trim_trailing_slashes "${BASE_URL}")"
 PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"

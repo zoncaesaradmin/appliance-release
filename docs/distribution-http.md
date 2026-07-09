@@ -159,6 +159,8 @@ That command:
   - `sha256sum.txt`
   - `fetch-http-release.sh`
   - `install-http-release.sh`
+  - `fetch-http-release-0.1.0.sh`
+  - `install-http-release-0.1.0.sh`
 - optionally updates `latest/`
 
 Equivalent direct script invocation:
@@ -178,31 +180,28 @@ The target host does not need this repo.
 Temporary Python-server style:
 
 ```bash
-curl -fLo /tmp/install-http-release.sh \
-  http://192.168.1.103:8080/appliance/0.1.0/install-http-release.sh
-bash /tmp/install-http-release.sh \
-  --base-url http://192.168.1.103:8080 \
-  --product-version 0.1.0
+curl -fLo /tmp/install-http-release-0.1.0.sh \
+  http://192.168.1.103:8080/appliance/0.1.0/install-http-release-0.1.0.sh
+bash /tmp/install-http-release-0.1.0.sh \
+  --base-url http://192.168.1.103:8080
 ```
 
 Longer-lived NGINX-style:
 
 ```bash
-curl -fLo /tmp/install-http-release.sh \
-  http://downloads.example.internal/releases/appliance/0.1.0/install-http-release.sh
-bash /tmp/install-http-release.sh \
-  --base-url http://downloads.example.internal/releases \
-  --product-version 0.1.0
+curl -fLo /tmp/install-http-release-0.1.0.sh \
+  http://downloads.example.internal/releases/appliance/0.1.0/install-http-release-0.1.0.sh
+bash /tmp/install-http-release-0.1.0.sh \
+  --base-url http://downloads.example.internal/releases
 ```
 
 If you only want to download and extract without installing yet:
 
 ```bash
-curl -fLo /tmp/fetch-http-release.sh \
-  http://downloads.example.internal/releases/appliance/0.1.0/fetch-http-release.sh
-bash /tmp/fetch-http-release.sh \
+curl -fLo /tmp/fetch-http-release-0.1.0.sh \
+  http://downloads.example.internal/releases/appliance/0.1.0/fetch-http-release-0.1.0.sh
+bash /tmp/fetch-http-release-0.1.0.sh \
   --base-url http://downloads.example.internal/releases \
-  --product-version 0.1.0 \
   --out-dir /tmp/appliance-0.1.0
 ```
 
@@ -222,13 +221,16 @@ The install helper does the same, then runs:
 If you published a `latest/` alias, the fetch side can use that too:
 
 ```bash
-curl -fLo /tmp/install-http-release.sh \
-  http://downloads.example.internal/releases/appliance/latest/install-http-release.sh
-bash /tmp/install-http-release.sh \
+curl -fLo /tmp/install-http-release-0.1.0.sh \
+  http://downloads.example.internal/releases/appliance/latest/install-http-release-0.1.0.sh
+bash /tmp/install-http-release-0.1.0.sh \
   --base-url http://downloads.example.internal/releases \
-  --product-version 0.1.0 \
   --use-latest
 ```
+
+The versioned helper names are the recommended entrypoint because the script can
+infer the product version from its own filename. The unversioned helper names
+are still published for compatibility, but they require `--product-version`.
 
 If you used only the fetch helper, then install from the extracted local directory:
 

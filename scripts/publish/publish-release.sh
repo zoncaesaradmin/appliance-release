@@ -131,6 +131,8 @@ PUBLIC_KEY_FILE="${EXPORT_DIR}/release-signing.pub"
 CHECKSUM_FILE="${EXPORT_DIR}/sha256sum.txt"
 FETCH_HELPER="${SCRIPT_DIR}/fetch-http-release.sh"
 INSTALL_HELPER="${SCRIPT_DIR}/install-http-release.sh"
+FETCH_HELPER_VERSIONED="fetch-http-release-${PRODUCT_VERSION}.sh"
+INSTALL_HELPER_VERSIONED="install-http-release-${PRODUCT_VERSION}.sh"
 
 require_file "${BUNDLE_ARCHIVE}" "bundle archive"
 require_file "${PUBLIC_KEY_FILE}" "release signing public key"
@@ -162,6 +164,11 @@ case "${MODE}" in
 
     REMOTE_VERSION_DIR="${REMOTE_ROOT}/${PATH_PREFIX}/${PRODUCT_VERSION}"
     REMOTE_LATEST_DIR="${REMOTE_ROOT}/${PATH_PREFIX}/latest"
+    PUBLISH_STAGE_DIR="$(mktemp -d "${EXPORT_DIR}/.publish-stage.XXXXXX")"
+    trap 'rm -rf "${PUBLISH_STAGE_DIR}"' EXIT
+
+    cp "${FETCH_HELPER}" "${PUBLISH_STAGE_DIR}/${FETCH_HELPER_VERSIONED}"
+    cp "${INSTALL_HELPER}" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_VERSIONED}"
 
     ssh -p "${SSH_PORT}" "${SERVER_TARGET}" "mkdir -p '${REMOTE_VERSION_DIR}'"
     scp -P "${SSH_PORT}" \
@@ -170,11 +177,13 @@ case "${MODE}" in
       "${CHECKSUM_FILE}" \
       "${FETCH_HELPER}" \
       "${INSTALL_HELPER}" \
+      "${PUBLISH_STAGE_DIR}/${FETCH_HELPER_VERSIONED}" \
+      "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_VERSIONED}" \
       "${SERVER_TARGET}:${REMOTE_VERSION_DIR}/"
 
     if [[ "${LATEST_ALIAS}" == "1" ]]; then
       ssh -p "${SSH_PORT}" "${SERVER_TARGET}" \
-        "mkdir -p '${REMOTE_LATEST_DIR}' && cp '${REMOTE_VERSION_DIR}/$(basename "${BUNDLE_ARCHIVE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${PUBLIC_KEY_FILE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${CHECKSUM_FILE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${FETCH_HELPER}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${INSTALL_HELPER}")' '${REMOTE_LATEST_DIR}/'"
+        "mkdir -p '${REMOTE_LATEST_DIR}' && cp '${REMOTE_VERSION_DIR}/$(basename "${BUNDLE_ARCHIVE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${PUBLIC_KEY_FILE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${CHECKSUM_FILE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${FETCH_HELPER}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${INSTALL_HELPER}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/${FETCH_HELPER_VERSIONED}' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/${INSTALL_HELPER_VERSIONED}' '${REMOTE_LATEST_DIR}/'"
     fi
 
     echo "published release files:"
@@ -185,6 +194,8 @@ case "${MODE}" in
     echo "published helper scripts:"
     echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${FETCH_HELPER}")"
     echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${INSTALL_HELPER}")"
+    echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/${FETCH_HELPER_VERSIONED}"
+    echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/${INSTALL_HELPER_VERSIONED}"
 
     if [[ -n "${PUBLIC_BASE_URL}" ]]; then
       echo
@@ -196,6 +207,10 @@ case "${MODE}" in
       echo "helper script URLs:"
       echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${FETCH_HELPER}")"
       echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${INSTALL_HELPER}")"
+      echo
+      echo "recommended versioned helper URLs:"
+      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${FETCH_HELPER_VERSIONED}"
+      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_VERSIONED}"
       if [[ "${LATEST_ALIAS}" == "1" ]]; then
         echo
         echo "latest alias URLs:"
@@ -204,6 +219,8 @@ case "${MODE}" in
         echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${CHECKSUM_FILE}")"
         echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${FETCH_HELPER}")"
         echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${INSTALL_HELPER}")"
+        echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${FETCH_HELPER_VERSIONED}"
+        echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${INSTALL_HELPER_VERSIONED}"
       fi
     fi
     ;;
