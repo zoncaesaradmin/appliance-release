@@ -167,7 +167,12 @@ require_appliance_code_bootstrap() {
 build-full-bundle: appliance-code host bootstrap is missing for non-interactive CI
 build-full-bundle: this script will not prompt for sudo in CI
 build-full-bundle:
-build-full-bundle: run these commands once on this Linux host, outside CI:
+build-full-bundle: easiest fix from this repo:
+build-full-bundle:   export REGISTRY_USER=<github-username>
+build-full-bundle:   export REGISTRY_TOKEN=<PAT with read:packages>
+build-full-bundle:   bash ${RELEASE_REPO_DIR}/scripts/ci/bootstrap-build-host.sh
+build-full-bundle:
+build-full-bundle: equivalent manual commands:
 build-full-bundle:   cd ${code_repo_dir}
 build-full-bundle:   export REGISTRY_USER=<github-username>
 build-full-bundle:   export REGISTRY_TOKEN=<PAT with read:packages>
@@ -175,6 +180,11 @@ build-full-bundle:   make dev-registry-login
 build-full-bundle:   make dev-sudo-setup
 build-full-bundle:
 build-full-bundle: if your token rotated later, rerun only:
+build-full-bundle:   export REGISTRY_USER=<github-username>
+build-full-bundle:   export REGISTRY_TOKEN=<new-PAT with read:packages>
+build-full-bundle:   bash ${RELEASE_REPO_DIR}/scripts/ci/bootstrap-build-host.sh
+build-full-bundle:
+build-full-bundle: or manually:
 build-full-bundle:   cd ${code_repo_dir}
 build-full-bundle:   export REGISTRY_USER=<github-username>
 build-full-bundle:   export REGISTRY_TOKEN=<new-PAT with read:packages>

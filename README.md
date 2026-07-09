@@ -31,6 +31,13 @@ exports the two customer delivery files:
 The build-machine workflow is meant to stay non-interactive. If the Linux host
 has not yet been prepared for `appliance-code`'s rootful Podman dev-container
 path, the script now fails clearly instead of stopping on a sudo prompt.
+Run the one-time helper from this repo first:
+
+```bash
+export REGISTRY_USER=<github-username>
+export REGISTRY_TOKEN=<PAT with read:packages>
+bash ./scripts/ci/bootstrap-build-host.sh
+```
 
 Rerunning the CI script is safe: it recreates the generated workspace,
 artifacts, and exported delivery files from scratch each time, while the

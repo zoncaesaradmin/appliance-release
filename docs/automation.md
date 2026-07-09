@@ -70,14 +70,17 @@ script now fails with a clear message instead of pausing on a sudo password
 prompt. Prepare the host once, outside CI:
 
 ```bash
-cd /path/to/appliance-code
 export REGISTRY_USER=<github-username>
 export REGISTRY_TOKEN=<PAT with read:packages>
-make dev-registry-login
-make dev-sudo-setup
+bash ./scripts/ci/bootstrap-build-host.sh
 ```
 
 After that one-time host bootstrap, later CI runs should stay non-interactive.
+
+That helper reuses or refreshes the `appliance-code` clone under the normal
+build root, then runs `make dev-registry-login` and `make dev-sudo-setup`
+for you in the right place. The only interactive step should be the one-time
+sudo authentication inside that bootstrap helper.
 
 The generated config file is left on disk as rerun/audit evidence:
 
