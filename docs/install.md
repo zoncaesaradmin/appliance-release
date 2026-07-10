@@ -105,7 +105,16 @@ isn't obviously safe to adopt — see [K3s Ownership](security.md#k3s-ownership)
    bundle-local `helm upgrade --install` against the bundle's
    schema-validated values file. The target host does not need a separate
    Helm package installed.
-7. **Persist installed-state.** On success, `installed-state.json` records
+7. **Application bootstrap.** First-run application initialization is driven
+   by `zonctl` in the same install workflow. For a human operator,
+   `zonctl install` prompts on the terminal for the first administrator
+   password; for automation, it accepts protected stdin-driven input rather
+   than requiring a hand-created password file. Requiring the operator to
+   `kubectl exec` into the control-plane pod is not an acceptable product
+   workflow. The release/install contract is therefore: installer-owned
+   bootstrap, replay disabled after success, and no secret material exposed on
+   the command line.
+8. **Persist installed-state.** On success, `installed-state.json` records
    the installed version, component versions, and K3s ownership.
 
 If any step from image preload onward fails, install rolls back exactly
@@ -113,6 +122,20 @@ what it did this run: newly imported images are removed, a failed chart
 apply is uninstalled, and K3s is stopped. V1 never silently substitutes
 an unpinned or unverified artifact for one that failed to resolve, and
 it never falls back to the network.
+
+## First Admin Model
+
+The intended operator workflow is:
+
+1. `zonctl install` accepts the first-admin credential through a terminal
+   prompt for a human operator, or through protected stdin for automation.
+2. `zonctl` invokes the supported bootstrap path against the freshly deployed
+   control plane.
+3. The application disables bootstrap replay after success.
+
+Manual pod access is still useful for engineering and break-glass debugging,
+but it is not the supported first-time admin creation experience for
+customers.
 
 ## Evidence
 

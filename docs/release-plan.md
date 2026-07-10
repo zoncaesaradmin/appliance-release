@@ -140,7 +140,6 @@ appliance-<version>-airgap-ubuntu-24.04-amd64.tar.zst
     images/
   oci-images/
   charts/
-  crds/
   configuration/
   scanner-data/
   sbom/
@@ -188,7 +187,10 @@ Destructive commands require an explicit confirmation mechanism suitable for bot
 8. Wait for and verify K3s, CoreDNS, storage provisioner, Traefik, networking, and metrics dependencies.
 9. Generate purpose-separated secrets and TLS material, or validate operator-supplied certificates, without command-line leakage.
 10. Install the exact Helm chart with schema-validated values and wait for rollout.
-11. Run bootstrap through the supported application mechanism and disable replay.
+11. Run first-admin bootstrap through the supported application mechanism from
+    `zonctl` using a terminal prompt for human installs or protected stdin for
+    automation, then disable replay. Operators must not need to `kubectl exec`
+    into a pod for day-0 admin creation.
 12. Run product-supplied black-box REST, MCP, OCI, auth, and dependency-health smoke tests.
 13. Persist the verified installed-state record and print access, backup, and recovery instructions.
 
@@ -309,7 +311,7 @@ and then `make clean`.
 | R0-03 | Implement signature, digest, provenance, SBOM, license, and vulnerability policy verification | R0-01 | Tamper, missing-evidence, wrong-identity, expiry, and offline tests |
 | R1-01 | Build the lifecycle CLI skeleton, locking, transaction journal, redacted logging, and dry-run | R0-01 | Unit/race/failure-injection tests |
 | R1-02 | Implement K3s install/configuration/status ownership adapter | R0-02, R1-01 | Fresh host, restart, interrupted install, and conflict tests |
-| R1-03 | Implement offline OCI image preload and Helm/CRD application adapters | R0-03, R1-01 | Digest, ordering, idempotency, rollback, missing-artifact, and egress-denied tests |
+| R1-03 | Implement offline OCI image preload and Helm application adapters | R0-03, R1-01 | Digest, ordering, idempotency, rollback, missing-artifact, and egress-denied tests |
 | R2-01 | Assemble, verify, and install the complete air-gap bundle end to end | R1-02, R1-03, accepted product input | Egress-denied fresh-install and no-remote-fallback evidence |
 | R3-01 | Implement status, verify, repair, diagnostics, and redacted support bundle | R2-01 | Dependency-failure and secret-leakage suite |
 | R3-02 | Implement coordinated backup and clean-node restore | R2-01 | Automated offline RPO/RTO drill with integrity evidence |

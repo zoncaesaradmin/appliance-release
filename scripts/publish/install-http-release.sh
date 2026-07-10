@@ -7,6 +7,9 @@ usage: install-http-release.sh --base-url URL [options]
 
 Download a published release bundle from a plain HTTP/HTTPS location, verify
 checksums, extract it locally, run zonctl preflight, and then install it.
+During install, zonctl also bootstraps the first administrator in the same
+workflow: it prompts on the terminal for the initial password unless you use
+zonctl's own non-interactive bootstrap flags directly.
 
 Required:
   --base-url URL               Base URL that serves the appliance path, for
@@ -15,8 +18,8 @@ Required:
 
 Optional:
   --product-version VERSION    Product version to install. If omitted, the
-                               script infers it from a versioned filename such
-                               as install-http-release-0.1.0.sh
+                               script uses its own embedded version set at
+                               publish time
   --out-dir DIR                Local download/extract directory.
                                Default: /tmp/appliance-<version>
   --path-prefix PATH           Path under base URL. Default: appliance
@@ -28,11 +31,20 @@ Optional:
   --output FORMAT              zonctl output format. Default: json
   --help                       Show this help
 
-Example:
-  bash ./install-http-release-0.1.0.sh \
-    --base-url http://downloads.example.internal/releases \
+Example (piped, no local file needed — the version below is embedded in
+the published script's content, not inferred from its filename):
+  curl -fsSL http://downloads.example.internal/releases/appliance/0.1.0/install-http-release.sh \
+    | bash -s -- --base-url http://downloads.example.internal/releases
 EOF
 }
+
+# Substituted by publish-release.sh into the published copy of this script,
+# so the version travels with the file's content rather than relying on the
+# filename. That keeps the public helper URL stable as install-http-release.sh
+# under each versioned release directory and also works when the script is
+# piped straight into `bash` (curl ... | bash). Left empty in the tracked source copy;
+# publish-release.sh's sed substitution is the only thing that sets it.
+PRODUCT_VERSION_EMBEDDED=""
 
 BASE_URL=""
 PRODUCT_VERSION=""
@@ -43,25 +55,6 @@ STATE_DIR="/var/lib/zon"
 NODE_NAME=""
 DRY_RUN="0"
 OUTPUT_FORMAT="json"
-FETCH_SCRIPT_TEMP=""
-
-infer_product_version_from_script() {
-  local script_name
-  script_name="$(basename "${BASH_SOURCE[0]}")"
-  if [[ "${script_name}" =~ ^install-http-release-([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)\.sh$ ]]; then
-    printf '%s\n' "${BASH_REMATCH[1]}"
-    return 0
-  fi
-  return 1
-}
-
-cleanup() {
-  if [[ -n "${FETCH_SCRIPT_TEMP}" && -f "${FETCH_SCRIPT_TEMP}" ]]; then
-    rm -f "${FETCH_SCRIPT_TEMP}"
-  fi
-}
-
-trap cleanup EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -133,15 +126,13 @@ trim_trailing_slashes() {
 require_var BASE_URL
 
 if [[ -z "${PRODUCT_VERSION}" ]]; then
-  PRODUCT_VERSION="$(infer_product_version_from_script || true)"
+  PRODUCT_VERSION="${PRODUCT_VERSION_EMBEDDED}"
 fi
 require_var PRODUCT_VERSION
 
 if [[ -z "${OUT_DIR}" ]]; then
   OUT_DIR="/tmp/appliance-${PRODUCT_VERSION}"
 fi
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 BASE_URL="$(trim_trailing_slashes "${BASE_URL}")"
 PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"
@@ -153,34 +144,41 @@ if [[ "${USE_LATEST}" == "1" ]]; then
   REMOTE_DIR="${BASE_URL}/${PATH_PREFIX}/latest"
 fi
 
-FETCH_SCRIPT="${SCRIPT_DIR}/fetch-http-release-${PRODUCT_VERSION}.sh"
-if [[ ! -f "${FETCH_SCRIPT}" ]]; then
-  FETCH_SCRIPT="${SCRIPT_DIR}/fetch-http-release.sh"
-fi
-if [[ ! -f "${FETCH_SCRIPT}" ]]; then
-  FETCH_SCRIPT_TEMP="${OUT_DIR}/.fetch-http-release-${PRODUCT_VERSION}.sh"
-  if ! curl -fsLo "${FETCH_SCRIPT_TEMP}" "${REMOTE_DIR}/fetch-http-release-${PRODUCT_VERSION}.sh"; then
-    curl -fsLo "${FETCH_SCRIPT_TEMP}" "${REMOTE_DIR}/fetch-http-release.sh"
-  fi
-  chmod +x "${FETCH_SCRIPT_TEMP}"
-  FETCH_SCRIPT="${FETCH_SCRIPT_TEMP}"
-fi
-
-fetch_args=(
-  --base-url "${BASE_URL}"
-  --product-version "${PRODUCT_VERSION}"
-  --out-dir "${OUT_DIR}"
-  --path-prefix "${PATH_PREFIX}"
-)
-if [[ "${USE_LATEST}" == "1" ]]; then
-  fetch_args+=(--use-latest)
-fi
-
-bash "${FETCH_SCRIPT}" "${fetch_args[@]}"
-
+BUNDLE_ARCHIVE="appliance-${PRODUCT_VERSION}-bundle.tar.gz"
+PUBLIC_KEY_FILE="release-signing.pub"
+CHECKSUM_FILE="sha256sum.txt"
 BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-bundle"
 PUBLIC_KEY="${OUT_DIR}/release-signing.pub"
 ZONCTL="${BUNDLE_DIR}/zonctl"
+
+curl -fLo "${OUT_DIR}/${BUNDLE_ARCHIVE}" "${REMOTE_DIR}/${BUNDLE_ARCHIVE}"
+curl -fLo "${OUT_DIR}/${PUBLIC_KEY_FILE}" "${REMOTE_DIR}/${PUBLIC_KEY_FILE}"
+curl -fLo "${OUT_DIR}/${CHECKSUM_FILE}" "${REMOTE_DIR}/${CHECKSUM_FILE}"
+
+if command -v sha256sum >/dev/null 2>&1; then
+  (cd "${OUT_DIR}" && sha256sum -c "${CHECKSUM_FILE}")
+else
+  if ! command -v shasum >/dev/null 2>&1; then
+    echo "install-http-release: need sha256sum or shasum to verify checksums" >&2
+    exit 1
+  fi
+  tmp_checksums="${OUT_DIR}/.sha256sum.tmp"
+  awk '{print $1 "  " $2}' "${OUT_DIR}/${CHECKSUM_FILE}" > "${tmp_checksums}"
+  (cd "${OUT_DIR}" && shasum -a 256 -c "$(basename "${tmp_checksums}")")
+  rm -f "${tmp_checksums}"
+fi
+
+rm -rf "${OUT_DIR:?}/$(basename "${BUNDLE_DIR}")"
+tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${BUNDLE_ARCHIVE}"
+
+echo "downloaded release files:"
+echo "  ${OUT_DIR}/${BUNDLE_ARCHIVE}"
+echo "  ${OUT_DIR}/${PUBLIC_KEY_FILE}"
+echo "  ${OUT_DIR}/${CHECKSUM_FILE}"
+echo
+echo "extracted bundle:"
+echo "  ${BUNDLE_DIR}"
+echo
 
 chmod +x "${ZONCTL}"
 

@@ -171,7 +171,6 @@ Optional variables:
 `make publish-release` prints the exact target-host commands for:
 
 - install
-- fetch only
 - latest alias install, if `PUBLISH_LATEST_ALIAS=1` is enabled
 
 If the derived base URL is not the real public URL, rerun with
@@ -184,8 +183,7 @@ That command:
   - `appliance-0.1.0-bundle.tar.gz`
   - `release-signing.pub`
   - `sha256sum.txt`
-  - `fetch-http-release-0.1.0.sh`
-  - `install-http-release-0.1.0.sh`
+  - `install-http-release.sh`
 - optionally updates `latest/`
 
 Equivalent direct script invocation:
@@ -205,74 +203,73 @@ The target host does not need this repo.
 Temporary Python-server style:
 
 ```bash
-curl -fLo /tmp/install-http-release-0.1.0.sh \
-  http://192.168.1.103:8080/appliance/0.1.0/install-http-release-0.1.0.sh
-bash /tmp/install-http-release-0.1.0.sh \
+curl -fLo /tmp/install-http-release.sh \
+  http://192.168.1.103:8080/appliance/0.1.0/install-http-release.sh
+bash /tmp/install-http-release.sh \
   --base-url http://192.168.1.103:8080
 ```
 
 Longer-lived NGINX-style:
 
 ```bash
-curl -fLo /tmp/install-http-release-0.1.0.sh \
-  http://downloads.example.internal/releases/appliance/0.1.0/install-http-release-0.1.0.sh
-bash /tmp/install-http-release-0.1.0.sh \
+curl -fLo /tmp/install-http-release.sh \
+  http://downloads.example.internal/releases/appliance/0.1.0/install-http-release.sh
+bash /tmp/install-http-release.sh \
   --base-url http://downloads.example.internal/releases
 ```
 
-If you only want to download and extract without installing yet:
+The normal customer install entrypoint is the single piped command:
 
 ```bash
-curl -fLo /tmp/fetch-http-release-0.1.0.sh \
-  http://downloads.example.internal/releases/appliance/0.1.0/fetch-http-release-0.1.0.sh
-bash /tmp/fetch-http-release-0.1.0.sh \
-  --base-url http://downloads.example.internal/releases \
-  --out-dir /tmp/appliance-0.1.0
+curl -fsSL http://192.168.1.103:28081/appliance/0.1.0/install-http-release.sh \
+  | bash -s -- --base-url http://192.168.1.103:28081
 ```
 
-Those helper scripts download:
+That one command downloads the release, verifies checksums, extracts the
+bundle, runs `zonctl preflight`, runs `zonctl install`, and prompts for the
+first administrator password during install.
+
+The install helper downloads:
 
 - `appliance-0.1.0-bundle.tar.gz`
 - `release-signing.pub`
 - `sha256sum.txt`
 
-The fetch helper verifies checksums and extracts locally.
-
-The install helper does the same, then runs:
+The install helper verifies checksums, extracts locally, then runs:
 
 - `zonctl preflight`
 - `zonctl install`
 
 Those install-time `zonctl` commands use the bundle-local helper binaries, not
-host-installed `helm` or `kubectl`.
+host-installed `helm` or `kubectl`. `zonctl install` now also handles
+first-admin bootstrap in the same flow: for a human operator it prompts on the
+terminal for the initial administrator password instead of requiring a separate
+pod-level bootstrap command.
 
-If you published a `latest/` alias, the fetch side can use that too:
+If you published a `latest/` alias, the same install helper can use that too:
 
 ```bash
-curl -fLo /tmp/install-http-release-0.1.0.sh \
-  http://downloads.example.internal/releases/appliance/latest/install-http-release-0.1.0.sh
-bash /tmp/install-http-release-0.1.0.sh \
+curl -fLo /tmp/install-http-release.sh \
+  http://downloads.example.internal/releases/appliance/latest/install-http-release.sh
+bash /tmp/install-http-release.sh \
   --base-url http://downloads.example.internal/releases \
   --use-latest
 ```
 
-The versioned helper names are the published entrypoint. The script infers the
-product version from its own filename.
-
-If you used only the fetch helper, then install from the extracted local directory:
-
-```bash
-chmod +x /tmp/appliance-0.1.0/appliance-0.1.0-bundle/zonctl
-sudo /tmp/appliance-0.1.0/appliance-0.1.0-bundle/zonctl preflight --output json
-sudo /tmp/appliance-0.1.0/appliance-0.1.0-bundle/zonctl install \
-  --bundle-dir /tmp/appliance-0.1.0/appliance-0.1.0-bundle \
-  --public-key /tmp/appliance-0.1.0/release-signing.pub \
-  --state-dir /var/lib/zon \
-  --output json
-```
+The published helper name is stable. The product version is carried inside
+the script content and the versioned release path in the URL.
 
 No extra host package install is required for Helm, kubectl, or ctr in that
 flow. They are resolved from inside the extracted bundle.
+
+After a successful install, the installer also places `zonctl` on the target
+host at `/usr/local/bin/zonctl`, so day-2 commands can be run directly:
+
+```bash
+sudo zonctl status --output json
+sudo zonctl verify --output json
+sudo zonctl support-bundle --output json
+```
 
 ## Why This Is Separate From The Build Script
 

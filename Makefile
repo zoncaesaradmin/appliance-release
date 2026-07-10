@@ -142,19 +142,6 @@ publish-release:
 		$${PUBLISH_PUBLIC_BASE_URL:+--public-base-url "$${PUBLISH_PUBLIC_BASE_URL}"} \
 		$${PUBLISH_LATEST_ALIAS:+--latest-alias}
 
-.PHONY: fetch-http-release
-fetch-http-release:
-	@if [ -z "$${FETCH_BASE_URL:-}" ] || [ -z "$${PRODUCT_VERSION:-}" ] || [ -z "$${FETCH_OUT_DIR:-}" ]; then \
-		echo "fetch-http-release: set FETCH_BASE_URL=..., PRODUCT_VERSION=..., and FETCH_OUT_DIR=/abs/path/to/download-dir" >&2; \
-		exit 2; \
-	fi
-	bash ./scripts/publish/fetch-http-release.sh \
-		--base-url "$${FETCH_BASE_URL}" \
-		--product-version "$${PRODUCT_VERSION}" \
-		--out-dir "$${FETCH_OUT_DIR}" \
-		$${FETCH_PATH_PREFIX:+--path-prefix "$${FETCH_PATH_PREFIX}"} \
-		$${FETCH_USE_LATEST:+--use-latest}
-
 .PHONY: clean
 clean:
 	rm -rf bin .run

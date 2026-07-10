@@ -213,7 +213,7 @@ That command will:
 - run host preflight
 - install or adopt K3s
 - preload the bundled images
-- apply CRDs and the Helm chart
+- apply the Helm chart
 - persist `installed-state.json`
 
 ## 10. Validate The Installed Host
@@ -244,6 +244,5 @@ What is still manual around a real release:
 
 - obtaining the real `release-input/` candidate from `appliance-code`
 - staging the final install-ready OCI image archives
-- staging the final install-ready CRD manifest
 - choosing the final install `values.yaml`
 - transferring the extracted bundle to the host
