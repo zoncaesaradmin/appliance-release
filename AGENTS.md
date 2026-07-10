@@ -22,6 +22,7 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
   - If safe to adopt (compatible or upgradeable version, no unrelated workloads), automatically upgrade K3s to the supported version if required and proceed.
   - If unrelated workloads are present, never silently modify the cluster — require an explicit adoption/force option before taking ownership.
 - The installer is idempotent and safe to rerun in every mode above.
+- Treat partial prior attempts as a first-class state. Install and upgrade must converge cleanly when rerun after an interrupted or failed attempt: every installer-owned mutation must either be overwritten safely in place or explicitly cleaned up/rolled back so the next run can continue without manual cluster surgery.
 
 ## Packaging and Versioning
 
