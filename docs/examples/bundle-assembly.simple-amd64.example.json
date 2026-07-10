@@ -12,8 +12,32 @@
   },
   "entries": [
     {
-      "sourcePath": "/absolute/path/to/appliance-ctl/bin/zonctl",
+      "sourcePath": "/absolute/path/to/generated/zonctl-launcher",
       "targetPath": "zonctl",
+      "component": "appliance",
+      "executable": true
+    },
+    {
+      "sourcePath": "/absolute/path/to/generated/bin/zonctl-real",
+      "targetPath": "bin/zonctl-real",
+      "component": "appliance",
+      "executable": true
+    },
+    {
+      "sourcePath": "/absolute/path/to/helm",
+      "targetPath": "bin/helm",
+      "component": "appliance",
+      "executable": true
+    },
+    {
+      "sourcePath": "/absolute/path/to/generated/bin/kubectl-wrapper",
+      "targetPath": "bin/kubectl",
+      "component": "appliance",
+      "executable": true
+    },
+    {
+      "sourcePath": "/absolute/path/to/generated/bin/ctr-wrapper",
+      "targetPath": "bin/ctr",
       "component": "appliance",
       "executable": true
     },
@@ -21,12 +45,6 @@
       "sourcePath": "/absolute/path/to/staging/k3s",
       "targetPath": "k3s/binary/k3s",
       "component": "k3s-binary",
-      "executable": true
-    },
-    {
-      "sourcePath": "/absolute/path/to/staging/install.sh",
-      "targetPath": "k3s/install/install.sh",
-      "component": "k3s-install",
       "executable": true
     },
     {

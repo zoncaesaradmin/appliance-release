@@ -29,6 +29,7 @@ Public egress is not required during install or runtime.
 
 - `make`
 - `bash`
+- `helm` on the build machine `PATH`, or `HELM_BINARY=/abs/path/to/helm`
 - a local `appliance-ctl` checkout if you want to assemble bundles
   locally; that repo owns the `zonctl` source and binary
 

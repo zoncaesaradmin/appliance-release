@@ -16,6 +16,10 @@ The idea is:
 This keeps distribution separate from build, and keeps install itself
 offline.
 
+The extracted bundle now carries its own `zonctl` launcher plus bundle-local
+`helm`, `kubectl`, and `ctr` helpers, so the target host does not need those
+tools installed separately.
+
 ## Recommendation
 
 For a temporary setup, the simplest distribution server is just a plain file
@@ -239,6 +243,9 @@ The install helper does the same, then runs:
 - `zonctl preflight`
 - `zonctl install`
 
+Those install-time `zonctl` commands use the bundle-local helper binaries, not
+host-installed `helm` or `kubectl`.
+
 If you published a `latest/` alias, the fetch side can use that too:
 
 ```bash
@@ -263,6 +270,9 @@ sudo /tmp/appliance-0.1.0/appliance-0.1.0-bundle/zonctl install \
   --state-dir /var/lib/zon \
   --output json
 ```
+
+No extra host package install is required for Helm, kubectl, or ctr in that
+flow. They are resolved from inside the extracted bundle.
 
 ## Why This Is Separate From The Build Script
 

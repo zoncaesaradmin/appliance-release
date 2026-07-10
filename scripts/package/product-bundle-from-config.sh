@@ -65,8 +65,8 @@ RELEASE_INPUT_VERSION="${RELEASE_INPUT_VERSION:-}"
 RELEASE_INPUT_FETCH_TEMPLATE="${RELEASE_INPUT_FETCH_TEMPLATE:-}"
 CONTROL_PLANE_IMAGE="${CONTROL_PLANE_IMAGE:-}"
 K3S_BINARY="${K3S_BINARY:-${INPUTS_DIR}/k3s}"
-K3S_INSTALL_SCRIPT="${K3S_INSTALL_SCRIPT:-${INPUTS_DIR}/install.sh}"
 K3S_AIRGAP_IMAGES="${K3S_AIRGAP_IMAGES:-${INPUTS_DIR}/k3s-airgap-images-amd64.tar.zst}"
+HELM_BINARY="${HELM_BINARY:-}"
 DOWNLOADS_DIR="${WORKDIR}/downloads"
 STAGING_DIR="${WORKDIR}/staging"
 RELEASE_INPUT_DIR="${WORKDIR}/release-input"
@@ -212,11 +212,9 @@ PY
 
 if [[ "${SAMPLE_MODE}" == "1" ]]; then
   create_sample_release_input
-  mkdir -p "$(dirname "${K3S_BINARY}")" "$(dirname "${K3S_INSTALL_SCRIPT}")" "$(dirname "${K3S_AIRGAP_IMAGES}")"
+  mkdir -p "$(dirname "${K3S_BINARY}")" "$(dirname "${K3S_AIRGAP_IMAGES}")"
   printf 'k3s-binary\n' > "${K3S_BINARY}"
   chmod +x "${K3S_BINARY}"
-  printf '#!/bin/sh\necho install\n' > "${K3S_INSTALL_SCRIPT}"
-  chmod +x "${K3S_INSTALL_SCRIPT}"
   printf 'k3s images\n' > "${K3S_AIRGAP_IMAGES}"
 fi
 
@@ -267,12 +265,15 @@ require_valid_k3s_airgap_images() {
 }
 
 require_file "${K3S_BINARY}" "k3s binary"
-require_file "${K3S_INSTALL_SCRIPT}" "k3s install script"
 require_file "${K3S_AIRGAP_IMAGES}" "k3s airgap images"
 require_valid_k3s_airgap_images "${K3S_AIRGAP_IMAGES}"
 if [[ -n "${VALUES_FILE:-}" ]]; then
   require_file "${VALUES_FILE}" "values file"
 fi
+if [[ -z "${HELM_BINARY}" ]]; then
+  HELM_BINARY="$(command -v helm || true)"
+fi
+require_file "${HELM_BINARY}" "helm binary"
 
 json_artifact_path() {
   local manifest_path="$1"
@@ -320,6 +321,7 @@ require_file "${ZONCTL_BINARY}" "zonctl binary"
 make -C "${REPO_ROOT}" init-simple-workspace \
   WORKDIR="${WORKDIR}" \
   ZONCTL_BINARY="${ZONCTL_BINARY}" \
+  HELM_BINARY="${HELM_BINARY}" \
   PRODUCT_VERSION="${PRODUCT_VERSION}" \
   CONTROL_PLANE_IMAGE_REF="${CONTROL_PLANE_IMAGE_REF}" \
   OS_VERSION="${OS_VERSION}"
@@ -338,6 +340,7 @@ fi
 make -C "${REPO_ROOT}" init-simple-workspace \
   WORKDIR="${WORKDIR}" \
   ZONCTL_BINARY="${ZONCTL_BINARY}" \
+  HELM_BINARY="${HELM_BINARY}" \
   PRODUCT_VERSION="${PRODUCT_VERSION}" \
   CONTROL_PLANE_IMAGE_REF="${CONTROL_PLANE_IMAGE_REF}" \
   OS_VERSION="${OS_VERSION}"
@@ -351,8 +354,6 @@ require_file "${CONTROL_PLANE_IMAGE}" "control-plane image"
 mkdir -p "${STAGING_DIR}"
 cp "${K3S_BINARY}" "${STAGING_DIR}/k3s"
 chmod +x "${STAGING_DIR}/k3s"
-cp "${K3S_INSTALL_SCRIPT}" "${STAGING_DIR}/install.sh"
-chmod +x "${STAGING_DIR}/install.sh"
 cp "${K3S_AIRGAP_IMAGES}" "${STAGING_DIR}/k3s-airgap-images-amd64.tar.zst"
 control_plane_staging_name="$(basename "$(json_artifact_path "${RELEASE_INPUT_DIR}/release-input.json" controlPlaneImage)")"
 if [[ -z "${control_plane_staging_name}" ]]; then

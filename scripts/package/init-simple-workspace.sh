@@ -3,13 +3,15 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: init-simple-workspace.sh --workdir DIR --zonctl-binary PATH [options]
+usage: init-simple-workspace.sh --workdir DIR --zonctl-binary PATH --helm-binary PATH [options]
 
 Creates a local workspace for the minimal amd64 appliance bundle flow.
 
 Options:
   --workdir DIR                 Workspace root to create/update. Required.
   --zonctl-binary PATH          Path to the zonctl binary that will be bundled.
+                                Required.
+  --helm-binary PATH            Path to the helm binary that will be bundled.
                                 Required.
   --product-version VERSION     Final bundle/product version for bundle output.
                                 Defaults to 0.1.0.
@@ -25,6 +27,7 @@ EOF
 
 WORKDIR=""
 ZONCTL_BINARY=""
+HELM_BINARY=""
 PRODUCT_VERSION=""
 CONTROL_PLANE_IMAGE_REF=""
 OS_VERSION="24.04"
@@ -38,6 +41,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --zonctl-binary)
       ZONCTL_BINARY="${2:-}"
+      shift 2
+      ;;
+    --helm-binary)
+      HELM_BINARY="${2:-}"
       shift 2
       ;;
     --product-version)
@@ -74,9 +81,15 @@ if [[ -z "${ZONCTL_BINARY}" ]]; then
   usage >&2
   exit 2
 fi
+if [[ -z "${HELM_BINARY}" ]]; then
+  echo "init-simple-workspace: --helm-binary is required" >&2
+  usage >&2
+  exit 2
+fi
 
 WORKDIR="$(cd "$(dirname "${WORKDIR}")" && pwd)/$(basename "${WORKDIR}")"
 ZONCTL_BINARY="$(cd "$(dirname "${ZONCTL_BINARY}")" && pwd)/$(basename "${ZONCTL_BINARY}")"
+HELM_BINARY="$(cd "$(dirname "${HELM_BINARY}")" && pwd)/$(basename "${HELM_BINARY}")"
 RELEASE_INPUT_DIR="${WORKDIR}/release-input"
 
 json_string() {
@@ -137,6 +150,8 @@ fi
 STAGING_DIR="${WORKDIR}/staging"
 OUT_DIR="${WORKDIR}/out"
 KEYS_DIR="${WORKDIR}/keys"
+GENERATED_DIR="${WORKDIR}/generated-tools"
+GENERATED_BIN_DIR="${GENERATED_DIR}/bin"
 BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-bundle"
 CONFIG_PATH="${WORKDIR}/bundle-assembly.simple.json"
 VALUES_PATH="${STAGING_DIR}/values-minimal.yaml"
@@ -145,11 +160,20 @@ WORKSPACE_README="${WORKDIR}/README.md"
 PRIVATE_KEY_PATH="${KEYS_DIR}/release-signing.key"
 PUBLIC_KEY_PATH="${KEYS_DIR}/release-signing.pub"
 CONTROL_PLANE_TAR="${STAGING_DIR}/${CONTROL_PLANE_ARCHIVE_NAME}"
+ZONCTL_LAUNCHER_PATH="${GENERATED_DIR}/zonctl"
+ZONCTL_REAL_PATH="${GENERATED_BIN_DIR}/zonctl-real"
+HELM_BUNDLED_PATH="${GENERATED_BIN_DIR}/helm"
+KUBECTL_WRAPPER_PATH="${GENERATED_BIN_DIR}/kubectl"
+CTR_WRAPPER_PATH="${GENERATED_BIN_DIR}/ctr"
 
-mkdir -p "${WORKDIR}" "${RELEASE_INPUT_DIR}" "${STAGING_DIR}" "${OUT_DIR}" "${KEYS_DIR}"
+mkdir -p "${WORKDIR}" "${RELEASE_INPUT_DIR}" "${STAGING_DIR}" "${OUT_DIR}" "${KEYS_DIR}" "${GENERATED_BIN_DIR}"
 
 if [[ ! -x "${ZONCTL_BINARY}" ]]; then
   echo "init-simple-workspace: zonctl binary is missing or not executable: ${ZONCTL_BINARY}" >&2
+  exit 1
+fi
+if [[ ! -x "${HELM_BINARY}" ]]; then
+  echo "init-simple-workspace: helm binary is missing or not executable: ${HELM_BINARY}" >&2
   exit 1
 fi
 
@@ -161,6 +185,41 @@ if [[ ! -f "${PRIVATE_KEY_PATH}" || ! -f "${PUBLIC_KEY_PATH}" ]]; then
   openssl genpkey -algorithm Ed25519 -out "${PRIVATE_KEY_PATH}" >/dev/null 2>&1
   openssl pkey -in "${PRIVATE_KEY_PATH}" -pubout -out "${PUBLIC_KEY_PATH}" >/dev/null 2>&1
 fi
+
+cp "${ZONCTL_BINARY}" "${ZONCTL_REAL_PATH}"
+chmod 755 "${ZONCTL_REAL_PATH}"
+cp "${HELM_BINARY}" "${HELM_BUNDLED_PATH}"
+chmod 755 "${HELM_BUNDLED_PATH}"
+
+cat >"${ZONCTL_LAUNCHER_PATH}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="${SCRIPT_DIR}/bin:${PATH}"
+exec "${SCRIPT_DIR}/bin/zonctl-real" "$@"
+EOF
+chmod 755 "${ZONCTL_LAUNCHER_PATH}"
+
+cat >"${KUBECTL_WRAPPER_PATH}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUNDLE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+exec "${BUNDLE_DIR}/k3s/binary/k3s" kubectl "$@"
+EOF
+chmod 755 "${KUBECTL_WRAPPER_PATH}"
+
+cat >"${CTR_WRAPPER_PATH}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUNDLE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+exec "${BUNDLE_DIR}/k3s/binary/k3s" ctr "$@"
+EOF
+chmod 755 "${CTR_WRAPPER_PATH}"
 
 cat >"${VALUES_PATH}" <<EOF
 replicaCount: 1
@@ -218,7 +277,6 @@ cat >"${STAGING_README}" <<EOF
 Place the remaining release-side artifacts in this directory before assembly:
 
 - \`k3s\`
-- \`install.sh\`
 - \`k3s-airgap-images-amd64.tar.zst\`
 - \`${CONTROL_PLANE_ARCHIVE_NAME}\`
 - \`values-minimal.yaml\` (generated for you; edit as needed)
@@ -233,6 +291,12 @@ The \`release-input\` directory is produced by \`appliance-code\` and must conta
 - \`provenance/\`
 - \`notices/\`
 - \`tests/\`
+
+Build-machine helper requirement:
+
+- a local Helm binary, passed to this script as \`--helm-binary\` (or via
+  \`HELM_BINARY\` in the higher-level Make/config flow), so the final bundle
+  includes the bundle-local Helm launcher used during target-host install
 EOF
 
 cat >"${CONFIG_PATH}" <<EOF
@@ -250,8 +314,32 @@ cat >"${CONFIG_PATH}" <<EOF
   },
   "entries": [
     {
-      "sourcePath": "${ZONCTL_BINARY}",
+      "sourcePath": "${ZONCTL_LAUNCHER_PATH}",
       "targetPath": "zonctl",
+      "component": "appliance",
+      "executable": true
+    },
+    {
+      "sourcePath": "${ZONCTL_REAL_PATH}",
+      "targetPath": "bin/zonctl-real",
+      "component": "appliance",
+      "executable": true
+    },
+    {
+      "sourcePath": "${HELM_BUNDLED_PATH}",
+      "targetPath": "bin/helm",
+      "component": "appliance",
+      "executable": true
+    },
+    {
+      "sourcePath": "${KUBECTL_WRAPPER_PATH}",
+      "targetPath": "bin/kubectl",
+      "component": "appliance",
+      "executable": true
+    },
+    {
+      "sourcePath": "${CTR_WRAPPER_PATH}",
+      "targetPath": "bin/ctr",
       "component": "appliance",
       "executable": true
     },
@@ -259,12 +347,6 @@ cat >"${CONFIG_PATH}" <<EOF
       "sourcePath": "${STAGING_DIR}/k3s",
       "targetPath": "k3s/binary/k3s",
       "component": "k3s-binary",
-      "executable": true
-    },
-    {
-      "sourcePath": "${STAGING_DIR}/install.sh",
-      "targetPath": "k3s/install/install.sh",
-      "component": "k3s-install",
       "executable": true
     },
     {
@@ -299,7 +381,9 @@ This workspace is the handoff point between the two repos:
 
 1. \`appliance-code\` must produce/populate \`${RELEASE_INPUT_DIR}\`
 2. \`appliance-release\` stages host/bundle artifacts in \`${STAGING_DIR}\`
-3. \`appliance-release\` assembles the final bundle using:
+3. the build machine provides a local Helm binary so the bundle can include
+   bundle-local operator tooling
+4. \`appliance-release\` assembles the final bundle using:
    \`${CONFIG_PATH}\`
 
 Suggested flow:
@@ -313,6 +397,13 @@ scripts/package/assemble-simple-bundle.sh --workdir ${WORKDIR} --zonctl-binary /
 Public key for install-time verification:
 
 - \`${PUBLIC_KEY_PATH}\`
+
+Bundled operator tools:
+
+- \`zonctl\` launcher at the bundle root
+- bundle-local \`helm\`
+- bundle-local \`kubectl\` wrapper using the bundled K3s binary
+- bundle-local \`ctr\` wrapper using the bundled K3s binary
 EOF
 
 echo "created simple bundle workspace:"

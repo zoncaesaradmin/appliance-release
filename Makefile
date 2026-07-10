@@ -73,6 +73,7 @@ init-simple-workspace:
 	bash ./scripts/package/init-simple-workspace.sh \
 		--workdir "$${WORKDIR}" \
 		--zonctl-binary "$${ZONCTL_BINARY:-$(ZONCTL_BINARY)}" \
+		--helm-binary "$${HELM_BINARY:-$$(command -v helm)}" \
 		$${PRODUCT_VERSION:+--product-version "$${PRODUCT_VERSION}"} \
 		$${CONTROL_PLANE_IMAGE_REF:+--control-plane-image-ref "$${CONTROL_PLANE_IMAGE_REF}"} \
 		$${OS_VERSION:+--os-version "$${OS_VERSION}"}

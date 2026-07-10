@@ -9,7 +9,7 @@ make product-bundle CONFIG=/abs/path/to/product-bundle.env
 
 The supported model is:
 
-- `appliance-code` produces a prepared `release-input` artifact
+- `appliance-code` produces a prepared `release-input` artifact during the CI run
 - `appliance-ctl` provides the `zonctl` source and binary
 - `appliance-release` consumes that `release-input`, stages the remaining
   K3s installer artifacts, and assembles the final signed bundle
@@ -24,9 +24,14 @@ PRODUCT_VERSION=0.1.0 \
 CODE_REPO_SOURCE=https://git.example.invalid/zon/appliance-code.git \
 CTL_REPO_SOURCE=https://git.example.invalid/zon/appliance-ctl.git \
 K3S_BINARY_SOURCE=/ci/inputs/k3s \
-K3S_INSTALL_SCRIPT_SOURCE=/ci/inputs/install.sh \
 K3S_AIRGAP_IMAGES_SOURCE=/ci/inputs/k3s-airgap-images-amd64.tar.zst \
 bash ./scripts/ci/build-full-bundle.sh
+```
+
+If `helm` is not already on the build-machine `PATH`, also set:
+
+```bash
+HELM_BINARY=/abs/path/to/helm
 ```
 
 That script will:
@@ -63,6 +68,9 @@ Because the `release-input` producer path in `appliance-code` builds the
 control-plane image inside that repo's shared dev container, the Linux build
 host needs the prerequisites documented by `appliance-code` for `make dev-run`
 to work, especially Podman plus the one-time dev-container registry auth/bootstrap.
+The build host also needs a local Helm binary available on `PATH`, or passed
+explicitly as `HELM_BINARY=/abs/path/to/helm`, so the final bundle can include
+the bundle-local Helm launcher used during target-host install.
 
 This CI script is intentionally non-interactive. If the Linux build host has
 not yet been bootstrapped for `appliance-code`'s rootful Podman flow, the
@@ -101,28 +109,33 @@ publish script.
 
 ## Real Inputs
 
-Real bundle builds still need these inputs:
+The primary CI script, `scripts/ci/build-full-bundle.sh`, now expects these
+external inputs:
 
-- `release-input-${PRODUCT_VERSION}.tar.gz` or an unpacked `release-input/`
 - `k3s`
-- `install.sh`
 - `k3s-airgap-images-amd64.tar.zst`
+- a local Helm binary on the build machine
 
-By default, the control-plane image is taken from the prepared `release-input`.
-Only override the control-plane image if you are intentionally substituting a
-different local file for debugging.
+It does **not** expect you to provide `release-input-${PRODUCT_VERSION}.tar.gz`
+from outside. That artifact is produced during the run by the cloned
+`appliance-code` repo.
 
-The outer CI script can take the `release-input` either as:
+By default, the control-plane image path is taken from the prepared
+`release-input`. Only override the control-plane image in the lower-level
+config-driven flow if you are intentionally substituting a different local file
+for debugging.
 
-- `--release-input-source /path/or/url`
-- `--release-input-version VERSION --release-input-fetch-template 'https://example.invalid/release-input-{version}.tar.gz'`
+The lower-level config-driven flow still supports:
 
-The other staged files can be overridden in the config-driven flow with:
+- `RELEASE_INPUT_SOURCE=/path/or/url`
+- or `RELEASE_INPUT_VERSION=...` together with `RELEASE_INPUT_FETCH_TEMPLATE=...`
+
+and these staging overrides:
 
 - `CONTROL_PLANE_IMAGE`
 - `K3S_BINARY`
-- `K3S_INSTALL_SCRIPT`
 - `K3S_AIRGAP_IMAGES`
+- `HELM_BINARY`
 
 ## Config-Driven Flow
 
@@ -146,7 +159,9 @@ make product-bundle CONFIG="$(pwd)/configs/product-bundle.sample.env"
 ```
 
 That flow auto-generates a placeholder `release-input`, placeholder control
-plane/K3s artifacts, assembles a sample bundle, and verifies it. The sample
+plane/K3s artifacts, assembles a sample bundle, and verifies it. It still
+expects a local Helm binary on `PATH` unless you set `HELM_BINARY` in the
+sample env file or shell. The sample
 output lands at:
 
 - `${TMPDIR:-/tmp}/appliance-product-sample/out/appliance-0.1.0-bundle`
