@@ -28,7 +28,7 @@ Optional:
   --state-dir DIR              zonctl state directory. Default: /var/lib/zon
   --node-name NAME             Optional zonctl --node-name override
   --dry-run                    Pass --dry-run to zonctl install
-  --output FORMAT              zonctl output format. Default: json
+  --output FORMAT              zonctl output format. Default: text
   --help                       Show this help
 
 Example (piped, no local file needed — the version below is embedded in
@@ -54,7 +54,7 @@ USE_LATEST="0"
 STATE_DIR="/var/lib/zon"
 NODE_NAME=""
 DRY_RUN="0"
-OUTPUT_FORMAT="json"
+OUTPUT_FORMAT="text"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -123,6 +123,36 @@ trim_trailing_slashes() {
   printf '%s\n' "${value}"
 }
 
+run_zonctl_step() {
+  local start_message="$1"
+  local success_message="$2"
+  local failure_message="$3"
+  shift 3
+
+  local stdout_file
+  local stderr_file
+  stdout_file="$(mktemp "${OUT_DIR}/.zonctl-stdout.XXXXXX")"
+  stderr_file="$(mktemp "${OUT_DIR}/.zonctl-stderr.XXXXXX")"
+
+  echo "${start_message}"
+  if "$@" >"${stdout_file}" 2>"${stderr_file}"; then
+    echo "${success_message}"
+    rm -f "${stdout_file}" "${stderr_file}"
+    return 0
+  fi
+
+  echo "${failure_message}" >&2
+  if [[ -s "${stdout_file}" ]]; then
+    sed 's/^/  /' "${stdout_file}" >&2
+  fi
+  if [[ -s "${stderr_file}" ]]; then
+    echo "  details:" >&2
+    sed 's/^/    /' "${stderr_file}" >&2
+  fi
+  rm -f "${stdout_file}" "${stderr_file}"
+  exit 1
+}
+
 require_var BASE_URL
 
 if [[ -z "${PRODUCT_VERSION}" ]]; then
@@ -151,10 +181,13 @@ BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-bundle"
 PUBLIC_KEY="${OUT_DIR}/release-signing.pub"
 ZONCTL="${BUNDLE_DIR}/zonctl"
 
+echo "[1/5] Downloading release files..."
 curl -fLo "${OUT_DIR}/${BUNDLE_ARCHIVE}" "${REMOTE_DIR}/${BUNDLE_ARCHIVE}"
 curl -fLo "${OUT_DIR}/${PUBLIC_KEY_FILE}" "${REMOTE_DIR}/${PUBLIC_KEY_FILE}"
 curl -fLo "${OUT_DIR}/${CHECKSUM_FILE}" "${REMOTE_DIR}/${CHECKSUM_FILE}"
+echo "[1/5] Release files downloaded."
 
+echo "[2/5] Verifying release checksums..."
 if command -v sha256sum >/dev/null 2>&1; then
   (cd "${OUT_DIR}" && sha256sum -c "${CHECKSUM_FILE}")
 else
@@ -167,22 +200,20 @@ else
   (cd "${OUT_DIR}" && shasum -a 256 -c "$(basename "${tmp_checksums}")")
   rm -f "${tmp_checksums}"
 fi
+echo "[2/5] Release checksums verified."
 
+echo "[3/5] Extracting bundle..."
 rm -rf "${OUT_DIR:?}/$(basename "${BUNDLE_DIR}")"
 tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${BUNDLE_ARCHIVE}"
-
-echo "downloaded release files:"
-echo "  ${OUT_DIR}/${BUNDLE_ARCHIVE}"
-echo "  ${OUT_DIR}/${PUBLIC_KEY_FILE}"
-echo "  ${OUT_DIR}/${CHECKSUM_FILE}"
-echo
-echo "extracted bundle:"
-echo "  ${BUNDLE_DIR}"
-echo
+echo "[3/5] Bundle extracted to ${BUNDLE_DIR}."
 
 chmod +x "${ZONCTL}"
 
-sudo "${ZONCTL}" preflight --output "${OUTPUT_FORMAT}"
+run_zonctl_step \
+  "[4/5] Running host preflight..." \
+  "[4/5] Host preflight passed." \
+  "[4/5] Host preflight failed." \
+  sudo "${ZONCTL}" preflight --output "${OUTPUT_FORMAT}"
 
 install_args=(
   --bundle-dir "${BUNDLE_DIR}"
@@ -197,4 +228,10 @@ if [[ "${DRY_RUN}" == "1" ]]; then
   install_args+=(--dry-run)
 fi
 
-sudo "${ZONCTL}" install "${install_args[@]}"
+run_zonctl_step \
+  "[5/5] Installing appliance platform. This can take several minutes. You will be prompted for the first administrator only when the platform is ready." \
+  "[5/5] Appliance installation and first-administrator setup completed." \
+  "[5/5] Appliance installation failed." \
+  sudo "${ZONCTL}" install "${install_args[@]}"
+
+echo "zonctl is now available at /usr/local/bin/zonctl on the target host."
