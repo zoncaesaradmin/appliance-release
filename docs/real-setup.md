@@ -65,8 +65,11 @@ Important notes:
   intentionally small file that relies on chart defaults. This repo now
   carries the product `configuration.schema.json` alongside that
   `values.yaml`.
-- Every OCI archive you reference in the bundle config should already be
-  in the exact local import form you want `ctr image import` to consume.
+- Application/dependency OCI archives should already be in the exact
+  local import form you want `ctr image import` to consume. The K3s
+  upstream air-gap payload can stay as the standard
+  `k3s-airgap-images-amd64.tar.zst`; `zonctl` expands it during install
+  before importing it into containerd.
 
 ## 3. Create A Release-Signing Key Pair
 
