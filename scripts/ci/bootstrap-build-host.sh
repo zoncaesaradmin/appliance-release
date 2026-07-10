@@ -63,7 +63,16 @@ require_var() {
 normalize_clone_source() {
   local source="$1"
   if [[ -d "${source}" ]]; then
-    printf 'file://%s/%s\n' "$(cd "$(dirname "${source}")" && pwd)" "$(basename "${source}")"
+    if [[ -d "${source}/.git" ]]; then
+      if git -C "${source}" remote get-url origin >/dev/null 2>&1; then
+        git -C "${source}" remote get-url origin
+        return 0
+      fi
+      echo "bootstrap-build-host: local repo source ${source} has no origin remote configured" >&2
+      exit 1
+    fi
+    echo "bootstrap-build-host: local source ${source} is not a git checkout with an origin remote" >&2
+    exit 1
   else
     printf '%s\n' "${source}"
   fi

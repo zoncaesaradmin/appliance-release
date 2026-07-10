@@ -207,9 +207,32 @@ set_env_var() {
 normalize_clone_source() {
   local source="$1"
   if [[ -d "${source}" ]]; then
-    printf 'file://%s/%s\n' "$(cd "$(dirname "${source}")" && pwd)" "$(basename "${source}")"
+    if [[ -d "${source}/.git" ]]; then
+      if git -C "${source}" remote get-url origin >/dev/null 2>&1; then
+        git -C "${source}" remote get-url origin
+        return 0
+      fi
+      echo "build-full-bundle: local repo source ${source} has no origin remote configured" >&2
+      exit 1
+    fi
+    echo "build-full-bundle: local source ${source} is not a git checkout with an origin remote" >&2
+    exit 1
   else
     printf '%s\n' "${source}"
+  fi
+}
+
+warn_if_local_repo_source() {
+  local source="$1"
+  local label="$2"
+
+  if [[ -d "${source}" ]]; then
+    cat >&2 <<EOF
+build-full-bundle: ${label} source is a local directory:
+build-full-bundle:   ${source}
+build-full-bundle: this run will resolve that checkout's origin remote and clone/fetch from the remote URL
+build-full-bundle: the local working tree contents themselves will not be used as the bundle input source
+EOF
   fi
 }
 
@@ -276,6 +299,9 @@ require_var CTL_REPO_SOURCE
 require_var K3S_VERSION
 require_var K3S_BINARY_SOURCE
 require_var K3S_AIRGAP_IMAGES_SOURCE
+
+warn_if_local_repo_source "${CODE_REPO_SOURCE}" "CODE_REPO"
+warn_if_local_repo_source "${CTL_REPO_SOURCE}" "CTL_REPO"
 
 require_file "${K3S_BINARY_SOURCE}" "k3s binary"
 require_file "${K3S_AIRGAP_IMAGES_SOURCE}" "k3s airgap images"

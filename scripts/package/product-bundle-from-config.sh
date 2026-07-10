@@ -366,7 +366,17 @@ clone_repo() {
   local dest="$3"
   local clone_source="${source}"
   if [[ -d "${source}" ]]; then
-    clone_source="file://$(cd "$(dirname "${source}")" && pwd)/$(basename "${source}")"
+    if [[ -d "${source}/.git" ]]; then
+      if git -C "${source}" remote get-url origin >/dev/null 2>&1; then
+        clone_source="$(git -C "${source}" remote get-url origin)"
+      else
+        echo "product-bundle-from-config: local repo source ${source} has no origin remote configured" >&2
+        exit 1
+      fi
+    else
+      echo "product-bundle-from-config: local source ${source} is not a git checkout with an origin remote" >&2
+      exit 1
+    fi
   fi
   rm -rf "${dest}"
   mkdir -p "$(dirname "${dest}")"
