@@ -294,9 +294,8 @@ The \`release-input\` directory is produced by \`appliance-code\` and must conta
 
 Build-machine helper requirement:
 
-- a local Helm binary, passed to this script as \`--helm-binary\` (or via
-  \`HELM_BINARY\` in the higher-level Make/config flow), so the final bundle
-  includes the bundle-local Helm launcher used during target-host install
+- a Helm binary, passed to this script as \`--helm-binary\`, so the final
+  bundle includes the bundle-local Helm launcher used during target-host install
 EOF
 
 cat >"${CONFIG_PATH}" <<EOF
@@ -381,8 +380,8 @@ This workspace is the handoff point between the two repos:
 
 1. \`appliance-code\` must produce/populate \`${RELEASE_INPUT_DIR}\`
 2. \`appliance-release\` stages host/bundle artifacts in \`${STAGING_DIR}\`
-3. the build machine provides a local Helm binary so the bundle can include
-   bundle-local operator tooling
+3. this low-level workspace flow is given a concrete Helm binary path so the
+   bundle can include bundle-local operator tooling
 4. \`appliance-release\` assembles the final bundle using:
    \`${CONFIG_PATH}\`
 

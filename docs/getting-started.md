@@ -29,7 +29,6 @@ Public egress is not required during install or runtime.
 
 - `make`
 - `bash`
-- `helm` on the build machine `PATH`, or `HELM_BINARY=/abs/path/to/helm`
 - a local `appliance-ctl` checkout if you want to assemble bundles
   locally; that repo owns the `zonctl` source and binary
 
@@ -61,6 +60,8 @@ That flow uses `appliance-code`'s `make dev-run` path to produce the
 `release-input` artifact inside the shared dev container, so the Linux build
 host should satisfy the `appliance-code` dev-container prerequisites rather
 than installing the control-plane image-build toolchain directly on the host.
+The real bundle flow now auto-downloads a pinned Linux `amd64` Helm binary
+unless you explicitly override it with `HELM_BINARY=/abs/path/to/helm`.
 
 ### Repo Boundary
 

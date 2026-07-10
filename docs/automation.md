@@ -28,12 +28,6 @@ K3S_AIRGAP_IMAGES_SOURCE=/ci/inputs/k3s-airgap-images-amd64.tar.zst \
 bash ./scripts/ci/build-full-bundle.sh
 ```
 
-If `helm` is not already on the build-machine `PATH`, also set:
-
-```bash
-HELM_BINARY=/abs/path/to/helm
-```
-
 That script will:
 
 - source the stable defaults from [configs/product-bundle.ci.env](/Users/zoncaesar/ws/appliance-release/configs/product-bundle.ci.env)
@@ -68,9 +62,9 @@ Because the `release-input` producer path in `appliance-code` builds the
 control-plane image inside that repo's shared dev container, the Linux build
 host needs the prerequisites documented by `appliance-code` for `make dev-run`
 to work, especially Podman plus the one-time dev-container registry auth/bootstrap.
-The build host also needs a local Helm binary available on `PATH`, or passed
-explicitly as `HELM_BINARY=/abs/path/to/helm`, so the final bundle can include
-the bundle-local Helm launcher used during target-host install.
+The bundle flow now auto-downloads a pinned Linux `amd64` Helm binary for the
+final bundle when `HELM_BINARY` is not explicitly set. Set `HELM_BINARY` only
+if you want to override that pinned artifact with your own exact file.
 
 This CI script is intentionally non-interactive. If the Linux build host has
 not yet been bootstrapped for `appliance-code`'s rootful Podman flow, the
@@ -114,7 +108,8 @@ external inputs:
 
 - `k3s`
 - `k3s-airgap-images-amd64.tar.zst`
-- a local Helm binary on the build machine
+- optionally, `HELM_BINARY=/abs/path/to/helm` if you want to override the
+  pinned auto-downloaded Helm artifact
 
 It does **not** expect you to provide `release-input-${PRODUCT_VERSION}.tar.gz`
 from outside. That artifact is produced during the run by the cloned
@@ -135,6 +130,7 @@ and these staging overrides:
 - `CONTROL_PLANE_IMAGE`
 - `K3S_BINARY`
 - `K3S_AIRGAP_IMAGES`
+- `HELM_VERSION`
 - `HELM_BINARY`
 
 ## Config-Driven Flow
@@ -159,9 +155,8 @@ make product-bundle CONFIG="$(pwd)/configs/product-bundle.sample.env"
 ```
 
 That flow auto-generates a placeholder `release-input`, placeholder control
-plane/K3s artifacts, assembles a sample bundle, and verifies it. It still
-expects a local Helm binary on `PATH` unless you set `HELM_BINARY` in the
-sample env file or shell. The sample
+plane/K3s artifacts, a placeholder Helm binary, assembles a sample bundle,
+and verifies it. The sample
 output lands at:
 
 - `${TMPDIR:-/tmp}/appliance-product-sample/out/appliance-0.1.0-bundle`

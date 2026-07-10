@@ -26,7 +26,6 @@ Configuration is taken from environment variables. The most common pattern is:
   CTL_REPO_SOURCE=https://git.example.invalid/zon/appliance-ctl.git \
   K3S_BINARY_SOURCE=/ci/inputs/k3s \
   K3S_AIRGAP_IMAGES_SOURCE=/ci/inputs/k3s-airgap-images-amd64.tar.zst \
-  HELM_BINARY=/usr/local/bin/helm \
   bash ./scripts/ci/build-full-bundle.sh
 
 Optional overrides:
@@ -35,6 +34,8 @@ Optional overrides:
   WORK_ROOT=${TMPDIR:-/tmp}/appliance-build
   EXPORT_DIR=\$WORK_ROOT/export
   K3S_VERSION_OVERRIDE=v1.30.4+k3s1
+  HELM_VERSION=v3.21.1
+  HELM_BINARY=/abs/path/to/linux-amd64/helm
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
 EOF
 }
@@ -56,6 +57,7 @@ USER_CTL_REPO_REF="${CTL_REPO_REF-}"
 USER_K3S_BINARY_SOURCE="${K3S_BINARY_SOURCE-}"
 USER_K3S_AIRGAP_IMAGES_SOURCE="${K3S_AIRGAP_IMAGES_SOURCE-}"
 USER_HELM_BINARY="${HELM_BINARY-}"
+USER_HELM_VERSION="${HELM_VERSION-}"
 USER_VALUES_FILE_SOURCE="${VALUES_FILE_SOURCE-}"
 USER_WORK_ROOT="${WORK_ROOT-}"
 USER_EXPORT_DIR="${EXPORT_DIR-}"
@@ -74,6 +76,7 @@ CTL_REPO_REF="${USER_CTL_REPO_REF:-${CTL_REPO_REF:-main}}"
 K3S_BINARY_SOURCE="${USER_K3S_BINARY_SOURCE:-${K3S_BINARY_SOURCE:-}}"
 K3S_AIRGAP_IMAGES_SOURCE="${USER_K3S_AIRGAP_IMAGES_SOURCE:-${K3S_AIRGAP_IMAGES_SOURCE:-}}"
 HELM_BINARY="${USER_HELM_BINARY:-${HELM_BINARY:-}}"
+HELM_VERSION="${USER_HELM_VERSION:-${HELM_VERSION:-}}"
 VALUES_FILE_SOURCE="${USER_VALUES_FILE_SOURCE:-${VALUES_FILE:-}}"
 WORK_ROOT="${USER_WORK_ROOT:-${WORKDIR:-${TMPDIR:-/tmp}/appliance-build}}"
 EXPORT_DIR="${USER_EXPORT_DIR:-${EXPORT_DIR:-${WORK_ROOT}/export}}"
@@ -274,13 +277,8 @@ require_var K3S_VERSION
 require_var K3S_BINARY_SOURCE
 require_var K3S_AIRGAP_IMAGES_SOURCE
 
-if [[ -z "${HELM_BINARY}" ]]; then
-  HELM_BINARY="$(command -v helm || true)"
-fi
-
 require_file "${K3S_BINARY_SOURCE}" "k3s binary"
 require_file "${K3S_AIRGAP_IMAGES_SOURCE}" "k3s airgap images"
-require_file "${HELM_BINARY}" "helm binary"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   require_file "${VALUES_FILE_SOURCE}" "values file"
 fi
@@ -332,6 +330,7 @@ set_env_var "${CONFIG_OUT}" CTL_REPO_REF ""
 set_env_var "${CONFIG_OUT}" INPUTS_DIR "${INPUTS_DIR}"
 set_env_var "${CONFIG_OUT}" SAMPLE_MODE "0"
 set_env_var "${CONFIG_OUT}" HELM_BINARY "${HELM_BINARY}"
+set_env_var "${CONFIG_OUT}" HELM_VERSION "${HELM_VERSION}"
 set_env_var "${CONFIG_OUT}" K3S_BINARY "${INPUTS_DIR}/k3s"
 set_env_var "${CONFIG_OUT}" K3S_AIRGAP_IMAGES "${INPUTS_DIR}/k3s-airgap-images-amd64.tar.zst"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then

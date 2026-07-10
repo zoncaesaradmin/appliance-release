@@ -67,6 +67,8 @@ CONTROL_PLANE_IMAGE="${CONTROL_PLANE_IMAGE:-}"
 K3S_BINARY="${K3S_BINARY:-${INPUTS_DIR}/k3s}"
 K3S_AIRGAP_IMAGES="${K3S_AIRGAP_IMAGES:-${INPUTS_DIR}/k3s-airgap-images-amd64.tar.zst}"
 HELM_BINARY="${HELM_BINARY:-}"
+HELM_VERSION="${HELM_VERSION:-v3.21.1}"
+HELM_DOWNLOAD_BASE_URL="${HELM_DOWNLOAD_BASE_URL:-https://get.helm.sh}"
 DOWNLOADS_DIR="${WORKDIR}/downloads"
 STAGING_DIR="${WORKDIR}/staging"
 RELEASE_INPUT_DIR="${WORKDIR}/release-input"
@@ -270,10 +272,79 @@ require_valid_k3s_airgap_images "${K3S_AIRGAP_IMAGES}"
 if [[ -n "${VALUES_FILE:-}" ]]; then
   require_file "${VALUES_FILE}" "values file"
 fi
-if [[ -z "${HELM_BINARY}" ]]; then
-  HELM_BINARY="$(command -v helm || true)"
-fi
-require_file "${HELM_BINARY}" "helm binary"
+
+verify_sha256_file() {
+  local payload="$1"
+  local checksum_file="$2"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    (
+      cd "$(dirname "${payload}")"
+      sha256sum -c "$(basename "${checksum_file}")"
+    ) >/dev/null
+    return 0
+  fi
+
+  if command -v shasum >/dev/null 2>&1; then
+    local expected actual
+    expected="$(awk '{print $1}' "${checksum_file}" | head -n 1)"
+    actual="$(shasum -a 256 "${payload}" | awk '{print $1}')"
+    [[ "${actual}" == "${expected}" ]]
+    return 0
+  fi
+
+  echo "product-bundle-from-config: need sha256sum or shasum to verify Helm download" >&2
+  exit 1
+}
+
+resolve_helm_binary() {
+  if [[ -n "${HELM_BINARY}" ]]; then
+    require_file "${HELM_BINARY}" "helm binary"
+    return 0
+  fi
+
+  local resolved_path="${DOWNLOADS_DIR}/helm/${HELM_VERSION}/linux-amd64/helm"
+  if [[ -x "${resolved_path}" ]]; then
+    HELM_BINARY="${resolved_path}"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "${resolved_path}")"
+
+  if [[ "${SAMPLE_MODE}" == "1" ]]; then
+    cat >"${resolved_path}" <<'EOF'
+#!/usr/bin/env bash
+echo "sample helm placeholder"
+EOF
+    chmod 755 "${resolved_path}"
+    HELM_BINARY="${resolved_path}"
+    return 0
+  fi
+
+  local archive_name="helm-${HELM_VERSION}-linux-amd64.tar.gz"
+  local archive_path="${DOWNLOADS_DIR}/${archive_name}"
+  local checksum_path="${archive_path}.sha256sum"
+  local extract_dir="${DOWNLOADS_DIR}/helm-extract-${HELM_VERSION}"
+
+  curl -fsSL "${HELM_DOWNLOAD_BASE_URL}/${archive_name}" -o "${archive_path}"
+  curl -fsSL "${HELM_DOWNLOAD_BASE_URL}/${archive_name}.sha256sum" -o "${checksum_path}"
+  verify_sha256_file "${archive_path}" "${checksum_path}"
+
+  rm -rf "${extract_dir}"
+  mkdir -p "${extract_dir}"
+  tar -xzf "${archive_path}" -C "${extract_dir}"
+
+  if [[ ! -f "${extract_dir}/linux-amd64/helm" ]]; then
+    echo "product-bundle-from-config: downloaded Helm archive missing linux-amd64/helm: ${archive_path}" >&2
+    exit 1
+  fi
+
+  cp "${extract_dir}/linux-amd64/helm" "${resolved_path}"
+  chmod 755 "${resolved_path}"
+  HELM_BINARY="${resolved_path}"
+}
+
+resolve_helm_binary
 
 json_artifact_path() {
   local manifest_path="$1"
