@@ -231,7 +231,7 @@ image:
   pullPolicy: Never
 
 namespace:
-  create: true
+  create: false
   name: ""
 
 config:
@@ -245,7 +245,7 @@ secrets:
 
 persistence:
   enabled: true
-  storageClassName: ""
+  storageClassName: "local-path"
   accessMode: ReadWriteOnce
   size: 10Gi
   dataDir: /var/lib/appliance/data
@@ -255,7 +255,7 @@ service:
   internalPort: 8081
 
 ingress:
-  enabled: true
+  enabled: false
   entryPoints:
     - websecure
   host: zon.example.internal
@@ -267,7 +267,7 @@ serviceAccount:
   automountServiceAccountToken: false
 
 networkPolicy:
-  enabled: true
+  enabled: false
   traefikNamespaceLabel: {}
 EOF
 
