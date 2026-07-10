@@ -126,6 +126,24 @@ if isinstance(path, str) and path:
 PY
 }
 
+json_artifact_string() {
+  local manifest_path="$1"
+  local key="$2"
+  local field="$3"
+  python3 - "${manifest_path}" "${key}" "${field}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    data = json.load(handle)
+
+artifact = data.get("artifacts", {}).get(sys.argv[2], {})
+value = artifact.get(sys.argv[3], "")
+if isinstance(value, str):
+    print(value)
+PY
+}
+
 RELEASE_INPUT_MANIFEST="${RELEASE_INPUT_DIR}/release-input.json"
 CODE_VERSION=""
 CONTROL_PLANE_ARCHIVE_NAME=""
@@ -134,6 +152,9 @@ if [[ -f "${RELEASE_INPUT_MANIFEST}" ]]; then
   CODE_VERSION="$(json_string "${RELEASE_INPUT_MANIFEST}" codeVersion)"
   CONTROL_PLANE_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" controlPlaneImage)"
   CHART_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" applianceChart)"
+  if [[ -z "${CONTROL_PLANE_IMAGE_REF}" ]]; then
+    CONTROL_PLANE_IMAGE_REF="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" controlPlaneImage imageReference)"
+  fi
 fi
 
 PRODUCT_VERSION="${PRODUCT_VERSION:-0.1.0}"
