@@ -105,6 +105,12 @@ This script checks:
 - a smoke check from the target host itself
 - support bundle collection on failure
 
+If your config enables `verification.argo.enabled: true`, it also checks:
+
+- `appliance-workflows` and `appliance-builds` namespaces
+- core Argo Workflow CRDs
+- the Argo controller deployment and pods
+
 ## 5. Verify Client/API Only
 
 Use this from the Mac if the appliance is already installed and reachable.

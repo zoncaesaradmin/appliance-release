@@ -22,6 +22,9 @@ Options:
   --app-version-cmd CMD          Override verification.app_version_command.
   --smoke-test-cmd CMD           Override verification.smoke_test_command.
   --failure-log-cmd CMD          Override verification.failure_log_command.
+  --argo-namespaces-cmd CMD      Override verification.argo.namespaces_command.
+  --argo-crds-cmd CMD            Override verification.argo.crds_command.
+  --argo-controller-cmd CMD      Override verification.argo.controller_command.
   --final-ok                     Print ok when all checks pass.
   --run-dir DIR                  Local run directory.
 EOF
@@ -34,6 +37,9 @@ SERVICE_HEALTH_CMD=""
 APP_VERSION_CMD=""
 SMOKE_TEST_CMD=""
 FAILURE_LOG_CMD=""
+ARGO_NAMESPACES_CMD=""
+ARGO_CRDS_CMD=""
+ARGO_CONTROLLER_CMD=""
 FINAL_OK="false"
 RUN_DIR=""
 
@@ -65,6 +71,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --failure-log-cmd)
       FAILURE_LOG_CMD="${2:-}"
+      shift 2
+      ;;
+    --argo-namespaces-cmd)
+      ARGO_NAMESPACES_CMD="${2:-}"
+      shift 2
+      ;;
+    --argo-crds-cmd)
+      ARGO_CRDS_CMD="${2:-}"
+      shift 2
+      ;;
+    --argo-controller-cmd)
+      ARGO_CONTROLLER_CMD="${2:-}"
       shift 2
       ;;
     --final-ok)
@@ -100,6 +118,10 @@ SERVICE_HEALTH_CMD="${SERVICE_HEALTH_CMD:-$(config_get_optional "${CONFIG_PATH}"
 APP_VERSION_CMD="${APP_VERSION_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.app_version_command" || true)}"
 SMOKE_TEST_CMD="${SMOKE_TEST_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_command" || true)}"
 FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.failure_log_command" || true)}"
+ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
+ARGO_NAMESPACES_CMD="${ARGO_NAMESPACES_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.argo.namespaces_command" || true)}"
+ARGO_CRDS_CMD="${ARGO_CRDS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.argo.crds_command" || true)}"
+ARGO_CONTROLLER_CMD="${ARGO_CONTROLLER_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.argo.controller_command" || true)}"
 ALLOW_INGRESS_WARNING="$(config_get_optional "${CONFIG_PATH}" "verification.allow_ingress_warning" || true)"
 ALLOW_VERIFY_SCHEMA_BUG="$(config_get_optional "${CONFIG_PATH}" "verification.allow_verify_schema_bug" || true)"
 
@@ -108,6 +130,17 @@ VERIFY_CMD="${VERIFY_CMD:-sudo zonctl verify --output json}"
 SERVICE_HEALTH_CMD="${SERVICE_HEALTH_CMD:-sudo kubectl get pods -A}"
 APP_VERSION_CMD="${APP_VERSION_CMD:-sudo zonctl status --output json}"
 FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-sudo zonctl support-bundle --output json}"
+if [[ -z "${ARGO_ENABLED}" ]]; then
+  ARGO_ENABLED="false"
+fi
+if [[ -n "${ARGO_NAMESPACES_CMD}" || -n "${ARGO_CRDS_CMD}" || -n "${ARGO_CONTROLLER_CMD}" ]]; then
+  ARGO_ENABLED="true"
+fi
+if bool_true "${ARGO_ENABLED}"; then
+  ARGO_NAMESPACES_CMD="${ARGO_NAMESPACES_CMD:-sudo kubectl get namespace appliance-workflows appliance-builds}"
+  ARGO_CRDS_CMD="${ARGO_CRDS_CMD:-sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io}"
+  ARGO_CONTROLLER_CMD="${ARGO_CONTROLLER_CMD:-sudo kubectl -n appliance-workflows get deploy,pods}"
+fi
 
 ensure_dir "${RUN_DIR}"
 ensure_dir "${RUN_DIR}/logs"
@@ -158,6 +191,9 @@ service_health_code="0"
 app_version_code="0"
 smoke_test_code=""
 failure_log_code=""
+argo_namespaces_code=""
+argo_crds_code=""
+argo_controller_code=""
 
 wrap_command_for_target() {
   local command="$1"
@@ -219,6 +255,24 @@ if [[ -n "${SMOKE_TEST_CMD}" ]]; then
   fi
 fi
 
+if bool_true "${ARGO_ENABLED}"; then
+  if run_check "argo-namespaces" "${ARGO_NAMESPACES_CMD}"; then
+    argo_namespaces_code="0"
+  else
+    argo_namespaces_code="$?"
+  fi
+  if run_check "argo-crds" "${ARGO_CRDS_CMD}"; then
+    argo_crds_code="0"
+  else
+    argo_crds_code="$?"
+  fi
+  if run_check "argo-controller" "${ARGO_CONTROLLER_CMD}"; then
+    argo_controller_code="0"
+  else
+    argo_controller_code="$?"
+  fi
+fi
+
 overall_failed="false"
 for code in "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}"; do
   if [[ "${code}" != "0" ]]; then
@@ -228,6 +282,11 @@ done
 if [[ -n "${smoke_test_code}" && "${smoke_test_code}" != "0" ]]; then
   overall_failed="true"
 fi
+for code in "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}"; do
+  if [[ -n "${code}" && "${code}" != "0" ]]; then
+    overall_failed="true"
+  fi
+done
 
 if bool_true "${overall_failed}" && [[ -n "${FAILURE_LOG_CMD}" ]]; then
   failure_log_log="${RUN_DIR}/logs/failure-logs.log"
@@ -242,7 +301,7 @@ if bool_true "${overall_failed}" && [[ -n "${FAILURE_LOG_CMD}" ]]; then
   fi
 fi
 
-final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${FAILURE_LOG_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${failure_log_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
+final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${FAILURE_LOG_CMD}" "${ARGO_ENABLED}" "${ARGO_NAMESPACES_CMD}" "${ARGO_CRDS_CMD}" "${ARGO_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${failure_log_code}" "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -257,17 +316,24 @@ import sys
     app_version_cmd,
     smoke_test_cmd,
     failure_log_cmd,
+    argo_enabled,
+    argo_namespaces_cmd,
+    argo_crds_cmd,
+    argo_controller_cmd,
     status_code,
     verify_code,
     service_health_code,
     app_version_code,
     smoke_test_code,
     failure_log_code,
+    argo_namespaces_code,
+    argo_crds_code,
+    argo_controller_code,
     overall_failed,
     run_dir,
     allow_ingress_warning,
     allow_verify_schema_bug,
-) = sys.argv[1:20]
+) = sys.argv[1:27]
 
 run_dir_path = Path(run_dir)
 warnings = []
@@ -329,6 +395,10 @@ if int(service_health_code) != 0 or int(app_version_code) != 0:
     final_failed = True
 if smoke_test_code and int(smoke_test_code) != 0:
     final_failed = True
+if argo_enabled == "true":
+    for code in (argo_namespaces_code, argo_crds_code, argo_controller_code):
+        if code and int(code) != 0:
+            final_failed = True
 
 payload = {
     "configPath": config_path,
@@ -367,6 +437,25 @@ if smoke_test_cmd:
         "command": smoke_test_cmd,
         "exitCode": int(smoke_test_code or 0),
         "log": str(run_dir_path / "logs" / "smoke-test.log"),
+    }
+
+if argo_enabled == "true":
+    payload["checks"]["argo"] = {
+        "namespaces": {
+            "command": argo_namespaces_cmd,
+            "exitCode": int(argo_namespaces_code or 0),
+            "log": str(run_dir_path / "logs" / "argo-namespaces.log"),
+        },
+        "crds": {
+            "command": argo_crds_cmd,
+            "exitCode": int(argo_crds_code or 0),
+            "log": str(run_dir_path / "logs" / "argo-crds.log"),
+        },
+        "controller": {
+            "command": argo_controller_cmd,
+            "exitCode": int(argo_controller_code or 0),
+            "log": str(run_dir_path / "logs" / "argo-controller.log"),
+        },
     }
 
 if failure_log_cmd:

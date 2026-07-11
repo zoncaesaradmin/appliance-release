@@ -19,6 +19,10 @@ The supported model is:
 - `appliance-release` consumes that `release-input`, stages the remaining
   K3s installer artifacts, and assembles the final signed bundle
 
+When the product handoff includes optional Phase 1 Argo Workflows artifacts
+(chart, CRDs, controller image, executor image), this repo now carries those
+through the bundle automatically as part of the same manifest-driven flow.
+
 ## Normal CI Command
 
 If your build machine already checked out `appliance-release`, the preferred
@@ -104,7 +108,8 @@ make product-bundle CONFIG="$(pwd)/configs/product-bundle.sample.env"
 
 That flow auto-generates a placeholder `release-input`, placeholder control
 plane/K3s artifacts, a placeholder Helm binary, assembles a sample bundle,
-and verifies it. The sample
+and verifies it. If you also set `ARGO_VERSION` plus the Argo image references,
+the sample flow includes placeholder Argo artifacts too. The sample
 output lands at:
 
 - `${TMPDIR:-/tmp}/appliance-product-sample/out/appliance-0.1.0-bundle`

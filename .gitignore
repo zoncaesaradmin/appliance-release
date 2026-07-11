@@ -27,6 +27,7 @@ go.work.sum
 
 # env file
 .env
+.agents/.DS_Store
 
 # make verify's own per-stage logs
 .run/

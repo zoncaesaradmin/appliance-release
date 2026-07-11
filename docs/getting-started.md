@@ -57,7 +57,8 @@ make product-bundle CONFIG="$(pwd)/configs/product-bundle.sample.env"
 ## Repo Boundary
 
 - `appliance-code` owns product artifacts such as the control-plane
-  chart, schema, and signed `release-input` handoff
+  chart, schema, optional Argo Phase 1 artifacts, and signed `release-input`
+  handoff
 - `appliance-ctl` owns the `zonctl` source, tests, and binary
 - `appliance-release` owns packaging automation, bundle assembly
   workspace setup, signing material generation, and final bundle

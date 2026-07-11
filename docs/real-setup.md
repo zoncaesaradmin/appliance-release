@@ -58,6 +58,9 @@ Important notes:
 
 - The `release-input` chart archive is already bundle-ready and can be
   referenced directly.
+- If `release-input/` also contains optional Argo Workflows Phase 1
+  artifacts, the simple workspace flow now auto-adds them to the bundle
+  config under `charts/`, `oci-images/`, and `kubernetes/crds/`.
 - The final bundle should contain a real `values.yaml`, even if it is an
   intentionally small file that relies on chart defaults. This repo now
   carries the product `configuration.schema.json` alongside that
@@ -125,6 +128,10 @@ The assembler automatically also carries forward:
 - `notices/`
 - `tests/`
 - the derived public key under `public-keys/release-signing.pub`
+
+If present in `release-input`, it also stages the optional Argo Workflows
+chart, controller/executor OCI archives, and CRD YAMLs so the bundle contract
+is ready for installer-side Argo bring-up.
 
 ## 5. Assemble The Extracted Bundle
 

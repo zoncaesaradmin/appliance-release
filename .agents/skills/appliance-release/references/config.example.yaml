@@ -68,6 +68,14 @@ verification:
   app_version_command: sudo cat /var/lib/zon/installed-state.json
   smoke_test_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
   failure_log_command: sudo zonctl support-bundle --output json
+  argo:
+    enabled: false
+    # If you enable this after packaging/installing Argo Workflows, the target
+    # verification step will also confirm the two namespaces, the core CRDs,
+    # and the controller deployment/pods.
+    namespaces_command: sudo kubectl get namespace appliance-workflows appliance-builds
+    crds_command: sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io
+    controller_command: sudo kubectl -n appliance-workflows get deploy,pods
   allow_ingress_warning: true
   allow_verify_schema_bug: true
 

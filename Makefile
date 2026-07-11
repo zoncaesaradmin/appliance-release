@@ -145,3 +145,4 @@ publish-release:
 .PHONY: clean
 clean:
 	rm -rf bin .run
+	rm -rf bin .agents/.DS_Store

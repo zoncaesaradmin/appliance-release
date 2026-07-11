@@ -64,6 +64,9 @@ RELEASE_INPUT_SOURCE="${RELEASE_INPUT_SOURCE:-}"
 RELEASE_INPUT_VERSION="${RELEASE_INPUT_VERSION:-}"
 RELEASE_INPUT_FETCH_TEMPLATE="${RELEASE_INPUT_FETCH_TEMPLATE:-}"
 CONTROL_PLANE_IMAGE="${CONTROL_PLANE_IMAGE:-}"
+ARGO_VERSION="${ARGO_VERSION:-}"
+ARGO_CONTROLLER_IMAGE_REF="${ARGO_CONTROLLER_IMAGE_REF:-}"
+ARGO_EXECUTOR_IMAGE_REF="${ARGO_EXECUTOR_IMAGE_REF:-}"
 K3S_BINARY="${K3S_BINARY:-${INPUTS_DIR}/k3s}"
 K3S_AIRGAP_IMAGES="${K3S_AIRGAP_IMAGES:-${INPUTS_DIR}/k3s-airgap-images-amd64.tar.zst}"
 HELM_BINARY="${HELM_BINARY:-}"
@@ -84,7 +87,7 @@ create_sample_release_input() {
     CONTROL_PLANE_IMAGE_REF="internal/control-plane-api:${PRODUCT_VERSION}"
   fi
 
-  python3 - "${sample_root}" "${archive_path}" "${PRODUCT_VERSION}" "${CHART_VERSION}" "${K3S_VERSION}" "${CONTROL_PLANE_IMAGE_REF}" <<'PY'
+  python3 - "${sample_root}" "${archive_path}" "${PRODUCT_VERSION}" "${CHART_VERSION}" "${K3S_VERSION}" "${CONTROL_PLANE_IMAGE_REF}" "${ARGO_VERSION}" "${ARGO_CONTROLLER_IMAGE_REF}" "${ARGO_EXECUTOR_IMAGE_REF}" <<'PY'
 import hashlib
 import json
 import shutil
@@ -98,6 +101,9 @@ product_version = sys.argv[3]
 chart_version = sys.argv[4]
 k3s_version = sys.argv[5]
 control_plane_image_ref = sys.argv[6]
+argo_version = sys.argv[7]
+argo_controller_image_ref = sys.argv[8]
+argo_executor_image_ref = sys.argv[9]
 
 if sample_root.exists():
     shutil.rmtree(sample_root)
@@ -114,6 +120,8 @@ compatibility = {
     "chartVersion": chart_version,
     "supportedUpgradeSources": [],
 }
+if argo_version:
+    compatibility["argoVersion"] = argo_version
 
 control_plane_bytes = b"control-plane-image\n"
 schema_bytes = b'{\n  "$schema": "https://json-schema.org/draft/2020-12/schema",\n  "type": "object"\n}\n'
@@ -165,6 +173,55 @@ with tarfile.open(sample_root / chart_name, "w:gz") as tf:
     tf.add(chart_src, arcname="appliance")
 shutil.rmtree(sample_root / "chart")
 
+argo_chart_name = ""
+argo_controller_name = ""
+argo_executor_name = ""
+argo_crds_name = ""
+if argo_version:
+    argo_chart_name = f"appliance-argo-workflows-chart-{argo_version}.tgz"
+    argo_chart_src = sample_root / "chart" / "appliance-argo-workflows"
+    argo_chart_src.mkdir(parents=True, exist_ok=True)
+    (argo_chart_src / "Chart.yaml").write_text(
+        "\n".join(
+            [
+                "apiVersion: v2",
+                "name: appliance-argo-workflows",
+                f"version: {argo_version}",
+                f"appVersion: {argo_version}",
+                "type: application",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (argo_chart_src / "values.yaml").write_text("controller:\n  enabled: true\n", encoding="utf-8")
+    with tarfile.open(sample_root / argo_chart_name, "w:gz") as tf:
+        tf.add(argo_chart_src, arcname="appliance-argo-workflows")
+    shutil.rmtree(sample_root / "chart")
+
+    argo_crds_name = "argo-crds"
+    argo_crds_dir = sample_root / argo_crds_name
+    argo_crds_dir.mkdir(parents=True, exist_ok=True)
+    (argo_crds_dir / "workflows.argoproj.io.yaml").write_text(
+        "\n".join(
+            [
+                "apiVersion: apiextensions.k8s.io/v1",
+                "kind: CustomResourceDefinition",
+                "metadata:",
+                "  name: workflows.argoproj.io",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    if argo_controller_image_ref:
+        argo_controller_name = f"argo-controller-{argo_version}.oci.tar.zst"
+        (sample_root / argo_controller_name).write_bytes(b"sample argo controller image\n")
+    if argo_executor_image_ref:
+        argo_executor_name = f"argo-executor-{argo_version}.oci.tar.zst"
+        (sample_root / argo_executor_name).write_bytes(b"sample argo executor image\n")
+
 def file_digest(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -201,6 +258,20 @@ release_input = {
     },
     "compatibility": compatibility,
 }
+
+if argo_chart_name:
+    release_input["artifacts"]["argoWorkflowsChart"] = file_artifact(argo_chart_name)
+if argo_crds_name:
+    release_input["artifacts"]["argoCRDs"] = {
+        "path": argo_crds_name,
+        "manifestDigest": dir_manifest_digest(sample_root / argo_crds_name),
+    }
+if argo_controller_name:
+    release_input["artifacts"]["argoControllerImage"] = file_artifact(argo_controller_name)
+    release_input["artifacts"]["argoControllerImage"]["imageReference"] = argo_controller_image_ref
+if argo_executor_name:
+    release_input["artifacts"]["argoExecutorImage"] = file_artifact(argo_executor_name)
+    release_input["artifacts"]["argoExecutorImage"]["imageReference"] = argo_executor_image_ref
 
 (sample_root / "release-input.json").write_text(json.dumps(release_input, indent=2) + "\n", encoding="utf-8")
 
