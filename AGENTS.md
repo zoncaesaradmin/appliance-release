@@ -29,6 +29,7 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 - Helm is the standard deployment mechanism. Each major platform component (`zon-core`, `zon-api`, `zon-ui`, `zon-registry`, `zon-observability`, ...) ships as its own Helm chart.
 - Maintain two independent version levels: a **platform version** (the complete tested release, pinning the supported K3s version and every chart/image version) and independent **per-service versions** that may evolve while remaining compatible with a given platform release.
 - The installer is **manifest-driven**, not hardcoded: the signed release manifest and bundle entries define the platform version, supported K3s version, chart/image versions, enabled components, default configuration, and migration information. `zonctl` reads these verified inputs rather than embedding release values in code.
+- Do not introduce build-time target-specific hostnames, IP addresses, URLs, TLS names, or origins into the release bundle workflow. A bundle must remain portable across target hosts; target identity belongs to install-time or post-install configuration, not product-bundle assembly inputs.
 
 ## Verification
 

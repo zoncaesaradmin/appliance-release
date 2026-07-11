@@ -257,7 +257,7 @@ namespace:
 
 config:
   environment: production
-  canonicalOrigin: https://zon.example.internal
+  canonicalOrigin: https://127.0.0.1
   logLevel: info
   trustedProxyCount: 1
 
@@ -276,10 +276,10 @@ service:
   internalPort: 8081
 
 ingress:
-  enabled: false
+  enabled: true
   entryPoints:
     - websecure
-  host: zon.example.internal
+  host: ""
   tlsSecretName: appliance-tls
 
 serviceAccount:
