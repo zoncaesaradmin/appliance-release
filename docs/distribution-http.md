@@ -1,4 +1,6 @@
-# HTTP Distribution
+# Publish Server Workflow (HTTP)
+
+Audience: publish server operator or build machine only.
 
 This is the current recommended simple distribution model for the files
 exported by `scripts/ci/build-full-bundle.sh`.
@@ -15,10 +17,6 @@ The idea is:
 
 This keeps distribution separate from build, and keeps install itself
 offline.
-
-The extracted bundle now carries its own `zonctl` launcher plus bundle-local
-`helm`, `kubectl`, and `ctr` helpers, so the target host does not need those
-tools installed separately.
 
 ## Recommendation
 
@@ -168,15 +166,7 @@ Optional variables:
 - `PUBLISH_SSH_PORT`
   Defaults to `22`.
 
-`make publish-release` prints the exact target-host commands for:
-
-- install
-- latest alias install, if `PUBLISH_LATEST_ALIAS=1` is enabled
-
-If the derived base URL is not the real public URL, rerun with
-`PUBLISH_PUBLIC_BASE_URL=...`.
-
-That command:
+The command:
 
 - creates a versioned directory on the remote server
 - copies:
@@ -196,68 +186,9 @@ bash ./scripts/publish/publish-release.sh \
   --remote-root /srv/www/releases
 ```
 
-## What The Target Host Runs
-
-The target host does not need this repo.
-
-Temporary Python-server style:
-
-```bash
-curl -fLo /tmp/install-http-release.sh \
-  http://192.168.1.103:8080/appliance/0.1.0/install-http-release.sh
-bash /tmp/install-http-release.sh \
-  --base-url http://192.168.1.103:8080
-```
-
-Longer-lived NGINX-style:
-
-```bash
-curl -fLo /tmp/install-http-release.sh \
-  http://downloads.example.internal/releases/appliance/0.1.0/install-http-release.sh
-bash /tmp/install-http-release.sh \
-  --base-url http://downloads.example.internal/releases
-```
-
-The normal customer install entrypoint is the single piped command:
-
-```bash
-curl -fsSL http://192.168.1.103:28081/appliance/0.1.0/install-http-release.sh \
-  | bash -s -- --base-url http://192.168.1.103:28081
-```
-
-That one command downloads the release, verifies checksums, extracts the
-bundle, runs `zonctl preflight`, runs `zonctl install`, and prompts for the
-first administrator password during install.
-
-The install helper downloads:
-
-- `appliance-0.1.0-bundle.tar.gz`
-- `release-signing.pub`
-- `sha256sum.txt`
-
-The install helper verifies checksums, extracts locally, then runs:
-
-- `zonctl preflight`
-- `zonctl install`
-
-Those install-time `zonctl` commands use the bundle-local helper binaries, not
-host-installed `helm` or `kubectl`. `zonctl install` now also handles
-first-admin bootstrap in the same flow: for a human operator it prompts on the
-terminal for the initial administrator password instead of requiring a separate
-pod-level bootstrap command.
-
-If you published a `latest/` alias, the same install helper can use that too:
-
-```bash
-curl -fLo /tmp/install-http-release.sh \
-  http://downloads.example.internal/releases/appliance/latest/install-http-release.sh
-bash /tmp/install-http-release.sh \
-  --base-url http://downloads.example.internal/releases \
-  --use-latest
-```
-
-The published helper name is stable. The product version is carried inside
-the script content and the versioned release path in the URL.
+`make publish-release` prints the exact target-host install command. For the
+target-host runbook itself, including install, upgrade, repair, uninstall, and
+factory-reset cases, see [target-host-operations.md](target-host-operations.md).
 
 No extra host package install is required for Helm, kubectl, or ctr in that
 flow. They are resolved from inside the extracted bundle.

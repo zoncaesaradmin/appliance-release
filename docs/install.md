@@ -1,12 +1,9 @@
-# Installing Zon
+# Install Reference
 
 This describes the current, implemented behavior of `zonctl install`. It
 covers what ships today; see [release-plan.md](release-plan.md) for the
 overall plan and execution ledger, and [security.md](security.md) for the
 trust model behind every verification step mentioned here.
-
-Implementation package names referenced below now live in the
-`appliance-ctl` repo, which owns the `zonctl` source tree.
 
 ## Bundle-Only V1
 
@@ -19,42 +16,16 @@ the bundled launcher layout), default configuration, and the signed
 
 ## Prerequisites
 
-- A host that passes `zonctl preflight` (see [Host Requirements](#host-requirements)
-  below). Installation refuses to proceed if preflight reports `unsupported`
-  or `operator-action` findings.
+- A host that passes `zonctl preflight`. See
+  [support-matrix.md](support-matrix.md) for the qualified target-host
+  baseline. Installation refuses to proceed if preflight reports
+  `unsupported` or `operator-action` findings.
 - The extracted air-gap release bundle directory (contains
   `release-manifest.json`, `release-manifest.sig`, and every artifact the
   manifest lists).
 - The pinned release-signing public key (`--public-key`). This is the
   root of trust for installation: every other verification step chains
   from a valid signature against this key.
-
-## Host Requirements
-
-The qualified v1 baseline (see [support-matrix.md](support-matrix.md) and
-`internal/preflight`) is:
-
-- Ubuntu Server 22.04 LTS or 24.04 LTS, `amd64`
-- At least 4 CPUs and 4 GiB RAM
-- A local `ext4` filesystem for the platform data directory, with at least
-  50 GiB free space and 200,000 free inodes
-- cgroup v2, kernel user namespaces, and IPv4 forwarding enabled (IPv4
-  forwarding is auto-fixed by the installer if disabled; the rest are
-  operator-action findings that must be resolved before install proceeds)
-- A synchronized system clock, an internally resolvable hostname, and ports
-  `6443`, `10250`, and `8472` available on a fresh host. If an existing K3s
-  instance is already running, those ports may already be occupied by K3s and
-  the installer then treats the host as a reuse/adoption candidate instead of
-  a fresh-port-conflict case. Additional product-specific ports are added once
-  `appliance-code`'s configuration schema pins them.
-- No conflicting `docker`, `microk8s`, or unrelated `kubelet` service, and no
-  active host firewall blocking the required ports. For `ufw`, the current
-  implementation passes preflight when the required baseline rules are already
-  allowed; other active firewall managers remain conservative operator-action
-  findings for now.
-
-Run `zonctl preflight --output json` to get a full machine-readable
-report before installing.
 
 ## Running Install
 

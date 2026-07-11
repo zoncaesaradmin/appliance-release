@@ -1,10 +1,7 @@
-# Backup and Restore
+# Backup And Restore Reference
 
 `zonctl backup` and `zonctl restore` (`internal/backup`) implement a
 coordinated, offline backup and a clean-node restore.
-
-Implementation package names referenced below now live in the
-`appliance-ctl` repo, which owns the `zonctl` source tree.
 
 ## Backup
 

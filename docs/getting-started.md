@@ -1,41 +1,29 @@
-# Getting Started
+# Developer Getting Started
 
-This page is for two different audiences, because this repository is
-mid-build (see [CHANGELOG.md](../CHANGELOG.md)): an **operator** who
-eventually runs `zonctl install` against a real signed bundle, and a
-**developer** working on this repository itself. Read the section that
-matches what you're trying to do.
+Audience: developer machine only.
 
-## For Operators: Installing Zon
+This page is for working on `appliance-release` itself. If you are operating a
+target Ubuntu host, use [target-host-operations.md](target-host-operations.md)
+instead. If you are running CI or a release build machine, start with
+[automation.md](automation.md).
 
-On a supported Ubuntu Server host (22.04 or 24.04 LTS), installing Zon is
-one command from the signed appliance bundle:
+## What This Repo Owns
 
-```
-zonctl install --bundle-dir /path/to/extracted/bundle --public-key /path/to/release-signing.pub
-```
+- bundle assembly
+- final release signing
+- publish/distribution helpers
+- packaging automation that consumes `appliance-code` and `appliance-ctl`
 
-`zonctl` verifies the signed bundle, re-checks every artifact digest,
-runs host preflight, installs and starts K3s (or adopts a compatible
-existing cluster), preloads the bundled images, and applies the chart —
-see [install.md](install.md) for
-exactly what happens at each step.
+If you need to change the `zonctl` source, work in `appliance-ctl`, not here.
 
-Public egress is not required during install or runtime.
-
-## For Developers: Working On This Repository
-
-### Prerequisites
+## Prerequisites
 
 - `make`
 - `bash`
 - a local `appliance-ctl` checkout if you want to assemble bundles
   locally; that repo owns the `zonctl` source and binary
 
-If you want to change `zonctl` itself, work in `appliance-ctl`, not
-here. This repo is now the packaging/orchestration layer.
-
-### Day-to-day loop
+## Day-To-Day Loop
 
 ```
 make verify
@@ -48,22 +36,25 @@ Use `make verify` before committing. It runs the local repo checks that
 do not require a real host or a full product bundle, and finishes with
 `make clean`.
 
-Use `make product-bundle CONFIG="$(pwd)/configs/product-bundle.sample.env"`
-when you want a fully automated local smoke run with generated placeholder
-inputs. Use `make product-bundle` with your own config when you have real
-artifacts and versions to package.
+Use the sample flow when you want a local smoke run with generated placeholder
+inputs:
 
-For CAE/CI, prefer `bash ./scripts/ci/build-full-bundle.sh` from the checked-out
-`appliance-release` repo root. That is the primary entrypoint.
+```bash
+make product-bundle CONFIG="$(pwd)/configs/product-bundle.sample.env"
+```
 
-That flow uses `appliance-code`'s `make dev-run` path to produce the
-`release-input` artifact inside the shared dev container, so the Linux build
-host should satisfy the `appliance-code` dev-container prerequisites rather
-than installing the control-plane image-build toolchain directly on the host.
-The real bundle flow now auto-downloads a pinned Linux `amd64` Helm binary
-unless you explicitly override it with `HELM_BINARY=/abs/path/to/helm`.
+## Which Workflow To Use
 
-### Repo Boundary
+- Normal CI/build-machine path:
+  [automation.md](automation.md)
+- Manual low-level bundle debugging:
+  [real-setup.md](real-setup.md)
+- HTTP publish step:
+  [distribution-http.md](distribution-http.md)
+- Target-host install / upgrade / reset:
+  [target-host-operations.md](target-host-operations.md)
+
+## Repo Boundary
 
 - `appliance-code` owns product artifacts such as the control-plane
   chart, schema, and signed `release-input` handoff
@@ -72,7 +63,7 @@ unless you explicitly override it with `HELM_BINARY=/abs/path/to/helm`.
   workspace setup, signing material generation, and final bundle
   composition
 
-### Real-bundle targets
+## Real-Bundle Targets
 
 `assemble-bundle` and `verify-bundle` are now real targets. They use
 an external `zonctl` binary for producing and verifying a signed
@@ -86,7 +77,7 @@ BUNDLE_DIR=/abs/path/to/bundle PUBLIC_KEY=/abs/path/to/release-signing.pub make 
 By default these targets look for `../appliance-ctl/bin/zonctl`. If
 your binary lives elsewhere, set `ZONCTL_BINARY=/abs/path/to/zonctl`.
 
-### Exercising The CLI Directly
+## Exercising `zonctl` Directly
 
 If you want to build and run `zonctl` directly, do that in
 `appliance-ctl`:
@@ -96,7 +87,7 @@ make -C ../appliance-ctl build
 ../appliance-ctl/bin/zonctl --help
 ```
 
-### Before merging changes
+## Before Merging Changes
 
 1. Run `make verify`.
 2. Run `make product-bundle CONFIG="$(pwd)/configs/product-bundle.sample.env"`

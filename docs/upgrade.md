@@ -1,12 +1,9 @@
-# Upgrading the Appliance
+# Upgrade Reference
 
 `zonctl upgrade` implements the N-1 upgrade sequence
 (`internal/upgrade.Orchestrator.Upgrade`): the target release states which
 prior versions it may upgrade from, and everything else is refused or
 rolled back rather than left in an unclear state.
-
-Implementation package names referenced below now live in the
-`appliance-ctl` repo, which owns the `zonctl` source tree.
 
 ## Running Upgrade
 

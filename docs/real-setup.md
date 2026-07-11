@@ -1,10 +1,13 @@
-# Real Setup Guide
+# Manual Bundle Assembly (Advanced)
+
+Audience: developer machine or build machine only.
 
 This is the practical path to build an installable extracted appliance
 bundle from local staged artifacts, verify it, copy it to a supported
 Ubuntu host, and install it there with `zonctl`.
 
-For the one-command automated path, see [automation.md](automation.md).
+Use this only when debugging the lower-level bundle assembly flow. For the
+normal one-command build path, see [automation.md](automation.md).
 
 The bundle assembly flow is now implemented in this repository via:
 
@@ -22,12 +25,6 @@ On the build workstation:
 - a release-input directory from `appliance-code`
 - staged install-ready artifacts for the final bundle
 - an Ed25519 signing key pair for the final release manifest
-
-On the target host:
-
-- Ubuntu Server 22.04 LTS or 24.04 LTS, `amd64`
-- root or sudo access
-- enough disk and memory to satisfy `zonctl preflight`
 
 ## 1. Build `zonctl`
 
@@ -184,52 +181,8 @@ If you want the bundle to be easier to move around, archive it as a
 separate transport step after assembly. `zonctl install` itself still
 consumes the extracted directory.
 
-## 8. Run Preflight On The Target Host
-
-On the target host:
-
-```bash
-chmod +x /tmp/appliance-2.4.0-bundle/zonctl
-sudo /tmp/appliance-2.4.0-bundle/zonctl preflight --output json
-```
-
-Fix any `unsupported` or `operator-action` findings before installing.
-
-## 9. Install The Appliance
-
-On the target host:
-
-```bash
-sudo /tmp/appliance-2.4.0-bundle/zonctl install \
-  --bundle-dir /tmp/appliance-2.4.0-bundle \
-  --public-key /tmp/release-signing.pub \
-  --state-dir /var/lib/zon \
-  --output json
-```
-
-That command will:
-
-- verify the signed bundle
-- run host preflight
-- install or adopt K3s
-- preload the bundled images
-- apply the Helm chart
-- persist `installed-state.json`
-
-## 10. Validate The Installed Host
-
-After install:
-
-```bash
-sudo /tmp/appliance-2.4.0-bundle/zonctl status --output json
-sudo /tmp/appliance-2.4.0-bundle/zonctl verify --output json
-```
-
-If you want to inspect the exact install evidence later:
-
-```bash
-sudo /tmp/appliance-2.4.0-bundle/zonctl support-bundle --output json
-```
+After transfer, use [target-host-operations.md](target-host-operations.md) for
+the target-device install, upgrade, repair, uninstall, or reset steps.
 
 ## Current Boundary
 

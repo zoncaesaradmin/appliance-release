@@ -1,7 +1,4 @@
-# Support Matrix
-
-Implementation package names referenced below now live in the
-`appliance-ctl` repo, which owns the `zonctl` source tree.
+# Target Host Support Matrix
 
 ## Qualified Host Baseline (v1)
 

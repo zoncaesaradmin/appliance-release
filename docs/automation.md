@@ -1,4 +1,9 @@
-# Bundle Automation
+# Build Machine / CI Workflow
+
+Audience: build machine or CI runner only.
+
+This is the normal end-to-end release build path. It is not for the target
+Ubuntu host.
 
 This repo exposes one primary CI entrypoint and one lower-level debug path:
 
@@ -14,7 +19,7 @@ The supported model is:
 - `appliance-release` consumes that `release-input`, stages the remaining
   K3s installer artifacts, and assembles the final signed bundle
 
-## Single Build-Machine Command
+## Normal CI Command
 
 If your build machine already checked out `appliance-release`, the preferred
 single command is:
@@ -38,38 +43,20 @@ That script will:
 - assemble and verify the final signed bundle
 - export the customer delivery files into `EXPORT_DIR` or `WORK_ROOT/export`
 
-On every run, the script rebuilds the generated state from scratch. The repo
-clones are reused and refreshed, while the workspace, artifacts, and exported
-delivery files are cleared and recreated so reruns do not inherit stale bundle
-outputs.
+On every run, the script recreates the generated workspace, artifacts, and
+exported delivery files. The dependency repo clones are refreshed in place.
 
-The final extracted bundle lands at:
+## Outputs
 
 - `${WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-bundle`
-
-The customer-facing handoff files land at:
-
 - `${WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-bundle.tar.gz`
 - `${WORK_ROOT}/export/release-signing.pub`
 
-The single CI defaults file is
-[configs/product-bundle.ci.env](/Users/zoncaesar/ws/appliance-release/configs/product-bundle.ci.env).
-That file carries the stable values like the pinned K3s version, the control
-plane image repository, the default workspace, and the default `appliance-ctl`
-source. The outer script is the one thing that should drive runtime inputs.
+## One-Time Build-Host Bootstrap
 
 Because the `release-input` producer path in `appliance-code` builds the
 control-plane image inside that repo's shared dev container, the Linux build
-host needs the prerequisites documented by `appliance-code` for `make dev-run`
-to work, especially Podman plus the one-time dev-container registry auth/bootstrap.
-The bundle flow now auto-downloads a pinned Linux `amd64` Helm binary for the
-final bundle when `HELM_BINARY` is not explicitly set. Set `HELM_BINARY` only
-if you want to override that pinned artifact with your own exact file.
-
-This CI script is intentionally non-interactive. If the Linux build host has
-not yet been bootstrapped for `appliance-code`'s rootful Podman flow, the
-script now fails with a clear message instead of pausing on a sudo password
-prompt. Prepare the host once, outside CI:
+host needs the Podman / registry bootstrap once:
 
 ```bash
 export REGISTRY_USER=<github-username>
@@ -77,61 +64,19 @@ export REGISTRY_TOKEN=<PAT with read:packages>
 bash ./scripts/ci/bootstrap-build-host.sh
 ```
 
-After that one-time host bootstrap, later CI runs should stay non-interactive.
-
-That helper reuses or refreshes the `appliance-code` clone under the normal
-build root, then runs `make dev-registry-login` and `make dev-sudo-setup`
-for you in the right place. The only interactive step should be the one-time
-sudo authentication inside that bootstrap helper.
-
-The generated config file is left on disk as rerun/audit evidence:
-
-- `${WORKSPACE}/generated/product-bundle.env`
-
-What to publish to a customer or downstream deployment team:
-
-- the exported bundle archive
-- the exported `release-signing.pub`
-
-The customer does not need any of the three source repos. They only need those
-two exported files on the target Ubuntu host.
-
-For the current simple distribution model, see
-[HTTP Distribution](distribution-http.md). That page shows how to put the
-exported files onto a separate HTTP/HTTPS download server with the new
-publish script.
+After that, later CI runs should stay non-interactive.
 
 ## Real Inputs
 
-The primary CI script, `scripts/ci/build-full-bundle.sh`, now expects these
-external inputs:
+The primary script expects these external K3s inputs:
 
 - `k3s`
 - `k3s-airgap-images-amd64.tar.zst`
 - optionally, `HELM_BINARY=/abs/path/to/helm` if you want to override the
   pinned auto-downloaded Helm artifact
 
-It does **not** expect you to provide `release-input-${PRODUCT_VERSION}.tar.gz`
-from outside. That artifact is produced during the run by the cloned
-`appliance-code` repo.
-
-By default, the control-plane image path is taken from the prepared
-`release-input`. Only override the control-plane image in the lower-level
-config-driven flow if you are intentionally substituting a different local file
-for debugging.
-
-The lower-level config-driven flow still supports:
-
-- `RELEASE_INPUT_SOURCE=/path/or/url`
-- or `RELEASE_INPUT_VERSION=...` together with `RELEASE_INPUT_FETCH_TEMPLATE=...`
-
-and these staging overrides:
-
-- `CONTROL_PLANE_IMAGE`
-- `K3S_BINARY`
-- `K3S_AIRGAP_IMAGES`
-- `HELM_VERSION`
-- `HELM_BINARY`
+`release-input-${PRODUCT_VERSION}.tar.gz` is produced during the run by the
+cloned `appliance-code` repo.
 
 ## Config-Driven Flow
 
@@ -145,6 +90,9 @@ Start from these templates if you want examples:
 
 - [configs/product-bundle.ci.env](/Users/zoncaesar/ws/appliance-release/configs/product-bundle.ci.env)
 - [configs/product-bundle.sample.env](/Users/zoncaesar/ws/appliance-release/configs/product-bundle.sample.env)
+
+Use this lower-level path when you are debugging bundle inputs or intentionally
+overriding staged artifacts.
 
 ## Local Smoke Run
 
