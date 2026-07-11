@@ -1,0 +1,345 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/common.sh"
+
+usage() {
+  cat <<'EOF'
+usage: build-and-publish.sh [options]
+
+Run explicit build and publish commands on the remote build host, stop on the
+first failure, and pull back export metadata for reporting.
+
+Options:
+  --config PATH                 YAML or JSON config file. Optional if
+                                APPLIANCE_RELEASE_CONFIG is set or a local
+                                appliance-release.config.yaml exists.
+  --git-pull-cmd CMD            Optional remote git-pull command.
+  --bootstrap-cmd CMD           Optional remote bootstrap command.
+  --build-cmd CMD               Remote build command. Defaults to build_flow.build_command.
+  --publish-cmd CMD             Remote publish command. Defaults to build_flow.publish_command.
+  --remote-cwd PATH             Remote working directory. Defaults to release_workspace.remote_repo_path.
+  --remote-export-dir PATH      Optional remote export directory to rsync back locally.
+  --remote-release-input PATH   Optional remote release-input file or directory to copy back.
+  --remote-bundle-dir PATH      Optional remote extracted bundle directory to copy back.
+  --release-version VERSION     Optional release version for metadata and filenames.
+  --run-dir DIR                 Local run directory.
+EOF
+}
+
+CONFIG_PATH=""
+GIT_PULL_CMD=""
+BOOTSTRAP_CMD=""
+BUILD_CMD=""
+PUBLISH_CMD=""
+REMOTE_CWD=""
+REMOTE_EXPORT_DIR=""
+REMOTE_RELEASE_INPUT=""
+REMOTE_BUNDLE_DIR=""
+RELEASE_VERSION=""
+RUN_DIR=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --config)
+      CONFIG_PATH="${2:-}"
+      shift 2
+      ;;
+    --git-pull-cmd)
+      GIT_PULL_CMD="${2:-}"
+      shift 2
+      ;;
+    --bootstrap-cmd)
+      BOOTSTRAP_CMD="${2:-}"
+      shift 2
+      ;;
+    --build-cmd)
+      BUILD_CMD="${2:-}"
+      shift 2
+      ;;
+    --publish-cmd)
+      PUBLISH_CMD="${2:-}"
+      shift 2
+      ;;
+    --remote-cwd)
+      REMOTE_CWD="${2:-}"
+      shift 2
+      ;;
+    --remote-export-dir)
+      REMOTE_EXPORT_DIR="${2:-}"
+      shift 2
+      ;;
+    --remote-release-input)
+      REMOTE_RELEASE_INPUT="${2:-}"
+      shift 2
+      ;;
+    --remote-bundle-dir)
+      REMOTE_BUNDLE_DIR="${2:-}"
+      shift 2
+      ;;
+    --release-version)
+      RELEASE_VERSION="${2:-}"
+      shift 2
+      ;;
+    --run-dir)
+      RUN_DIR="${2:-}"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "unknown argument: $1"
+      ;;
+  esac
+done
+
+CONFIG_PATH="$(resolve_config_path "${CONFIG_PATH}" || true)"
+[[ -n "${CONFIG_PATH}" ]] || fail "config not provided; use --config or APPLIANCE_RELEASE_CONFIG"
+ensure_file "${CONFIG_PATH}"
+
+if [[ -z "${RUN_DIR}" ]]; then
+  RUN_DIR="$(pwd)/.run/appliance-release/$(date -u +%Y%m%dT%H%M%SZ)"
+fi
+
+if [[ -z "${REMOTE_CWD}" ]]; then
+  REMOTE_CWD="$(config_get "${CONFIG_PATH}" "release_workspace.remote_repo_path")"
+fi
+if [[ -z "${GIT_PULL_CMD}" ]]; then
+  GIT_PULL_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.git_pull_command" || true)"
+fi
+if [[ -z "${BOOTSTRAP_CMD}" ]]; then
+  BOOTSTRAP_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_command" || true)"
+fi
+if [[ -z "${BUILD_CMD}" ]]; then
+  BUILD_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_command" || true)"
+fi
+if [[ -z "${PUBLISH_CMD}" ]]; then
+  PUBLISH_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.publish_command" || true)"
+fi
+if [[ -z "${RELEASE_VERSION}" ]]; then
+  RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
+fi
+if [[ -z "${REMOTE_EXPORT_DIR}" ]]; then
+  REMOTE_EXPORT_DIR="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_export_dir" || true)"
+fi
+if [[ -z "${REMOTE_RELEASE_INPUT}" ]]; then
+  REMOTE_RELEASE_INPUT="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_release_input_path" || true)"
+fi
+if [[ -z "${REMOTE_BUNDLE_DIR}" ]]; then
+  REMOTE_BUNDLE_DIR="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_bundle_dir" || true)"
+fi
+
+[[ -n "${BUILD_CMD}" ]] || fail "build command not provided and build_flow.build_command is missing"
+[[ -n "${PUBLISH_CMD}" ]] || fail "publish command not provided and build_flow.publish_command is missing"
+
+require_cmd rsync
+require_cmd ssh
+require_cmd python3
+
+BUILD_HOST="$(config_get "${CONFIG_PATH}" "build_host.alias")"
+BOOTSTRAP_NEEDS_SUDO="$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_needs_sudo" || true)"
+BUILD_NEEDS_SUDO="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_needs_sudo" || true)"
+BOOTSTRAP_REGISTRY_USER="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user" || true)"
+BOOTSTRAP_REGISTRY_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token_env" || true)"
+BOOTSTRAP_REGISTRY_TOKEN="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token" || true)"
+PUBLISH_PUBLIC_BASE_URL="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.base_url" || true)"
+if [[ -z "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
+  BOOTSTRAP_REGISTRY_TOKEN_ENV="REGISTRY_TOKEN"
+fi
+ensure_dir "${RUN_DIR}"
+ensure_dir "${RUN_DIR}/logs"
+ensure_dir "${RUN_DIR}/artifacts"
+ensure_dir "${RUN_DIR}/metadata"
+
+git_pull_remote_cmd=""
+if [[ -n "${GIT_PULL_CMD}" ]]; then
+  git_pull_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${GIT_PULL_CMD}"
+fi
+bootstrap_remote_cmd=""
+if [[ -n "${BOOTSTRAP_CMD}" ]]; then
+  bootstrap_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BOOTSTRAP_CMD}"
+fi
+build_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BUILD_CMD}"
+publish_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PUBLISH_CMD}"
+
+if [[ -n "${PUBLISH_PUBLIC_BASE_URL}" ]] && [[ "${PUBLISH_CMD}" != *"PUBLISH_PUBLIC_BASE_URL="* ]]; then
+  publish_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && PUBLISH_PUBLIC_BASE_URL=$(shell_quote "${PUBLISH_PUBLIC_BASE_URL}") ${PUBLISH_CMD}"
+fi
+
+git_pull_log="${RUN_DIR}/logs/git-pull.log"
+bootstrap_log="${RUN_DIR}/logs/bootstrap.log"
+build_log="${RUN_DIR}/logs/build.log"
+publish_log="${RUN_DIR}/logs/publish.log"
+
+if [[ -n "${git_pull_remote_cmd}" ]]; then
+  log "running remote git pull on ${BUILD_HOST}"
+  run_ssh_logged "${BUILD_HOST}" "${git_pull_log}" "${git_pull_remote_cmd}"
+fi
+
+build_sudo_password=""
+if bool_true "${BOOTSTRAP_NEEDS_SUDO:-false}" || bool_true "${BUILD_NEEDS_SUDO:-false}"; then
+  build_sudo_password="$(resolve_secret "APPLIANCE_BUILD_SUDO_PASSWORD" "Build host sudo password")"
+fi
+
+if [[ -n "${bootstrap_remote_cmd}" ]]; then
+  bootstrap_env_prefix=""
+  if [[ -n "${BOOTSTRAP_REGISTRY_USER}" ]]; then
+    bootstrap_env_prefix="${bootstrap_env_prefix}export REGISTRY_USER=$(shell_quote "${BOOTSTRAP_REGISTRY_USER}") ; "
+  fi
+  if [[ -z "${BOOTSTRAP_REGISTRY_TOKEN}" && -n "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
+    BOOTSTRAP_REGISTRY_TOKEN="$(resolve_secret "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" "Build host registry token")"
+  fi
+  if [[ -n "${BOOTSTRAP_REGISTRY_TOKEN}" ]]; then
+    bootstrap_env_prefix="${bootstrap_env_prefix}export REGISTRY_TOKEN=$(shell_quote "${BOOTSTRAP_REGISTRY_TOKEN}") ; "
+  fi
+  if [[ -n "${bootstrap_env_prefix}" ]]; then
+    bootstrap_remote_cmd="${bootstrap_env_prefix}${bootstrap_remote_cmd}"
+  fi
+  if bool_true "${BOOTSTRAP_NEEDS_SUDO:-false}"; then
+    bootstrap_remote_cmd="printf '%s\n' $(shell_quote "${build_sudo_password}") | sudo -S -p '' -v >/dev/null && ${bootstrap_remote_cmd}"
+  fi
+  log "running remote bootstrap on ${BUILD_HOST}"
+  run_ssh_logged "${BUILD_HOST}" "${bootstrap_log}" "${bootstrap_remote_cmd}"
+fi
+
+if bool_true "${BUILD_NEEDS_SUDO:-false}"; then
+  build_remote_cmd="printf '%s\n' $(shell_quote "${build_sudo_password}") | sudo -S -p '' -v >/dev/null && ${build_remote_cmd}"
+fi
+
+log "running remote build on ${BUILD_HOST}"
+run_ssh_logged "${BUILD_HOST}" "${build_log}" "${build_remote_cmd}"
+
+log "running remote publish on ${BUILD_HOST}"
+run_ssh_logged "${BUILD_HOST}" "${publish_log}" "${publish_remote_cmd}"
+
+copy_remote_path() {
+  local remote_path="$1"
+  local local_path="$2"
+  [[ -n "${remote_path}" ]] || return 0
+
+  if ssh "${BUILD_HOST}" "test -d $(shell_quote "${remote_path}")"; then
+    ensure_dir "${local_path}"
+    rsync -az "${BUILD_HOST}:${remote_path}/" "${local_path}/"
+    return 0
+  fi
+  ensure_dir "${local_path}"
+  rsync -az "${BUILD_HOST}:${remote_path}" "${local_path}/"
+}
+
+if [[ -n "${REMOTE_EXPORT_DIR}" ]]; then
+  log "collecting remote export directory ${REMOTE_EXPORT_DIR}"
+  copy_remote_path "${REMOTE_EXPORT_DIR}" "${RUN_DIR}/artifacts/export"
+fi
+
+if [[ -n "${REMOTE_RELEASE_INPUT}" ]]; then
+  log "collecting remote release input ${REMOTE_RELEASE_INPUT}"
+  copy_remote_path "${REMOTE_RELEASE_INPUT}" "${RUN_DIR}/artifacts/release-input"
+fi
+
+if [[ -n "${REMOTE_BUNDLE_DIR}" ]]; then
+  log "collecting remote bundle directory ${REMOTE_BUNDLE_DIR}"
+  copy_remote_path "${REMOTE_BUNDLE_DIR}" "${RUN_DIR}/artifacts/bundle"
+fi
+
+remote_release_commit_cmd="cd $(shell_quote "${REMOTE_CWD}") && git rev-parse HEAD"
+remote_release_commit="$(ssh "${BUILD_HOST}" "bash -lc $(shell_quote "${remote_release_commit_cmd}")" 2>/dev/null || true)"
+
+python3 - "${RUN_DIR}" "${CONFIG_PATH}" "${BUILD_HOST}" "${REMOTE_CWD}" "${RELEASE_VERSION}" "${GIT_PULL_CMD}" "${BOOTSTRAP_CMD}" "${BUILD_CMD}" "${PUBLISH_CMD}" "${remote_release_commit}" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+run_dir = Path(sys.argv[1])
+(
+    config_path,
+    build_host,
+    remote_cwd,
+    release_version,
+    git_pull_cmd,
+    bootstrap_cmd,
+    build_cmd,
+    publish_cmd,
+    remote_release_commit,
+) = sys.argv[2:11]
+
+def read_text(path: Path):
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    return None
+
+def read_json(path: Path):
+    if path.is_file():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return None
+
+export_dir = run_dir / "artifacts" / "export"
+release_input_dir = run_dir / "artifacts" / "release-input"
+bundle_dir = run_dir / "artifacts" / "bundle"
+
+checksums_text = read_text(export_dir / "sha256sum.txt")
+release_input = read_json(release_input_dir / "release-input.json")
+release_manifest = read_json(bundle_dir / "release-manifest.json")
+
+artifact_checksums = []
+if checksums_text:
+    for raw_line in checksums_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) >= 2:
+            artifact_checksums.append({"digest": parts[0], "path": parts[-1]})
+
+image_digests = {}
+if release_input and isinstance(release_input.get("artifacts"), dict):
+    for key, value in release_input["artifacts"].items():
+        if isinstance(value, dict):
+            digest = value.get("digest") or value.get("manifestDigest")
+            if digest:
+                image_digests[key] = {
+                    "path": value.get("path"),
+                    "digest": digest,
+                }
+
+bundle_entries = []
+if release_manifest and isinstance(release_manifest.get("entries"), list):
+    for entry in release_manifest["entries"]:
+        if isinstance(entry, dict):
+            bundle_entries.append(
+                {
+                    "path": entry.get("targetPath") or entry.get("path"),
+                    "digest": entry.get("digest"),
+                    "sizeBytes": entry.get("sizeBytes"),
+                }
+            )
+
+payload = {
+    "configPath": config_path,
+    "buildHost": build_host,
+    "remoteWorkingDirectory": remote_cwd,
+    "releaseVersion": release_version or None,
+    "remoteReleaseCommit": remote_release_commit or None,
+    "gitPullCommand": git_pull_cmd or None,
+    "bootstrapCommand": bootstrap_cmd or None,
+    "buildCommand": build_cmd,
+    "publishCommand": publish_cmd,
+    "artifactChecksums": artifact_checksums,
+    "releaseInputArtifacts": image_digests,
+    "bundleEntries": bundle_entries,
+    "logs": {
+        "gitPull": str(run_dir / "logs" / "git-pull.log"),
+        "bootstrap": str(run_dir / "logs" / "bootstrap.log"),
+        "build": str(run_dir / "logs" / "build.log"),
+        "publish": str(run_dir / "logs" / "publish.log"),
+    },
+}
+
+out_path = run_dir / "metadata" / "build-publish.json"
+out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+
+log "build/publish metadata written to ${RUN_DIR}/metadata/build-publish.json"

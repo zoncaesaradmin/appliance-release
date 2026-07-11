@@ -1,0 +1,77 @@
+# Example config for the appliance-release skill.
+# Fill in the SSH user/host or SSH alias details for your environment.
+# Use absolute remote paths.
+
+build_host:
+  # Example:
+  # alias: zonsys@192.168.1.102
+  # alias: build-host-alias-from-ssh-config
+  alias: zonsys@192.168.1.102
+
+target_host:
+  # Example:
+  # alias: target-user@192.168.1.101
+  # alias: target-host-alias-from-ssh-config
+  alias: zonsys@192.168.1.101
+  state_dir: /var/lib/zon
+
+release_workspace:
+  # Remote appliance-release checkout on the build machine.
+  remote_repo_path: /home/zonsys/ws/appliance-release
+  # Export directory produced on the build machine.
+  remote_export_dir: /home/zonsys/appliance-build/export
+  # Release-input location on the build machine after the bundle build.
+  remote_release_input_path: /home/zonsys/appliance-build/workspace/release-input
+  # Extracted bundle directory on the build machine after the bundle build.
+  remote_bundle_dir: /home/zonsys/appliance-build/workspace/out/appliance-0.1.0-bundle
+
+artifact_registry:
+  # Public HTTP/HTTPS base URL serving the published release files.
+  # Example: http://192.168.1.103:28081
+  base_url: http://artifact-host-or-ip:28081
+  # SSH target used by the build machine's publish command when needed.
+  # Example:
+  # publish_server_alias: publish-user@192.168.1.103
+  # publish_server_alias: publish-host-alias-from-ssh-config
+  publish_server_alias: zonsys@192.168.1.103
+  publish_remote_root: /home/zonsys/releases
+  release_path_prefix: appliance
+
+release:
+  version: 0.1.0
+  publish_latest_alias: false
+
+build_flow:
+  # Required for bootstrap-build-host.sh when the build host still needs the
+  # one-time appliance-code registry login/bootstrap.
+  # Put the username here and keep the token in the existing Mac env var:
+  # export REGISTRY_TOKEN='...'
+  registry_user: your-registry-username
+  registry_token_env: REGISTRY_TOKEN
+  # Optional but less secure alternative if you really want the token in config:
+  # registry_token: your-registry-token
+  git_pull_command: git pull
+  bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
+  bootstrap_needs_sudo: true
+  build_needs_sudo: true
+  build_command: PRODUCT_VERSION=0.1.0 K3S_BINARY_SOURCE=/home/zonsys/ci/inputs/k3s K3S_AIRGAP_IMAGES_SOURCE=/home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst bash /home/zonsys/ws/appliance-release/scripts/ci/build-full-bundle.sh
+  publish_command: PRODUCT_VERSION=0.1.0 make publish-release EXPORT_DIR=/home/zonsys/appliance-build/export PUBLISH_SERVER=publish-user@publish-host-or-ip PUBLISH_REMOTE_ROOT=/home/zonsys/releases PUBLISH_PUBLIC_BASE_URL=http://artifact-host-or-ip:28081
+
+install:
+  bootstrap_admin_username: admin
+  uninstall_first: true
+
+verification:
+  status_command: sudo zonctl status --output json
+  verify_command: sudo zonctl verify --output json
+  service_health_command: sudo kubectl get pods -A
+  app_version_command: sudo cat /var/lib/zon/installed-state.json
+  smoke_test_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
+  failure_log_command: sudo zonctl support-bundle --output json
+  allow_ingress_warning: true
+  allow_verify_schema_bug: true
+
+client_verification:
+  # Example: https://192.168.1.101
+  base_url: https://target-ip-or-dns
+  username: admin
