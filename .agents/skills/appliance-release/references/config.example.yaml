@@ -92,9 +92,9 @@ verification:
     # If you enable this after packaging/installing Argo Workflows, the target
     # verification step will also confirm the two namespaces, the core CRDs,
     # and that the controller deployment actually becomes Available.
-    namespaces_command: sudo kubectl get namespace appliance-workflows appliance-builds
+    namespaces_command: sudo kubectl get namespace workflows appliance-builds
     crds_command: sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io
-    controller_command: sudo kubectl -n appliance-workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n appliance-workflows get deploy,pods
+    controller_command: sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods
   allow_ingress_warning: true
   allow_verify_schema_bug: true
 

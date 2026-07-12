@@ -178,14 +178,14 @@ argo_controller_name = ""
 argo_executor_name = ""
 argo_crds_name = ""
 if argo_version:
-    argo_chart_name = f"appliance-argo-workflows-chart-{argo_version}.tgz"
-    argo_chart_src = sample_root / "chart" / "appliance-argo-workflows"
+    argo_chart_name = f"argo-workflows-chart-{argo_version}.tgz"
+    argo_chart_src = sample_root / "chart" / "argo-workflows"
     argo_chart_src.mkdir(parents=True, exist_ok=True)
     (argo_chart_src / "Chart.yaml").write_text(
         "\n".join(
             [
                 "apiVersion: v2",
-                "name: appliance-argo-workflows",
+                "name: argo-workflows",
                 f"version: {argo_version}",
                 f"appVersion: {argo_version}",
                 "type: application",
@@ -196,7 +196,7 @@ if argo_version:
     )
     (argo_chart_src / "values.yaml").write_text("controller:\n  enabled: true\n", encoding="utf-8")
     with tarfile.open(sample_root / argo_chart_name, "w:gz") as tf:
-        tf.add(argo_chart_src, arcname="appliance-argo-workflows")
+        tf.add(argo_chart_src, arcname="argo-workflows")
     shutil.rmtree(sample_root / "chart")
 
     argo_crds_name = "argo-crds"

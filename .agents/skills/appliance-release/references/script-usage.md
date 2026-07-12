@@ -107,7 +107,7 @@ This script checks:
 
 If your config enables `verification.argo.enabled: true`, it also checks:
 
-- `appliance-workflows` and `appliance-builds` namespaces
+- `workflows` and `appliance-builds` namespaces
 - core Argo Workflow CRDs
 - the Argo controller deployment and pods
 

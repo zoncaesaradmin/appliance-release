@@ -439,11 +439,11 @@ entry_paths = {
     if isinstance(entry, dict)
 }
 expected_prefixes = [
-    "charts/appliance-argo-workflows",
+    "charts/argo-workflows",
     "kubernetes/crds/",
     "oci-images/",
 ]
-has_chart = any(path.startswith("charts/appliance-argo-workflows") for path in entry_paths)
+has_chart = any(path.startswith("charts/argo-workflows") for path in entry_paths)
 has_crds = any(path.startswith("kubernetes/crds/") for path in entry_paths)
 has_controller = any("argo-controller" in path for path in entry_paths if path.startswith("oci-images/"))
 has_executor = any("argo-executor" in path for path in entry_paths if path.startswith("oci-images/"))

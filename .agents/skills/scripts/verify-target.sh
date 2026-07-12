@@ -145,9 +145,9 @@ if [[ -n "${ARGO_NAMESPACES_CMD}" || -n "${ARGO_CRDS_CMD}" || -n "${ARGO_CONTROL
   ARGO_ENABLED="true"
 fi
 if bool_true "${ARGO_ENABLED}"; then
-  ARGO_NAMESPACES_CMD="${ARGO_NAMESPACES_CMD:-sudo kubectl get namespace appliance-workflows appliance-builds}"
+  ARGO_NAMESPACES_CMD="${ARGO_NAMESPACES_CMD:-sudo kubectl get namespace workflows appliance-builds}"
   ARGO_CRDS_CMD="${ARGO_CRDS_CMD:-sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io}"
-  ARGO_CONTROLLER_CMD="${ARGO_CONTROLLER_CMD:-sudo kubectl -n appliance-workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n appliance-workflows get deploy,pods}"
+  ARGO_CONTROLLER_CMD="${ARGO_CONTROLLER_CMD:-sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods}"
 fi
 
 ensure_dir "${RUN_DIR}"
@@ -206,14 +206,14 @@ fi
 if [[ -n "${BUNDLE_BIN_DIR}" && "${FAILURE_LOG_CMD}" == "sudo zonctl support-bundle --output json" ]]; then
   FAILURE_LOG_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} zonctl support-bundle --output json"
 fi
-if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_NAMESPACES_CMD}" == "sudo kubectl get namespace appliance-workflows appliance-builds" ]]; then
-  ARGO_NAMESPACES_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl get namespace appliance-workflows appliance-builds"
+if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_NAMESPACES_CMD}" == "sudo kubectl get namespace workflows appliance-builds" ]]; then
+  ARGO_NAMESPACES_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl get namespace workflows appliance-builds"
 fi
 if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_CRDS_CMD}" == "sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io" ]]; then
   ARGO_CRDS_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io"
 fi
-if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_CONTROLLER_CMD}" == "sudo kubectl -n appliance-workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n appliance-workflows get deploy,pods" ]]; then
-  ARGO_CONTROLLER_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n appliance-workflows wait --for=condition=Available deployment --all --timeout=120s && sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n appliance-workflows get deploy,pods"
+if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_CONTROLLER_CMD}" == "sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods" ]]; then
+  ARGO_CONTROLLER_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n workflows get deploy,pods"
 fi
 
 status_code="0"

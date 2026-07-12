@@ -347,7 +347,7 @@ The \`release-input\` directory is produced by \`appliance-code\` and must conta
 If the product handoff includes Argo Workflows for Phase 1 bring-up, this
 workspace also auto-packages the optional release-input artifacts when present:
 
-- \`${ARGO_CHART_ARCHIVE_NAME:-appliance-argo-workflows-<version>.tgz}\`
+- \`${ARGO_CHART_ARCHIVE_NAME:-argo-workflows-<version>.tgz}\`
 - \`${ARGO_CRDS_REL_PATH:-argo-crds/}\`
 - \`${ARGO_CONTROLLER_ARCHIVE_NAME:-argo-controller.oci.tar.zst}\`
 - \`${ARGO_EXECUTOR_ARCHIVE_NAME:-argo-executor.oci.tar.zst}\`
