@@ -24,6 +24,7 @@ Options:
   --out-dir DIR              Override the target-host download/extract directory.
   --bootstrap-admin-username NAME
                              Override install.bootstrap_admin_username.
+  --appliance-profile NAME   Override install.appliance_profile.
   --output FORMAT            zonctl output format. Default: text.
   --uninstall-first          Uninstall the previous appliance first.
   --use-latest               Install from the latest alias instead of a versioned path.
@@ -39,6 +40,7 @@ STATE_DIR=""
 NODE_NAME=""
 OUT_DIR=""
 BOOTSTRAP_ADMIN_USERNAME=""
+APPLIANCE_PROFILE=""
 OUTPUT_FORMAT="text"
 UNINSTALL_FIRST=""
 USE_LATEST="false"
@@ -76,6 +78,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --bootstrap-admin-username)
       BOOTSTRAP_ADMIN_USERNAME="${2:-}"
+      shift 2
+      ;;
+    --appliance-profile)
+      APPLIANCE_PROFILE="${2:-}"
       shift 2
       ;;
     --output)
@@ -134,6 +140,12 @@ if [[ -z "${BOOTSTRAP_ADMIN_USERNAME}" ]]; then
 fi
 if [[ -z "${BOOTSTRAP_ADMIN_USERNAME}" ]]; then
   BOOTSTRAP_ADMIN_USERNAME="admin"
+fi
+if [[ -z "${APPLIANCE_PROFILE}" ]]; then
+  APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
+fi
+if [[ -z "${APPLIANCE_PROFILE}" ]]; then
+  APPLIANCE_PROFILE="core"
 fi
 if [[ -z "${UNINSTALL_FIRST}" ]]; then
   UNINSTALL_FIRST="$(config_get_optional "${CONFIG_PATH}" "install.uninstall_first" || true)"
@@ -208,6 +220,11 @@ install_args=(
   --bootstrap-password-stdin
 )'
 
+if [[ -n "${APPLIANCE_PROFILE}" ]]; then
+  remote_script+='
+install_args+=(--appliance-profile '"$(shell_quote "${APPLIANCE_PROFILE}")"')'
+fi
+
 if bool_true "${USE_LATEST}"; then
   remote_script+='
 echo "[target] Using latest release alias at '"$(shell_quote "${remote_release_dir}")"'."'
@@ -241,7 +258,7 @@ install_log="${RUN_DIR}/logs/install.log"
 log "installing release on ${TARGET_HOST} using ${remote_release_dir}"
 run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"
 
-python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${NODE_NAME}" "${OUT_DIR}" "${BOOTSTRAP_ADMIN_USERNAME}" "${OUTPUT_FORMAT}" "${USE_LATEST}" "${UNINSTALL_FIRST:-false}" "${install_log}" <<'PY'
+python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${NODE_NAME}" "${OUT_DIR}" "${BOOTSTRAP_ADMIN_USERNAME}" "${APPLIANCE_PROFILE}" "${OUTPUT_FORMAT}" "${USE_LATEST}" "${UNINSTALL_FIRST:-false}" "${install_log}" <<'PY'
 import json
 import sys
 
@@ -257,11 +274,12 @@ import sys
     node_name,
     out_dir,
     bootstrap_admin_username,
+    appliance_profile,
     output_format,
     use_latest,
     uninstall_first,
     install_log,
-) = sys.argv[1:16]
+) = sys.argv[1:17]
 
 payload = {
     "configPath": config_path,
@@ -276,6 +294,7 @@ payload = {
     "outDir": out_dir,
     "bundleDir": f"{out_dir}/appliance-{release_version}-bundle" if release_version else None,
     "bootstrapAdminUsername": bootstrap_admin_username,
+    "applianceProfile": appliance_profile or None,
     "outputFormat": output_format,
     "useLatest": use_latest == "true",
     "uninstallFirst": uninstall_first == "true",

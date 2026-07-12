@@ -17,6 +17,8 @@ Notes:
 - If `APPLIANCE_RELEASE_CONFIG` is set, you usually do not need `--config`.
 - `REGISTRY_TOKEN` is mainly needed for build-host bootstrap and build.
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used both for install and Mac-side API verification.
+- Set `install.appliance_profile` in the config if you want a non-default appliance profile.
+- If you omit `install.appliance_profile`, the product default profile is `core`.
 
 ## 1. Full Flow
 
@@ -31,6 +33,7 @@ Common explicit example:
 ```bash
 /Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-flow.sh \
   --release-version 0.1.0 \
+  --appliance-profile builder \
   --uninstall-first \
   --final-ok
 ```
@@ -70,6 +73,7 @@ Use this when the release is already published and you want only the install ste
 ```bash
 /Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/install-on-target.sh \
   --release-version 0.1.0 \
+  --appliance-profile builder \
   --uninstall-first
 ```
 
@@ -149,9 +153,8 @@ Your usual real config lives in the repo, for example:
 /Users/zoncaesar/ws/appliance-release/appliance-release.config.yaml
 ```
 
-If you keep an optional global symlink at `~/.agents/skills/appliance-release`,
-point it at the repo-local skill directory. The repo-local script path is
-`.agents/skills/release/scripts`.
+Do not use a global skill symlink here. The single place to look is the
+repo-local skill path: `.agents/skills/release/scripts`.
 
 ## 7. Simplest Day-To-Day Usage
 

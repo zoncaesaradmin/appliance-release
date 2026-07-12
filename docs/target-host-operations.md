@@ -34,6 +34,20 @@ curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-releas
   | bash -s -- --base-url "${RELEASE_BASE_URL}"
 ```
 
+The default appliance profile is `core`. To install a different v1 profile,
+pass it as product configuration only:
+
+```bash
+curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-release.sh" \
+  | bash -s -- --base-url "${RELEASE_BASE_URL}" --appliance-profile builder
+```
+
+Notes:
+
+- valid v1 profiles are `core`, `builder`, and `storage`
+- profile selection does not change the published bundle files or create a different SKU
+- omitting `--appliance-profile` keeps the default `core` profile
+
 What this does:
 
 - downloads `appliance-<version>-bundle.tar.gz`
@@ -94,6 +108,8 @@ Notes:
 - `upgrade` requires an existing `installed-state.json` under `STATE_DIR`
 - `upgrade` takes a verified pre-upgrade backup automatically
 - if the upgrade fails after mutation starts, `zonctl` attempts rollback
+- omit `--appliance-profile` on upgrade to preserve the currently installed profile
+- pass `--appliance-profile <name>` only when you intentionally want the control plane to come back with a different product-facing profile
 
 ## 3. Clean Recovery After A Failed Or Interrupted Run
 

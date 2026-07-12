@@ -190,6 +190,11 @@ bash ./scripts/publish/publish-release.sh \
 target-host runbook itself, including install, upgrade, repair, uninstall, and
 factory-reset cases, see [target-host-operations.md](target-host-operations.md).
 
+The published `install-http-release.sh` helper also accepts
+`--appliance-profile <core|builder|storage>` as a product-configuration input.
+That choice is passed into the control plane at install time only; it does not
+produce a different bundle or publish path.
+
 No extra host package install is required for Helm, kubectl, or ctr in that
 flow. They are resolved from inside the extracted bundle.
 

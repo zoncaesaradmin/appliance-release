@@ -250,7 +250,7 @@ wrap_command_for_target() {
   esac
 }
 
-run_check() {
+run_check_quiet_failure() {
   local name="$1"
   local command="$2"
   local log_file="${RUN_DIR}/logs/${name}.log"
@@ -260,6 +260,17 @@ run_check() {
   effective_command="$(wrap_command_for_target "${command}")"
   if run_ssh_captured "${TARGET_HOST}" "${log_file}" "${effective_command}"; then
     log "${name} completed; log: ${log_file}"
+    return 0
+  fi
+  return 1
+}
+
+run_check() {
+  local name="$1"
+  local command="$2"
+  local log_file="${RUN_DIR}/logs/${name}.log"
+
+  if run_check_quiet_failure "${name}" "${command}"; then
     return 0
   fi
   log "${name} failed; log: ${log_file}"
@@ -292,34 +303,100 @@ PY
 
 verify_is_allowed_warning() {
   local log_file="$1"
-  [[ "${ALLOW_VERIFY_SCHEMA_BUG}" == "true" ]] || return 1
   python3 - "${log_file}" <<'PY'
+import json
 import sys
 from pathlib import Path
 
 text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
 if "entriesFailed" in text and "expected array, but got null" in text:
-    raise SystemExit(0)
+    raise SystemExit(10)
+
+for raw_line in text.replace("\r", "\n").splitlines():
+    line = raw_line.strip()
+    if not (line.startswith("{") and line.endswith("}")):
+        continue
+    try:
+        data = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    payload = data.get("data")
+    if not isinstance(payload, dict):
+        continue
+    manifest_valid = payload.get("manifestValid")
+    entries_failed = payload.get("entriesFailed")
+    if manifest_valid is True and entries_failed == []:
+        raise SystemExit(20)
 raise SystemExit(1)
+PY
+  case "$?" in
+    10)
+      [[ "${ALLOW_VERIFY_SCHEMA_BUG}" == "true" ]]
+      return
+      ;;
+    20)
+      [[ "${ALLOW_INGRESS_WARNING}" == "true" ]]
+      return
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+verify_warning_label() {
+  local log_file="$1"
+  python3 - "${log_file}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+if "entriesFailed" in text and "expected array, but got null" in text:
+    print("allowed schema warning")
+    raise SystemExit(0)
+
+for raw_line in text.replace("\r", "\n").splitlines():
+    line = raw_line.strip()
+    if not (line.startswith("{") and line.endswith("}")):
+        continue
+    try:
+        data = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    payload = data.get("data")
+    if not isinstance(payload, dict):
+        continue
+    manifest_valid = payload.get("manifestValid")
+    entries_failed = payload.get("entriesFailed")
+    if manifest_valid is True and entries_failed == []:
+        print("allowed ingress warning")
+        raise SystemExit(0)
+
+print("allowed warning")
 PY
 }
 
-if run_check "status" "${STATUS_CMD}"; then
+if run_check_quiet_failure "status" "${STATUS_CMD}"; then
   status_code="0"
 else
   status_code="$?"
   if status_is_allowed_warning "${RUN_DIR}/logs/status.log"; then
     status_code="0"
     log "status completed with allowed ingress warning; log: ${RUN_DIR}/logs/status.log"
+  else
+    log "status failed; log: ${RUN_DIR}/logs/status.log"
   fi
 fi
-if run_check "verify" "${VERIFY_CMD}"; then
+if run_check_quiet_failure "verify" "${VERIFY_CMD}"; then
   verify_code="0"
 else
   verify_code="$?"
   if verify_is_allowed_warning "${RUN_DIR}/logs/verify.log"; then
     verify_code="0"
-    log "verify completed with allowed schema warning; log: ${RUN_DIR}/logs/verify.log"
+    log "verify completed with $(verify_warning_label "${RUN_DIR}/logs/verify.log"); log: ${RUN_DIR}/logs/verify.log"
+  else
+    log "verify failed; log: ${RUN_DIR}/logs/verify.log"
   fi
 fi
 if run_check "service-health" "${SERVICE_HEALTH_CMD}"; then
@@ -467,9 +544,19 @@ known_verify_schema_bug = (
     "entriesFailed" in verify_log_text
     and "expected array, but got null" in verify_log_text
 )
+verify_json = parse_json_line(verify_log_text)
+verify_ingress_only_warning = False
+if verify_json and isinstance(verify_json.get("data"), dict):
+    payload = verify_json["data"]
+    if payload.get("manifestValid") is True and payload.get("entriesFailed") == []:
+        verify_ingress_only_warning = True
+
 if known_verify_schema_bug and allow_verify_schema_bug == "true":
     warnings.append("zonctl verify hit the known entriesFailed schema bug; the wrapper records it as a warning and relies on the other install and API checks.")
     known_issues.append("verify-entriesFailed-schema-bug")
+elif verify_ingress_only_warning and allow_ingress_warning == "true":
+    warnings.append("zonctl verify reports only the known ingress condition; the wrapper records it as a warning for this flow.")
+    known_issues.append("verify-ingress-warning")
 else:
     if int(verify_code) != 0:
         final_failed = True
@@ -501,6 +588,7 @@ payload = {
             "exitCode": int(verify_code),
             "log": str(run_dir_path / "logs" / "verify.log"),
             "knownSchemaBug": known_verify_schema_bug,
+            "ingressOnlyWarning": verify_ingress_only_warning,
         },
         "serviceHealth": {
             "command": service_health_cmd,

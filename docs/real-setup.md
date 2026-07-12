@@ -65,6 +65,11 @@ Important notes:
   intentionally small file that relies on chart defaults. This repo now
   carries the product `configuration.schema.json` alongside that
   `values.yaml`.
+- Appliance-profile selection is not a bundle split in v1. Keep one portable
+  `values.yaml` in the bundle and pass the chosen product-facing profile at
+  install time as configuration. Do not create profile-specific bundle
+  variants or alternate values files just to select `core`, `builder`, or
+  `storage`.
 - Application/dependency OCI archives should already be in the exact
   local import form you want `ctr image import` to consume. The K3s
   upstream air-gap payload can stay as the standard

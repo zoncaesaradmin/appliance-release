@@ -21,6 +21,7 @@ Options:
                              appliance-release.config.yaml exists.
   --run-dir DIR              Run directory. Default: <repo>/.run/appliance-release/<timestamp>
   --release-version VERSION  Release version override.
+  --appliance-profile NAME   Install-time appliance profile override.
   --uninstall-first          Uninstall the previous appliance before install.
   --skip-build               Skip build/publish.
   --skip-install             Skip install.
@@ -33,6 +34,7 @@ EOF
 CONFIG_PATH=""
 RUN_DIR=""
 RELEASE_VERSION=""
+APPLIANCE_PROFILE=""
 UNINSTALL_FIRST="false"
 SKIP_BUILD="false"
 SKIP_INSTALL="false"
@@ -52,6 +54,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --release-version)
       RELEASE_VERSION="${2:-}"
+      shift 2
+      ;;
+    --appliance-profile)
+      APPLIANCE_PROFILE="${2:-}"
       shift 2
       ;;
     --uninstall-first)
@@ -98,6 +104,12 @@ fi
 if [[ -z "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
 fi
+if [[ -z "${APPLIANCE_PROFILE}" ]]; then
+  APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
+fi
+if [[ -z "${APPLIANCE_PROFILE}" ]]; then
+  APPLIANCE_PROFILE="core"
+fi
 
 ensure_dir "${RUN_DIR}"
 ensure_dir "${RUN_DIR}/logs"
@@ -107,6 +119,9 @@ log "release flow run directory: ${RUN_DIR}"
 log "using config: ${CONFIG_PATH}"
 if [[ -n "${RELEASE_VERSION}" ]]; then
   log "release version: ${RELEASE_VERSION}"
+fi
+if [[ -n "${APPLIANCE_PROFILE}" ]]; then
+  log "appliance profile: ${APPLIANCE_PROFILE}"
 fi
 
 if ! bool_true "${SKIP_BUILD}"; then
@@ -122,6 +137,9 @@ if ! bool_true "${SKIP_INSTALL}"; then
   install_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
   if [[ -n "${RELEASE_VERSION}" ]]; then
     install_args+=(--release-version "${RELEASE_VERSION}")
+  fi
+  if [[ -n "${APPLIANCE_PROFILE}" ]]; then
+    install_args+=(--appliance-profile "${APPLIANCE_PROFILE}")
   fi
   if bool_true "${UNINSTALL_FIRST}"; then
     install_args+=(--uninstall-first)
@@ -142,7 +160,7 @@ if ! bool_true "${SKIP_CLIENT_VERIFY}"; then
   bash "${SCRIPT_DIR}/verify-client-access.sh" "${client_verify_args[@]}"
 fi
 
-python3 - "${RUN_DIR}/metadata/run-release-flow.json" "${CONFIG_PATH}" "${RUN_DIR}" "${RELEASE_VERSION}" "${SKIP_BUILD}" "${SKIP_INSTALL}" "${SKIP_TARGET_VERIFY}" "${SKIP_CLIENT_VERIFY}" "${UNINSTALL_FIRST}" <<'PY'
+python3 - "${RUN_DIR}/metadata/run-release-flow.json" "${CONFIG_PATH}" "${RUN_DIR}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${SKIP_BUILD}" "${SKIP_INSTALL}" "${SKIP_TARGET_VERIFY}" "${SKIP_CLIENT_VERIFY}" "${UNINSTALL_FIRST}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -152,12 +170,13 @@ import sys
     config_path,
     run_dir,
     release_version,
+    appliance_profile,
     skip_build,
     skip_install,
     skip_target_verify,
     skip_client_verify,
     uninstall_first,
-) = sys.argv[1:10]
+) = sys.argv[1:11]
 
 run_dir_path = Path(run_dir)
 
@@ -165,6 +184,7 @@ payload = {
     "configPath": config_path,
     "runDir": run_dir,
     "releaseVersion": release_version or None,
+    "applianceProfile": appliance_profile or None,
     "steps": {
         "buildPublishSkipped": skip_build == "true",
         "installSkipped": skip_install == "true",

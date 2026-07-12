@@ -26,6 +26,8 @@ Optional:
   --use-latest                 Fetch from <base-url>/<path-prefix>/latest/
                                instead of the explicit version directory
   --state-dir DIR              zonctl state directory. Default: /var/lib/zon
+  --appliance-profile NAME     Product-facing appliance profile passed to
+                               zonctl install. Default: core
   --node-name NAME             Optional zonctl --node-name override
   --dry-run                    Pass --dry-run to zonctl install
   --output FORMAT              zonctl output format. Default: text
@@ -52,6 +54,7 @@ OUT_DIR=""
 PATH_PREFIX="appliance"
 USE_LATEST="0"
 STATE_DIR="/var/lib/zon"
+APPLIANCE_PROFILE=""
 NODE_NAME=""
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
@@ -80,6 +83,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --state-dir)
       STATE_DIR="${2:-}"
+      shift 2
+      ;;
+    --appliance-profile)
+      APPLIANCE_PROFILE="${2:-}"
       shift 2
       ;;
     --node-name)
@@ -163,6 +170,9 @@ require_var PRODUCT_VERSION
 if [[ -z "${OUT_DIR}" ]]; then
   OUT_DIR="/tmp/appliance-${PRODUCT_VERSION}"
 fi
+if [[ -z "${APPLIANCE_PROFILE}" ]]; then
+  APPLIANCE_PROFILE="core"
+fi
 
 BASE_URL="$(trim_trailing_slashes "${BASE_URL}")"
 PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"
@@ -221,6 +231,9 @@ install_args=(
   --state-dir "${STATE_DIR}"
   --output "${OUTPUT_FORMAT}"
 )
+if [[ -n "${APPLIANCE_PROFILE}" ]]; then
+  install_args+=(--appliance-profile "${APPLIANCE_PROFILE}")
+fi
 if [[ -n "${NODE_NAME}" ]]; then
   install_args+=(--node-name "${NODE_NAME}")
 fi
