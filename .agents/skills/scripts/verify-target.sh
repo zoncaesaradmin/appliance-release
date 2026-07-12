@@ -118,6 +118,8 @@ SERVICE_HEALTH_CMD="${SERVICE_HEALTH_CMD:-$(config_get_optional "${CONFIG_PATH}"
 APP_VERSION_CMD="${APP_VERSION_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.app_version_command" || true)}"
 SMOKE_TEST_CMD="${SMOKE_TEST_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_command" || true)}"
 FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.failure_log_command" || true)}"
+SMOKE_TEST_RETRIES="${SMOKE_TEST_RETRIES:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_retries" || true)}"
+SMOKE_TEST_RETRY_DELAY_SECONDS="${SMOKE_TEST_RETRY_DELAY_SECONDS:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_retry_delay_seconds" || true)}"
 ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
 ARGO_NAMESPACES_CMD="${ARGO_NAMESPACES_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.argo.namespaces_command" || true)}"
 ARGO_CRDS_CMD="${ARGO_CRDS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.argo.crds_command" || true)}"
@@ -133,13 +135,19 @@ FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-sudo zonctl support-bundle --output json}"
 if [[ -z "${ARGO_ENABLED}" ]]; then
   ARGO_ENABLED="false"
 fi
+if [[ -z "${SMOKE_TEST_RETRIES}" ]]; then
+  SMOKE_TEST_RETRIES="5"
+fi
+if [[ -z "${SMOKE_TEST_RETRY_DELAY_SECONDS}" ]]; then
+  SMOKE_TEST_RETRY_DELAY_SECONDS="3"
+fi
 if [[ -n "${ARGO_NAMESPACES_CMD}" || -n "${ARGO_CRDS_CMD}" || -n "${ARGO_CONTROLLER_CMD}" ]]; then
   ARGO_ENABLED="true"
 fi
 if bool_true "${ARGO_ENABLED}"; then
   ARGO_NAMESPACES_CMD="${ARGO_NAMESPACES_CMD:-sudo kubectl get namespace appliance-workflows appliance-builds}"
   ARGO_CRDS_CMD="${ARGO_CRDS_CMD:-sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io}"
-  ARGO_CONTROLLER_CMD="${ARGO_CONTROLLER_CMD:-sudo kubectl -n appliance-workflows get deploy,pods}"
+  ARGO_CONTROLLER_CMD="${ARGO_CONTROLLER_CMD:-sudo kubectl -n appliance-workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n appliance-workflows get deploy,pods}"
 fi
 
 ensure_dir "${RUN_DIR}"
@@ -173,6 +181,7 @@ BUNDLE_DIR=""
 BUNDLE_BIN_DIR=""
 TARGET_SUDO_PASSWORD="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 DEFAULT_TARGET_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
 
 if [[ -f "${INSTALL_METADATA_PATH}" ]]; then
   BUNDLE_DIR="$(read_install_metadata_value "${INSTALL_METADATA_PATH}" "bundleDir" || true)"
@@ -180,9 +189,31 @@ if [[ -f "${INSTALL_METADATA_PATH}" ]]; then
     BUNDLE_BIN_DIR="${BUNDLE_DIR}/bin"
   fi
 fi
+if [[ -z "${BUNDLE_DIR}" && -n "${RELEASE_VERSION}" ]]; then
+  BUNDLE_DIR="/tmp/appliance-${RELEASE_VERSION}/appliance-${RELEASE_VERSION}-bundle"
+  BUNDLE_BIN_DIR="${BUNDLE_DIR}/bin"
+fi
 
 if [[ -n "${BUNDLE_BIN_DIR}" && "${STATUS_CMD}" == "sudo zonctl status --output json" ]]; then
   STATUS_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} zonctl status --output json"
+fi
+if [[ -n "${BUNDLE_BIN_DIR}" && "${VERIFY_CMD}" == "sudo zonctl verify --output json" ]]; then
+  VERIFY_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} zonctl verify --output json"
+fi
+if [[ -n "${BUNDLE_BIN_DIR}" && "${SERVICE_HEALTH_CMD}" == "sudo kubectl get pods -A" ]]; then
+  SERVICE_HEALTH_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl get pods -A"
+fi
+if [[ -n "${BUNDLE_BIN_DIR}" && "${FAILURE_LOG_CMD}" == "sudo zonctl support-bundle --output json" ]]; then
+  FAILURE_LOG_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} zonctl support-bundle --output json"
+fi
+if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_NAMESPACES_CMD}" == "sudo kubectl get namespace appliance-workflows appliance-builds" ]]; then
+  ARGO_NAMESPACES_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl get namespace appliance-workflows appliance-builds"
+fi
+if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_CRDS_CMD}" == "sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io" ]]; then
+  ARGO_CRDS_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io"
+fi
+if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_CONTROLLER_CMD}" == "sudo kubectl -n appliance-workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n appliance-workflows get deploy,pods" ]]; then
+  ARGO_CONTROLLER_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n appliance-workflows wait --for=condition=Available deployment --all --timeout=120s && sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n appliance-workflows get deploy,pods"
 fi
 
 status_code="0"
@@ -248,11 +279,21 @@ else
 fi
 
 if [[ -n "${SMOKE_TEST_CMD}" ]]; then
-  if run_check "smoke-test" "${SMOKE_TEST_CMD}"; then
-    smoke_test_code="0"
-  else
+  smoke_attempt=1
+  smoke_max_attempts="${SMOKE_TEST_RETRIES}"
+  while true; do
+    if run_check "smoke-test" "${SMOKE_TEST_CMD}"; then
+      smoke_test_code="0"
+      break
+    fi
     smoke_test_code="$?"
-  fi
+    if (( smoke_attempt >= smoke_max_attempts )); then
+      break
+    fi
+    log "smoke-test attempt ${smoke_attempt}/${smoke_max_attempts} failed; retrying in ${SMOKE_TEST_RETRY_DELAY_SECONDS}s"
+    sleep "${SMOKE_TEST_RETRY_DELAY_SECONDS}"
+    smoke_attempt=$((smoke_attempt + 1))
+  done
 fi
 
 if bool_true "${ARGO_ENABLED}"; then

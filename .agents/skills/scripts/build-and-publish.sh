@@ -146,6 +146,15 @@ BUILD_NEEDS_SUDO="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_needs
 BOOTSTRAP_REGISTRY_USER="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user" || true)"
 BOOTSTRAP_REGISTRY_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token_env" || true)"
 BOOTSTRAP_REGISTRY_TOKEN="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token" || true)"
+BUILD_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.enabled" || true)"
+BUILD_ARGO_REQUIRED="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.required" || true)"
+BUILD_ARGO_VERSION="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.version" || true)"
+BUILD_ARGO_CRDS_DIR_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.crds_dir_source" || true)"
+BUILD_ARGO_CONTROLLER_IMAGE_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.controller_image_ref" || true)"
+BUILD_ARGO_EXECUTOR_IMAGE_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.executor_image_ref" || true)"
+BUILD_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.controller_image_archive_source" || true)"
+BUILD_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.executor_image_archive_source" || true)"
+VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
 PUBLISH_PUBLIC_BASE_URL="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.base_url" || true)"
 if [[ -z "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
   BOOTSTRAP_REGISTRY_TOKEN_ENV="REGISTRY_TOKEN"
@@ -155,6 +164,34 @@ ensure_dir "${RUN_DIR}/logs"
 ensure_dir "${RUN_DIR}/artifacts"
 ensure_dir "${RUN_DIR}/metadata"
 
+append_env_assignment() {
+  local current="$1"
+  local name="$2"
+  local value="$3"
+  if [[ -z "${value}" ]]; then
+    printf '%s' "${current}"
+    return 0
+  fi
+  printf '%s%s=%s ' "${current}" "${name}" "$(shell_quote "${value}")"
+}
+
+BUILD_ENV_PREFIX=""
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "PRODUCT_VERSION" "${RELEASE_VERSION}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXPORT_DIR" "${REMOTE_EXPORT_DIR}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_ENABLED" "${BUILD_ARGO_ENABLED}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_REQUIRED" "${BUILD_ARGO_REQUIRED}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_VERSION" "${BUILD_ARGO_VERSION}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_CRDS_DIR_SOURCE" "${BUILD_ARGO_CRDS_DIR_SOURCE}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_CONTROLLER_IMAGE_REF" "${BUILD_ARGO_CONTROLLER_IMAGE_REF}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_EXECUTOR_IMAGE_REF" "${BUILD_ARGO_EXECUTOR_IMAGE_REF}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE" "${BUILD_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE" "${BUILD_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}")"
+
+PUBLISH_ENV_PREFIX=""
+PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PRODUCT_VERSION" "${RELEASE_VERSION}")"
+PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "EXPORT_DIR" "${REMOTE_EXPORT_DIR}")"
+PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_PUBLIC_BASE_URL" "${PUBLISH_PUBLIC_BASE_URL}")"
+
 git_pull_remote_cmd=""
 if [[ -n "${GIT_PULL_CMD}" ]]; then
   git_pull_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${GIT_PULL_CMD}"
@@ -163,12 +200,8 @@ bootstrap_remote_cmd=""
 if [[ -n "${BOOTSTRAP_CMD}" ]]; then
   bootstrap_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BOOTSTRAP_CMD}"
 fi
-build_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BUILD_CMD}"
-publish_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PUBLISH_CMD}"
-
-if [[ -n "${PUBLISH_PUBLIC_BASE_URL}" ]] && [[ "${PUBLISH_CMD}" != *"PUBLISH_PUBLIC_BASE_URL="* ]]; then
-  publish_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && PUBLISH_PUBLIC_BASE_URL=$(shell_quote "${PUBLISH_PUBLIC_BASE_URL}") ${PUBLISH_CMD}"
-fi
+build_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BUILD_ENV_PREFIX}${BUILD_CMD}"
+publish_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PUBLISH_ENV_PREFIX}${PUBLISH_CMD}"
 
 git_pull_log="${RUN_DIR}/logs/git-pull.log"
 bootstrap_log="${RUN_DIR}/logs/bootstrap.log"
@@ -216,6 +249,69 @@ run_ssh_logged "${BUILD_HOST}" "${build_log}" "${build_remote_cmd}"
 log "running remote publish on ${BUILD_HOST}"
 run_ssh_logged "${BUILD_HOST}" "${publish_log}" "${publish_remote_cmd}"
 
+eval "$(
+  python3 - "${build_log}" <<'PY'
+from pathlib import Path
+import shlex
+import sys
+
+log_path = Path(sys.argv[1])
+lines = log_path.read_text(encoding="utf-8").splitlines()
+
+def collect_block(label: str):
+    collected = []
+    capture = False
+    for line in lines:
+        if capture:
+            if line.startswith("  "):
+                value = line.strip()
+                if value:
+                    collected.append(value)
+                continue
+            if not line.strip():
+                break
+            if not line.startswith("  "):
+                break
+        if line.strip() == label:
+            capture = True
+    return collected
+
+release_input_paths = collect_block("release-input tarball:")
+bundle_paths = collect_block("final bundle:")
+export_paths = collect_block("exported customer delivery files:")
+
+export_dir = ""
+bundle_archive = ""
+for path in export_paths:
+    candidate = Path(path)
+    if not export_dir:
+      export_dir = str(candidate.parent)
+    if candidate.name.endswith("-bundle.tar.gz") and not bundle_archive:
+      bundle_archive = str(candidate)
+
+def emit(name: str, value: str):
+    print(f"{name}={shlex.quote(value)}")
+
+emit("DETECTED_RELEASE_INPUT_TAR", release_input_paths[0] if release_input_paths else "")
+emit("DETECTED_BUNDLE_DIR", bundle_paths[0] if bundle_paths else "")
+emit("DETECTED_EXPORT_DIR", export_dir)
+emit("DETECTED_BUNDLE_ARCHIVE", bundle_archive)
+PY
+)"
+
+if [[ -n "${DETECTED_EXPORT_DIR}" ]]; then
+  REMOTE_EXPORT_DIR="${DETECTED_EXPORT_DIR}"
+  log "using remote export directory from build log: ${REMOTE_EXPORT_DIR}"
+fi
+if [[ -n "${DETECTED_RELEASE_INPUT_TAR}" ]]; then
+  REMOTE_RELEASE_INPUT="${DETECTED_RELEASE_INPUT_TAR}"
+  log "using remote release-input tarball from build log: ${REMOTE_RELEASE_INPUT}"
+fi
+if [[ -n "${DETECTED_BUNDLE_DIR}" ]]; then
+  REMOTE_BUNDLE_DIR="${DETECTED_BUNDLE_DIR}"
+  log "using remote bundle directory from build log: ${REMOTE_BUNDLE_DIR}"
+fi
+
 copy_remote_path() {
   local remote_path="$1"
   local local_path="$2"
@@ -230,6 +326,33 @@ copy_remote_path() {
   rsync -az "${BUILD_HOST}:${remote_path}" "${local_path}/"
 }
 
+extract_archive_into_dir() {
+  local archive_path="$1"
+  local output_dir="$2"
+  rm -rf "${output_dir}"
+  ensure_dir "${output_dir}"
+  tar -C "${output_dir}" -xzf "${archive_path}"
+}
+
+find_first_file() {
+  local search_dir="$1"
+  local pattern="$2"
+  python3 - "${search_dir}" "${pattern}" <<'PY'
+from pathlib import Path
+import sys
+
+search_dir = Path(sys.argv[1])
+pattern = sys.argv[2]
+
+if not search_dir.is_dir():
+    raise SystemExit(0)
+
+matches = sorted(search_dir.glob(pattern))
+if matches:
+    print(matches[0])
+PY
+}
+
 if [[ -n "${REMOTE_EXPORT_DIR}" ]]; then
   log "collecting remote export directory ${REMOTE_EXPORT_DIR}"
   copy_remote_path "${REMOTE_EXPORT_DIR}" "${RUN_DIR}/artifacts/export"
@@ -237,12 +360,109 @@ fi
 
 if [[ -n "${REMOTE_RELEASE_INPUT}" ]]; then
   log "collecting remote release input ${REMOTE_RELEASE_INPUT}"
-  copy_remote_path "${REMOTE_RELEASE_INPUT}" "${RUN_DIR}/artifacts/release-input"
+  copy_remote_path "${REMOTE_RELEASE_INPUT}" "${RUN_DIR}/artifacts/release-input-src"
 fi
 
-if [[ -n "${REMOTE_BUNDLE_DIR}" ]]; then
+local_release_input_archive="$(find_first_file "${RUN_DIR}/artifacts/release-input-src" "*.tar.gz")"
+if [[ -z "${local_release_input_archive}" ]]; then
+  local_release_input_archive="$(find_first_file "${RUN_DIR}/artifacts/release-input-src" "*.tgz")"
+fi
+if [[ -n "${local_release_input_archive}" ]]; then
+  log "extracting copied release-input archive ${local_release_input_archive}"
+  extract_archive_into_dir "${local_release_input_archive}" "${RUN_DIR}/artifacts/release-input"
+elif [[ -d "${RUN_DIR}/artifacts/release-input-src" ]]; then
+  rm -rf "${RUN_DIR}/artifacts/release-input"
+  mv "${RUN_DIR}/artifacts/release-input-src" "${RUN_DIR}/artifacts/release-input"
+fi
+
+local_bundle_archive=""
+if [[ -n "${DETECTED_BUNDLE_ARCHIVE}" ]]; then
+  local_bundle_archive="${RUN_DIR}/artifacts/export/$(basename "${DETECTED_BUNDLE_ARCHIVE}")"
+fi
+if [[ -z "${local_bundle_archive}" || ! -f "${local_bundle_archive}" ]]; then
+  local_bundle_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-bundle.tar.gz")"
+fi
+if [[ -n "${local_bundle_archive}" && -f "${local_bundle_archive}" ]]; then
+  log "extracting copied bundle archive ${local_bundle_archive}"
+  extract_archive_into_dir "${local_bundle_archive}" "${RUN_DIR}/artifacts/bundle"
+elif [[ -n "${REMOTE_BUNDLE_DIR}" ]]; then
   log "collecting remote bundle directory ${REMOTE_BUNDLE_DIR}"
   copy_remote_path "${REMOTE_BUNDLE_DIR}" "${RUN_DIR}/artifacts/bundle"
+fi
+
+if bool_true "${BUILD_ARGO_ENABLED:-false}" || bool_true "${VERIFY_ARGO_ENABLED:-false}"; then
+  python3 - "${RUN_DIR}/artifacts/release-input" "${RUN_DIR}/artifacts/bundle" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+release_input_root = Path(sys.argv[1])
+bundle_root = Path(sys.argv[2])
+
+def first_named(root: Path, name: str):
+    if not root.is_dir():
+        return None
+    matches = sorted(root.rglob(name))
+    return matches[0] if matches else None
+
+release_input_path = first_named(release_input_root, "release-input.json")
+bundle_manifest_path = first_named(bundle_root, "release-manifest.json")
+
+missing = []
+if release_input_path is None:
+    missing.append("release-input.json")
+if bundle_manifest_path is None:
+    missing.append("release-manifest.json")
+if missing:
+    raise SystemExit("build-and-publish: missing copied metadata: " + ", ".join(missing))
+
+release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
+release_artifacts = release_input.get("artifacts") or {}
+required_release_keys = {
+    "argoWorkflowsChart",
+    "argoCRDs",
+    "argoControllerImage",
+    "argoExecutorImage",
+}
+missing_release = sorted(key for key in required_release_keys if key not in release_artifacts)
+if missing_release:
+    raise SystemExit(
+        "build-and-publish: Argo expected but release-input is missing: "
+        + ", ".join(missing_release)
+    )
+
+bundle_manifest = json.loads(bundle_manifest_path.read_text(encoding="utf-8"))
+entries = bundle_manifest.get("entries") or []
+entry_paths = {
+    entry.get("targetPath") or entry.get("path") or ""
+    for entry in entries
+    if isinstance(entry, dict)
+}
+expected_prefixes = [
+    "charts/appliance-argo-workflows",
+    "kubernetes/crds/",
+    "oci-images/",
+]
+has_chart = any(path.startswith("charts/appliance-argo-workflows") for path in entry_paths)
+has_crds = any(path.startswith("kubernetes/crds/") for path in entry_paths)
+has_controller = any("argo-controller" in path for path in entry_paths if path.startswith("oci-images/"))
+has_executor = any("argo-executor" in path for path in entry_paths if path.startswith("oci-images/"))
+missing_bundle = []
+if not has_chart:
+    missing_bundle.append("Argo chart entry")
+if not has_crds:
+    missing_bundle.append("Argo CRD entries")
+if not has_controller:
+    missing_bundle.append("Argo controller image entry")
+if not has_executor:
+    missing_bundle.append("Argo executor image entry")
+if missing_bundle:
+    raise SystemExit(
+        "build-and-publish: Argo expected but final bundle is missing: "
+        + ", ".join(missing_bundle)
+    )
+PY
+  log "validated copied Argo artifacts in release-input and final bundle"
 fi
 
 remote_release_commit_cmd="cd $(shell_quote "${REMOTE_CWD}") && git rev-parse HEAD"
@@ -276,13 +496,21 @@ def read_json(path: Path):
         return json.loads(path.read_text(encoding="utf-8"))
     return None
 
+def read_json_named(root: Path, name: str):
+    if not root.is_dir():
+        return None
+    matches = sorted(root.rglob(name))
+    if not matches:
+        return None
+    return json.loads(matches[0].read_text(encoding="utf-8"))
+
 export_dir = run_dir / "artifacts" / "export"
 release_input_dir = run_dir / "artifacts" / "release-input"
 bundle_dir = run_dir / "artifacts" / "bundle"
 
 checksums_text = read_text(export_dir / "sha256sum.txt")
-release_input = read_json(release_input_dir / "release-input.json")
-release_manifest = read_json(bundle_dir / "release-manifest.json")
+release_input = read_json_named(release_input_dir, "release-input.json")
+release_manifest = read_json_named(bundle_dir, "release-manifest.json")
 
 artifact_checksums = []
 if checksums_text:

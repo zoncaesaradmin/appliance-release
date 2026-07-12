@@ -37,6 +37,12 @@ Optional overrides:
   HELM_VERSION=v3.21.1
   HELM_BINARY=/abs/path/to/linux-amd64/helm
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
+  ARGO_ENABLED=1
+  ARGO_REQUIRED=1
+  ARGO_VERSION=v3.5.10
+  ARGO_CRDS_DIR_SOURCE=/ci/inputs/argo-crds
+  ARGO_CONTROLLER_IMAGE_REF=quay.io/argoproj/workflow-controller:v3.5.10
+  ARGO_EXECUTOR_IMAGE_REF=quay.io/argoproj/argoexec:v3.5.10
 EOF
 }
 
@@ -62,6 +68,14 @@ USER_VALUES_FILE_SOURCE="${VALUES_FILE_SOURCE-}"
 USER_WORK_ROOT="${WORK_ROOT-}"
 USER_EXPORT_DIR="${EXPORT_DIR-}"
 USER_K3S_VERSION_OVERRIDE="${K3S_VERSION_OVERRIDE-}"
+USER_ARGO_ENABLED="${ARGO_ENABLED-}"
+USER_ARGO_REQUIRED="${ARGO_REQUIRED-}"
+USER_ARGO_VERSION="${ARGO_VERSION-}"
+USER_ARGO_CRDS_DIR_SOURCE="${ARGO_CRDS_DIR_SOURCE-}"
+USER_ARGO_CONTROLLER_IMAGE_REF="${ARGO_CONTROLLER_IMAGE_REF-}"
+USER_ARGO_EXECUTOR_IMAGE_REF="${ARGO_EXECUTOR_IMAGE_REF-}"
+USER_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE-}"
+USER_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE-}"
 
 set -a
 # shellcheck disable=SC1090
@@ -81,6 +95,14 @@ VALUES_FILE_SOURCE="${USER_VALUES_FILE_SOURCE:-${VALUES_FILE:-}}"
 WORK_ROOT="${USER_WORK_ROOT:-${WORKDIR:-${TMPDIR:-/tmp}/appliance-build}}"
 EXPORT_DIR="${USER_EXPORT_DIR:-${EXPORT_DIR:-${WORK_ROOT}/export}}"
 K3S_VERSION_OVERRIDE="${USER_K3S_VERSION_OVERRIDE:-}"
+ARGO_ENABLED="${USER_ARGO_ENABLED:-${ARGO_ENABLED:-}}"
+ARGO_REQUIRED="${USER_ARGO_REQUIRED:-${ARGO_REQUIRED:-}}"
+ARGO_VERSION="${USER_ARGO_VERSION:-${ARGO_VERSION:-}}"
+ARGO_CRDS_DIR_SOURCE="${USER_ARGO_CRDS_DIR_SOURCE:-${ARGO_CRDS_DIR_SOURCE:-}}"
+ARGO_CONTROLLER_IMAGE_REF="${USER_ARGO_CONTROLLER_IMAGE_REF:-${ARGO_CONTROLLER_IMAGE_REF:-}}"
+ARGO_EXECUTOR_IMAGE_REF="${USER_ARGO_EXECUTOR_IMAGE_REF:-${ARGO_EXECUTOR_IMAGE_REF:-}}"
+ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="${USER_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE:-${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE:-}}"
+ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="${USER_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE:-${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE:-}}"
 
 if [[ -n "${K3S_VERSION_OVERRIDE}" ]]; then
   K3S_VERSION="${K3S_VERSION_OVERRIDE}"
@@ -102,6 +124,18 @@ RELEASE_INPUT_TAR="${ARTIFACTS_DIR}/release-input-${PRODUCT_VERSION}.tar.gz"
 CODE_RELEASE_INPUT_TAR="${CODE_REPO_DIR}/.run/release-input-${PRODUCT_VERSION}.tar.gz"
 CODE_DEV_SCRIPT_REL=".run/package-release-input-in-dev-container.sh"
 CODE_DEV_SCRIPT_PATH="${CODE_REPO_DIR}/${CODE_DEV_SCRIPT_REL}"
+
+bool_true() {
+  local value="${1:-}"
+  case "$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+shell_quote() {
+  printf '%q' "${1:-}"
+}
 
 require_var() {
   local name="$1"
@@ -180,6 +214,62 @@ build-full-bundle: then rerun:
 build-full-bundle:   bash ${RELEASE_REPO_DIR}/scripts/ci/build-full-bundle.sh
 EOF
   exit 1
+}
+
+export_container_image_archive() {
+  local image_ref="$1"
+  local output_path="$2"
+  local podman_bin
+
+  podman_bin="$(command -v podman)"
+  mkdir -p "$(dirname "${output_path}")"
+  rm -f "${output_path}"
+
+  sudo -n "${podman_bin}" pull "${image_ref}" >/dev/null
+  sudo -n "${podman_bin}" save --format oci-archive -o "${output_path}" "${image_ref}" >/dev/null
+}
+
+fetch_argo_crds_from_release() {
+  local argo_version="$1"
+  local output_dir="$2"
+  local manifest_url="https://github.com/argoproj/argo-workflows/releases/download/${argo_version}/namespace-install.yaml"
+  local tmp_manifest
+
+  tmp_manifest="$(mktemp)"
+  trap 'rm -f "${tmp_manifest}"' RETURN
+  curl -fsSL "${manifest_url}" -o "${tmp_manifest}"
+
+  rm -rf "${output_dir}"
+  mkdir -p "${output_dir}"
+  python3 - "${tmp_manifest}" "${output_dir}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+manifest_path = Path(sys.argv[1])
+output_dir = Path(sys.argv[2])
+text = manifest_path.read_text(encoding="utf-8")
+docs = re.split(r"^---\s*$", text, flags=re.MULTILINE)
+written = 0
+
+for raw_doc in docs:
+    doc = raw_doc.strip()
+    if not doc:
+        continue
+    if not re.search(r"^kind:\s*CustomResourceDefinition\s*$", doc, flags=re.MULTILINE):
+        continue
+    match = re.search(r"^\s*name:\s*([A-Za-z0-9._-]+)\s*$", doc, flags=re.MULTILINE)
+    if not match:
+        raise SystemExit("build-full-bundle: could not determine Argo CRD filename from downloaded manifest")
+    out_path = output_dir / f"{match.group(1)}.yaml"
+    out_path.write_text(doc + "\n", encoding="utf-8")
+    written += 1
+
+if written == 0:
+    raise SystemExit("build-full-bundle: downloaded Argo manifest did not contain any CRDs")
+PY
+  rm -f "${tmp_manifest}"
+  trap - RETURN
 }
 
 set_env_var() {
@@ -300,6 +390,18 @@ require_var K3S_VERSION
 require_var K3S_BINARY_SOURCE
 require_var K3S_AIRGAP_IMAGES_SOURCE
 
+if bool_true "${ARGO_ENABLED:-false}" && [[ -z "${ARGO_VERSION}" ]]; then
+  echo "build-full-bundle: ARGO_VERSION is required when ARGO_ENABLED is true" >&2
+  exit 2
+fi
+if bool_true "${ARGO_ENABLED:-false}" && [[ -z "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" && -z "${ARGO_CONTROLLER_IMAGE_REF}" ]]; then
+  echo "build-full-bundle: ARGO_CONTROLLER_IMAGE_REF or ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE is required when ARGO_ENABLED is true" >&2
+  exit 2
+fi
+if bool_true "${ARGO_ENABLED:-false}" && [[ -z "${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" && -z "${ARGO_EXECUTOR_IMAGE_REF}" ]]; then
+  echo "build-full-bundle: ARGO_EXECUTOR_IMAGE_REF or ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE is required when ARGO_ENABLED is true" >&2
+  exit 2
+fi
 warn_if_local_repo_source "${CODE_REPO_SOURCE}" "CODE_REPO"
 warn_if_local_repo_source "${CTL_REPO_SOURCE}" "CTL_REPO"
 
@@ -307,6 +409,16 @@ require_file "${K3S_BINARY_SOURCE}" "k3s binary"
 require_file "${K3S_AIRGAP_IMAGES_SOURCE}" "k3s airgap images"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   require_file "${VALUES_FILE_SOURCE}" "values file"
+fi
+if [[ -n "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" ]]; then
+  require_file "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" "Argo controller image archive"
+fi
+if [[ -n "${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" ]]; then
+  require_file "${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" "Argo executor image archive"
+fi
+if [[ -n "${ARGO_CRDS_DIR_SOURCE}" && ! -d "${ARGO_CRDS_DIR_SOURCE}" ]]; then
+  echo "build-full-bundle: missing Argo CRDs directory: ${ARGO_CRDS_DIR_SOURCE}" >&2
+  exit 1
 fi
 
 rm -rf "${ARTIFACTS_DIR}" "${WORKSPACE}"
@@ -324,13 +436,78 @@ clone_repo "${CTL_REPO_SOURCE}" "${CTL_REPO_REF}" "${CTL_REPO_DIR}"
 require_appliance_code_bootstrap
 
 mkdir -p "${CODE_REPO_DIR}/.run"
+
+ARGO_CRDS_DIR_FOR_DEV=""
+ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
+ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
+
+if bool_true "${ARGO_ENABLED:-false}"; then
+  if [[ -n "${ARGO_CRDS_DIR_SOURCE}" ]]; then
+    ARGO_CRDS_DIR_FOR_DEV="/workspace/.run/argo-crds"
+    rm -rf "${CODE_REPO_DIR}/.run/argo-crds"
+    mkdir -p "${CODE_REPO_DIR}/.run/argo-crds"
+    cp -R "${ARGO_CRDS_DIR_SOURCE}/." "${CODE_REPO_DIR}/.run/argo-crds/"
+  elif bool_true "${ARGO_REQUIRED:-true}"; then
+    ARGO_CRDS_DIR_FOR_DEV="/workspace/.run/argo-crds"
+    fetch_argo_crds_from_release "${ARGO_VERSION}" "${CODE_REPO_DIR}/.run/argo-crds"
+  fi
+
+  if [[ -n "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" ]]; then
+    ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-controller-image.tar"
+    cp "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/argo-controller-image.tar"
+  else
+    ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-controller-image.tar"
+    export_container_image_archive "${ARGO_CONTROLLER_IMAGE_REF}" "${CODE_REPO_DIR}/.run/argo-controller-image.tar"
+  fi
+
+  if [[ -n "${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" ]]; then
+    ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-executor-image.tar"
+    cp "${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/argo-executor-image.tar"
+  else
+    ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-executor-image.tar"
+    export_container_image_archive "${ARGO_EXECUTOR_IMAGE_REF}" "${CODE_REPO_DIR}/.run/argo-executor-image.tar"
+  fi
+fi
+
 cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 cd /workspace
-make package-release-input-tar \
-  OUT_FILE="/workspace/.run/release-input-${PRODUCT_VERSION}.tar.gz" \
-  K3S_VERSION="${K3S_VERSION}"
+CONTROL_PLANE_IMAGE_OUT="/workspace/.run/control-plane-image.tar"
+ARGO_ARGS=()
+CODE_VERSION="\${CODE_VERSION:-\$(git describe --tags --always --dirty 2>/dev/null | sed 's/[^A-Za-z0-9_.-]/-/g')}"
+
+bool_true() {
+  local value="\${1:-}"
+  case "\$(printf '%s' "\${value}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+make package-control-plane-image-archive OUT_FILE="\${CONTROL_PLANE_IMAGE_OUT}"
+
+if bool_true $(shell_quote "${ARGO_ENABLED}"); then
+  ARGO_ARGS+=(--argo-version $(shell_quote "${ARGO_VERSION}"))
+
+  if [[ -n $(shell_quote "${ARGO_CRDS_DIR_FOR_DEV}") ]]; then
+    ARGO_ARGS+=(--argo-crds-dir $(shell_quote "${ARGO_CRDS_DIR_FOR_DEV}"))
+  fi
+
+  ARGO_ARGS+=(--argo-controller-image $(shell_quote "${ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}"))
+  ARGO_ARGS+=(--argo-controller-image-reference $(shell_quote "${ARGO_CONTROLLER_IMAGE_REF}"))
+
+  ARGO_ARGS+=(--argo-executor-image $(shell_quote "${ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV}"))
+  ARGO_ARGS+=(--argo-executor-image-reference $(shell_quote "${ARGO_EXECUTOR_IMAGE_REF}"))
+fi
+
+bash ./scripts/package/archive-release-input.sh \
+  --out-file "/workspace/.run/release-input-${PRODUCT_VERSION}.tar.gz" \
+  --code-version "\${CODE_VERSION}" \
+  --control-plane-image "\${CONTROL_PLANE_IMAGE_OUT}" \
+  --control-plane-image-reference "localhost/appliance-control-plane:\${CODE_VERSION}" \
+  --k3s-version $(shell_quote "${K3S_VERSION}") \
+  "\${ARGO_ARGS[@]}"
 EOF
 chmod +x "${CODE_DEV_SCRIPT_PATH}"
 

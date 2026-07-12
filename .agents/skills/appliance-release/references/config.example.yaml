@@ -19,11 +19,15 @@ release_workspace:
   # Remote appliance-release checkout on the build machine.
   remote_repo_path: /home/zonsys/ws/appliance-release
   # Export directory produced on the build machine.
+  # The skill injects this as EXPORT_DIR for both build and publish so the
+  # publish step does not accidentally use a stale export from an older run.
   remote_export_dir: /home/zonsys/appliance-build/export
-  # Release-input location on the build machine after the bundle build.
-  remote_release_input_path: /home/zonsys/appliance-build/workspace/release-input
-  # Extracted bundle directory on the build machine after the bundle build.
-  remote_bundle_dir: /home/zonsys/appliance-build/workspace/out/appliance-0.1.0-bundle
+  # Optional fallback only. The skill now prefers the real paths printed by the
+  # build log, so these are mainly used if log parsing fails.
+  remote_release_input_path: /tmp/appliance-product-ci/artifacts/release-input-0.1.0.tar.gz
+  # Optional fallback only. The skill now prefers the real paths printed by the
+  # build log, so this is mainly used if log parsing fails.
+  remote_bundle_dir: /tmp/appliance-product-ci/workspace/out/appliance-0.1.0-bundle
 
 artifact_registry:
   # Public HTTP/HTTPS base URL serving the published release files.
@@ -54,8 +58,23 @@ build_flow:
   bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
   bootstrap_needs_sudo: true
   build_needs_sudo: true
-  build_command: PRODUCT_VERSION=0.1.0 K3S_BINARY_SOURCE=/home/zonsys/ci/inputs/k3s K3S_AIRGAP_IMAGES_SOURCE=/home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst bash /home/zonsys/ws/appliance-release/scripts/ci/build-full-bundle.sh
-  publish_command: PRODUCT_VERSION=0.1.0 make publish-release EXPORT_DIR=/home/zonsys/appliance-build/export PUBLISH_SERVER=publish-user@publish-host-or-ip PUBLISH_REMOTE_ROOT=/home/zonsys/releases PUBLISH_PUBLIC_BASE_URL=http://artifact-host-or-ip:28081
+  # PRODUCT_VERSION and EXPORT_DIR are injected automatically by the skill from
+  # release.version and release_workspace.remote_export_dir.
+  build_command: K3S_BINARY_SOURCE=/home/zonsys/ci/inputs/k3s K3S_AIRGAP_IMAGES_SOURCE=/home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst bash /home/zonsys/ws/appliance-release/scripts/ci/build-full-bundle.sh
+  # PRODUCT_VERSION, EXPORT_DIR, and PUBLISH_PUBLIC_BASE_URL are injected
+  # automatically by the skill, so keep the command itself minimal.
+  publish_command: make publish-release PUBLISH_SERVER=zonsys@192.168.1.103 PUBLISH_REMOTE_ROOT=/home/zonsys/releases
+  argo:
+    enabled: false
+    required: true
+    version: v3.5.10
+    # Point this at the unpacked CRD directory on the build machine when Argo is enabled.
+    crds_dir_source: /home/zonsys/ci/inputs/argo-crds
+    controller_image_ref: quay.io/argoproj/workflow-controller:v3.5.10
+    executor_image_ref: quay.io/argoproj/argoexec:v3.5.10
+    # Optional local archive overrides if you already mirrored the OCI images.
+    # controller_image_archive_source: /home/zonsys/ci/inputs/argo/workflow-controller.oci.tar
+    # executor_image_archive_source: /home/zonsys/ci/inputs/argo/argoexec.oci.tar
 
 install:
   bootstrap_admin_username: admin
@@ -72,10 +91,10 @@ verification:
     enabled: false
     # If you enable this after packaging/installing Argo Workflows, the target
     # verification step will also confirm the two namespaces, the core CRDs,
-    # and the controller deployment/pods.
+    # and that the controller deployment actually becomes Available.
     namespaces_command: sudo kubectl get namespace appliance-workflows appliance-builds
     crds_command: sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io
-    controller_command: sudo kubectl -n appliance-workflows get deploy,pods
+    controller_command: sudo kubectl -n appliance-workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n appliance-workflows get deploy,pods
   allow_ingress_warning: true
   allow_verify_schema_bug: true
 
