@@ -92,6 +92,11 @@ verification:
   verify_command: sudo zonctl verify --output json
   service_health_command: sudo kubectl get pods -A
   app_version_command: sudo cat /var/lib/zon/installed-state.json
+  # Only enable a smoke test here if the target host can actually reach the
+  # appliance HTTPS endpoint you want to prove. If you copy the localhost
+  # example below unchanged, verify-target.sh will automatically rewrite it to
+  # client_verification.base_url when that value is set. Otherwise replace it
+  # with a host-specific reachable URL.
   smoke_test_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
   failure_log_command: sudo zonctl support-bundle --output json
   # Matches build_flow.argo above: Argo Workflows is installed by default,

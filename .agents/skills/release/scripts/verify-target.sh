@@ -42,6 +42,7 @@ ARGO_CRDS_CMD=""
 ARGO_CONTROLLER_CMD=""
 FINAL_OK="false"
 RUN_DIR=""
+DEFAULT_SMOKE_TEST_CMD='code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -126,6 +127,7 @@ ARGO_CRDS_CMD="${ARGO_CRDS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verifica
 ARGO_CONTROLLER_CMD="${ARGO_CONTROLLER_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.argo.controller_command" || true)}"
 ALLOW_INGRESS_WARNING="$(config_get_optional "${CONFIG_PATH}" "verification.allow_ingress_warning" || true)"
 ALLOW_VERIFY_SCHEMA_BUG="$(config_get_optional "${CONFIG_PATH}" "verification.allow_verify_schema_bug" || true)"
+CLIENT_BASE_URL="$(config_get_optional "${CONFIG_PATH}" "client_verification.base_url" || true)"
 
 STATUS_CMD="${STATUS_CMD:-sudo zonctl status --output json}"
 VERIFY_CMD="${VERIFY_CMD:-sudo zonctl verify --output json}"
@@ -148,6 +150,11 @@ if bool_true "${ARGO_ENABLED}"; then
   ARGO_NAMESPACES_CMD="${ARGO_NAMESPACES_CMD:-sudo kubectl get namespace workflows appliance-builds}"
   ARGO_CRDS_CMD="${ARGO_CRDS_CMD:-sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io}"
   ARGO_CONTROLLER_CMD="${ARGO_CONTROLLER_CMD:-sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods}"
+fi
+
+if [[ "${SMOKE_TEST_CMD}" == "${DEFAULT_SMOKE_TEST_CMD}" && -n "${CLIENT_BASE_URL}" ]]; then
+  SMOKE_TEST_CMD="code=\"\$(curl -ksS -o /dev/null -w ''%{http_code}'' ${CLIENT_BASE_URL}/api/v1/auth/session)\" && [ \"\$code\" = \"401\" ]"
+  log "rewrote default localhost smoke test to use client_verification.base_url: ${CLIENT_BASE_URL}"
 fi
 
 ensure_dir "${RUN_DIR}"
@@ -329,19 +336,6 @@ for code in "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_cod
   fi
 done
 
-if bool_true "${overall_failed}" && [[ -n "${FAILURE_LOG_CMD}" ]]; then
-  failure_log_log="${RUN_DIR}/logs/failure-logs.log"
-  log "verification failed; collecting failure logs from ${TARGET_HOST}"
-  failure_log_command="$(wrap_command_for_target "${FAILURE_LOG_CMD}")"
-  if run_ssh_captured "${TARGET_HOST}" "${failure_log_log}" "${failure_log_command}"; then
-    failure_log_code="0"
-    log "failure log collection completed; log: ${failure_log_log}"
-  else
-    failure_log_code="$?"
-    log "failure log collection failed; log: ${failure_log_log}"
-  fi
-fi
-
 final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${FAILURE_LOG_CMD}" "${ARGO_ENABLED}" "${ARGO_NAMESPACES_CMD}" "${ARGO_CRDS_CMD}" "${ARGO_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${failure_log_code}" "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
 import json
 from pathlib import Path
@@ -510,6 +504,65 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 print("true" if final_failed else "false")
 PY
 )"
+
+if bool_true "${final_failed}" && [[ -n "${FAILURE_LOG_CMD}" ]]; then
+  failure_log_log="${RUN_DIR}/logs/failure-logs.log"
+  log "verification failed; collecting failure logs from ${TARGET_HOST}"
+  failure_log_command="$(wrap_command_for_target "${FAILURE_LOG_CMD}")"
+  if run_ssh_captured "${TARGET_HOST}" "${failure_log_log}" "${failure_log_command}"; then
+    failure_log_code="0"
+    log "failure log collection completed; log: ${failure_log_log}"
+  else
+    failure_log_code="$?"
+    log "failure log collection failed; log: ${failure_log_log}"
+  fi
+
+  final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${FAILURE_LOG_CMD}" "${ARGO_ENABLED}" "${ARGO_NAMESPACES_CMD}" "${ARGO_CRDS_CMD}" "${ARGO_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${failure_log_code}" "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+(
+    out_path,
+    config_path,
+    target_host,
+    status_cmd,
+    verify_cmd,
+    service_health_cmd,
+    app_version_cmd,
+    smoke_test_cmd,
+    failure_log_cmd,
+    argo_enabled,
+    argo_namespaces_cmd,
+    argo_crds_cmd,
+    argo_controller_cmd,
+    status_code,
+    verify_code,
+    service_health_code,
+    app_version_code,
+    smoke_test_code,
+    failure_log_code,
+    argo_namespaces_code,
+    argo_crds_code,
+    argo_controller_code,
+    overall_failed,
+    run_dir,
+    allow_ingress_warning,
+    allow_verify_schema_bug,
+) = sys.argv[1:27]
+
+run_dir_path = Path(run_dir)
+payload = json.loads(Path(out_path).read_text(encoding="utf-8"))
+payload["failureLogs"] = {
+    "command": failure_log_cmd,
+    "exitCode": int(failure_log_code or 0) if failure_log_code else None,
+    "log": str(run_dir_path / "logs" / "failure-logs.log"),
+}
+Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+print("true" if payload.get("failed") else "false")
+PY
+  )"
+fi
 
 if bool_true "${final_failed}"; then
   fail "verification failed; see ${RUN_DIR}/metadata/verify.json"

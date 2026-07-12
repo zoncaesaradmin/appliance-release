@@ -16,16 +16,11 @@ Use this skill when we need to drive the repeatable Zon appliance release path f
 ## Source Of Truth
 
 This skill is intended to live in the `appliance-release` repository and be
-tracked in git at:
+tracked in git at one path:
 
-- `.agents/skills/appliance-release`
-- `.agents/skills/scripts`
+- `.agents/skills/release`
 
-If you also want it available as a global Codex skill, point the global path
-`~/.agents/skills/appliance-release` at this repo copy, usually with a symlink.
-
-The `appliance-release/scripts` path is kept as a compatibility symlink. The
-shared `.agents/skills/scripts` directory is the canonical script location.
+All skill docs, examples, and helper scripts live inside that directory.
 
 ## What This Skill Does Not Own
 
@@ -65,19 +60,19 @@ Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `
 
 ## Scripts
 
-- `../scripts/run-release-flow.sh`
+- `scripts/run-release-flow.sh`
   One-shot wrapper for the common flow from the `appliance-release` repo: build/publish, install, target verify, then macOS-side API verify.
-- `../scripts/build-and-publish.sh`
+- `scripts/build-and-publish.sh`
   Run the deterministic build-host flow: optional `git pull`, build-host bootstrap, bundle build, publish, and artifact metadata capture.
-- `../scripts/install-on-target.sh`
+- `scripts/install-on-target.sh`
   Optionally uninstall the previous appliance, then install the published release on the target host via the HTTP installer helper.
-- `../scripts/verify-target.sh`
+- `scripts/verify-target.sh`
   Run post-install verification, service-health checks, smoke checks, and failure-log capture.
-- `../scripts/verify-client-access.sh`
+- `scripts/verify-client-access.sh`
   Run macOS-side client/API checks against the appliance after first-admin setup.
-- `../scripts/common.sh`
+- `scripts/common.sh`
   Shared helpers for config resolution, logging, SSH execution, and secret loading.
-- `../scripts/config_query.py`
+- `scripts/config_query.py`
   Shared YAML/JSON query helper used by the shell scripts.
 
 ## Workflow

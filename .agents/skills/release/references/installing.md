@@ -3,24 +3,21 @@
 The source of truth for this skill is the repo copy:
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/appliance-release
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release
 ```
 
-The canonical script directory is:
+The script directory lives inside the same skill:
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/scripts
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts
 ```
-
-The path `/Users/zoncaesar/ws/appliance-release/.agents/skills/appliance-release/scripts`
-is kept only as a compatibility symlink.
 
 To expose it as a global Codex skill on this machine, point the global path at
 the repo copy:
 
 ```bash
 mv ~/.agents/skills/appliance-release ~/.agents/skills/appliance-release.backup
-ln -s /Users/zoncaesar/ws/appliance-release/.agents/skills/appliance-release \
+ln -s /Users/zoncaesar/ws/appliance-release/.agents/skills/release \
   ~/.agents/skills/appliance-release
 ```
 

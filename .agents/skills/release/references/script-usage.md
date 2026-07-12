@@ -23,13 +23,13 @@ Notes:
 Use this for the normal end-to-end workflow.
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/scripts/run-release-flow.sh
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-flow.sh
 ```
 
 Common explicit example:
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/scripts/run-release-flow.sh \
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-flow.sh \
   --release-version 0.1.0 \
   --uninstall-first \
   --final-ok
@@ -47,13 +47,13 @@ This does:
 Use this if you only want the remote build and publish step.
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/scripts/build-and-publish.sh
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/build-and-publish.sh
 ```
 
 Example with an explicit version:
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/scripts/build-and-publish.sh \
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/build-and-publish.sh \
   --release-version 0.1.0
 ```
 
@@ -68,7 +68,7 @@ Use this when:
 Use this when the release is already published and you want only the install step.
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/scripts/install-on-target.sh \
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/install-on-target.sh \
   --release-version 0.1.0 \
   --uninstall-first
 ```
@@ -76,7 +76,7 @@ Use this when the release is already published and you want only the install ste
 If you want to keep the current install and test without uninstalling first:
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/scripts/install-on-target.sh \
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/install-on-target.sh \
   --release-version 0.1.0
 ```
 
@@ -93,7 +93,7 @@ This script:
 Use this after install if you want only target-side verification.
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/scripts/verify-target.sh
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/verify-target.sh
 ```
 
 This script checks:
@@ -116,7 +116,7 @@ If your config enables `verification.argo.enabled: true`, it also checks:
 Use this from the Mac if the appliance is already installed and reachable.
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/scripts/verify-client-access.sh
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/verify-client-access.sh
 ```
 
 This script checks:
@@ -130,7 +130,7 @@ This script checks:
 If you want to override the host or username for a one-off test:
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/scripts/verify-client-access.sh \
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/verify-client-access.sh \
   --host https://192.168.1.101 \
   --username admin
 ```
@@ -140,7 +140,7 @@ If you want to override the host or username for a one-off test:
 Start from:
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/appliance-release/references/config.example.yaml
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/references/config.example.yaml
 ```
 
 Your usual real config lives in the repo, for example:
@@ -149,9 +149,9 @@ Your usual real config lives in the repo, for example:
 /Users/zoncaesar/ws/appliance-release/appliance-release.config.yaml
 ```
 
-If you keep the optional global symlink at `~/.agents/skills/appliance-release`,
-the compatibility path `~/.agents/skills/appliance-release/scripts/...` will
-still work. The canonical repo-local script path is `.agents/skills/scripts`.
+If you keep an optional global symlink at `~/.agents/skills/appliance-release`,
+point it at the repo-local skill directory. The repo-local script path is
+`.agents/skills/release/scripts`.
 
 ## 7. Simplest Day-To-Day Usage
 
@@ -165,5 +165,5 @@ export APPLIANCE_BUILD_SUDO_PASSWORD='caesar'
 export APPLIANCE_TARGET_SUDO_PASSWORD='caesar'
 export APPLIANCE_FIRST_ADMIN_PASSWORD='ins3965!'
 
-/Users/zoncaesar/ws/appliance-release/.agents/skills/scripts/run-release-flow.sh --uninstall-first --final-ok
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-flow.sh --uninstall-first --final-ok
 ```

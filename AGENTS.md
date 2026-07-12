@@ -37,6 +37,13 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 - The installer fails closed: it never silently proceeds when a required artifact is missing, invalid, or fails verification, and it never falls back to an unpinned or unverified source.
 - Secrets are generated on the target or supplied through protected files/descriptors. They never appear in Git, release artifacts, command arguments, logs, or support bundles.
 
+## Real Setup Guardrail
+
+- Do not run real-environment verification flows unless the user explicitly asks for that exact run in the current turn.
+- Specifically, do not run `run-release-flow.sh --skip-build --skip-install` or similar "verify against the real setup only" commands on behalf of the user.
+- Do not use the user's real build server, publish server, or target device for validation after code changes unless the user explicitly asks for that execution in the current turn.
+- Hand off the exact command(s) for the user to run instead of consuming the real setup automatically.
+
 ## Repository Boundary
 
 - Consume only signed/pinned release inputs from private `appliance-code` outputs.
