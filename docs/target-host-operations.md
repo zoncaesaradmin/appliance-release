@@ -24,10 +24,10 @@ export WORK_DIR=/tmp/appliance-${RELEASE_VERSION}
 Replace `RELEASE_BASE_URL` and `RELEASE_VERSION` for your real published
 release.
 
-## 1. First Install
+## 1. Install Or Upgrade
 
-This is the normal fresh-host path. It is the only fully wrapped one-command
-public installer flow today.
+This is the normal one-command public flow for both a fresh host and an
+existing owned Zon appliance install.
 
 ```bash
 curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-release.sh" \
@@ -55,8 +55,9 @@ What this does:
 - verifies `sha256sum.txt`
 - extracts the bundle under `/tmp/appliance-<version>`
 - runs `zonctl preflight`
-- runs `zonctl install`
-- prompts for the first administrator only when the platform is ready
+- runs `zonctl install` on a fresh host
+- automatically switches to `zonctl upgrade` when the target already has an owned appliance install
+- uses the first-administrator prompt only for a fresh install
 - installs `zonctl` to `/usr/local/bin/zonctl`
 
 After install, validate with:
@@ -66,13 +67,18 @@ sudo zonctl status --output text
 sudo kubectl get pods -A
 ```
 
-## 2. Upgrade
+Notes:
 
-Use this when Zon is already installed and you want to move to a newer published
-release while preserving the appliance state.
+- if the currently installed appliance version already matches `RELEASE_VERSION`,
+  the helper performs an in-place reconcile through the upgrade path
+- when the pinned K3s version already matches, `zonctl upgrade` leaves K3s in place
+- omit `--appliance-profile` to keep the default or the currently installed
+  profile behavior
 
-The public helper script currently wraps `install`, not `upgrade`, so the
-upgrade path is slightly more explicit today.
+## 2. Explicit Manual Upgrade
+
+Use this only when you want the upgrade steps spelled out manually instead of
+using the wrapped helper above.
 
 Download the new release bundle:
 
@@ -185,15 +191,19 @@ curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-releas
 ## 6. When To Use Which Path
 
 - Fresh host, no Zon installed:
-  Use `First Install`.
+  Use `Install Or Upgrade`.
 - Zon already installed, keep data and move to a newer release:
-  Use `Upgrade`.
+  Use `Install Or Upgrade`.
+- Zon already installed, same version, reapply appliance state cleanly:
+  Use `Install Or Upgrade`.
+- You specifically want the lower-level explicit upgrade commands:
+  Use `Explicit Manual Upgrade`.
 - Previous operation was interrupted or partially failed:
   Use `Clean Recovery`.
 - Remove platform but preserve appliance data:
   Use `Uninstall`.
 - Wipe everything and start over:
-  Use `Factory Reset`, then rerun `First Install`.
+  Use `Factory Reset`, then rerun `Install Or Upgrade`.
 
 ## 7. Reboot / Reload Guidance
 

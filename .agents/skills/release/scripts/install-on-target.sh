@@ -218,11 +218,42 @@ install_args=(
   --output '"$(shell_quote "${OUTPUT_FORMAT}")"'
   --bootstrap-admin-username '"$(shell_quote "${BOOTSTRAP_ADMIN_USERNAME}")"'
   --bootstrap-password-stdin
-)'
+)
+upgrade_args=(
+  --bundle-dir "${bundle_dir}"
+  --public-key "${public_key}"
+  --state-dir '"$(shell_quote "${STATE_DIR}")"'
+  --output '"$(shell_quote "${OUTPUT_FORMAT}")"'
+)
+capture_zonctl_step() {
+  local stdout_file="$1"
+  local stderr_file="$2"
+  local stdin_payload="$3"
+  shift 3
+  if [[ -n "${stdin_payload}" ]]; then
+    printf "%s" "${stdin_payload}" | "$@" >"${stdout_file}" 2>"${stderr_file}"
+    return $?
+  fi
+  "$@" >"${stdout_file}" 2>"${stderr_file}"
+}
+print_captured_failure() {
+  local failure_message="$1"
+  local stdout_file="$2"
+  local stderr_file="$3"
+  echo "${failure_message}" >&2
+  if [[ -s "${stdout_file}" ]]; then
+    sed "s/^/  /" "${stdout_file}" >&2
+  fi
+  if [[ -s "${stderr_file}" ]]; then
+    echo "  details:" >&2
+    sed "s/^/    /" "${stderr_file}" >&2
+  fi
+}'
 
 if [[ -n "${APPLIANCE_PROFILE}" ]]; then
   remote_script+='
-install_args+=(--appliance-profile '"$(shell_quote "${APPLIANCE_PROFILE}")"')'
+install_args+=(--appliance-profile '"$(shell_quote "${APPLIANCE_PROFILE}")"')
+upgrade_args+=(--appliance-profile '"$(shell_quote "${APPLIANCE_PROFILE}")"')'
 fi
 
 if bool_true "${USE_LATEST}"; then
@@ -232,7 +263,8 @@ fi
 
 if [[ -n "${NODE_NAME}" ]]; then
   remote_script+='
-install_args+=(--node-name '"$(shell_quote "${NODE_NAME}")"')'
+install_args+=(--node-name '"$(shell_quote "${NODE_NAME}")"')
+upgrade_args+=(--node-name '"$(shell_quote "${NODE_NAME}")"')'
 fi
 remote_script+='
 echo "[target 4/5] Running host preflight..."
@@ -250,8 +282,24 @@ fi
 
 remote_script+='
 echo "[target 5/5] Installing appliance platform."
-printf "%s\n" '"$(shell_quote "${first_admin_password}")"' | sudo -n "${zonctl}" install "${install_args[@]}"
-echo "[target 5/5] Appliance installation completed."
+install_stdout="$(mktemp "${out_dir}/.zonctl-install-stdout.XXXXXX")"
+install_stderr="$(mktemp "${out_dir}/.zonctl-install-stderr.XXXXXX")"
+if capture_zonctl_step "${install_stdout}" "${install_stderr}" '"$(shell_quote "${first_admin_password}")"' sudo -n "${zonctl}" install "${install_args[@]}"; then
+  rm -f "${install_stdout}" "${install_stderr}"
+  echo "[target 5/5] Appliance installation completed."
+else
+  install_output="$(cat "${install_stdout}" "${install_stderr}")"
+  if [[ "${install_output}" == *"refusing to install (reuse-owned)"* || "${install_output}" == *"refusing to install (upgrade-owned)"* ]]; then
+    rm -f "${install_stdout}" "${install_stderr}"
+    echo "[target 5/5] Existing owned appliance detected. Switching to in-place upgrade/reconcile."
+    sudo -n "${zonctl}" upgrade "${upgrade_args[@]}"
+    echo "[target 5/5] Appliance upgrade/reconcile completed."
+  else
+    print_captured_failure "[target 5/5] Appliance installation failed." "${install_stdout}" "${install_stderr}"
+    rm -f "${install_stdout}" "${install_stderr}"
+    exit 1
+  fi
+fi
 echo "zonctl is now available at /usr/local/bin/zonctl on the target host."'
 
 install_log="${RUN_DIR}/logs/install.log"
@@ -285,7 +333,7 @@ payload = {
     "configPath": config_path,
     "targetHost": target_host,
     "helperUrl": helper_url,
-    "installMethod": "direct-http-zonctl",
+    "installMethod": "direct-http-zonctl-auto",
     "releaseVersion": release_version or None,
     "baseUrl": base_url,
     "pathPrefix": path_prefix,

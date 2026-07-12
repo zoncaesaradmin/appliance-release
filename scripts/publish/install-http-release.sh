@@ -6,10 +6,15 @@ usage() {
 usage: install-http-release.sh --base-url URL [options]
 
 Download a published release bundle from a plain HTTP/HTTPS location, verify
-checksums, extract it locally, run zonctl preflight, and then install it.
-During install, zonctl also bootstraps the first administrator in the same
-workflow: it prompts on the terminal for the initial password unless you use
-zonctl's own non-interactive bootstrap flags directly.
+checksums, extract it locally, run zonctl preflight, and then automatically
+choose the right appliance lifecycle action:
+
+- fresh host: run `zonctl install`
+- existing owned appliance: switch to `zonctl upgrade`
+
+For a fresh install, zonctl also bootstraps the first administrator in the
+same workflow: it prompts on the terminal for the initial password unless you
+use zonctl's own non-interactive bootstrap flags directly.
 
 Required:
   --base-url URL               Base URL that serves the appliance path, for
@@ -27,8 +32,14 @@ Optional:
                                instead of the explicit version directory
   --state-dir DIR              zonctl state directory. Default: /var/lib/zon
   --appliance-profile NAME     Product-facing appliance profile passed to
-                               zonctl install. Default: core
+                               zonctl install/upgrade. Default: core
   --node-name NAME             Optional zonctl --node-name override
+  --bootstrap-admin-username NAME
+                               Username for the first administrator created
+                               during a fresh install. Default: admin
+  --bootstrap-password-stdin   Read the first administrator password from
+                               stdin for a fresh install. Ignored when the
+                               helper switches to upgrade.
   --dry-run                    Pass --dry-run to zonctl install
   --output FORMAT              zonctl output format. Default: text
   --help                       Show this help
@@ -56,6 +67,8 @@ USE_LATEST="0"
 STATE_DIR="/var/lib/zon"
 APPLIANCE_PROFILE=""
 NODE_NAME=""
+BOOTSTRAP_ADMIN_USERNAME="admin"
+BOOTSTRAP_PASSWORD_STDIN="0"
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
 
@@ -92,6 +105,14 @@ while [[ $# -gt 0 ]]; do
     --node-name)
       NODE_NAME="${2:-}"
       shift 2
+      ;;
+    --bootstrap-admin-username)
+      BOOTSTRAP_ADMIN_USERNAME="${2:-}"
+      shift 2
+      ;;
+    --bootstrap-password-stdin)
+      BOOTSTRAP_PASSWORD_STDIN="1"
+      shift 1
       ;;
     --dry-run)
       DRY_RUN="1"
@@ -160,6 +181,42 @@ run_zonctl_step() {
   exit 1
 }
 
+capture_zonctl_step() {
+  local stdout_file="$1"
+  local stderr_file="$2"
+  local stdin_payload="$3"
+  shift 3
+
+  if [[ -n "${stdin_payload}" ]]; then
+    printf '%s' "${stdin_payload}" | "$@" >"${stdout_file}" 2>"${stderr_file}"
+    return $?
+  fi
+
+  "$@" >"${stdout_file}" 2>"${stderr_file}"
+}
+
+print_captured_failure() {
+  local failure_message="$1"
+  local stdout_file="$2"
+  local stderr_file="$3"
+
+  echo "${failure_message}" >&2
+  if [[ -s "${stdout_file}" ]]; then
+    sed 's/^/  /' "${stdout_file}" >&2
+  fi
+  if [[ -s "${stderr_file}" ]]; then
+    echo "  details:" >&2
+    sed 's/^/    /' "${stderr_file}" >&2
+  fi
+}
+
+read_stdin_payload() {
+  if [[ "${BOOTSTRAP_PASSWORD_STDIN}" != "1" ]]; then
+    return 0
+  fi
+  cat
+}
+
 require_var BASE_URL
 
 if [[ -z "${PRODUCT_VERSION}" ]]; then
@@ -172,6 +229,11 @@ if [[ -z "${OUT_DIR}" ]]; then
 fi
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="core"
+fi
+
+BOOTSTRAP_PASSWORD=""
+if [[ "${BOOTSTRAP_PASSWORD_STDIN}" == "1" ]]; then
+  BOOTSTRAP_PASSWORD="$(read_stdin_payload)"
 fi
 
 BASE_URL="$(trim_trailing_slashes "${BASE_URL}")"
@@ -240,11 +302,52 @@ fi
 if [[ "${DRY_RUN}" == "1" ]]; then
   install_args+=(--dry-run)
 fi
+if [[ -n "${BOOTSTRAP_ADMIN_USERNAME}" ]]; then
+  install_args+=(--bootstrap-admin-username "${BOOTSTRAP_ADMIN_USERNAME}")
+fi
+if [[ "${BOOTSTRAP_PASSWORD_STDIN}" == "1" ]]; then
+  install_args+=(--bootstrap-password-stdin)
+fi
 
-run_zonctl_step \
-  "[5/5] Installing appliance platform. This can take several minutes. You will be prompted for the first administrator only when the platform is ready." \
-  "[5/5] Appliance installation and first-administrator setup completed." \
-  "[5/5] Appliance installation failed." \
-  sudo "${ZONCTL}" install "${install_args[@]}"
+upgrade_args=(
+  --bundle-dir "${BUNDLE_DIR}"
+  --public-key "${PUBLIC_KEY}"
+  --state-dir "${STATE_DIR}"
+  --output "${OUTPUT_FORMAT}"
+)
+if [[ -n "${APPLIANCE_PROFILE}" ]]; then
+  upgrade_args+=(--appliance-profile "${APPLIANCE_PROFILE}")
+fi
+if [[ -n "${NODE_NAME}" ]]; then
+  upgrade_args+=(--node-name "${NODE_NAME}")
+fi
+if [[ "${DRY_RUN}" == "1" ]]; then
+  upgrade_args+=(--dry-run)
+fi
 
-echo "zonctl is now available at /usr/local/bin/zonctl on the target host."
+install_stdout="$(mktemp "${OUT_DIR}/.zonctl-install-stdout.XXXXXX")"
+install_stderr="$(mktemp "${OUT_DIR}/.zonctl-install-stderr.XXXXXX")"
+
+echo "[5/5] Installing appliance platform. This can take several minutes. You will be prompted for the first administrator only when the platform is ready."
+if capture_zonctl_step "${install_stdout}" "${install_stderr}" "${BOOTSTRAP_PASSWORD}" sudo "${ZONCTL}" install "${install_args[@]}"; then
+  echo "[5/5] Appliance installation and first-administrator setup completed."
+  rm -f "${install_stdout}" "${install_stderr}"
+  echo "zonctl is now available at /usr/local/bin/zonctl on the target host."
+  exit 0
+fi
+
+install_output="$(cat "${install_stdout}" "${install_stderr}")"
+if [[ "${install_output}" == *"refusing to install (reuse-owned)"* || "${install_output}" == *"refusing to install (upgrade-owned)"* ]]; then
+  rm -f "${install_stdout}" "${install_stderr}"
+  run_zonctl_step \
+    "[5/5] Existing owned appliance detected. Switching to in-place upgrade/reconcile." \
+    "[5/5] Appliance upgrade/reconcile completed." \
+    "[5/5] Appliance upgrade/reconcile failed." \
+    sudo "${ZONCTL}" upgrade "${upgrade_args[@]}"
+  echo "zonctl is now available at /usr/local/bin/zonctl on the target host."
+  exit 0
+fi
+
+print_captured_failure "[5/5] Appliance installation failed." "${install_stdout}" "${install_stderr}"
+rm -f "${install_stdout}" "${install_stderr}"
+exit 1

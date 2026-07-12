@@ -90,7 +90,9 @@ This script:
 - verifies checksums
 - extracts the bundle on the target host
 - runs `zonctl preflight`
-- runs `zonctl install` with the first-admin password from env
+- runs `zonctl install` on a fresh host
+- automatically switches to `zonctl upgrade` when the target already has an owned appliance install
+- uses the first-admin password from env only for a fresh install bootstrap
 
 ## 4. Verify Target Only
 

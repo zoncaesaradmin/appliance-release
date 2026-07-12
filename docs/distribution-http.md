@@ -195,6 +195,16 @@ The published `install-http-release.sh` helper also accepts
 That choice is passed into the control plane at install time only; it does not
 produce a different bundle or publish path.
 
+The same published helper now handles both fresh installs and owned existing
+installs:
+
+- on a fresh host, it runs `zonctl install`
+- when it detects an already-owned appliance install, it switches to
+  `zonctl upgrade`
+- when the target already runs the same appliance version, that upgrade path
+  acts as an in-place reconcile and preserves K3s if the pinned K3s version
+  is unchanged
+
 No extra host package install is required for Helm, kubectl, or ctr in that
 flow. They are resolved from inside the extracted bundle.
 
