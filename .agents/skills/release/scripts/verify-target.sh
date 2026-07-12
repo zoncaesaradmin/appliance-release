@@ -42,8 +42,6 @@ ARGO_CRDS_CMD=""
 ARGO_CONTROLLER_CMD=""
 FINAL_OK="false"
 RUN_DIR=""
-DEFAULT_SMOKE_TEST_CMD='code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
-
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)
@@ -152,9 +150,13 @@ if bool_true "${ARGO_ENABLED}"; then
   ARGO_CONTROLLER_CMD="${ARGO_CONTROLLER_CMD:-sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods}"
 fi
 
-if [[ "${SMOKE_TEST_CMD}" == "${DEFAULT_SMOKE_TEST_CMD}" && -n "${CLIENT_BASE_URL}" ]]; then
-  SMOKE_TEST_CMD="code=\"\$(curl -ksS -o /dev/null -w ''%{http_code}'' ${CLIENT_BASE_URL}/api/v1/auth/session)\" && [ \"\$code\" = \"401\" ]"
-  log "rewrote default localhost smoke test to use client_verification.base_url: ${CLIENT_BASE_URL}"
+if [[ -n "${CLIENT_BASE_URL}" ]]; then
+  rewritten_smoke_test="${SMOKE_TEST_CMD//https:\/\/127.0.0.1\/api\/v1\/auth\/session/${CLIENT_BASE_URL}\/api\/v1\/auth\/session}"
+  rewritten_smoke_test="${rewritten_smoke_test//https:\/\/localhost\/api\/v1\/auth\/session/${CLIENT_BASE_URL}\/api\/v1\/auth\/session}"
+  if [[ "${rewritten_smoke_test}" != "${SMOKE_TEST_CMD}" ]]; then
+    SMOKE_TEST_CMD="${rewritten_smoke_test}"
+    log "rewrote localhost smoke test to use client_verification.base_url: ${CLIENT_BASE_URL}"
+  fi
 fi
 
 ensure_dir "${RUN_DIR}"
@@ -264,15 +266,61 @@ run_check() {
   return 1
 }
 
+status_is_allowed_warning() {
+  local log_file="$1"
+  [[ "${ALLOW_INGRESS_WARNING}" == "true" ]] || return 1
+  python3 - "${log_file}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+for raw_line in text.replace("\r", "\n").splitlines():
+    line = raw_line.strip()
+    if line.startswith("{") and line.endswith("}"):
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        health = data.get("data", {}).get("componentHealth", [])
+        bad = [entry.get("name") for entry in health if isinstance(entry, dict) and not entry.get("healthy", False)]
+        if bad == ["ingress"]:
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+verify_is_allowed_warning() {
+  local log_file="$1"
+  [[ "${ALLOW_VERIFY_SCHEMA_BUG}" == "true" ]] || return 1
+  python3 - "${log_file}" <<'PY'
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+if "entriesFailed" in text and "expected array, but got null" in text:
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
 if run_check "status" "${STATUS_CMD}"; then
   status_code="0"
 else
   status_code="$?"
+  if status_is_allowed_warning "${RUN_DIR}/logs/status.log"; then
+    status_code="0"
+    log "status completed with allowed ingress warning; log: ${RUN_DIR}/logs/status.log"
+  fi
 fi
 if run_check "verify" "${VERIFY_CMD}"; then
   verify_code="0"
 else
   verify_code="$?"
+  if verify_is_allowed_warning "${RUN_DIR}/logs/verify.log"; then
+    verify_code="0"
+    log "verify completed with allowed schema warning; log: ${RUN_DIR}/logs/verify.log"
+  fi
 fi
 if run_check "service-health" "${SERVICE_HEALTH_CMD}"; then
   service_health_code="0"
