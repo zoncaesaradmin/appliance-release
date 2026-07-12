@@ -28,6 +28,15 @@ Configuration is taken from environment variables. The most common pattern is:
   K3S_AIRGAP_IMAGES_SOURCE=/ci/inputs/k3s-airgap-images-amd64.tar.zst \
   bash ./scripts/ci/build-full-bundle.sh
 
+Argo Workflows is on by default (it is a mandatory component of the
+complete v1 appliance per ADR 0011) and needs no configuration: its
+version and controller/executor image references are derived
+automatically from appliance-code's own
+deploy/charts/argo-workflows/Chart.yaml (the chart's pinned appVersion),
+and its CRDs are fetched automatically from the matching upstream Argo
+Workflows GitHub release unless you provide a local copy. You never need
+to set an Argo version yourself.
+
 Optional overrides:
   CODE_REPO_REF=main
   CTL_REPO_REF=main
@@ -37,10 +46,9 @@ Optional overrides:
   HELM_VERSION=v3.21.1
   HELM_BINARY=/abs/path/to/linux-amd64/helm
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
-  ARGO_ENABLED=1
-  ARGO_REQUIRED=1
-  ARGO_VERSION=v3.5.10
-  ARGO_CRDS_DIR_SOURCE=/ci/inputs/argo-crds
+  ARGO_ENABLED=0                    # opt out entirely (control-plane-only debug build)
+  ARGO_CRDS_DIR_SOURCE=/ci/inputs/argo-crds   # use a local/offline CRD copy instead of fetching from GitHub
+  ARGO_VERSION=v3.5.10                        # pin a different Argo version than the chart's appVersion
   ARGO_CONTROLLER_IMAGE_REF=quay.io/argoproj/workflow-controller:v3.5.10
   ARGO_EXECUTOR_IMAGE_REF=quay.io/argoproj/argoexec:v3.5.10
 EOF
@@ -103,6 +111,19 @@ ARGO_CONTROLLER_IMAGE_REF="${USER_ARGO_CONTROLLER_IMAGE_REF:-${ARGO_CONTROLLER_I
 ARGO_EXECUTOR_IMAGE_REF="${USER_ARGO_EXECUTOR_IMAGE_REF:-${ARGO_EXECUTOR_IMAGE_REF:-}}"
 ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="${USER_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE:-${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE:-}}"
 ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="${USER_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE:-${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE:-}}"
+
+# Argo Workflows is a mandatory component of the complete v1 appliance
+# (ADR 0011 in appliance-code), so it is on by default. ARGO_VERSION and
+# the controller/executor image references are NOT configured here: they
+# are derived later from appliance-code's own
+# deploy/charts/argo-workflows/Chart.yaml (the chart's pinned appVersion
+# is the single source of truth), once that repo is cloned. Operators
+# never need to set an Argo version or image reference for an ordinary
+# build; ARGO_ENABLED=false remains available as an explicit escape
+# hatch for a control-plane-only debug build.
+if [[ -z "${ARGO_ENABLED}" ]]; then
+  ARGO_ENABLED="true"
+fi
 
 if [[ -n "${K3S_VERSION_OVERRIDE}" ]]; then
   K3S_VERSION="${K3S_VERSION_OVERRIDE}"
@@ -227,6 +248,29 @@ export_container_image_archive() {
 
   sudo -n "${podman_bin}" pull "${image_ref}" >/dev/null
   sudo -n "${podman_bin}" save --format oci-archive -o "${output_path}" "${image_ref}" >/dev/null
+}
+
+# derive_argo_version_from_code_repo reads the pinned Argo version out of
+# appliance-code's own deploy/charts/argo-workflows/Chart.yaml (its
+# appVersion field), the single source of truth for which Argo release
+# this chart is built against. This is what lets an operator build a
+# complete appliance without ever having to know or set an Argo version
+# themselves: it's the same version the chart itself is pinned to,
+# already reviewed and committed in that repo.
+derive_argo_version_from_code_repo() {
+  local chart_yaml="${CODE_REPO_DIR}/deploy/charts/argo-workflows/Chart.yaml"
+  local version
+
+  if [[ ! -f "${chart_yaml}" ]]; then
+    echo "build-full-bundle: ARGO_ENABLED is true but ${chart_yaml} was not found; cannot derive the Argo version" >&2
+    exit 1
+  fi
+  version="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${chart_yaml}")"
+  if [[ -z "${version}" ]]; then
+    echo "build-full-bundle: could not parse appVersion from ${chart_yaml}" >&2
+    exit 1
+  fi
+  printf '%s' "${version}"
 }
 
 fetch_argo_crds_from_release() {
@@ -390,18 +434,6 @@ require_var K3S_VERSION
 require_var K3S_BINARY_SOURCE
 require_var K3S_AIRGAP_IMAGES_SOURCE
 
-if bool_true "${ARGO_ENABLED:-false}" && [[ -z "${ARGO_VERSION}" ]]; then
-  echo "build-full-bundle: ARGO_VERSION is required when ARGO_ENABLED is true" >&2
-  exit 2
-fi
-if bool_true "${ARGO_ENABLED:-false}" && [[ -z "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" && -z "${ARGO_CONTROLLER_IMAGE_REF}" ]]; then
-  echo "build-full-bundle: ARGO_CONTROLLER_IMAGE_REF or ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE is required when ARGO_ENABLED is true" >&2
-  exit 2
-fi
-if bool_true "${ARGO_ENABLED:-false}" && [[ -z "${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" && -z "${ARGO_EXECUTOR_IMAGE_REF}" ]]; then
-  echo "build-full-bundle: ARGO_EXECUTOR_IMAGE_REF or ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE is required when ARGO_ENABLED is true" >&2
-  exit 2
-fi
 warn_if_local_repo_source "${CODE_REPO_SOURCE}" "CODE_REPO"
 warn_if_local_repo_source "${CTL_REPO_SOURCE}" "CTL_REPO"
 
@@ -435,13 +467,25 @@ clone_repo "${CTL_REPO_SOURCE}" "${CTL_REPO_REF}" "${CTL_REPO_DIR}"
 
 require_appliance_code_bootstrap
 
+if bool_true "${ARGO_ENABLED}"; then
+  if [[ -z "${ARGO_VERSION}" ]]; then
+    ARGO_VERSION="$(derive_argo_version_from_code_repo)"
+  fi
+  if [[ -z "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" && -z "${ARGO_CONTROLLER_IMAGE_REF}" ]]; then
+    ARGO_CONTROLLER_IMAGE_REF="quay.io/argoproj/workflow-controller:${ARGO_VERSION}"
+  fi
+  if [[ -z "${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" && -z "${ARGO_EXECUTOR_IMAGE_REF}" ]]; then
+    ARGO_EXECUTOR_IMAGE_REF="quay.io/argoproj/argoexec:${ARGO_VERSION}"
+  fi
+fi
+
 mkdir -p "${CODE_REPO_DIR}/.run"
 
 ARGO_CRDS_DIR_FOR_DEV=""
 ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
 ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
 
-if bool_true "${ARGO_ENABLED:-false}"; then
+if bool_true "${ARGO_ENABLED}"; then
   if [[ -n "${ARGO_CRDS_DIR_SOURCE}" ]]; then
     ARGO_CRDS_DIR_FOR_DEV="/workspace/.run/argo-crds"
     rm -rf "${CODE_REPO_DIR}/.run/argo-crds"

@@ -64,14 +64,21 @@ build_flow:
   # PRODUCT_VERSION, EXPORT_DIR, and PUBLISH_PUBLIC_BASE_URL are injected
   # automatically by the skill, so keep the command itself minimal.
   publish_command: make publish-release PUBLISH_SERVER=zonsys@192.168.1.103 PUBLISH_REMOTE_ROOT=/home/zonsys/releases
+  # Argo Workflows is a mandatory component of the complete v1 appliance
+  # (ADR 0011) and build-full-bundle.sh enables it by default with zero
+  # configuration: its version and controller/executor image references
+  # are derived automatically from appliance-code's own
+  # deploy/charts/argo-workflows/Chart.yaml, and its CRDs are fetched
+  # automatically from the matching upstream GitHub release. Nothing
+  # below is required for an ordinary build — uncomment only to override
+  # a specific default (e.g. an offline/pinned CRD source, or a mirrored
+  # image reference).
   argo:
-    enabled: false
-    required: true
-    version: v3.5.10
-    # Point this at the unpacked CRD directory on the build machine when Argo is enabled.
-    crds_dir_source: /home/zonsys/ci/inputs/argo-crds
-    controller_image_ref: quay.io/argoproj/workflow-controller:v3.5.10
-    executor_image_ref: quay.io/argoproj/argoexec:v3.5.10
+    # enabled: false                  # opt out entirely (control-plane-only debug build)
+    # crds_dir_source: /home/zonsys/ci/inputs/argo-crds   # use a local CRD copy instead of fetching from GitHub
+    # version: v3.5.10                                    # pin a different Argo version than the chart's appVersion
+    # controller_image_ref: quay.io/argoproj/workflow-controller:v3.5.10
+    # executor_image_ref: quay.io/argoproj/argoexec:v3.5.10
     # Optional local archive overrides if you already mirrored the OCI images.
     # controller_image_archive_source: /home/zonsys/ci/inputs/argo/workflow-controller.oci.tar
     # executor_image_archive_source: /home/zonsys/ci/inputs/argo/argoexec.oci.tar
@@ -87,11 +94,13 @@ verification:
   app_version_command: sudo cat /var/lib/zon/installed-state.json
   smoke_test_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
   failure_log_command: sudo zonctl support-bundle --output json
+  # Matches build_flow.argo above: Argo Workflows is installed by default,
+  # so verification checks it by default too — confirming the two
+  # namespaces, the core CRDs, and that the controller deployment
+  # actually becomes Available (not just that helm/K3s reported success).
+  # Set this to false only if build_flow.argo.enabled is also false.
   argo:
-    enabled: false
-    # If you enable this after packaging/installing Argo Workflows, the target
-    # verification step will also confirm the two namespaces, the core CRDs,
-    # and that the controller deployment actually becomes Available.
+    enabled: true
     namespaces_command: sudo kubectl get namespace workflows appliance-builds
     crds_command: sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io
     controller_command: sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods
