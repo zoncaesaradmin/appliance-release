@@ -104,12 +104,14 @@ control_plane_image_ref = sys.argv[6]
 argo_version = sys.argv[7]
 argo_controller_image_ref = sys.argv[8]
 argo_executor_image_ref = sys.argv[9]
+ui_image_ref = f"internal/appliance-ui:{product_version}"
 
 if sample_root.exists():
     shutil.rmtree(sample_root)
 sample_root.mkdir(parents=True)
 
 control_plane_name = f"control-plane-api-{product_version}.tar"
+ui_name = f"appliance-ui-{product_version}.tar"
 chart_name = f"appliance-chart-{product_version}.tgz"
 schema_name = "configuration.schema.json"
 compatibility_name = "compatibility.json"
@@ -124,11 +126,13 @@ if argo_version:
     compatibility["argoVersion"] = argo_version
 
 control_plane_bytes = b"control-plane-image\n"
+ui_bytes = b"appliance-ui-image\n"
 schema_bytes = b'{\n  "$schema": "https://json-schema.org/draft/2020-12/schema",\n  "type": "object"\n}\n'
 compatibility_bytes = (json.dumps(compatibility, indent=2) + "\n").encode("utf-8")
 checksums_bytes = b"sample checksums placeholder\n"
 
 (sample_root / control_plane_name).write_bytes(control_plane_bytes)
+(sample_root / ui_name).write_bytes(ui_bytes)
 (sample_root / schema_name).write_bytes(schema_bytes)
 (sample_root / compatibility_name).write_bytes(compatibility_bytes)
 (sample_root / checksums_name).write_bytes(checksums_bytes)
@@ -164,6 +168,11 @@ chart_src.mkdir(parents=True, exist_ok=True)
             "image:",
             f"  repository: {control_plane_image_ref.rsplit(':', 1)[0]}",
             f'  tag: "{control_plane_image_ref.rsplit(":", 1)[1]}"',
+            "ui:",
+            "  enabled: true",
+            "  image:",
+            f"    repository: {ui_image_ref.rsplit(':', 1)[0]}",
+            f'    tag: "{ui_image_ref.rsplit(":", 1)[1]}"',
             "",
         ]
     ),
@@ -247,6 +256,7 @@ release_input = {
     "generatedAt": "2026-07-06T00:00:00Z",
     "artifacts": {
         "controlPlaneImage": file_artifact(control_plane_name),
+        "uiImage": file_artifact(ui_name),
         "applianceChart": file_artifact(chart_name),
         "configurationSchema": file_artifact(schema_name),
         "compatibility": file_artifact(compatibility_name),
@@ -258,6 +268,8 @@ release_input = {
     },
     "compatibility": compatibility,
 }
+release_input["artifacts"]["controlPlaneImage"]["imageReference"] = control_plane_image_ref
+release_input["artifacts"]["uiImage"]["imageReference"] = ui_image_ref
 
 if argo_chart_name:
     release_input["artifacts"]["argoWorkflowsChart"] = file_artifact(argo_chart_name)

@@ -164,6 +164,7 @@ PY
 RELEASE_INPUT_MANIFEST="${RELEASE_INPUT_DIR}/release-input.json"
 CODE_VERSION=""
 CONTROL_PLANE_ARCHIVE_NAME=""
+UI_IMAGE_REF=""
 CHART_ARCHIVE_NAME=""
 ARGO_VERSION=""
 ARGO_CHART_ARCHIVE_NAME=""
@@ -175,6 +176,7 @@ ARGO_EXECUTOR_IMAGE_REF=""
 if [[ -f "${RELEASE_INPUT_MANIFEST}" ]]; then
   CODE_VERSION="$(json_string "${RELEASE_INPUT_MANIFEST}" codeVersion)"
   CONTROL_PLANE_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" controlPlaneImage)"
+  UI_IMAGE_REF="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" uiImage imageReference)"
   CHART_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" applianceChart)"
   ARGO_VERSION="$(json_compatibility_string "${RELEASE_INPUT_MANIFEST}" argoVersion)"
   ARGO_CHART_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" argoWorkflowsChart)"
@@ -191,6 +193,9 @@ fi
 PRODUCT_VERSION="${PRODUCT_VERSION:-0.1.0}"
 if [[ -z "${CONTROL_PLANE_IMAGE_REF}" ]]; then
   CONTROL_PLANE_IMAGE_REF="internal/control-plane-api:${CODE_VERSION:-${PRODUCT_VERSION}}"
+fi
+if [[ -z "${UI_IMAGE_REF}" ]]; then
+  UI_IMAGE_REF="internal/appliance-ui:${CODE_VERSION:-${PRODUCT_VERSION}}"
 fi
 if [[ -z "${CONTROL_PLANE_ARCHIVE_NAME}" ]]; then
   CONTROL_PLANE_ARCHIVE_NAME="control-plane-api-${CONTROL_PLANE_IMAGE_REF##*:}.tar"
@@ -282,6 +287,28 @@ image:
   digest: ""
   pullPolicy: Never
 
+ui:
+  enabled: true
+  image:
+    repository: ${UI_IMAGE_REF%:*}
+    tag: "${UI_IMAGE_REF##*:}"
+    digest: ""
+    pullPolicy: Never
+  service:
+    port: 8080
+  config:
+    logLevel: info
+    cookieSecure: true
+    controlPlaneBaseURL: ""
+    controlPlaneInternalBaseURL: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
 namespace:
   create: false
   name: ""
@@ -336,6 +363,7 @@ Place the remaining release-side artifacts in this directory before assembly:
 The \`release-input\` directory is produced by \`appliance-code\` and must contain:
 
 - \`release-input.json\`
+- the UI image archive declared as \`artifacts.uiImage\`
 - \`${CHART_ARCHIVE_NAME}\`
 - \`configuration.schema.json\`
 - \`checksums.txt\`
@@ -498,6 +526,7 @@ def add_crd_artifacts():
 
 
 add_artifact_file("argoWorkflowsChart", "charts", "chart")
+add_artifact_file("uiImage", "oci-images", "oci-images", image_reference_field=True)
 add_artifact_file("argoControllerImage", "oci-images", "oci-images", image_reference_field=True)
 add_artifact_file("argoExecutorImage", "oci-images", "oci-images", image_reference_field=True)
 add_crd_artifacts()

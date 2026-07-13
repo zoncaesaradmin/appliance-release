@@ -518,6 +518,7 @@ cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF
 set -euo pipefail
 cd /workspace
 CONTROL_PLANE_IMAGE_OUT="/workspace/.run/control-plane-image.tar"
+UI_IMAGE_OUT="/workspace/.run/appliance-ui-image.tar"
 ARGO_ARGS=()
 CODE_VERSION="\${CODE_VERSION:-\$(git describe --tags --always --dirty 2>/dev/null | sed 's/[^A-Za-z0-9_.-]/-/g')}"
 
@@ -530,6 +531,7 @@ bool_true() {
 }
 
 make package-control-plane-image-archive OUT_FILE="\${CONTROL_PLANE_IMAGE_OUT}"
+make package-ui-image-archive OUT_FILE="\${UI_IMAGE_OUT}"
 
 if bool_true $(shell_quote "${ARGO_ENABLED}"); then
   ARGO_ARGS+=(--argo-version $(shell_quote "${ARGO_VERSION}"))
@@ -550,6 +552,8 @@ bash ./scripts/package/archive-release-input.sh \
   --code-version "\${CODE_VERSION}" \
   --control-plane-image "\${CONTROL_PLANE_IMAGE_OUT}" \
   --control-plane-image-reference "localhost/appliance-control-plane:\${CODE_VERSION}" \
+  --ui-image "\${UI_IMAGE_OUT}" \
+  --ui-image-reference "localhost/appliance-ui:\${CODE_VERSION}" \
   --k3s-version $(shell_quote "${K3S_VERSION}") \
   "\${ARGO_ARGS[@]}"
 EOF

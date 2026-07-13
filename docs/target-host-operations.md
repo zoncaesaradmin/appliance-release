@@ -67,6 +67,13 @@ sudo zonctl status --output text
 sudo kubectl get pods -A
 ```
 
+Then open the appliance root URL in a browser to confirm the UI service is
+reachable:
+
+```text
+https://<appliance-host>/
+```
+
 Notes:
 
 - if the currently installed appliance version already matches `RELEASE_VERSION`,

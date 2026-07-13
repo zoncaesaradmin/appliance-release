@@ -109,6 +109,7 @@ This script checks:
 - pod health with `kubectl get pods -A`
 - installed-state version info
 - a smoke check from the target host itself
+- the browser UI home route returning the expected appliance UI shell when `client_verification.base_url` or `verification.ui_home_command` is configured
 - support bundle collection on failure
 
 If your config enables `verification.argo.enabled: true`, it also checks:

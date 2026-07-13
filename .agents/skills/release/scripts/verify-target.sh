@@ -21,6 +21,7 @@ Options:
   --service-health-cmd CMD       Override verification.service_health_command.
   --app-version-cmd CMD          Override verification.app_version_command.
   --smoke-test-cmd CMD           Override verification.smoke_test_command.
+  --ui-home-cmd CMD              Override verification.ui_home_command.
   --failure-log-cmd CMD          Override verification.failure_log_command.
   --argo-namespaces-cmd CMD      Override verification.argo.namespaces_command.
   --argo-crds-cmd CMD            Override verification.argo.crds_command.
@@ -36,6 +37,7 @@ VERIFY_CMD=""
 SERVICE_HEALTH_CMD=""
 APP_VERSION_CMD=""
 SMOKE_TEST_CMD=""
+UI_HOME_CMD=""
 FAILURE_LOG_CMD=""
 ARGO_NAMESPACES_CMD=""
 ARGO_CRDS_CMD=""
@@ -66,6 +68,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --smoke-test-cmd)
       SMOKE_TEST_CMD="${2:-}"
+      shift 2
+      ;;
+    --ui-home-cmd)
+      UI_HOME_CMD="${2:-}"
       shift 2
       ;;
     --failure-log-cmd)
@@ -116,6 +122,7 @@ VERIFY_CMD="${VERIFY_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.v
 SERVICE_HEALTH_CMD="${SERVICE_HEALTH_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.service_health_command" || true)}"
 APP_VERSION_CMD="${APP_VERSION_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.app_version_command" || true)}"
 SMOKE_TEST_CMD="${SMOKE_TEST_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_command" || true)}"
+UI_HOME_CMD="${UI_HOME_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.ui_home_command" || true)}"
 FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.failure_log_command" || true)}"
 SMOKE_TEST_RETRIES="${SMOKE_TEST_RETRIES:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_retries" || true)}"
 SMOKE_TEST_RETRY_DELAY_SECONDS="${SMOKE_TEST_RETRY_DELAY_SECONDS:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_retry_delay_seconds" || true)}"
@@ -156,6 +163,9 @@ if [[ -n "${CLIENT_BASE_URL}" ]]; then
   if [[ "${rewritten_smoke_test}" != "${SMOKE_TEST_CMD}" ]]; then
     SMOKE_TEST_CMD="${rewritten_smoke_test}"
     log "rewrote localhost smoke test to use client_verification.base_url: ${CLIENT_BASE_URL}"
+  fi
+  if [[ -z "${UI_HOME_CMD}" ]]; then
+    UI_HOME_CMD="body=\$(curl -kfsS $(shell_quote "${CLIENT_BASE_URL}/")) && printf '%s' \"\$body\" | grep -Eiq '<!doctype html|<html' && printf '%s' \"\$body\" | grep -Eiq 'Zon Appliance|Sign in to continue|Appliance status|Create first administrator'"
   fi
 fi
 
@@ -230,6 +240,7 @@ verify_code="0"
 service_health_code="0"
 app_version_code="0"
 smoke_test_code=""
+ui_home_code=""
 failure_log_code=""
 argo_namespaces_code=""
 argo_crds_code=""
@@ -428,6 +439,14 @@ if [[ -n "${SMOKE_TEST_CMD}" ]]; then
   done
 fi
 
+if [[ -n "${UI_HOME_CMD}" ]]; then
+  if run_check "ui-home" "${UI_HOME_CMD}"; then
+    ui_home_code="0"
+  else
+    ui_home_code="$?"
+  fi
+fi
+
 if bool_true "${ARGO_ENABLED}"; then
   if run_check "argo-namespaces" "${ARGO_NAMESPACES_CMD}"; then
     argo_namespaces_code="0"
@@ -455,13 +474,16 @@ done
 if [[ -n "${smoke_test_code}" && "${smoke_test_code}" != "0" ]]; then
   overall_failed="true"
 fi
+if [[ -n "${ui_home_code}" && "${ui_home_code}" != "0" ]]; then
+  overall_failed="true"
+fi
 for code in "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}"; do
   if [[ -n "${code}" && "${code}" != "0" ]]; then
     overall_failed="true"
   fi
 done
 
-final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${FAILURE_LOG_CMD}" "${ARGO_ENABLED}" "${ARGO_NAMESPACES_CMD}" "${ARGO_CRDS_CMD}" "${ARGO_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${failure_log_code}" "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
+final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${UI_HOME_CMD}" "${FAILURE_LOG_CMD}" "${ARGO_ENABLED}" "${ARGO_NAMESPACES_CMD}" "${ARGO_CRDS_CMD}" "${ARGO_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${ui_home_code}" "${failure_log_code}" "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -475,6 +497,7 @@ import sys
     service_health_cmd,
     app_version_cmd,
     smoke_test_cmd,
+    ui_home_cmd,
     failure_log_cmd,
     argo_enabled,
     argo_namespaces_cmd,
@@ -485,6 +508,7 @@ import sys
     service_health_code,
     app_version_code,
     smoke_test_code,
+    ui_home_code,
     failure_log_code,
     argo_namespaces_code,
     argo_crds_code,
@@ -493,7 +517,7 @@ import sys
     run_dir,
     allow_ingress_warning,
     allow_verify_schema_bug,
-) = sys.argv[1:27]
+) = sys.argv[1:29]
 
 run_dir_path = Path(run_dir)
 warnings = []
@@ -608,6 +632,13 @@ if smoke_test_cmd:
         "command": smoke_test_cmd,
         "exitCode": int(smoke_test_code or 0),
         "log": str(run_dir_path / "logs" / "smoke-test.log"),
+    }
+
+if ui_home_cmd:
+    payload["checks"]["uiHome"] = {
+        "command": ui_home_cmd,
+        "exitCode": int(ui_home_code or 0),
+        "log": str(run_dir_path / "logs" / "ui-home.log"),
     }
 
 if argo_enabled == "true":
