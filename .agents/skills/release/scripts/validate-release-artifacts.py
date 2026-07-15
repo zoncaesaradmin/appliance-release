@@ -52,8 +52,6 @@ def require_dir_artifact(artifacts: dict, key: str, release_input_dir: Path) -> 
     path = require_existing_release_path(release_input_dir, artifact["path"], key)
     if not path.is_dir():
         raise ValueError(f"release-input artifacts.{key}.path must be a directory: {path}")
-    if not any(child.is_file() for child in path.rglob("*")):
-        raise ValueError(f"release-input artifacts.{key}.path must contain at least one file: {path}")
     return path
 
 
@@ -183,9 +181,9 @@ def image_reference_from_values(root: dict, path: str) -> str:
     return f"{repository}:{tag}"
 
 
-def load_bundle_values(bundle_root: Path, entries_by_path: dict[str, dict]) -> dict:
+def load_bundle_values(bundle_content_root: Path, entries_by_path: dict[str, dict]) -> dict:
     require_bundle_entry(entries_by_path, "configuration/values.yaml", "configuration values")
-    values_path = bundle_root / "configuration" / "values.yaml"
+    values_path = bundle_content_root / "configuration" / "values.yaml"
     if not values_path.is_file():
         raise ValueError(f"bundle configuration values file is missing on disk: {values_path}")
     return parse_simple_yaml_mapping(values_path.read_text(encoding="utf-8"))
@@ -354,7 +352,7 @@ def main() -> int:
         for entry in entries
         if isinstance(entry, dict)
     }
-    bundle_values = load_bundle_values(bundle_root, entries_by_path)
+    bundle_values = load_bundle_values(bundle_manifest_path.parent, entries_by_path)
 
     checked = {
         "requiredArtifacts": validate_required_artifacts(

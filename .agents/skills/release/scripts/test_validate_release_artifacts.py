@@ -119,11 +119,42 @@ ingress:
     )
 
 
+def populate_positive_case_with_nested_bundle(tmp: Path) -> None:
+    populate_positive_case(tmp)
+    nested_root = tmp / "bundle" / "appliance-0.1.0-bundle"
+    nested_root.mkdir(parents=True, exist_ok=True)
+    (tmp / "bundle" / "configuration").rename(nested_root / "configuration")
+    (tmp / "bundle" / "release-manifest.json").rename(nested_root / "release-manifest.json")
+
+
 def test_positive_case() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp)
         result = run_validator(tmp, "--require-argo")
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+
+
+def test_positive_case_with_nested_bundle_root() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case_with_nested_bundle(tmp)
+        result = run_validator(tmp, "--require-argo")
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+
+
+def test_allows_empty_directory_artifacts() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        for name in ("sbom", "provenance", "notices", "tests"):
+            directory = tmp / "release-input" / name
+            for child in list(directory.rglob("*")):
+                if child.is_file():
+                    child.unlink()
+            result = run_validator(tmp, "--require-argo")
         if result.returncode != 0:
             raise AssertionError(result.stderr)
 
@@ -212,6 +243,8 @@ def test_rejects_mismatched_ui_values_image_reference() -> None:
 
 def main() -> None:
     test_positive_case()
+    test_positive_case_with_nested_bundle_root()
+    test_allows_empty_directory_artifacts()
     test_rejects_tag_only_extra_oci_image()
     test_rejects_missing_expected_extra_oci_image_ref()
     test_rejects_missing_ui_bundle_entry()
