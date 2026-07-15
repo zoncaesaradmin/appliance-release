@@ -91,13 +91,6 @@ if [[ -z "${PATH_PREFIX}" ]]; then
   PATH_PREFIX="appliance"
 fi
 STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || true)"
-BOOTSTRAP_ADMIN_USERNAME="$(config_get_optional "${CONFIG_PATH}" "install.bootstrap_admin_username" || true)"
-if [[ -z "${BOOTSTRAP_ADMIN_USERNAME}" ]]; then
-  BOOTSTRAP_ADMIN_USERNAME="$(config_get_optional "${CONFIG_PATH}" "client_verification.username" || true)"
-fi
-if [[ -z "${BOOTSTRAP_ADMIN_USERNAME}" ]]; then
-  BOOTSTRAP_ADMIN_USERNAME="admin"
-fi
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 fi
@@ -134,9 +127,23 @@ ensure_dir "${RUN_DIR}/metadata"
 [[ -n "${RELEASE_VERSION}" ]] || fail "--release-version is required for automated install"
 helper_url="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-http-release.sh"
 remote_release_dir="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}"
+bundle_url="${remote_release_dir}/appliance-${RELEASE_VERSION}-bundle.tar.gz"
+checksums_url="${remote_release_dir}/sha256sum.txt"
+
+preflight_public_url() {
+  local url="$1"
+  local label="$2"
+  local output=""
+  if ! output="$(curl -fsSIL "${url}" 2>&1)"; then
+    fail "published ${label} is not reachable at ${url}. Check that the HTTP server is running and serving the release root/path prefix. curl output: ${output}"
+  fi
+}
+
+preflight_public_url "${helper_url}" "install helper"
+preflight_public_url "${bundle_url}" "bundle archive"
+preflight_public_url "${checksums_url}" "checksum file"
 
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
-first_admin_password="$(resolve_secret "APPLIANCE_FIRST_ADMIN_PASSWORD" "First administrator password")"
 build_catalog_b64=""
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   build_catalog_b64="$(python3 - "${BUILD_CATALOG_PATH}" <<'PY'
@@ -203,8 +210,6 @@ install_args=(
   --public-key "${public_key}"
   --state-dir '"$(shell_quote "${STATE_DIR}")"'
   --output '"$(shell_quote "${OUTPUT_FORMAT}")"'
-  --bootstrap-admin-username '"$(shell_quote "${BOOTSTRAP_ADMIN_USERNAME}")"'
-  --bootstrap-password-stdin
 )
 upgrade_args=(
   --bundle-dir "${bundle_dir}"
@@ -273,7 +278,7 @@ remote_script+='
 echo "[target 5/5] Installing appliance platform."
 install_stdout="$(mktemp "${out_dir}/.zonctl-install-stdout.XXXXXX")"
 install_stderr="$(mktemp "${out_dir}/.zonctl-install-stderr.XXXXXX")"
-if capture_zonctl_step "${install_stdout}" "${install_stderr}" '"$(shell_quote "${first_admin_password}")"' sudo -n "${zonctl}" install "${install_args[@]}"; then
+if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" sudo -n "${zonctl}" install "${install_args[@]}"; then
   rm -f "${install_stdout}" "${install_stderr}"
   echo "[target 5/5] Appliance installation completed."
 else
@@ -295,7 +300,7 @@ install_log="${RUN_DIR}/logs/install.log"
 log "installing release on ${TARGET_HOST} using ${remote_release_dir}"
 run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"
 
-python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${BOOTSTRAP_ADMIN_USERNAME}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${SOURCE_CREDENTIALS_PATH}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${install_log}" <<'PY'
+python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${SOURCE_CREDENTIALS_PATH}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${install_log}" <<'PY'
 import json
 import sys
 
@@ -309,14 +314,13 @@ import sys
     path_prefix,
     state_dir,
     out_dir,
-    bootstrap_admin_username,
     appliance_profile,
     build_catalog_path,
     source_credentials_path,
     output_format,
     uninstall_first,
     install_log,
-) = sys.argv[1:17]
+) = sys.argv[1:16]
 
 payload = {
     "configPath": config_path,
@@ -329,7 +333,6 @@ payload = {
     "stateDir": state_dir or None,
     "outDir": out_dir,
     "bundleDir": f"{out_dir}/appliance-{release_version}-bundle" if release_version else None,
-    "bootstrapAdminUsername": bootstrap_admin_username,
     "applianceProfile": appliance_profile or None,
     "buildCatalogPath": build_catalog_path or None,
     "sourceCredentialsPath": source_credentials_path or None,

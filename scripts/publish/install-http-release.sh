@@ -12,9 +12,11 @@ choose the right appliance lifecycle action:
 - fresh host: run `zonctl install`
 - existing owned appliance: switch to `zonctl upgrade`
 
-For a fresh install, zonctl also bootstraps the first administrator in the
-same workflow: it prompts on the terminal for the initial password unless you
-use zonctl's own non-interactive bootstrap flags directly.
+For a fresh install, appliance setup now continues in a separate step after the
+platform is installed:
+
+- primary path: open the appliance UI and create the first administrator there
+- automation/headless path: run a separate explicit bootstrap step
 
 Required:
   --base-url URL               Base URL that serves the appliance path, for
@@ -39,12 +41,6 @@ Optional:
                                zonctl install/upgrade to create Git SSH
                                Kubernetes Secrets for builder workflows
   --node-name NAME             Optional zonctl --node-name override
-  --bootstrap-admin-username NAME
-                               Username for the first administrator created
-                               during a fresh install. Default: admin
-  --bootstrap-password-stdin   Read the first administrator password from
-                               stdin for a fresh install. Ignored when the
-                               helper switches to upgrade.
   --dry-run                    Pass --dry-run to zonctl install/upgrade
   --output FORMAT              zonctl output format. Default: text
   --help                       Show this help
@@ -74,8 +70,6 @@ APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
 SOURCE_CREDENTIALS_PATH=""
 NODE_NAME=""
-BOOTSTRAP_ADMIN_USERNAME="admin"
-BOOTSTRAP_PASSWORD_STDIN="0"
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
 
@@ -120,14 +114,6 @@ while [[ $# -gt 0 ]]; do
     --node-name)
       NODE_NAME="${2:-}"
       shift 2
-      ;;
-    --bootstrap-admin-username)
-      BOOTSTRAP_ADMIN_USERNAME="${2:-}"
-      shift 2
-      ;;
-    --bootstrap-password-stdin)
-      BOOTSTRAP_PASSWORD_STDIN="1"
-      shift 1
       ;;
     --dry-run)
       DRY_RUN="1"
@@ -225,13 +211,6 @@ print_captured_failure() {
   fi
 }
 
-read_stdin_payload() {
-  if [[ "${BOOTSTRAP_PASSWORD_STDIN}" != "1" ]]; then
-    return 0
-  fi
-  cat
-}
-
 require_var BASE_URL
 
 if [[ -z "${PRODUCT_VERSION}" ]]; then
@@ -244,11 +223,6 @@ if [[ -z "${OUT_DIR}" ]]; then
 fi
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="core"
-fi
-
-BOOTSTRAP_PASSWORD=""
-if [[ "${BOOTSTRAP_PASSWORD_STDIN}" == "1" ]]; then
-  BOOTSTRAP_PASSWORD="$(read_stdin_payload)"
 fi
 
 BASE_URL="$(trim_trailing_slashes "${BASE_URL}")"
@@ -323,13 +297,6 @@ fi
 if [[ "${DRY_RUN}" == "1" ]]; then
   install_args+=(--dry-run)
 fi
-if [[ -n "${BOOTSTRAP_ADMIN_USERNAME}" ]]; then
-  install_args+=(--bootstrap-admin-username "${BOOTSTRAP_ADMIN_USERNAME}")
-fi
-if [[ "${BOOTSTRAP_PASSWORD_STDIN}" == "1" ]]; then
-  install_args+=(--bootstrap-password-stdin)
-fi
-
 upgrade_args=(
   --bundle-dir "${BUNDLE_DIR}"
   --public-key "${PUBLIC_KEY}"
@@ -355,11 +322,12 @@ fi
 install_stdout="$(mktemp "${OUT_DIR}/.zonctl-install-stdout.XXXXXX")"
 install_stderr="$(mktemp "${OUT_DIR}/.zonctl-install-stderr.XXXXXX")"
 
-echo "[5/5] Installing appliance platform. This can take several minutes. You will be prompted for the first administrator only when the platform is ready."
-if capture_zonctl_step "${install_stdout}" "${install_stderr}" "${BOOTSTRAP_PASSWORD}" sudo "${ZONCTL}" install "${install_args[@]}"; then
-  echo "[5/5] Appliance installation and first-administrator setup completed."
+echo "[5/5] Installing appliance platform. This can take several minutes."
+if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" sudo "${ZONCTL}" install "${install_args[@]}"; then
+  echo "[5/5] Appliance installation completed."
   rm -f "${install_stdout}" "${install_stderr}"
   echo "zonctl is now available at /usr/local/bin/zonctl on the target host."
+  echo "If this is a fresh install, open the appliance UI to create the first administrator."
   exit 0
 fi
 

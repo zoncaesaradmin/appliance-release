@@ -263,6 +263,11 @@ if ! bool_true "${SKIP_INSTALL}"; then
   bash "${SCRIPT_DIR}/install-on-target.sh" "${install_args[@]}"
 fi
 
+if ! bool_true "${SKIP_TARGET_VERIFY}" || ! bool_true "${SKIP_CLIENT_VERIFY}"; then
+  log "starting explicit first-admin bootstrap phase"
+  bash "${SCRIPT_DIR}/bootstrap-admin-on-target.sh" --config "${CONFIG_PATH}" --run-dir "${RUN_DIR}"
+fi
+
 if ! bool_true "${SKIP_TARGET_VERIFY}"; then
   target_verify_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
   if [[ -n "${APPLIANCE_PROFILE}" ]]; then
