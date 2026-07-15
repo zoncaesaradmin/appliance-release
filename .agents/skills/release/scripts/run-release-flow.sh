@@ -25,10 +25,11 @@ Options:
   --build-catalog PATH       Local build catalog JSON/YAML passed to zonctl.
   --source-credentials PATH  Local source credential manifest passed to zonctl.
   --uninstall-first          Uninstall the previous appliance before install.
+  --skip-bootstrap-admin     Skip explicit first-admin creation and leave
+                             setup to the appliance UI or a later manual
+                             bootstrap step.
   --skip-build               Skip build/publish.
   --skip-install             Skip install.
-  --skip-target-verify       Skip target-host verification.
-  --skip-client-verify       Skip macOS-side API verification.
   --final-ok                 Print OK run on success.
 EOF
 }
@@ -40,10 +41,9 @@ APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
 SOURCE_CREDENTIALS_PATH=""
 UNINSTALL_FIRST="false"
+SKIP_BOOTSTRAP_ADMIN="false"
 SKIP_BUILD="false"
 SKIP_INSTALL="false"
-SKIP_TARGET_VERIFY="false"
-SKIP_CLIENT_VERIFY="false"
 FINAL_OK="false"
 
 while [[ $# -gt 0 ]]; do
@@ -76,20 +76,16 @@ while [[ $# -gt 0 ]]; do
       UNINSTALL_FIRST="true"
       shift 1
       ;;
+    --skip-bootstrap-admin)
+      SKIP_BOOTSTRAP_ADMIN="true"
+      shift 1
+      ;;
     --skip-build)
       SKIP_BUILD="true"
       shift 1
       ;;
     --skip-install)
       SKIP_INSTALL="true"
-      shift 1
-      ;;
-    --skip-target-verify)
-      SKIP_TARGET_VERIFY="true"
-      shift 1
-      ;;
-    --skip-client-verify)
-      SKIP_CLIENT_VERIFY="true"
       shift 1
       ;;
     --final-ok)
@@ -147,7 +143,7 @@ finalize_release_flow() {
   fi
   FLOW_FINALIZED="true"
 
-  python3 - "${RUN_DIR}/metadata/run-release-flow.json" "${CONFIG_PATH}" "${RUN_DIR}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${SOURCE_CREDENTIALS_PATH}" "${SKIP_BUILD}" "${SKIP_INSTALL}" "${SKIP_TARGET_VERIFY}" "${SKIP_CLIENT_VERIFY}" "${UNINSTALL_FIRST}" "${exit_code}" <<'PY'
+  python3 - "${RUN_DIR}/metadata/run-release-flow.json" "${CONFIG_PATH}" "${RUN_DIR}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${SOURCE_CREDENTIALS_PATH}" "${SKIP_BUILD}" "${SKIP_INSTALL}" "${SKIP_BOOTSTRAP_ADMIN}" "${UNINSTALL_FIRST}" "${exit_code}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -162,11 +158,10 @@ import sys
     source_credentials_path,
     skip_build,
     skip_install,
-    skip_target_verify,
-    skip_client_verify,
+    skip_bootstrap_admin,
     uninstall_first,
     exit_code,
-) = sys.argv[1:14]
+) = sys.argv[1:13]
 
 run_dir_path = Path(run_dir)
 exit_code_int = int(exit_code)
@@ -183,13 +178,15 @@ payload = {
     "steps": {
         "buildPublishSkipped": skip_build == "true",
         "installSkipped": skip_install == "true",
-        "targetVerifySkipped": skip_target_verify == "true",
-        "clientVerifySkipped": skip_client_verify == "true",
+        "bootstrapAdminSkipped": skip_bootstrap_admin == "true",
+        "targetVerifySkipped": False,
+        "clientVerifySkipped": skip_bootstrap_admin == "true",
         "uninstallFirst": uninstall_first == "true",
     },
     "metadataFiles": {
         "buildPublish": str(run_dir_path / "metadata" / "build-publish.json"),
         "install": str(run_dir_path / "metadata" / "install.json"),
+        "bootstrapAdmin": str(run_dir_path / "metadata" / "bootstrap-admin.json"),
         "targetVerify": str(run_dir_path / "metadata" / "verify.json"),
         "clientVerify": str(run_dir_path / "metadata" / "client-verify.json"),
         "releaseReportJson": str(run_dir_path / "metadata" / "release-report.json"),
@@ -232,6 +229,9 @@ fi
 if [[ -n "${SOURCE_CREDENTIALS_PATH}" ]]; then
   log "source credential manifest: ${SOURCE_CREDENTIALS_PATH}"
 fi
+if bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
+  log "bootstrap-admin is skipped; client/API verification will also be skipped so first-user setup can be completed later in the UI"
+fi
 
 if ! bool_true "${SKIP_BUILD}"; then
   build_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
@@ -263,24 +263,22 @@ if ! bool_true "${SKIP_INSTALL}"; then
   bash "${SCRIPT_DIR}/install-on-target.sh" "${install_args[@]}"
 fi
 
-if ! bool_true "${SKIP_TARGET_VERIFY}" || ! bool_true "${SKIP_CLIENT_VERIFY}"; then
+if ! bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
   log "starting explicit first-admin bootstrap phase"
   bash "${SCRIPT_DIR}/bootstrap-admin-on-target.sh" --config "${CONFIG_PATH}" --run-dir "${RUN_DIR}"
 fi
 
-if ! bool_true "${SKIP_TARGET_VERIFY}"; then
-  target_verify_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
-  if [[ -n "${APPLIANCE_PROFILE}" ]]; then
-    target_verify_args+=(--appliance-profile "${APPLIANCE_PROFILE}")
-  fi
-  if [[ -n "${SOURCE_CREDENTIALS_PATH}" ]]; then
-    target_verify_args+=(--source-credentials "${SOURCE_CREDENTIALS_PATH}")
-  fi
-  log "starting target verification phase"
-  bash "${SCRIPT_DIR}/verify-target.sh" "${target_verify_args[@]}"
+target_verify_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
+if [[ -n "${APPLIANCE_PROFILE}" ]]; then
+  target_verify_args+=(--appliance-profile "${APPLIANCE_PROFILE}")
 fi
+if [[ -n "${SOURCE_CREDENTIALS_PATH}" ]]; then
+  target_verify_args+=(--source-credentials "${SOURCE_CREDENTIALS_PATH}")
+fi
+log "starting target verification phase"
+bash "${SCRIPT_DIR}/verify-target.sh" "${target_verify_args[@]}"
 
-if ! bool_true "${SKIP_CLIENT_VERIFY}"; then
+if ! bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
   client_verify_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
   if [[ -n "${APPLIANCE_PROFILE}" ]]; then
     client_verify_args+=(--appliance-profile "${APPLIANCE_PROFILE}")

@@ -34,6 +34,7 @@ def test_complete_report() -> None:
                 "steps": {
                     "buildPublishSkipped": False,
                     "installSkipped": False,
+                    "bootstrapAdminSkipped": False,
                     "targetVerifySkipped": False,
                     "clientVerifySkipped": False,
                 },
@@ -162,7 +163,8 @@ def test_missing_unskipped_metadata_fails_summary_status() -> None:
                 "steps": {
                     "buildPublishSkipped": False,
                     "installSkipped": True,
-                    "targetVerifySkipped": True,
+                    "bootstrapAdminSkipped": True,
+                    "targetVerifySkipped": False,
                     "clientVerifySkipped": True,
                 },
                 "metadataFiles": {
@@ -200,7 +202,8 @@ def test_wrapper_failure_marks_report_failed() -> None:
                 "steps": {
                     "buildPublishSkipped": True,
                     "installSkipped": True,
-                    "targetVerifySkipped": True,
+                    "bootstrapAdminSkipped": True,
+                    "targetVerifySkipped": False,
                     "clientVerifySkipped": True,
                 },
                 "metadataFiles": {},

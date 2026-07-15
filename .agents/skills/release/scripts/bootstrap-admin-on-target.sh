@@ -110,7 +110,13 @@ exit 1'
 
 bootstrap_log="${RUN_DIR}/logs/bootstrap-admin.log"
 log "bootstrapping first administrator on ${TARGET_HOST}"
-run_ssh_logged "${TARGET_HOST}" "${bootstrap_log}" "${remote_script}"
+if ! run_ssh_logged "${TARGET_HOST}" "${bootstrap_log}" "${remote_script}"; then
+  if [[ -f "${bootstrap_log}" ]] && grep -Eq 'bootstrap: created administrator|already initialized' "${bootstrap_log}"; then
+    log "bootstrap-admin command returned non-zero after a successful target-side result; accepting based on ${bootstrap_log}"
+  else
+    fail "bootstrap-admin failed; see ${bootstrap_log}"
+  fi
+fi
 
 python3 - "${RUN_DIR}/metadata/bootstrap-admin.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${ADMIN_USERNAME}" "${NAMESPACE}" "${DEPLOYMENT}" "${bootstrap_log}" <<'PY'
 import json
