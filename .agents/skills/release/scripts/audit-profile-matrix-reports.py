@@ -178,7 +178,6 @@ def audit_plan(plan: dict[str, Any], reports: dict[str, dict[str, Any]], errors:
                 errors.append(f"{profile}: releaseVersion is {actual!r}, want plan releaseVersion {expected_version!r}")
     expected_paths = {
         "buildCatalogPath": normalized_path(plan.get("buildCatalogPath")),
-        "sourceCredentialsPath": normalized_path(plan.get("sourceCredentialsPath")),
     }
     for field, expected in expected_paths.items():
         if not expected:

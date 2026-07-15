@@ -37,9 +37,6 @@ Optional:
                                zonctl install/upgrade. Default: core
   --build-catalog PATH         Target-local build catalog YAML/JSON passed to
                                zonctl install/upgrade as control-plane config
-  --source-credentials PATH    Target-local source credential manifest used by
-                               zonctl install/upgrade to create Git SSH
-                               Kubernetes Secrets for builder workflows
   --node-name NAME             Optional zonctl --node-name override
   --dry-run                    Pass --dry-run to zonctl install/upgrade
   --output FORMAT              zonctl output format. Default: text
@@ -68,7 +65,6 @@ USE_LATEST="0"
 STATE_DIR="/var/lib/zon"
 APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
-SOURCE_CREDENTIALS_PATH=""
 NODE_NAME=""
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
@@ -105,10 +101,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --build-catalog)
       BUILD_CATALOG_PATH="${2:-}"
-      shift 2
-      ;;
-    --source-credentials)
-      SOURCE_CREDENTIALS_PATH="${2:-}"
       shift 2
       ;;
     --node-name)
@@ -288,9 +280,6 @@ fi
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   install_args+=(--build-catalog "${BUILD_CATALOG_PATH}")
 fi
-if [[ -n "${SOURCE_CREDENTIALS_PATH}" ]]; then
-  install_args+=(--source-credentials "${SOURCE_CREDENTIALS_PATH}")
-fi
 if [[ -n "${NODE_NAME}" ]]; then
   install_args+=(--node-name "${NODE_NAME}")
 fi
@@ -308,9 +297,6 @@ if [[ -n "${APPLIANCE_PROFILE}" ]]; then
 fi
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   upgrade_args+=(--build-catalog "${BUILD_CATALOG_PATH}")
-fi
-if [[ -n "${SOURCE_CREDENTIALS_PATH}" ]]; then
-  upgrade_args+=(--source-credentials "${SOURCE_CREDENTIALS_PATH}")
 fi
 if [[ -n "${NODE_NAME}" ]]; then
   upgrade_args+=(--node-name "${NODE_NAME}")

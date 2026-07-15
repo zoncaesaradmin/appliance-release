@@ -23,22 +23,8 @@ from config_query import load_config  # noqa: E402
 
 
 PROFILES = ("core", "storage", "builder")
-K8S_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
 OCI_REPO_RE = re.compile(r"^[a-z0-9]+([._/-][a-z0-9]+)*$")
 MAKE_TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
-FORBIDDEN_SOURCE_CREDENTIAL_FIELDS = {
-    "privateKey",
-    "private_key",
-    "sshPrivateKey",
-    "ssh_private_key",
-    "token",
-    "password",
-}
-FORBIDDEN_SECRET_MARKERS = (
-    "-----BEGIN OPENSSH PRIVATE KEY-----",
-    "-----BEGIN RSA PRIVATE KEY-----",
-    "-----BEGIN EC PRIVATE KEY-----",
-)
 
 
 def lookup(data: dict, path: str, default: Any = "") -> Any:
@@ -126,123 +112,6 @@ def parse_source_credential_scalar(raw: str) -> str:
     return raw
 
 
-def load_source_credential_manifest(path: Path) -> dict[str, Any]:
-    text = path.read_text(encoding="utf-8")
-    stripped = text.lstrip()
-    if stripped.startswith("{") or stripped.startswith("["):
-        data = json.loads(text)
-        if isinstance(data, list):
-            data = {"credentials": data}
-        return data
-
-    credentials: list[dict[str, str]] = []
-    current: Optional[dict[str, str]] = None
-    for raw in text.splitlines():
-        line = raw.split("#", 1)[0].rstrip()
-        if not line.strip():
-            continue
-        stripped_line = line.lstrip(" ")
-        if stripped_line == "credentials:":
-            continue
-        if stripped_line.startswith("- "):
-            if current is not None:
-                credentials.append(current)
-            current = {}
-            remainder = stripped_line[2:].strip()
-            if remainder:
-                if ":" not in remainder:
-                    raise ValueError("expected key: value after '-' in source credential manifest")
-                key, value = remainder.split(":", 1)
-                current[key.strip()] = parse_source_credential_scalar(value)
-            continue
-        if current is None:
-            continue
-        if ":" not in stripped_line:
-            raise ValueError("expected key: value in source credential manifest")
-        key, value = stripped_line.split(":", 1)
-        current[key.strip()] = parse_source_credential_scalar(value)
-    if current is not None:
-        credentials.append(current)
-    return {"credentials": credentials}
-
-
-def valid_kubernetes_name(name: str) -> bool:
-    if not name or len(name) > 253:
-        return False
-    return all(0 < len(part) <= 63 and K8S_NAME_RE.match(part) for part in name.split("."))
-
-
-def validate_source_credentials(config_path: Path, source_credentials: str) -> list[str]:
-    errors: list[str] = []
-    if not source_credentials:
-        return errors
-    path = resolve_config_relative_path(config_path, source_credentials)
-    if not path.is_file():
-        return errors
-    try:
-        data = load_source_credential_manifest(path)
-    except Exception as exc:
-        return [f"install.source_credentials_path could not be parsed: {exc}"]
-    credentials = data.get("credentials")
-    if not isinstance(credentials, list) or not credentials:
-        return ["install.source_credentials_path must contain a non-empty credentials list"]
-    for index, cred in enumerate(credentials):
-        prefix = f"install.source_credentials_path credentials[{index}]"
-        if not isinstance(cred, dict):
-            errors.append(f"{prefix} must be a mapping")
-            continue
-        for key, value in cred.items():
-            if key in FORBIDDEN_SOURCE_CREDENTIAL_FIELDS:
-                errors.append(f"{prefix}.{key} must not contain inline secret material; use privateKeyPath")
-            if isinstance(value, str) and any(marker in value for marker in FORBIDDEN_SECRET_MARKERS):
-                errors.append(f"{prefix}.{key} appears to contain inline private key material")
-        namespace = as_str(cred.get("namespace", "appliance-builds"))
-        secret_name = as_str(cred.get("secretName", ""))
-        private_key_path = as_str(cred.get("privateKeyPath", ""))
-        known_hosts_secret = as_str(cred.get("knownHostsSecretName", ""))
-        known_hosts_path = as_str(cred.get("knownHostsPath", ""))
-        if not namespace:
-            errors.append(f"{prefix}.namespace is required or must default to appliance-builds")
-        elif not valid_kubernetes_name(namespace):
-            errors.append(f"{prefix}.namespace is not a valid Kubernetes name: {namespace}")
-        if not secret_name:
-            errors.append(f"{prefix}.secretName is required")
-        elif not valid_kubernetes_name(secret_name):
-            errors.append(f"{prefix}.secretName is not a valid Kubernetes name: {secret_name}")
-        if not private_key_path:
-            errors.append(f"{prefix}.privateKeyPath is required")
-        elif not Path(private_key_path).is_absolute():
-            errors.append(f"{prefix}.privateKeyPath must be an absolute target-host path")
-        if bool(known_hosts_secret) != bool(known_hosts_path):
-            errors.append(f"{prefix}.knownHostsSecretName and knownHostsPath must be set together")
-        if known_hosts_secret and not valid_kubernetes_name(known_hosts_secret):
-            errors.append(f"{prefix}.knownHostsSecretName is not a valid Kubernetes name: {known_hosts_secret}")
-        if known_hosts_path and not Path(known_hosts_path).is_absolute():
-            errors.append(f"{prefix}.knownHostsPath must be an absolute target-host path")
-    return errors
-
-
-def source_credential_secret_names(config_path: Path, source_credentials: str) -> set[str]:
-    if not source_credentials:
-        return set()
-    path = resolve_config_relative_path(config_path, source_credentials)
-    if not path.is_file():
-        return set()
-    data = load_source_credential_manifest(path)
-    credentials = data.get("credentials")
-    if not isinstance(credentials, list):
-        return set()
-    names: set[str] = set()
-    for cred in credentials:
-        if not isinstance(cred, dict):
-            continue
-        for key in ("secretName", "knownHostsSecretName"):
-            value = as_str(cred.get(key, ""))
-            if value:
-                names.add(value)
-    return names
-
-
 def parse_simple_list_manifest(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     stripped = text.lstrip()
@@ -255,6 +124,30 @@ def parse_simple_list_manifest(path: Path) -> dict[str, Any]:
     data: dict[str, Any] = {}
     current_key = ""
     current_item: Optional[dict[str, str]] = None
+    nested_item: Optional[dict[str, Any]] = None
+
+    def flush_nested_item() -> None:
+        nonlocal nested_item
+        if current_item is None or nested_item is None:
+            return
+        pending_lists = current_item.get("__pending_lists__")
+        if not isinstance(pending_lists, dict):
+            nested_item = None
+            return
+        pending_key = as_str(pending_lists.get("key", ""))
+        if pending_key:
+            current_item.setdefault(pending_key, []).append(nested_item)
+        nested_item = None
+
+    def flush_current_item() -> None:
+        nonlocal current_item
+        if current_item is None or not current_key:
+            return
+        flush_nested_item()
+        current_item.pop("__pending_lists__", None)
+        data.setdefault(current_key, []).append(current_item)
+        current_item = None
+
     for raw in text.splitlines():
         line = raw.split("#", 1)[0].rstrip()
         if not line.strip():
@@ -264,9 +157,7 @@ def parse_simple_list_manifest(path: Path) -> dict[str, Any]:
         if indent == 0:
             if ":" not in stripped_line:
                 raise ValueError("expected top-level key: value")
-            if current_item is not None and current_key:
-                data.setdefault(current_key, []).append(current_item)
-                current_item = None
+            flush_current_item()
             key, value = stripped_line.split(":", 1)
             current_key = key.strip()
             value = value.strip()
@@ -279,16 +170,19 @@ def parse_simple_list_manifest(path: Path) -> dict[str, Any]:
             continue
         if stripped_line.startswith("- "):
             remainder = stripped_line[2:].strip()
-            if current_item is not None and current_key:
-                pending_lists = current_item.setdefault("__pending_lists__", {})
-                if isinstance(pending_lists, dict):
-                    pending_key = as_str(pending_lists.get("key", ""))
-                    if pending_key and ":" not in remainder:
-                        current_item.setdefault(pending_key, []).append(parse_source_credential_scalar(remainder))
-                        continue
-            if current_item is not None:
-                current_item.pop("__pending_lists__", None)
-                data.setdefault(current_key, []).append(current_item)
+            pending_lists = current_item.get("__pending_lists__") if current_item is not None else None
+            pending_key = as_str(pending_lists.get("key", "")) if isinstance(pending_lists, dict) else ""
+            if pending_key and indent > 2:
+                flush_nested_item()
+                if remainder and ":" in remainder:
+                    nested_item = {}
+                    key, value = remainder.split(":", 1)
+                    nested_item[key.strip()] = parse_source_credential_scalar(value)
+                    continue
+                if remainder:
+                    current_item.setdefault(pending_key, []).append(parse_source_credential_scalar(remainder))
+                    continue
+            flush_current_item()
             current_item = {}
             if remainder:
                 if ":" not in remainder:
@@ -297,6 +191,14 @@ def parse_simple_list_manifest(path: Path) -> dict[str, Any]:
                 current_item[key.strip()] = parse_source_credential_scalar(value)
             continue
         if current_item is None:
+            continue
+        if nested_item is not None:
+            if ":" not in stripped_line:
+                raise ValueError("expected key: value in nested list entry")
+            key, value = stripped_line.split(":", 1)
+            key = key.strip()
+            value = value.strip()
+            nested_item[key] = parse_source_credential_scalar(value) if value else []
             continue
         if ":" not in stripped_line:
             raise ValueError("expected key: value in list entry")
@@ -307,11 +209,10 @@ def parse_simple_list_manifest(path: Path) -> dict[str, Any]:
             current_item[key] = parse_source_credential_scalar(value)
             current_item.pop("__pending_lists__", None)
         else:
+            flush_nested_item()
             current_item[key] = []
             current_item["__pending_lists__"] = {"key": key}
-    if current_item is not None and current_key:
-        current_item.pop("__pending_lists__", None)
-        data.setdefault(current_key, []).append(current_item)
+    flush_current_item()
     return data
 
 
@@ -375,7 +276,7 @@ def valid_repo_relative_path(raw: str) -> bool:
     return "." not in parts and ".." not in parts
 
 
-def validate_build_catalog(config_path: Path, config: dict, build_catalog: str, source_credentials: str) -> list[str]:
+def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) -> list[str]:
     errors: list[str] = []
     if not build_catalog:
         return errors
@@ -394,8 +295,32 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str, 
     profile_names = item_names(work_profiles)
     repo_names = item_names(repos)
     target_names = build_target_lookup_names(build_targets)
+    profile_repo_names: dict[str, set[str]] = {}
+    target_repo_names: dict[str, set[str]] = {}
     credential_ids = item_ids(catalog_credentials)
     credentials_by_id = {as_str(item.get("id", "")): item for item in catalog_credentials if as_str(item.get("id", ""))}
+    for index, profile in enumerate(work_profiles):
+        prefix = f"install.build_catalog_path workProfiles[{index}]"
+        profile_name = as_str(profile.get("name", ""))
+        profile_repos = object_items(profile.get("repos"))
+        if profile_name and not profile_repos:
+            errors.append(f"{prefix}.repos must declare at least one repo")
+            continue
+        allowed_repos: set[str] = set()
+        for repo_index, profile_repo in enumerate(profile_repos):
+            repo_name = as_str(profile_repo.get("name", ""))
+            if not repo_name:
+                errors.append(f"{prefix}.repos[{repo_index}].name is required")
+                continue
+            if repo_names and repo_name not in repo_names:
+                errors.append(f"{prefix}.repos[{repo_index}].name references unknown repos entry: {repo_name}")
+                continue
+            if repo_name in allowed_repos:
+                errors.append(f"{prefix}.repos[{repo_index}].name duplicates repo {repo_name}")
+                continue
+            allowed_repos.add(repo_name)
+        if profile_name:
+            profile_repo_names[profile_name] = allowed_repos
     if not build_targets:
         errors.append("install.build_catalog_path must declare at least one buildTargets entry")
     expected_extra_refs = set(parse_csv(as_str(lookup(config, "build_flow.extra_oci_image_refs", ""))))
@@ -414,12 +339,16 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str, 
             errors.append(
                 f"{prefix}.builderImageDigest is not listed in build_flow.extra_oci_image_refs: {image_ref}"
             )
-        target_profile = as_str(target.get("workProfile", ""))
-        if target_profile and profile_names and target_profile not in profile_names:
-            errors.append(f"{prefix}.workProfile references unknown workProfiles entry: {target_profile}")
         target_repo = as_str(target.get("repo", ""))
         if target_repo and repo_names and target_repo not in repo_names:
             errors.append(f"{prefix}.repo references unknown repos entry: {target_repo}")
+        lookup_names = [target_name]
+        aliases = target.get("aliases")
+        if isinstance(aliases, list):
+            lookup_names.extend(as_str(alias) for alias in aliases if as_str(alias))
+        for lookup_name in lookup_names:
+            if lookup_name and target_repo:
+                target_repo_names.setdefault(lookup_name, set()).add(target_repo)
         execution = as_str(target.get("execution", ""))
         if execution not in {"repo_script", "make_target"}:
             errors.append(f"{prefix}.execution must be repo_script or make_target")
@@ -440,22 +369,11 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str, 
         elif not OCI_REPO_RE.match(image_repository):
             errors.append(f"{prefix}.imageRepository is invalid: {image_repository}")
 
-    provisioned_secrets = source_credential_secret_names(config_path, source_credentials)
-    if catalog_credentials and not source_credentials:
-        errors.append("install.source_credentials_path is required when build catalog declares sourceCredentials")
     for index, credential in enumerate(catalog_credentials):
         prefix = f"install.build_catalog_path sourceCredentials[{index}]"
-        for key in ("id", "gitHost", "kubernetesSecretName"):
+        for key in ("id", "gitHost"):
             if not as_str(credential.get(key, "")):
                 errors.append(f"{prefix}.{key} is required")
-        for key in ("kubernetesSecretName", "knownHostsSecretName"):
-            secret_name = as_str(credential.get(key, ""))
-            if secret_name and not valid_kubernetes_name(secret_name):
-                errors.append(f"{prefix}.{key} is not a valid Kubernetes name: {secret_name}")
-            if provisioned_secrets and secret_name and secret_name not in provisioned_secrets:
-                errors.append(
-                    f"{prefix}.{key} is not provisioned by install.source_credentials_path: {secret_name}"
-                )
     for index, repo in enumerate(repos):
         repo_prefix = f"install.build_catalog_path repos[{index}]"
         repo_url = as_str(repo.get("url", ""))
@@ -476,10 +394,6 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str, 
                 errors.append(
                     f"{repo_prefix}.url host {repo_host} does not match sourceCredentials {source_credential_ref} gitHost {credential_host}"
                 )
-            if is_ssh_git_url(repo_url) and not as_str(credential.get("knownHostsSecretName", "")):
-                errors.append(
-                    f"{repo_prefix}.sourceCredentialRef uses SSH but sourceCredentials {source_credential_ref} has no knownHostsSecretName"
-                )
 
     if as_bool(lookup(config, "client_verification.builder.workflow.enabled", False)):
         workflow_profile = as_str(lookup(config, "client_verification.builder.workflow.work_profile", ""))
@@ -493,14 +407,26 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str, 
             errors.append(
                 f"client_verification.builder.workflow.repo is not declared in build catalog repos: {workflow_repo}"
             )
+        if workflow_profile and workflow_repo and workflow_profile in profile_repo_names:
+            allowed_repos = profile_repo_names[workflow_profile]
+            if allowed_repos and workflow_repo not in allowed_repos:
+                errors.append(
+                    f"client_verification.builder.workflow.repo is not enabled for work_profile {workflow_profile}: {workflow_repo}"
+                )
         if workflow_target and target_names and workflow_target not in target_names:
             errors.append(
                 f"client_verification.builder.workflow.target_name is not declared in build catalog buildTargets: {workflow_target}"
             )
+        if workflow_target and workflow_repo:
+            repos_for_target = target_repo_names.get(workflow_target, set())
+            if repos_for_target and workflow_repo not in repos_for_target:
+                errors.append(
+                    f"client_verification.builder.workflow.target_name does not belong to workflow.repo {workflow_repo}: {workflow_target}"
+                )
     return errors
 
 
-def build_command(script_path: Path, config_path: Path, profile: str, release_version: str, build_catalog: str, source_credentials: str) -> list[str]:
+def build_command(script_path: Path, config_path: Path, profile: str, release_version: str, build_catalog: str) -> list[str]:
     args = ["bash", str(script_path), "--config", str(config_path), "--appliance-profile", profile, "--uninstall-first", "--final-ok"]
     if release_version:
         args.extend(["--release-version", release_version])
@@ -509,8 +435,6 @@ def build_command(script_path: Path, config_path: Path, profile: str, release_ve
     if profile == "builder":
         if build_catalog:
             args.extend(["--build-catalog", build_catalog])
-        if source_credentials:
-            args.extend(["--source-credentials", source_credentials])
     return args
 
 
@@ -536,7 +460,6 @@ def build_audit_command(script_path: Path, plan_json: Optional[Path], require_bu
 def suggested_final_config_overlay() -> str:
     release_repo = SCRIPT_DIR.parents[3]
     catalog = release_repo / ".agents" / "skills" / "release" / "references" / "build-catalog.example.yaml"
-    credentials = release_repo / ".agents" / "skills" / "release" / "references" / "source-credentials.example.yaml"
     return "\n".join(
         [
             "build_flow:",
@@ -548,7 +471,6 @@ def suggested_final_config_overlay() -> str:
             "install:",
             "  appliance_profile: builder",
             f"  build_catalog_path: {catalog}",
-            f"  source_credentials_path: {credentials}",
             "",
             "client_verification:",
             "  builder:",
@@ -582,27 +504,23 @@ def main() -> int:
     config = load_config(config_path)
     release_version = args.release_version or as_str(lookup(config, "release.version", ""))
     build_catalog = as_str(lookup(config, "install.build_catalog_path", ""))
-    source_credentials = as_str(lookup(config, "install.source_credentials_path", ""))
     script_path = SCRIPT_DIR / "run-release-flow.sh"
     audit_script_path = SCRIPT_DIR / "audit-profile-matrix-reports.py"
 
     validation_errors: list[str] = []
-    for value, label in ((build_catalog, "install.build_catalog_path"), (source_credentials, "install.source_credentials_path")):
+    for value, label in ((build_catalog, "install.build_catalog_path"),):
         error = file_error(config_path, value, label)
         if error:
             validation_errors.append(error)
-    validation_errors.extend(validate_build_catalog(config_path, config, build_catalog, source_credentials))
-    validation_errors.extend(validate_source_credentials(config_path, source_credentials))
+    validation_errors.extend(validate_build_catalog(config_path, config, build_catalog))
     if args.require_builder_workflow:
         validation_errors.extend(validate_builder_workflow(config))
         if not build_catalog:
             validation_errors.append("install.build_catalog_path is required for final builder workflow evidence")
-        if not source_credentials:
-            validation_errors.append("install.source_credentials_path is required for final builder workflow evidence")
 
     commands = []
     for profile in PROFILES:
-        argv = build_command(script_path, config_path, profile, release_version, build_catalog, source_credentials)
+        argv = build_command(script_path, config_path, profile, release_version, build_catalog)
         commands.append(
             {
                 "profile": profile,
@@ -648,7 +566,6 @@ def main() -> int:
         "releaseVersion": release_version or None,
         "readyForFinalPlan": not bool(validation_errors),
         "buildCatalogPath": resolved_config_path_str(config_path, build_catalog),
-        "sourceCredentialsPath": resolved_config_path_str(config_path, source_credentials),
         "profiles": list(PROFILES),
         "validationErrors": validation_errors,
         "commands": [] if args.checklist_only else commands,
@@ -695,7 +612,6 @@ def main() -> int:
                 f"- Config: {config_path}",
                 f"- Release version: {release_version or '(from generated release metadata)'}",
                 f"- Build catalog: {resolved_config_path_str(config_path, build_catalog) or '(not configured)'}",
-                f"- Source credentials: {resolved_config_path_str(config_path, source_credentials) or '(not configured)'}",
                 "",
             ]
         )

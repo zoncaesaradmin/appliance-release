@@ -26,17 +26,15 @@ Notes:
   `--build-catalog PATH` when the bundle does not already include a
   `config.buildCatalog` value plus matching Git-host and builder-image
   allowlists. The file is copied to the target install temp dir and passed to
-  `zonctl`; it should contain only product config and source credential secret
-  references, never private keys or tokens.
+  `zonctl`; it should contain only product config, never private keys or
+  tokens.
 - If the build catalog references a builder/task image, also set
   `build_flow.extra_oci_image_archive_sources` and
   `build_flow.extra_oci_image_refs` so that image is included in the signed
   bundle and preloaded on the target.
-- For Git-backed builder workflows, set `install.source_credentials_path` or
-  pass `--source-credentials PATH`. This file is a manifest of Kubernetes
-  Secret names and target-local SSH file paths; it must not contain private key
-  material. The helper copies the manifest only, not the private keys, so
-  `privateKeyPath` and `knownHostsPath` must already exist on the target host.
+- For Git-backed builder workflows, `zonctl` derives managed Secret names from
+  `sourceCredentials[].id`, prepares SSH key material under its state
+  directory, and creates the workflow-mount Secrets automatically.
 
 ## 1. Full Flow
 
@@ -53,7 +51,6 @@ Common explicit example:
   --release-version 0.1.0 \
   --appliance-profile builder \
   --build-catalog /Users/zoncaesar/ws/appliance-release/build-catalog.yaml \
-  --source-credentials /Users/zoncaesar/ws/appliance-release/source-credentials.yaml \
   --uninstall-first \
   --final-ok
 ```
@@ -119,7 +116,7 @@ Use this when the release is already published and you want only the install ste
 /Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/install-on-target.sh \
   --release-version 0.1.0 \
   --appliance-profile builder \
-  --source-credentials /Users/zoncaesar/ws/appliance-release/source-credentials.yaml \
+  --build-catalog /Users/zoncaesar/ws/appliance-release/build-catalog.yaml \
   --uninstall-first
 ```
 
@@ -169,13 +166,14 @@ If `install.appliance_profile` is `builder`, it also checks that
 `verification.builder.enabled` or `verification.builder.api_command` only when
 you need custom reachability behavior.
 
-If `install.source_credentials_path` is configured for a builder install, the
-target verifier also parses that manifest locally and checks that every
-declared private-key Secret has non-empty `ssh-privatekey` data and every
-declared `known_hosts` Secret has non-empty `known_hosts` data. Override
-`verification.builder.source_credentials_command` only when you need a custom
-Secret readiness check. This proves the pod-mount prerequisites are present;
-the actual Git clone still requires a real builder workflow run.
+If `install.build_catalog_path` declares `sourceCredentials` for a builder
+install, the target verifier derives the managed Secret names from those
+logical ids and checks that every private-key Secret has non-empty
+`ssh-privatekey` data and every `known_hosts` Secret has non-empty
+`known_hosts` data. Override `verification.builder.source_credentials_command`
+only when you need a custom Secret readiness check. This proves the pod-mount
+prerequisites are present; the actual Git clone still requires a real builder
+workflow run.
 
 ## 5. Verify Client/API Only
 
@@ -214,9 +212,8 @@ This script checks:
 - keeps the response body and response headers in separate log files
 
 The real workflow smoke is intentionally opt-in because it runs a build. Use
-it for final builder-profile evidence after the build catalog, source
-credential Secrets, Git host reachability, builder image, and appliance
-registry are ready. For v1, set
+it for final builder-profile evidence after the build catalog, Git host
+reachability, builder image, and appliance registry are ready. For v1, set
 `client_verification.builder.workflow.source_ref` to an immutable lowercase
 40-character commit SHA; branch and tag resolution belongs in the control
 plane/workflow layer later.
@@ -234,7 +231,6 @@ replace every host, repo, image, and target path with your real product values:
 
 ```bash
 /Users/zoncaesar/ws/appliance-release/.agents/skills/release/references/build-catalog.example.yaml
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/references/source-credentials.example.yaml
 ```
 
 Your usual real config lives in the repo, for example:

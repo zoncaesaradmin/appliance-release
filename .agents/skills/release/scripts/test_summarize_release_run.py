@@ -30,7 +30,6 @@ def test_complete_report() -> None:
                 "status": "passed",
                 "exitCode": 0,
                 "buildCatalogPath": "/tmp/build-catalog.yaml",
-                "sourceCredentialsPath": "/tmp/source-credentials.yaml",
                 "steps": {
                     "buildPublishSkipped": False,
                     "installSkipped": False,

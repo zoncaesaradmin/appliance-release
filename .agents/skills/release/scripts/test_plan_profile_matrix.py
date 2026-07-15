@@ -34,11 +34,11 @@ def test_generates_profile_matrix_commands() -> None:
             """
 workProfiles:
   - name: builder
+    repos:
+      - name: app
 sourceCredentials:
   - id: git-main
     gitHost: git.internal.example.com
-    kubernetesSecretName: git-main-deploy-key
-    knownHostsSecretName: git-main-known-hosts
 repos:
   - name: app
     url: git@git.internal.example.com:team/app.git
@@ -51,17 +51,6 @@ buildTargets:
     builderImageDigest: registry.local/buildah@sha256:abc123
 """.lstrip(),
         )
-        write(
-            tmp / "creds.yaml",
-            """
-credentials:
-  - namespace: appliance-builds
-    secretName: git-main-deploy-key
-    privateKeyPath: /home/zonsys/.ssh/appliance-build-git
-    knownHostsSecretName: git-main-known-hosts
-    knownHostsPath: /home/zonsys/.ssh/known_hosts
-""".lstrip(),
-        )
         config = tmp / "config.yaml"
         write(
             config,
@@ -72,7 +61,6 @@ build_flow:
   extra_oci_image_refs: registry.local/buildah@sha256:abc123
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
-  source_credentials_path: {tmp / "creds.yaml"}
 client_verification:
   builder:
     workflow:
@@ -96,8 +84,6 @@ client_verification:
         if not str(plan.get("generatedAt", "")).endswith("Z"):
             raise AssertionError(plan)
         if plan.get("buildCatalogPath") != str((tmp / "catalog.yaml").resolve()):
-            raise AssertionError(plan)
-        if plan.get("sourceCredentialsPath") != str((tmp / "creds.yaml").resolve()):
             raise AssertionError(plan)
         if "--skip-build" in commands["core"]["argv"]:
             raise AssertionError(commands["core"])
@@ -176,8 +162,6 @@ def test_checklist_mode_suppresses_runnable_commands_when_incomplete() -> None:
             raise AssertionError(plan)
         if ".agents/skills/release/references/build-catalog.example.yaml" not in overlay:
             raise AssertionError(plan)
-        if ".agents/skills/release/references/source-credentials.example.yaml" not in overlay:
-            raise AssertionError(plan)
         if "source_ref: 0123456789abcdef0123456789abcdef01234567" not in overlay:
             raise AssertionError(plan)
         if "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" not in overlay:
@@ -195,39 +179,6 @@ def test_checklist_mode_suppresses_runnable_commands_when_incomplete() -> None:
             raise AssertionError(markdown)
         if "## Commands" in markdown or "## Post-Run Audit Command" in markdown:
             raise AssertionError(markdown)
-
-
-def test_source_credentials_reject_inline_private_key_material() -> None:
-    with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
-        tmp = Path(tmp_dir)
-        write(tmp / "catalog.yaml", "profiles: {}\n")
-        write(
-            tmp / "creds.yaml",
-            """
-credentials:
-  - namespace: appliance-builds
-    secretName: git-main-deploy-key
-    privateKey: "-----BEGIN OPENSSH PRIVATE KEY-----"
-    privateKeyPath: /home/zonsys/.ssh/appliance-build-git
-""".lstrip(),
-        )
-        config = tmp / "config.yaml"
-        write(
-            config,
-            f"""
-install:
-  build_catalog_path: {tmp / "catalog.yaml"}
-  source_credentials_path: {tmp / "creds.yaml"}
-""".lstrip(),
-        )
-        result = run_planner(config)
-        if result.returncode == 0:
-            raise AssertionError("inline private key material was accepted")
-        plan = json.loads(result.stdout)
-        joined = "\n".join(plan["validationErrors"])
-        if "inline secret material" not in joined or "inline private key material" not in joined:
-            raise AssertionError(plan)
-
 
 def test_build_catalog_requires_extra_oci_image_ref() -> None:
     with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
@@ -260,54 +211,6 @@ install:
         if "build_flow.extra_oci_image_refs" not in joined:
             raise AssertionError(plan)
 
-
-def test_build_catalog_source_credentials_must_be_provisioned() -> None:
-    with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
-        tmp = Path(tmp_dir)
-        write(
-            tmp / "catalog.yaml",
-            """
-sourceCredentials:
-  - id: git-main
-    gitHost: git.internal.example.com
-    kubernetesSecretName: git-main-deploy-key
-    knownHostsSecretName: git-main-known-hosts
-buildTargets:
-  - name: app
-    execution: repo_script
-    imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:abc123
-""".lstrip(),
-        )
-        write(
-            tmp / "creds.yaml",
-            """
-credentials:
-  - namespace: appliance-builds
-    secretName: other-key
-    privateKeyPath: /home/zonsys/.ssh/other
-""".lstrip(),
-        )
-        config = tmp / "config.yaml"
-        write(
-            config,
-            f"""
-build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:abc123
-install:
-  build_catalog_path: {tmp / "catalog.yaml"}
-  source_credentials_path: {tmp / "creds.yaml"}
-""".lstrip(),
-        )
-        result = run_planner(config)
-        if result.returncode == 0:
-            raise AssertionError("unprovisioned catalog source credential Secret was accepted")
-        plan = json.loads(result.stdout)
-        joined = "\n".join(plan["validationErrors"])
-        if "not provisioned by install.source_credentials_path" not in joined:
-            raise AssertionError(plan)
-
-
 def test_build_catalog_workflow_smoke_names_must_exist() -> None:
     with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -316,12 +219,13 @@ def test_build_catalog_workflow_smoke_names_must_exist() -> None:
             """
 workProfiles:
   - name: builder
+    repos:
+      - name: app
 repos:
   - name: app
     url: https://git.internal.example.com/team/app.git
 buildTargets:
   - name: default
-    workProfile: builder
     repo: app
     execution: repo_script
     imageRepository: users/alice/app
@@ -364,6 +268,8 @@ def test_build_catalog_workflow_smoke_accepts_target_alias() -> None:
             """
 workProfiles:
   - name: builder
+    repos:
+      - name: app
 repos:
   - name: app
     url: https://git.internal.example.com/team/app.git
@@ -371,7 +277,6 @@ buildTargets:
   - name: default
     aliases:
       - app
-    workProfile: builder
     repo: app
     execution: repo_script
     imageRepository: users/alice/app
@@ -414,7 +319,6 @@ def test_build_catalog_repos_must_reference_known_source_credentials() -> None:
 sourceCredentials:
   - id: git-main
     gitHost: git.internal.example.com
-    kubernetesSecretName: git-main-key
 repos:
   - name: app
     url: https://git.internal.example.com/team/app.git
@@ -427,15 +331,6 @@ buildTargets:
     builderImageDigest: registry.local/buildah@sha256:abc123
 """.lstrip(),
         )
-        write(
-            tmp / "creds.yaml",
-            """
-credentials:
-  - namespace: appliance-builds
-    secretName: git-main-key
-    privateKeyPath: /home/zonsys/.ssh/key
-""".lstrip(),
-        )
         config = tmp / "config.yaml"
         write(
             config,
@@ -444,7 +339,6 @@ build_flow:
   extra_oci_image_refs: registry.local/buildah@sha256:abc123
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
-  source_credentials_path: {tmp / "creds.yaml"}
 """.lstrip(),
         )
         result = run_planner(config)
@@ -454,58 +348,6 @@ install:
         joined = "\n".join(plan["validationErrors"])
         if "sourceCredentialRef references unknown" not in joined:
             raise AssertionError(plan)
-
-
-def test_build_catalog_ssh_credential_requires_known_hosts_secret() -> None:
-    with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
-        tmp = Path(tmp_dir)
-        write(
-            tmp / "catalog.yaml",
-            """
-sourceCredentials:
-  - id: git-main
-    gitHost: git.internal.example.com
-    kubernetesSecretName: git-main-key
-repos:
-  - name: app
-    url: git@git.internal.example.com:team/app.git
-    sourceCredentialRef: git-main
-buildTargets:
-  - name: app
-    repo: app
-    execution: repo_script
-    imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:abc123
-""".lstrip(),
-        )
-        write(
-            tmp / "creds.yaml",
-            """
-credentials:
-  - namespace: appliance-builds
-    secretName: git-main-key
-    privateKeyPath: /home/zonsys/.ssh/key
-""".lstrip(),
-        )
-        config = tmp / "config.yaml"
-        write(
-            config,
-            f"""
-build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:abc123
-install:
-  build_catalog_path: {tmp / "catalog.yaml"}
-  source_credentials_path: {tmp / "creds.yaml"}
-""".lstrip(),
-        )
-        result = run_planner(config)
-        if result.returncode == 0:
-            raise AssertionError("SSH credential without knownHostsSecretName was accepted")
-        plan = json.loads(result.stdout)
-        joined = "\n".join(plan["validationErrors"])
-        if "has no knownHostsSecretName" not in joined:
-            raise AssertionError(plan)
-
 
 def test_build_catalog_ssh_repo_requires_source_credential_ref() -> None:
     with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
@@ -625,7 +467,6 @@ install:
 
 def test_reference_builder_templates_are_planner_compatible() -> None:
     catalog = ROOT / ".agents" / "skills" / "release" / "references" / "build-catalog.example.yaml"
-    credentials = ROOT / ".agents" / "skills" / "release" / "references" / "source-credentials.example.yaml"
     with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
         tmp = Path(tmp_dir)
         config = tmp / "config.yaml"
@@ -638,16 +479,15 @@ build_flow:
   extra_oci_image_refs: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 install:
   build_catalog_path: {catalog}
-  source_credentials_path: {credentials}
 client_verification:
   builder:
     workflow:
       enabled: true
       workspace_name: release-smoke
-      work_profile: builder
-      repo: app
+      work_profile: platform-dev
+      repo: platformkit
       source_ref: 0123456789abcdef0123456789abcdef01234567
-      target_name: app
+      target_name: platform
       poll_attempts: 2
       poll_delay_seconds: 1
 """.lstrip(),
@@ -664,13 +504,10 @@ def main() -> None:
     test_generates_profile_matrix_commands()
     test_require_builder_workflow_reports_missing_config()
     test_checklist_mode_suppresses_runnable_commands_when_incomplete()
-    test_source_credentials_reject_inline_private_key_material()
     test_build_catalog_requires_extra_oci_image_ref()
-    test_build_catalog_source_credentials_must_be_provisioned()
     test_build_catalog_workflow_smoke_names_must_exist()
     test_build_catalog_workflow_smoke_accepts_target_alias()
     test_build_catalog_repos_must_reference_known_source_credentials()
-    test_build_catalog_ssh_credential_requires_known_hosts_secret()
     test_build_catalog_ssh_repo_requires_source_credential_ref()
     test_build_catalog_make_target_requires_make_target_name()
     test_build_catalog_rejects_unsafe_execution_paths()

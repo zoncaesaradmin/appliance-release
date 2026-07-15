@@ -17,8 +17,6 @@ Options:
                            APPLIANCE_RELEASE_CONFIG is set or a local
                            appliance-release.config.yaml exists.
   --appliance-profile NAME Effective installed appliance profile.
-  --source-credentials PATH
-                           Source credential manifest used for leak checks.
   --run-dir DIR            Local run directory.
   --final-ok               Print ok when all checks pass.
 EOF
@@ -26,7 +24,6 @@ EOF
 
 CONFIG_PATH=""
 APPLIANCE_PROFILE=""
-SOURCE_CREDENTIALS_PATH=""
 RUN_DIR=""
 FINAL_OK="false"
 
@@ -38,10 +35,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --appliance-profile)
       APPLIANCE_PROFILE="${2:-}"
-      shift 2
-      ;;
-    --source-credentials)
-      SOURCE_CREDENTIALS_PATH="${2:-}"
       shift 2
       ;;
     --run-dir)
@@ -137,11 +130,9 @@ BUILDER_EXPECT_DISABLED="$(config_get_optional "${CONFIG_PATH}" "client_verifica
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 fi
-if [[ -z "${SOURCE_CREDENTIALS_PATH}" ]]; then
-  SOURCE_CREDENTIALS_PATH="$(config_get_optional "${CONFIG_PATH}" "install.source_credentials_path" || true)"
-fi
-if [[ -n "${SOURCE_CREDENTIALS_PATH}" ]]; then
-  ensure_file "${SOURCE_CREDENTIALS_PATH}"
+BUILD_CATALOG_PATH="$(config_get_optional "${CONFIG_PATH}" "install.build_catalog_path" || true)"
+if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
+  ensure_file "${BUILD_CATALOG_PATH}"
 fi
 if [[ -z "${BUILDER_ENABLED}" ]]; then
   if [[ "${APPLIANCE_PROFILE}" == "builder" ]]; then
@@ -839,7 +830,7 @@ PY
   fi
 fi
 
-python3 - "${RUN_DIR}/metadata/client-verify.json" "${CONFIG_PATH}" "${BASE_URL}" "${USERNAME}" "${BUILDER_ENABLED}" "${BUILDER_EXPECT_DISABLED}" "${BUILDER_WORKFLOW_ENABLED}" "${BUILDER_WORKFLOW_EXPECT_SUCCESS}" "${SOURCE_CREDENTIALS_PATH}" "${WORKFLOW_WORKSPACE_ID}" "${WORKFLOW_JOB_ID}" "${WORKFLOW_FINAL_STATUS}" "${LOGIN_BODY_FILE}" "${LOGIN_META_FILE}" "${LOGIN_REQUEST_FILE}" "${SESSION_BODY_FILE}" "${SESSION_META_FILE}" "${SESSION_REQUEST_FILE}" "${USERS_BODY_FILE}" "${USERS_META_FILE}" "${USERS_REQUEST_FILE}" "${DISABLED_BUILD_PROFILES_BODY_FILE}" "${DISABLED_BUILD_PROFILES_META_FILE}" "${DISABLED_BUILD_PROFILES_REQUEST_FILE}" "${DISABLED_MCP_INITIALIZE_BODY_FILE}" "${DISABLED_MCP_INITIALIZE_META_FILE}" "${DISABLED_MCP_INITIALIZE_REQUEST_FILE}" "${DISABLED_MCP_TOOLS_BODY_FILE}" "${DISABLED_MCP_TOOLS_META_FILE}" "${DISABLED_MCP_TOOLS_REQUEST_FILE}" "${DISABLED_MCP_CALL_BODY_FILE}" "${DISABLED_MCP_CALL_META_FILE}" "${DISABLED_MCP_CALL_REQUEST_FILE}" "${BUILDER_PROFILES_BODY_FILE}" "${BUILDER_PROFILES_META_FILE}" "${BUILDER_PROFILES_REQUEST_FILE}" "${MCP_INITIALIZE_BODY_FILE}" "${MCP_INITIALIZE_META_FILE}" "${MCP_INITIALIZE_REQUEST_FILE}" "${MCP_TOOLS_BODY_FILE}" "${MCP_TOOLS_META_FILE}" "${MCP_TOOLS_REQUEST_FILE}" "${WORKFLOW_CREATE_WORKSPACE_BODY_FILE}" "${WORKFLOW_CREATE_WORKSPACE_META_FILE}" "${WORKFLOW_CREATE_WORKSPACE_REQUEST_FILE}" "${WORKFLOW_TARGETS_BODY_FILE}" "${WORKFLOW_TARGETS_META_FILE}" "${WORKFLOW_TARGETS_REQUEST_FILE}" "${WORKFLOW_SUBMIT_BODY_FILE}" "${WORKFLOW_SUBMIT_META_FILE}" "${WORKFLOW_SUBMIT_REQUEST_FILE}" "${WORKFLOW_JOB_BODY_FILE}" "${WORKFLOW_JOB_META_FILE}" "${WORKFLOW_JOB_REQUEST_FILE}" "${WORKFLOW_JOB_POLL_FILE}" "${WORKFLOW_STEPS_BODY_FILE}" "${WORKFLOW_STEPS_META_FILE}" "${WORKFLOW_STEPS_REQUEST_FILE}" "${WORKFLOW_LOGS_BODY_FILE}" "${WORKFLOW_LOGS_META_FILE}" "${WORKFLOW_LOGS_REQUEST_FILE}" "${WORKFLOW_DELETE_WORKSPACE_BODY_FILE}" "${WORKFLOW_DELETE_WORKSPACE_META_FILE}" "${WORKFLOW_DELETE_WORKSPACE_REQUEST_FILE}" <<'PY'
+python3 - "${RUN_DIR}/metadata/client-verify.json" "${CONFIG_PATH}" "${BASE_URL}" "${USERNAME}" "${BUILDER_ENABLED}" "${BUILDER_EXPECT_DISABLED}" "${BUILDER_WORKFLOW_ENABLED}" "${BUILDER_WORKFLOW_EXPECT_SUCCESS}" "${BUILD_CATALOG_PATH}" "${WORKFLOW_WORKSPACE_ID}" "${WORKFLOW_JOB_ID}" "${WORKFLOW_FINAL_STATUS}" "${LOGIN_BODY_FILE}" "${LOGIN_META_FILE}" "${LOGIN_REQUEST_FILE}" "${SESSION_BODY_FILE}" "${SESSION_META_FILE}" "${SESSION_REQUEST_FILE}" "${USERS_BODY_FILE}" "${USERS_META_FILE}" "${USERS_REQUEST_FILE}" "${DISABLED_BUILD_PROFILES_BODY_FILE}" "${DISABLED_BUILD_PROFILES_META_FILE}" "${DISABLED_BUILD_PROFILES_REQUEST_FILE}" "${DISABLED_MCP_INITIALIZE_BODY_FILE}" "${DISABLED_MCP_INITIALIZE_META_FILE}" "${DISABLED_MCP_INITIALIZE_REQUEST_FILE}" "${DISABLED_MCP_TOOLS_BODY_FILE}" "${DISABLED_MCP_TOOLS_META_FILE}" "${DISABLED_MCP_TOOLS_REQUEST_FILE}" "${DISABLED_MCP_CALL_BODY_FILE}" "${DISABLED_MCP_CALL_META_FILE}" "${DISABLED_MCP_CALL_REQUEST_FILE}" "${BUILDER_PROFILES_BODY_FILE}" "${BUILDER_PROFILES_META_FILE}" "${BUILDER_PROFILES_REQUEST_FILE}" "${MCP_INITIALIZE_BODY_FILE}" "${MCP_INITIALIZE_META_FILE}" "${MCP_INITIALIZE_REQUEST_FILE}" "${MCP_TOOLS_BODY_FILE}" "${MCP_TOOLS_META_FILE}" "${MCP_TOOLS_REQUEST_FILE}" "${WORKFLOW_CREATE_WORKSPACE_BODY_FILE}" "${WORKFLOW_CREATE_WORKSPACE_META_FILE}" "${WORKFLOW_CREATE_WORKSPACE_REQUEST_FILE}" "${WORKFLOW_TARGETS_BODY_FILE}" "${WORKFLOW_TARGETS_META_FILE}" "${WORKFLOW_TARGETS_REQUEST_FILE}" "${WORKFLOW_SUBMIT_BODY_FILE}" "${WORKFLOW_SUBMIT_META_FILE}" "${WORKFLOW_SUBMIT_REQUEST_FILE}" "${WORKFLOW_JOB_BODY_FILE}" "${WORKFLOW_JOB_META_FILE}" "${WORKFLOW_JOB_REQUEST_FILE}" "${WORKFLOW_JOB_POLL_FILE}" "${WORKFLOW_STEPS_BODY_FILE}" "${WORKFLOW_STEPS_META_FILE}" "${WORKFLOW_STEPS_REQUEST_FILE}" "${WORKFLOW_LOGS_BODY_FILE}" "${WORKFLOW_LOGS_META_FILE}" "${WORKFLOW_LOGS_REQUEST_FILE}" "${WORKFLOW_DELETE_WORKSPACE_BODY_FILE}" "${WORKFLOW_DELETE_WORKSPACE_META_FILE}" "${WORKFLOW_DELETE_WORKSPACE_REQUEST_FILE}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -853,7 +844,7 @@ import sys
     builder_expect_disabled,
     builder_workflow_enabled,
     builder_workflow_expect_success,
-    source_credentials_path,
+    build_catalog_path,
     workflow_workspace_id,
     workflow_job_id,
     workflow_final_status,
@@ -975,6 +966,20 @@ def parse_scalar(raw: str) -> str:
         return raw[1:-1]
     return raw
 
+def sanitize_name(value: str) -> str:
+    out = []
+    last_dash = False
+    for char in value.strip().lower():
+        if char.isalnum():
+            out.append(char)
+            last_dash = False
+            continue
+        if not last_dash:
+            out.append("-")
+            last_dash = True
+    sanitized = "".join(out).strip("-")
+    return sanitized or "source"
+
 def load_source_secret_names(path: str):
     if not path:
         return []
@@ -985,41 +990,21 @@ def load_source_secret_names(path: str):
     stripped = text.lstrip()
     if stripped.startswith("{") or stripped.startswith("["):
         data = json.loads(text)
-        credentials = data.get("credentials", []) if isinstance(data, dict) else []
     else:
-        credentials = []
-        current = None
-        for raw in text.splitlines():
-            line = raw.split("#", 1)[0].rstrip()
-            if not line.strip():
-                continue
-            stripped_line = line.lstrip(" ")
-            if stripped_line == "credentials:":
-                continue
-            if stripped_line.startswith("- "):
-                if current is not None:
-                    credentials.append(current)
-                current = {}
-                remainder = stripped_line[2:].strip()
-                if remainder and ":" in remainder:
-                    key, value = remainder.split(":", 1)
-                    current[key.strip()] = parse_scalar(value)
-                continue
-            if current is None or ":" not in stripped_line:
-                continue
-            key, value = stripped_line.split(":", 1)
-            current[key.strip()] = parse_scalar(value)
-        if current is not None:
-            credentials.append(current)
+        try:
+            import yaml
+        except ModuleNotFoundError as exc:
+            raise SystemExit(f"PyYAML is required to parse build catalog {path}: {exc}") from exc
+        data = yaml.safe_load(text) or {}
 
     names = []
-    for cred in credentials:
+    for cred in data.get("sourceCredentials", []):
         if not isinstance(cred, dict):
             continue
-        for key in ("secretName", "knownHostsSecretName"):
-            value = str(cred.get(key) or "").strip()
-            if value:
-                names.append(value)
+        credential_id = sanitize_name(str(cred.get("id") or ""))
+        if credential_id:
+            names.append(f"builder-git-{credential_id}-key")
+            names.append(f"builder-git-{credential_id}-known-hosts")
     return sorted(set(names))
 
 def scan_for_secret_leaks(paths, source_secret_names):
@@ -1257,7 +1242,7 @@ if builder_enabled == "true":
                 "bodyLog": workflow_delete_workspace_body,
                 "metaLog": workflow_delete_workspace_meta,
             }
-        source_secret_names = load_source_secret_names(source_credentials_path)
+        source_secret_names = load_source_secret_names(build_catalog_path)
         submit_body = load_json_object(workflow_submit_body)
         job_body = load_json_object(workflow_job_body)
         submit_artifact_ref = str(submit_body.get("artifactRef") or "").strip()

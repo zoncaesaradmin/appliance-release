@@ -23,8 +23,6 @@ Options:
   --smoke-test-cmd CMD           Override verification.smoke_test_command.
   --ui-home-cmd CMD              Override verification.ui_home_command.
   --appliance-profile NAME       Effective installed appliance profile.
-  --source-credentials PATH      Source credential manifest used for builder
-                                 Secret readiness checks.
   --builder-api-cmd CMD          Override verification.builder.api_command.
   --builder-source-credentials-cmd CMD
                                  Override verification.builder.source_credentials_command.
@@ -45,7 +43,6 @@ APP_VERSION_CMD=""
 SMOKE_TEST_CMD=""
 UI_HOME_CMD=""
 APPLIANCE_PROFILE=""
-SOURCE_CREDENTIALS_PATH=""
 BUILDER_API_CMD=""
 BUILDER_SOURCE_CREDENTIALS_CMD=""
 FAILURE_LOG_CMD=""
@@ -86,10 +83,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --appliance-profile)
       APPLIANCE_PROFILE="${2:-}"
-      shift 2
-      ;;
-    --source-credentials)
-      SOURCE_CREDENTIALS_PATH="${2:-}"
       shift 2
       ;;
     --builder-api-cmd)
@@ -165,9 +158,7 @@ CLIENT_BASE_URL="$(config_get_optional "${CONFIG_PATH}" "client_verification.bas
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 fi
-if [[ -z "${SOURCE_CREDENTIALS_PATH}" ]]; then
-  SOURCE_CREDENTIALS_PATH="$(config_get_optional "${CONFIG_PATH}" "install.source_credentials_path" || true)"
-fi
+BUILD_CATALOG_PATH="$(config_get_optional "${CONFIG_PATH}" "install.build_catalog_path" || true)"
 
 STATUS_CMD="${STATUS_CMD:-sudo zonctl status --output json}"
 VERIFY_CMD="${VERIFY_CMD:-sudo zonctl verify --output json}"
@@ -281,18 +272,18 @@ if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_CONTROLLER_CMD}" == "sudo kubectl -n wor
 fi
 
 build_source_credentials_command() {
-  local manifest_path="$1"
+  local catalog_path="$1"
   local kubectl_cmd="kubectl"
   if [[ -n "${BUNDLE_BIN_DIR}" ]]; then
     kubectl_cmd="env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl"
   fi
-  python3 - "${manifest_path}" "${kubectl_cmd}" <<'PY'
+  python3 - "${catalog_path}" "${kubectl_cmd}" <<'PY'
 import json
 import shlex
 import sys
 from pathlib import Path
 
-manifest_path = Path(sys.argv[1])
+catalog_path = Path(sys.argv[1])
 kubectl_cmd = sys.argv[2]
 
 def parse_scalar(raw: str) -> str:
@@ -301,46 +292,35 @@ def parse_scalar(raw: str) -> str:
         return raw[1:-1]
     return raw
 
-def load_manifest(path: Path):
+def sanitize_name(value: str) -> str:
+    out = []
+    last_dash = False
+    for char in value.strip().lower():
+        if char.isalnum():
+            out.append(char)
+            last_dash = False
+            continue
+        if not last_dash:
+            out.append("-")
+            last_dash = True
+    sanitized = "".join(out).strip("-")
+    return sanitized or "source"
+
+def load_catalog(path: Path):
     text = path.read_text(encoding="utf-8")
     stripped = text.lstrip()
     if stripped.startswith("{") or stripped.startswith("["):
         return json.loads(text)
+    try:
+        import yaml
+    except ModuleNotFoundError as exc:
+        raise SystemExit(f"PyYAML is required to parse build catalog {path}: {exc}") from exc
+    return yaml.safe_load(text) or {}
 
-    credentials = []
-    current = None
-    for raw in text.splitlines():
-        line = raw.split("#", 1)[0].rstrip()
-        if not line.strip():
-            continue
-        stripped_line = line.lstrip(" ")
-        if stripped_line == "credentials:":
-            continue
-        if stripped_line.startswith("- "):
-            if current is not None:
-                credentials.append(current)
-            current = {}
-            remainder = stripped_line[2:].strip()
-            if remainder:
-                if ":" not in remainder:
-                    raise ValueError("expected key: value after '-' in source credential manifest")
-                key, value = remainder.split(":", 1)
-                current[key.strip()] = parse_scalar(value)
-            continue
-        if current is None:
-            continue
-        if ":" not in stripped_line:
-            raise ValueError("expected key: value in source credential manifest")
-        key, value = stripped_line.split(":", 1)
-        current[key.strip()] = parse_scalar(value)
-    if current is not None:
-        credentials.append(current)
-    return {"credentials": credentials}
-
-data = load_manifest(manifest_path)
-credentials = data.get("credentials")
+data = load_catalog(catalog_path)
+credentials = data.get("sourceCredentials")
 if not isinstance(credentials, list) or not credentials:
-    raise SystemExit("source credential manifest must contain credentials")
+    raise SystemExit("build catalog must contain sourceCredentials")
 
 checks = []
 seen = set()
@@ -358,25 +338,25 @@ def add_secret_key_check(namespace: str, secret_name: str, data_key: str):
 
 for index, cred in enumerate(credentials):
     if not isinstance(cred, dict):
-        raise SystemExit(f"credential entry {index} must be a mapping")
-    namespace = str(cred.get("namespace") or "appliance-builds").strip()
-    secret_name = str(cred.get("secretName") or "").strip()
-    known_hosts_secret = str(cred.get("knownHostsSecretName") or "").strip()
-    if not namespace or not secret_name:
-        raise SystemExit(f"credential entry {index} requires namespace and secretName")
+        raise SystemExit(f"sourceCredentials entry {index} must be a mapping")
+    credential_id = sanitize_name(str(cred.get("id") or ""))
+    if not credential_id:
+        raise SystemExit(f"sourceCredentials entry {index} requires id")
+    namespace = "appliance-builds"
+    secret_name = f"builder-git-{credential_id}-key"
+    known_hosts_secret = f"builder-git-{credential_id}-known-hosts"
     add_secret_key_check(namespace, secret_name, "ssh-privatekey")
-    if known_hosts_secret:
-        add_secret_key_check(namespace, known_hosts_secret, "known_hosts")
+    add_secret_key_check(namespace, known_hosts_secret, "known_hosts")
 
 if not checks:
-    raise SystemExit("source credential manifest did not declare any Secret data checks")
+    raise SystemExit("build catalog did not declare any source credential Secret data checks")
 print("sudo bash -lc " + shlex.quote(" && ".join(checks)))
 PY
 }
 
-if bool_true "${BUILDER_ENABLED}" && [[ -z "${BUILDER_SOURCE_CREDENTIALS_CMD}" && -n "${SOURCE_CREDENTIALS_PATH}" ]]; then
-  ensure_file "${SOURCE_CREDENTIALS_PATH}"
-  BUILDER_SOURCE_CREDENTIALS_CMD="$(build_source_credentials_command "${SOURCE_CREDENTIALS_PATH}")"
+if bool_true "${BUILDER_ENABLED}" && [[ -z "${BUILDER_SOURCE_CREDENTIALS_CMD}" && -n "${BUILD_CATALOG_PATH}" ]]; then
+  ensure_file "${BUILD_CATALOG_PATH}"
+  BUILDER_SOURCE_CREDENTIALS_CMD="$(build_source_credentials_command "${BUILD_CATALOG_PATH}")"
 fi
 
 status_code="0"

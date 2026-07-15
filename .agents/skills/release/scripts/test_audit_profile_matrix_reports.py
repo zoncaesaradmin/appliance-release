@@ -18,7 +18,6 @@ def write_report(
     *,
     workflow: bool = False,
     build_catalog_path: Optional[Path] = None,
-    source_credentials_path: Optional[Path] = None,
     bad: Optional[dict] = None,
 ) -> None:
     builder_tools = [
@@ -56,7 +55,6 @@ def write_report(
         "releaseVersion": "0.1.0",
         "applianceProfile": profile,
         "buildCatalogPath": str(build_catalog_path) if build_catalog_path else None,
-        "sourceCredentialsPath": str(source_credentials_path) if source_credentials_path else None,
         "steps": {
             "buildPublish": {"status": "passed" if profile == "core" else "skipped"},
             "install": {"status": "passed"},
@@ -106,12 +104,10 @@ def write_plan(
     release_version: str = "0.1.0",
     require_workflow: bool = False,
     build_catalog_path: Optional[Path] = None,
-    source_credentials_path: Optional[Path] = None,
 ) -> None:
     payload = {
         "releaseVersion": release_version,
         "buildCatalogPath": str(build_catalog_path) if build_catalog_path else None,
-        "sourceCredentialsPath": str(source_credentials_path) if source_credentials_path else None,
         "profiles": ["core", "storage", "builder"],
         "auditCommand": {"requiresBuilderWorkflow": require_workflow},
     }
@@ -162,19 +158,17 @@ def test_plan_json_requires_matching_builder_config_inputs() -> None:
         root = Path(tmp_dir)
         core, storage, builder = root / "core", root / "storage", root / "builder"
         expected_catalog = root / "catalog.yaml"
-        expected_credentials = root / "creds.yaml"
         wrong_catalog = root / "wrong-catalog.yaml"
-        write_report(core, "core", build_catalog_path=expected_catalog, source_credentials_path=expected_credentials)
-        write_report(storage, "storage", build_catalog_path=expected_catalog, source_credentials_path=expected_credentials)
+        write_report(core, "core", build_catalog_path=expected_catalog)
+        write_report(storage, "storage", build_catalog_path=expected_catalog)
         write_report(
             builder,
             "builder",
             workflow=True,
             build_catalog_path=wrong_catalog,
-            source_credentials_path=expected_credentials,
         )
         plan = root / "plan.json"
-        write_plan(plan, build_catalog_path=expected_catalog, source_credentials_path=expected_credentials)
+        write_plan(plan, build_catalog_path=expected_catalog)
         result = run_auditor(core, storage, builder, "--plan-json", str(plan), "--require-builder-workflow")
         if result.returncode == 0:
             raise AssertionError("builder report with wrong build catalog was accepted")

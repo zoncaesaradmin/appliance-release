@@ -208,7 +208,6 @@ def main() -> int:
         "releaseVersion": flow.get("releaseVersion"),
         "applianceProfile": flow.get("applianceProfile"),
         "buildCatalogPath": flow.get("buildCatalogPath"),
-        "sourceCredentialsPath": flow.get("sourceCredentialsPath"),
         "wrapperStatus": flow.get("status"),
         "wrapperExitCode": flow.get("exitCode"),
         "steps": {

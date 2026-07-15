@@ -100,19 +100,13 @@ install:
   # install temp dir and passed to zonctl as product config. The builder
   # profile needs a build catalog and matching Git-host/builder-image policy;
   # use this when the bundle's chart values do not already include them.
-  # Do not put private key or token material in this file; it may reference
-  # source credential Kubernetes Secret names only.
+  # Do not put private key or token material in this file.
+  # zonctl derives managed builder credential Secret names from
+  # sourceCredentials[].id and prepares the target-host SSH key material
+  # internally under its state directory.
   # Start from:
   # /Users/zoncaesar/ws/appliance-release/.agents/skills/release/references/build-catalog.example.yaml
   # build_catalog_path: /Users/zoncaesar/ws/appliance-release/build-catalog.yaml
-  # Optional source credential manifest copied to the target install temp dir
-  # and passed to zonctl. The manifest names Kubernetes Secrets to create for
-  # builder Git access. It must not contain private key material; the
-  # privateKeyPath and knownHostsPath values inside it are evaluated on the
-  # target host, so those files must already exist on the target.
-  # Start from:
-  # /Users/zoncaesar/ws/appliance-release/.agents/skills/release/references/source-credentials.example.yaml
-  # source_credentials_path: /Users/zoncaesar/ws/appliance-release/source-credentials.yaml
   uninstall_first: true
 
 verification:
@@ -144,10 +138,10 @@ verification:
   builder:
     # enabled: true
     # api_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://target-ip-or-dns/api/v1/work-profiles)" && [ "$code" != "404" ]'
-    # If install.source_credentials_path is set, verify-target.sh generates a
-    # kubectl Secret data-key check from that manifest. Override only when you
-    # need a custom readiness rule.
-    # source_credentials_command: 'sudo kubectl -n appliance-builds get secret git-main-deploy-key && sudo kubectl -n appliance-builds get secret git-main-known-hosts'
+    # If install.build_catalog_path declares sourceCredentials, verify-target.sh
+    # generates a kubectl Secret data-key check from the catalog's logical
+    # source credential ids. Override only when you need a custom readiness rule.
+    # source_credentials_command: 'sudo kubectl -n appliance-builds get secret builder-git-github-main-key && sudo kubectl -n appliance-builds get secret builder-git-github-main-known-hosts'
   allow_ingress_warning: true
   allow_verify_schema_bug: true
 
@@ -170,7 +164,7 @@ client_verification:
     # expect_disabled: true
     # Optional real builder workflow smoke. This submits an actual build through
     # REST, polls the job, fetches steps/logs, and expects success by default.
-    # Enable only when the builder catalog, source credentials, Git host,
+    # Enable only when the builder catalog, Git host reachability,
     # builder image, and registry are all ready for a real build.
     workflow:
       # enabled: true

@@ -195,14 +195,14 @@ configuration inputs:
 
 - `--appliance-profile <core|builder|storage>`
 - `--build-catalog /target/local/build-catalog.yaml`
-- `--source-credentials /target/local/source-credentials.yaml`
 
 Those choices are passed into the control plane at install or upgrade time
 only; they do not produce a different bundle or publish path. For the builder
 profile, provide a build catalog unless the bundle chart values already include
 one with matching Git-host and builder-image allowlists. For Git-backed builder
-workflows, the build catalog may reference Git source credential IDs, while the
-source-credential manifest points at target-local SSH key and `known_hosts`
+workflows, the build catalog may reference logical Git source credential IDs;
+`zonctl` derives the managed Secret names from those ids and prepares the
+target-local SSH key and `known_hosts`
 files that `zonctl` materializes into Kubernetes Secrets for build pods. Use
 read-only deploy keys, keep private key material out of the manifest, and make
 sure the target appliance can reach the configured Git host from the build

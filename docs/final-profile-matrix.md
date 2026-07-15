@@ -22,16 +22,15 @@ This target uses the same strict validation rules as
 .run/appliance-release/final-profile-input-checklist.md
 ```
 
-Use this checklist to fill the builder build catalog, source credential
-manifest, immutable workflow source ref, workflow target names, and any
-builder image bundle inputs before switching to the fail-closed final plan.
+Use this checklist to fill the builder build catalog, immutable workflow
+source ref, workflow target names, and any builder image bundle inputs before
+switching to the fail-closed final plan.
 The checklist also includes a secret-free YAML overlay template that can be
 copied into your real config after replacing placeholder paths, image digests,
 repo names, target names, and the workflow commit SHA.
 The canonical example inputs live at:
 
 - `.agents/skills/release/references/build-catalog.example.yaml`
-- `.agents/skills/release/references/source-credentials.example.yaml`
 
 Copy those into your own local working files before a real final builder run.
 The suggested overlay in the checklist points at the example files so there is
@@ -53,8 +52,7 @@ make plan-final-profile-matrix \
 ```
 
 This target fails closed unless final builder workflow evidence inputs are
-configured, including the builder workflow smoke, build catalog, and source
-credential manifest. It writes:
+configured, including the builder workflow smoke and build catalog. It writes:
 
 ```text
 .run/appliance-release/final-profile-matrix-plan.json
@@ -79,17 +77,14 @@ make plan-profile-matrix \
 ```
 
 This does not contact the build server or target host. It validates that final
-builder workflow evidence inputs are present and preflights the source
-credential manifest shape when `install.source_credentials_path` is set. That
-manifest must contain Secret names and absolute target-host file paths only,
-not inline private keys or tokens. When `install.build_catalog_path` is set,
-the planner also checks that builder target images are digest-pinned, listed in
-`build_flow.extra_oci_image_refs` when that release evidence list is
-configured, and that catalog source credential Secret names are provisioned by
-the source credential manifest. It also cross-checks the optional real workflow
-smoke's workspace profile (`work_profile`), `repo`, and `target_name` against catalog
-`workProfiles`, `repos`, and `buildTargets`; `target_name` may use either a
-build target name or one of its aliases.
+builder workflow evidence inputs are present. When
+`install.build_catalog_path` is set, the planner also checks that builder
+target images are digest-pinned, listed in `build_flow.extra_oci_image_refs`
+when that release evidence list is configured, and that catalog SSH repos
+reference declared logical source credentials. It also cross-checks the
+optional real workflow smoke's workspace profile (`work_profile`), `repo`, and
+`target_name` against catalog `workProfiles`, `repos`, and `buildTargets`;
+`target_name` may use either a build target name or one of its aliases.
 
 ## 3. Final Audit
 

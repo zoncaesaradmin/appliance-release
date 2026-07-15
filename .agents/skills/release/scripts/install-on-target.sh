@@ -19,9 +19,6 @@ Options:
   --release-version VERSION  Release version to install. Defaults to release.version.
   --appliance-profile NAME   Override install.appliance_profile.
   --build-catalog PATH       Local build catalog JSON/YAML passed to zonctl.
-  --source-credentials PATH  Local source credential manifest passed to zonctl.
-                             The manifest may reference target-local key paths;
-                             private keys are not copied by this helper.
   --uninstall-first          Uninstall the previous appliance first.
   --run-dir DIR              Local run directory.
 EOF
@@ -31,7 +28,6 @@ CONFIG_PATH=""
 RELEASE_VERSION=""
 APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
-SOURCE_CREDENTIALS_PATH=""
 UNINSTALL_FIRST=""
 RUN_DIR=""
 
@@ -51,10 +47,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --build-catalog)
       BUILD_CATALOG_PATH="${2:-}"
-      shift 2
-      ;;
-    --source-credentials)
-      SOURCE_CREDENTIALS_PATH="${2:-}"
       shift 2
       ;;
     --uninstall-first)
@@ -103,12 +95,6 @@ fi
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   ensure_file "${BUILD_CATALOG_PATH}"
 fi
-if [[ -z "${SOURCE_CREDENTIALS_PATH}" ]]; then
-  SOURCE_CREDENTIALS_PATH="$(config_get_optional "${CONFIG_PATH}" "install.source_credentials_path" || true)"
-fi
-if [[ -n "${SOURCE_CREDENTIALS_PATH}" ]]; then
-  ensure_file "${SOURCE_CREDENTIALS_PATH}"
-fi
 if [[ -z "${UNINSTALL_FIRST}" ]]; then
   UNINSTALL_FIRST="$(config_get_optional "${CONFIG_PATH}" "install.uninstall_first" || true)"
 fi
@@ -155,24 +141,11 @@ sys.stdout.write(base64.b64encode(Path(sys.argv[1]).read_bytes()).decode("ascii"
 PY
 )"
 fi
-source_credentials_b64=""
-if [[ -n "${SOURCE_CREDENTIALS_PATH}" ]]; then
-  source_credentials_b64="$(python3 - "${SOURCE_CREDENTIALS_PATH}" <<'PY'
-import base64
-import sys
-from pathlib import Path
-
-sys.stdout.write(base64.b64encode(Path(sys.argv[1]).read_bytes()).decode("ascii"))
-PY
-)"
-fi
-
 remote_script='set -euo pipefail
 remote_dir='"$(shell_quote "${remote_release_dir}")"'
 product_version='"$(shell_quote "${RELEASE_VERSION}")"'
 out_dir='"$(shell_quote "${OUT_DIR}")"'
 build_catalog_b64='"$(shell_quote "${build_catalog_b64}")"'
-source_credentials_b64='"$(shell_quote "${source_credentials_b64}")"'
 bundle_archive="appliance-${product_version}-bundle.tar.gz"
 public_key_file="release-signing.pub"
 checksum_file="sha256sum.txt"
@@ -222,12 +195,6 @@ if [[ -n "${build_catalog_b64}" ]]; then
   printf "%s" "${build_catalog_b64}" | base64 -d > "${build_catalog_path}"
   install_args+=(--build-catalog "${build_catalog_path}")
   upgrade_args+=(--build-catalog "${build_catalog_path}")
-fi
-if [[ -n "${source_credentials_b64}" ]]; then
-  source_credentials_path="${out_dir}/source-credentials.yaml"
-  printf "%s" "${source_credentials_b64}" | base64 -d > "${source_credentials_path}"
-  install_args+=(--source-credentials "${source_credentials_path}")
-  upgrade_args+=(--source-credentials "${source_credentials_path}")
 fi
 capture_zonctl_step() {
   local stdout_file="$1"
@@ -300,7 +267,7 @@ install_log="${RUN_DIR}/logs/install.log"
 log "installing release on ${TARGET_HOST} using ${remote_release_dir}"
 run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"
 
-python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${SOURCE_CREDENTIALS_PATH}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${install_log}" <<'PY'
+python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${install_log}" <<'PY'
 import json
 import sys
 
@@ -316,11 +283,10 @@ import sys
     out_dir,
     appliance_profile,
     build_catalog_path,
-    source_credentials_path,
     output_format,
     uninstall_first,
     install_log,
-) = sys.argv[1:16]
+) = sys.argv[1:15]
 
 payload = {
     "configPath": config_path,
@@ -335,7 +301,6 @@ payload = {
     "bundleDir": f"{out_dir}/appliance-{release_version}-bundle" if release_version else None,
     "applianceProfile": appliance_profile or None,
     "buildCatalogPath": build_catalog_path or None,
-    "sourceCredentialsPath": source_credentials_path or None,
     "outputFormat": output_format,
     "uninstallFirst": uninstall_first == "true",
     "log": install_log,

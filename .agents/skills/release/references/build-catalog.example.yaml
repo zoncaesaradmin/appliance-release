@@ -1,34 +1,121 @@
-# Example builder-profile build catalog for final release workflow smoke.
+# Example builder-profile build catalog in the current appliance-native schema.
 #
-# This is product configuration, not a release artifact split. Replace the Git
-# host, repo URL, builder image digest, and output image repository for the real
-# product environment before using it.
+# This example is intentionally modeled from the multi-repo Forgeline-style
+# catalog at /Users/zoncaesar/build-catalog.yaml, but translated into the
+# appliance builder product-config format expected by appliance-code and zonctl.
 #
-# Do not put private keys, tokens, or passwords in this file. Git SSH access is
-# represented only by sourceCredentialRef, which resolves to Kubernetes Secret
-# names provisioned from source-credentials.example.yaml.
+# Important differences from the older Forgeline schema:
+# - `workProfiles` replaces top-level `profiles`
+# - each workspace profile explicitly lists its repos
+# - each repo has one canonical `url` plus optional `defaultRef`
+# - each build target is explicit under `buildTargets` and belongs to one repo
+# - private key material does not belong here; SSH access is referenced only
+#   through `sourceCredentialRef`
+#
+# Replace repo URLs, output image repositories, and builder image digests with
+# the real product values before using this file.
+#
+# Do not put private keys, tokens, or passwords in this file.
 workProfiles:
-  - name: builder
-    description: Default developer workflow profile for appliance builder smoke.
+  - name: platform-dev
+    description: Platform development multi-repo workspace profile.
+    repos:
+      - name: platformkit
+        enabledByDefault: true
+      - name: zonbundle
+        enabledByDefault: true
+      - name: zoncore
+      - name: forgeline
+        enabledByDefault: true
+      - name: forgeline-release
+        enabledByDefault: true
+
+  - name: telemetry-dev
+    description: Telemetry development workspace profile.
+    repos:
+      - name: platformkit
+        enabledByDefault: true
+
+  - name: simulation-dev
+    description: Simulation development workspace profile.
+    repos:
+      - name: platformkit
+        enabledByDefault: true
+      - name: forgeline
+        enabledByDefault: true
 
 sourceCredentials:
-  - id: git-main
-    gitHost: git.internal.example.com
-    kubernetesSecretName: git-main-deploy-key
-    knownHostsSecretName: git-main-known-hosts
+  - id: github-main
+    gitHost: github.com
 
 repos:
-  - name: app
-    url: git@git.internal.example.com:team/app.git
-    sourceCredentialRef: git-main
+  - name: platformkit
+    url: git@github.com:zoncaesaradmin/platformkit.git
+    defaultRef: main
+    sourceCredentialRef: github-main
+
+  - name: zonbundle
+    url: git@github.com:zoncaesaradmin/zonbundle.git
+    defaultRef: main
+    sourceCredentialRef: github-main
+
+  - name: zoncore
+    url: git@github.com:zoncaesaradmin/zoncore.git
+    defaultRef: main
+    sourceCredentialRef: github-main
+
+  - name: forgeline
+    url: git@github.com:zoncaesaradmin/forgeline.git
+    defaultRef: main
+    sourceCredentialRef: github-main
+
+  - name: forgeline-release
+    url: git@github.com:zoncaesaradmin/forgeline-release.git
+    defaultRef: main
+    sourceCredentialRef: github-main
 
 buildTargets:
-  - name: app
+  - name: platformkit
     aliases:
-      - default
-    workProfile: builder
-    repo: app
+      - platform
+    repo: platformkit
     execution: repo_script
-    scriptPath: scripts/build-image.sh
-    imageRepository: users/alice/app
+    scriptPath: build.sh
+    imageRepository: users/example/platformkit
+    builderImageDigest: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+  - name: zonbundle
+    aliases:
+      - bundle
+    repo: zonbundle
+    execution: make_target
+    makeTarget: build
+    imageRepository: users/example/zonbundle
+    builderImageDigest: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+  - name: zoncore
+    aliases:
+      - core
+    repo: zoncore
+    execution: repo_script
+    scriptPath: build.sh
+    imageRepository: users/example/zoncore
+    builderImageDigest: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+  - name: forgeline
+    aliases:
+      - control
+    repo: forgeline
+    execution: repo_script
+    scriptPath: build.sh
+    imageRepository: users/example/forgeline
+    builderImageDigest: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+  - name: forgeline-release
+    aliases:
+      - release
+    repo: forgeline-release
+    execution: repo_script
+    scriptPath: build.sh
+    imageRepository: users/example/forgeline-release
     builderImageDigest: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

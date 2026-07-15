@@ -44,29 +44,26 @@ curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-releas
 
 For the builder profile, pass a target-local build catalog unless the bundle's
 chart values already include one with matching Git-host and builder-image
-allowlists. For Git-backed builder workflows, also pass a source-credential
-manifest. The SSH private key and `known_hosts` paths named by the manifest
-must already exist on the target host; `zonctl` creates the Kubernetes Secrets
+allowlists. For Git-backed builder workflows, `zonctl` now derives the managed
+Kubernetes Secret names from `sourceCredentials[].id`, prepares persistent SSH
+key and `known_hosts` files under its state directory, and creates the Secrets
 that workflow pods mount during `git clone`.
 
-Start from the release skill templates
-`.agents/skills/release/references/build-catalog.example.yaml` and
-`.agents/skills/release/references/source-credentials.example.yaml`, then
-replace the placeholder Git host, repo URL, builder image digest, output image
-repository, and target-host file paths.
+Start from the release skill template
+`.agents/skills/release/references/build-catalog.example.yaml`, then replace
+the placeholder Git host, repo URL, builder image digest, and output image
+repository.
 
-Use read-only deploy keys wherever possible. The source-credential manifest
-contains only Secret names and target-local file paths; it must not contain
-private key text or tokens. Those Secrets are mounted into build workflow pods,
-not into the control plane, and they are not part of the signed release bundle.
+Use read-only deploy keys wherever possible. Those Secrets are mounted into
+build workflow pods, not into the control plane, and they are not part of the
+signed release bundle.
 
 ```bash
 curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-release.sh" \
   | bash -s -- \
       --base-url "${RELEASE_BASE_URL}" \
       --appliance-profile builder \
-      --build-catalog /etc/zon/build-catalog.yaml \
-      --source-credentials /etc/zon/source-credentials.yaml
+      --build-catalog /etc/zon/build-catalog.yaml
 ```
 
 Notes:
@@ -74,7 +71,7 @@ Notes:
 - valid v1 profiles are `core`, `builder`, and `storage`
 - profile selection does not change the published bundle files or create a different SKU
 - omitting `--appliance-profile` keeps the default `core` profile
-- build catalog and source credential files are install-time product config, not release artifacts
+- build catalog files are install-time product config, not release artifacts
 - the target appliance must be able to reach the configured Git host from the
   build workflow namespace, because cloning happens inside a workflow pod
 
