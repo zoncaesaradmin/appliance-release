@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+"""Local tests for validate-release-artifacts.py."""
+
+import subprocess
+import tempfile
+from pathlib import Path
+import json
+
+
+ROOT = Path(__file__).resolve().parents[4]
+VALIDATOR = ROOT / ".agents" / "skills" / "release" / "scripts" / "validate-release-artifacts.py"
+
+
+def write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def run_validator(tmp: Path, *extra_args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [
+            "python3",
+            str(VALIDATOR),
+            "--release-input-root",
+            str(tmp / "release-input"),
+            "--bundle-root",
+            str(tmp / "bundle"),
+            *extra_args,
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+
+def populate_positive_case(tmp: Path) -> None:
+    write(tmp / "release-input" / "images" / "control-plane.tar", "control")
+    write(tmp / "release-input" / "images" / "appliance-ui.tar", "ui")
+    write(tmp / "release-input" / "chart" / "appliance-chart-1.0.0.tgz", "appliance chart")
+    write(tmp / "release-input" / "schemas" / "configuration.schema.json", "{}")
+    write(tmp / "release-input" / "compatibility.json", "{}")
+    write(tmp / "release-input" / "checksums.txt", "checksums")
+    write(tmp / "release-input" / "sbom" / "appliance.spdx.json", "{}")
+    write(tmp / "release-input" / "provenance" / "appliance.provenance.json", "{}")
+    write(tmp / "release-input" / "notices" / "THIRD-PARTY-NOTICES.txt", "notice")
+    write(tmp / "release-input" / "tests" / "conformance.txt", "tests")
+    write(tmp / "release-input" / "chart" / "argo-workflows-1.0.0.tgz", "chart")
+    write(tmp / "release-input" / "crds" / "workflows.yaml", "crd")
+    write(tmp / "release-input" / "images" / "argo-controller.tar", "controller")
+    write(tmp / "release-input" / "images" / "argo-executor.tar", "executor")
+    write(tmp / "release-input" / "images" / "buildah.tar", "buildah")
+    write(
+        tmp / "bundle" / "configuration" / "values.yaml",
+        """
+image:
+  repository: internal/control-plane
+  tag: "1.0.0"
+  digest: ""
+
+ui:
+  enabled: true
+  image:
+    repository: internal/appliance-ui
+    tag: "1.0.0"
+    digest: ""
+  service:
+    port: 8080
+
+ingress:
+  enabled: true
+  entryPoints:
+    - websecure
+""".lstrip(),
+    )
+    write(
+        tmp / "release-input" / "release-input.json",
+        """
+{
+  "artifacts": {
+    "controlPlaneImage": {"path": "images/control-plane.tar", "digest": "sha256:control", "sizeBytes": 7, "imageReference": "internal/control-plane:1.0.0"},
+    "uiImage": {"path": "images/appliance-ui.tar", "digest": "sha256:ui", "sizeBytes": 2, "imageReference": "internal/appliance-ui:1.0.0"},
+    "applianceChart": {"path": "chart/appliance-chart-1.0.0.tgz", "digest": "sha256:appliance-chart", "sizeBytes": 15},
+    "configurationSchema": {"path": "schemas/configuration.schema.json", "digest": "sha256:configuration", "sizeBytes": 2},
+    "compatibility": {"path": "compatibility.json", "digest": "sha256:compatibility", "sizeBytes": 2},
+    "checksums": {"path": "checksums.txt", "digest": "sha256:checksums", "sizeBytes": 9},
+    "sbom": {"path": "sbom", "manifestDigest": "sha256:sbom"},
+    "provenance": {"path": "provenance", "manifestDigest": "sha256:provenance"},
+    "notices": {"path": "notices", "manifestDigest": "sha256:notices"},
+    "tests": {"path": "tests", "manifestDigest": "sha256:tests"},
+    "argoWorkflowsChart": {"path": "chart/argo-workflows-1.0.0.tgz", "digest": "sha256:chart", "sizeBytes": 5},
+    "argoCRDs": {"path": "crds", "manifestDigest": "sha256:crds"},
+    "argoControllerImage": {"path": "images/argo-controller.tar", "digest": "sha256:controller", "sizeBytes": 10, "imageReference": "quay.io/argoproj/workflow-controller:v3.5.10"},
+    "argoExecutorImage": {"path": "images/argo-executor.tar", "digest": "sha256:executor", "sizeBytes": 8, "imageReference": "quay.io/argoproj/argoexec:v3.5.10"},
+    "extraOCIImages": [
+      {"path": "images/buildah.tar", "digest": "sha256:buildah", "sizeBytes": 6, "imageReference": "registry.local/buildah@sha256:abc123"}
+    ]
+  }
+}
+""".lstrip(),
+    )
+    write(
+        tmp / "bundle" / "release-manifest.json",
+        """
+{
+  "entries": [
+    {"targetPath": "oci-images/control-plane.tar", "digest": "sha256:control", "sizeBytes": 7, "imageReference": "internal/control-plane:1.0.0"},
+    {"targetPath": "oci-images/appliance-ui.tar", "digest": "sha256:ui", "sizeBytes": 2, "imageReference": "internal/appliance-ui:1.0.0"},
+    {"targetPath": "charts/appliance-chart-1.0.0.tgz", "digest": "sha256:appliance-chart", "sizeBytes": 15},
+    {"targetPath": "configuration/values.yaml", "digest": "sha256:values", "sizeBytes": 200},
+    {"targetPath": "charts/argo-workflows-1.0.0.tgz", "digest": "sha256:chart", "sizeBytes": 5},
+    {"targetPath": "kubernetes/crds/crds/workflows.yaml", "digest": "sha256:crd", "sizeBytes": 3},
+    {"targetPath": "oci-images/argo-controller.tar", "digest": "sha256:controller", "sizeBytes": 10, "imageReference": "quay.io/argoproj/workflow-controller:v3.5.10"},
+    {"targetPath": "oci-images/argo-executor.tar", "digest": "sha256:executor", "sizeBytes": 8, "imageReference": "quay.io/argoproj/argoexec:v3.5.10"},
+    {"targetPath": "oci-images/buildah.tar", "digest": "sha256:buildah", "sizeBytes": 6, "imageReference": "registry.local/buildah@sha256:abc123"}
+  ]
+}
+""".lstrip(),
+    )
+
+
+def test_positive_case() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        result = run_validator(tmp, "--require-argo")
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+
+
+def test_rejects_tag_only_extra_oci_image() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        release_input_path = tmp / "release-input" / "release-input.json"
+        release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
+        release_input["artifacts"]["extraOCIImages"][0]["imageReference"] = "registry.local/buildah:latest"
+        release_input_path.write_text(json.dumps(release_input), encoding="utf-8")
+        result = run_validator(tmp)
+        if result.returncode == 0:
+            raise AssertionError("tag-only extraOCIImages imageReference was accepted")
+        if "must be digest-pinned" not in result.stderr:
+            raise AssertionError(result.stderr)
+
+
+def test_rejects_missing_expected_extra_oci_image_ref() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        result = run_validator(
+            tmp,
+            "--expected-extra-oci-image-refs",
+            "registry.local/buildah@sha256:abc123,registry.local/missing@sha256:def456",
+        )
+        if result.returncode == 0:
+            raise AssertionError("missing expected extra OCI image ref was accepted")
+        if "missing expected image refs" not in result.stderr:
+            raise AssertionError(result.stderr)
+
+
+def test_rejects_missing_ui_bundle_entry() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["entries"] = [
+            entry for entry in manifest["entries"] if entry["targetPath"] != "oci-images/appliance-ui.tar"
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = run_validator(tmp)
+        if result.returncode == 0:
+            raise AssertionError("missing UI image bundle entry was accepted")
+        if "uiImage" not in result.stderr:
+            raise AssertionError(result.stderr)
+
+
+def test_rejects_mismatched_ui_bundle_image_reference() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for entry in manifest["entries"]:
+            if entry["targetPath"] == "oci-images/appliance-ui.tar":
+                entry["imageReference"] = "internal/appliance-ui:wrong"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = run_validator(tmp)
+        if result.returncode == 0:
+            raise AssertionError("mismatched UI imageReference was accepted")
+        if "imageReference mismatch" not in result.stderr or "uiImage" not in result.stderr:
+            raise AssertionError(result.stderr)
+
+
+def test_rejects_mismatched_ui_values_image_reference() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        values_path = tmp / "bundle" / "configuration" / "values.yaml"
+        values_path.write_text(
+            values_path.read_text(encoding="utf-8").replace(
+                "repository: internal/appliance-ui", "repository: internal/appliance-ui-wrong"
+            ),
+            encoding="utf-8",
+        )
+        result = run_validator(tmp)
+        if result.returncode == 0:
+            raise AssertionError("mismatched UI values image reference was accepted")
+        if "bundle values ui.image imageReference mismatch" not in result.stderr:
+            raise AssertionError(result.stderr)
+
+
+def main() -> None:
+    test_positive_case()
+    test_rejects_tag_only_extra_oci_image()
+    test_rejects_missing_expected_extra_oci_image_ref()
+    test_rejects_missing_ui_bundle_entry()
+    test_rejects_mismatched_ui_bundle_image_reference()
+    test_rejects_mismatched_ui_values_image_reference()
+    print("validate-release-artifacts tests passed")
+
+
+if __name__ == "__main__":
+    main()

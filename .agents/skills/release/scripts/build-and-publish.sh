@@ -154,6 +154,8 @@ BUILD_ARGO_CONTROLLER_IMAGE_REF="$(config_get_optional "${CONFIG_PATH}" "build_f
 BUILD_ARGO_EXECUTOR_IMAGE_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.executor_image_ref" || true)"
 BUILD_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.controller_image_archive_source" || true)"
 BUILD_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.executor_image_archive_source" || true)"
+BUILD_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_archive_sources" || true)"
+BUILD_EXTRA_OCI_IMAGE_REFS="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_refs" || true)"
 VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
 PUBLISH_PUBLIC_BASE_URL="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.base_url" || true)"
 if [[ -z "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
@@ -186,6 +188,8 @@ BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_CONTROLLER
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_EXECUTOR_IMAGE_REF" "${BUILD_ARGO_EXECUTOR_IMAGE_REF}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE" "${BUILD_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE" "${BUILD_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE_ARCHIVE_SOURCES" "${BUILD_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE_REFS" "${BUILD_EXTRA_OCI_IMAGE_REFS}")"
 
 PUBLISH_ENV_PREFIX=""
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PRODUCT_VERSION" "${RELEASE_VERSION}")"
@@ -390,79 +394,23 @@ elif [[ -n "${REMOTE_BUNDLE_DIR}" ]]; then
   copy_remote_path "${REMOTE_BUNDLE_DIR}" "${RUN_DIR}/artifacts/bundle"
 fi
 
+VALIDATE_RELEASE_ARTIFACTS_ARGS=()
 if bool_true "${BUILD_ARGO_ENABLED:-false}" || bool_true "${VERIFY_ARGO_ENABLED:-false}"; then
-  python3 - "${RUN_DIR}/artifacts/release-input" "${RUN_DIR}/artifacts/bundle" <<'PY'
-import json
-from pathlib import Path
-import sys
-
-release_input_root = Path(sys.argv[1])
-bundle_root = Path(sys.argv[2])
-
-def first_named(root: Path, name: str):
-    if not root.is_dir():
-        return None
-    matches = sorted(root.rglob(name))
-    return matches[0] if matches else None
-
-release_input_path = first_named(release_input_root, "release-input.json")
-bundle_manifest_path = first_named(bundle_root, "release-manifest.json")
-
-missing = []
-if release_input_path is None:
-    missing.append("release-input.json")
-if bundle_manifest_path is None:
-    missing.append("release-manifest.json")
-if missing:
-    raise SystemExit("build-and-publish: missing copied metadata: " + ", ".join(missing))
-
-release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
-release_artifacts = release_input.get("artifacts") or {}
-required_release_keys = {
-    "argoWorkflowsChart",
-    "argoCRDs",
-    "argoControllerImage",
-    "argoExecutorImage",
-}
-missing_release = sorted(key for key in required_release_keys if key not in release_artifacts)
-if missing_release:
-    raise SystemExit(
-        "build-and-publish: Argo expected but release-input is missing: "
-        + ", ".join(missing_release)
-    )
-
-bundle_manifest = json.loads(bundle_manifest_path.read_text(encoding="utf-8"))
-entries = bundle_manifest.get("entries") or []
-entry_paths = {
-    entry.get("targetPath") or entry.get("path") or ""
-    for entry in entries
-    if isinstance(entry, dict)
-}
-expected_prefixes = [
-    "charts/argo-workflows",
-    "kubernetes/crds/",
-    "oci-images/",
-]
-has_chart = any(path.startswith("charts/argo-workflows") for path in entry_paths)
-has_crds = any(path.startswith("kubernetes/crds/") for path in entry_paths)
-has_controller = any("argo-controller" in path for path in entry_paths if path.startswith("oci-images/"))
-has_executor = any("argo-executor" in path for path in entry_paths if path.startswith("oci-images/"))
-missing_bundle = []
-if not has_chart:
-    missing_bundle.append("Argo chart entry")
-if not has_crds:
-    missing_bundle.append("Argo CRD entries")
-if not has_controller:
-    missing_bundle.append("Argo controller image entry")
-if not has_executor:
-    missing_bundle.append("Argo executor image entry")
-if missing_bundle:
-    raise SystemExit(
-        "build-and-publish: Argo expected but final bundle is missing: "
-        + ", ".join(missing_bundle)
-    )
-PY
-  log "validated copied Argo artifacts in release-input and final bundle"
+  VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--require-argo)
+fi
+if [[ -n "${BUILD_EXTRA_OCI_IMAGE_REFS}" ]]; then
+  VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--expected-extra-oci-image-refs "${BUILD_EXTRA_OCI_IMAGE_REFS}")
+fi
+if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle" ]]; then
+  log "validating copied release-input artifacts against final bundle manifest"
+  python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
+    --release-input-root "${RUN_DIR}/artifacts/release-input" \
+    --bundle-root "${RUN_DIR}/artifacts/bundle" \
+    "${VALIDATE_RELEASE_ARTIFACTS_ARGS[@]}" \
+    >"${RUN_DIR}/logs/release-artifact-validation.json"
+  log "release artifact validation completed; log: ${RUN_DIR}/logs/release-artifact-validation.json"
+elif [[ ${#VALIDATE_RELEASE_ARTIFACTS_ARGS[@]} -gt 0 ]]; then
+  fail "Argo validation requested but copied release-input or bundle metadata is missing"
 fi
 
 remote_release_commit_cmd="cd $(shell_quote "${REMOTE_CWD}") && git rev-parse HEAD"
@@ -563,6 +511,7 @@ payload = {
         "bootstrap": str(run_dir / "logs" / "bootstrap.log"),
         "build": str(run_dir / "logs" / "build.log"),
         "publish": str(run_dir / "logs" / "publish.log"),
+        "releaseArtifactValidation": str(run_dir / "logs" / "release-artifact-validation.json"),
     },
 }
 

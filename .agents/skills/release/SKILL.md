@@ -70,6 +70,13 @@ Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `
   Run post-install verification, service-health checks, smoke checks, and failure-log capture.
 - `scripts/verify-client-access.sh`
   Run macOS-side client/API checks against the appliance after first-admin setup.
+- `scripts/plan-profile-matrix.py`
+  Generate, but do not execute, the final core/storage/builder profile-matrix
+  command plan and validate required builder workflow config inputs.
+- `scripts/audit-profile-matrix-reports.py`
+  Audit the generated `release-report.json` files after the real
+  core/storage/builder profile-matrix runs and fail closed on missing profile,
+  disabled-route, builder-tool, or builder workflow evidence.
 - `scripts/common.sh`
   Shared helpers for config resolution, logging, SSH execution, and secret loading.
 - `scripts/config_query.py`

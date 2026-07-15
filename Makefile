@@ -3,26 +3,150 @@ SHELL := /bin/bash
 
 DEFAULT_ZONCTL_BINARY := $(CURDIR)/../appliance-ctl/bin/zonctl
 ZONCTL_BINARY ?= $(DEFAULT_ZONCTL_BINARY)
+APPLIANCE_CODE_DIR ?= $(CURDIR)/../appliance-code
+APPLIANCE_CTL_DIR ?= $(CURDIR)/../appliance-ctl
 VERIFY_LOG_DIR := $(CURDIR)/.run/logs
 VERIFY_SHELL_LOG := $(VERIFY_LOG_DIR)/verify-shell.log
 VERIFY_HELP_LOG := $(VERIFY_LOG_DIR)/verify-help.log
 VERIFY_JSON_LOG := $(VERIFY_LOG_DIR)/verify-json.log
+VERIFY_CLIENT_CONFIG_LOG := $(VERIFY_LOG_DIR)/verify-client-config.log
+VERIFY_CLIENT_CONFIG_CASE_LOG := $(VERIFY_LOG_DIR)/verify-client-config-case.log
+VERIFY_RELEASE_ARTIFACTS_LOG := $(VERIFY_LOG_DIR)/verify-release-artifacts.log
+VERIFY_FINAL_TARGETS_LOG := $(VERIFY_LOG_DIR)/verify-final-targets.log
+VERIFY_MILESTONE_CODE_CONTROLPLANE_LOG := $(VERIFY_LOG_DIR)/verify-local-milestone-appliance-code-controlplane.log
+VERIFY_MILESTONE_CODE_CHART_LOG := $(VERIFY_LOG_DIR)/verify-local-milestone-appliance-code-chart.log
+VERIFY_MILESTONE_CODE_UI_LOG := $(VERIFY_LOG_DIR)/verify-local-milestone-appliance-code-ui.log
+VERIFY_MILESTONE_CODE_E2E_LOG := $(VERIFY_LOG_DIR)/verify-local-milestone-appliance-code-e2e.log
+VERIFY_MILESTONE_CTL_LOG := $(VERIFY_LOG_DIR)/verify-local-milestone-appliance-ctl.log
+VERIFY_MILESTONE_RELEASE_LOG := $(VERIFY_LOG_DIR)/verify-local-milestone-appliance-release.log
+VERIFY_MILESTONE_REPORT := $(CURDIR)/.run/appliance-release/local-milestone-report.json
+VERIFY_MILESTONE_REPORT_MD := $(CURDIR)/.run/appliance-release/local-milestone-report.md
+FINAL_READINESS_REPORT := $(CURDIR)/.run/appliance-release/final-readiness-report.json
+FINAL_READINESS_REPORT_MD := $(CURDIR)/.run/appliance-release/final-readiness-report.md
+FINAL_PROFILE_INPUT_CHECKLIST := $(CURDIR)/.run/appliance-release/final-profile-input-checklist.json
+FINAL_PROFILE_INPUT_CHECKLIST_MD := $(CURDIR)/.run/appliance-release/final-profile-input-checklist.md
+RELEASE_SKILL_SCRIPT_DIR := .agents/skills/release/scripts
 
 .PHONY: verify-shell
 verify-shell:
 	@bash -n $$(find scripts -type f -name '*.sh' | LC_ALL=C sort)
+	@bash -n $$(find "$(RELEASE_SKILL_SCRIPT_DIR)" -type f -name '*.sh' | LC_ALL=C sort)
 	@bash -n configs/product-bundle.sample.env
 	@bash -n configs/product-bundle.ci.env
+	@PYTHONPYCACHEPREFIX="$(CURDIR)/.run/pycache" python3 -m py_compile $$(find "$(RELEASE_SKILL_SCRIPT_DIR)" -type f -name '*.py' | LC_ALL=C sort)
 
 .PHONY: verify-help
 verify-help:
 	@for script in $$(find scripts -type f -name '*.sh' | LC_ALL=C sort); do \
 		bash "$$script" --help >/dev/null; \
 	done
+	@for script in $$(find "$(RELEASE_SKILL_SCRIPT_DIR)" -type f -name '*.sh' | LC_ALL=C sort); do \
+		bash "$$script" --help >/dev/null; \
+	done
+	@bash scripts/publish/install-http-release.sh --help | grep -q -- '--build-catalog'
+	@bash scripts/publish/install-http-release.sh --help | grep -q -- '--source-credentials'
 
 .PHONY: verify-json
 verify-json:
 	@python3 -c 'import json; from pathlib import Path; [json.load(path.open("r", encoding="utf-8")) for path in sorted(Path("docs").rglob("*.json"))]'
+
+.PHONY: verify-client-config
+verify-client-config:
+	@mkdir -p "$(VERIFY_LOG_DIR)"
+	@config_file="$(VERIFY_LOG_DIR)/client-invalid-source-ref.yaml"; \
+	run_dir="$(VERIFY_LOG_DIR)/client-invalid-source-ref-run"; \
+	printf '%s\n' \
+		'install:' \
+		'  appliance_profile: core' \
+		'client_verification:' \
+		'  builder:' \
+		'    workflow:' \
+		'      enabled: true' \
+		'      workspace_name: release-smoke' \
+		'      work_profile: builder' \
+		'      repo: app' \
+		'      source_ref: main' \
+		'      target_name: app' \
+		> "$$config_file"; \
+	set +e; \
+	APPLIANCE_FIRST_ADMIN_PASSWORD=test bash "$(RELEASE_SKILL_SCRIPT_DIR)/verify-client-access.sh" --config "$$config_file" --run-dir "$$run_dir" --appliance-profile builder >"$(VERIFY_CLIENT_CONFIG_CASE_LOG)" 2>&1; \
+	status="$$?"; \
+	set -e; \
+	if [ "$$status" -eq 0 ]; then \
+		echo "verify-client-config: mutable source_ref was accepted"; \
+		exit 1; \
+	fi; \
+	grep -q 'source_ref must be a 40-character lowercase commit SHA' "$(VERIFY_CLIENT_CONFIG_CASE_LOG)"
+
+.PHONY: verify-release-artifacts
+verify-release-artifacts:
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_assert_final_readiness.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_audit_profile_matrix_reports.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_validate_release_artifacts.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_summarize_release_run.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_plan_profile_matrix.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_verify_client_access.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_write_local_milestone_report.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_write_final_readiness_report.py"
+
+.PHONY: verify-final-targets
+verify-final-targets:
+	@mkdir -p "$(VERIFY_LOG_DIR)"
+	@config_file="$(VERIFY_LOG_DIR)/final-incomplete-config.yaml"; \
+	printf '%s\n' \
+		'release:' \
+		'  version: 0.1.0' \
+		'install:' \
+		'  appliance_profile: builder' \
+		'client_verification:' \
+		'  builder:' \
+		'    workflow:' \
+		'      enabled: false' \
+		> "$$config_file"; \
+	set +e; \
+	$(MAKE) --no-print-directory plan-final-profile-matrix CONFIG="$$config_file" >"$(VERIFY_LOG_DIR)/final-plan-incomplete.out" 2>"$(VERIFY_LOG_DIR)/final-plan-incomplete.err"; \
+	rc="$$?"; \
+	set -e; \
+	if [ "$$rc" -eq 0 ]; then \
+		echo "verify-final-targets: incomplete final profile matrix config was accepted"; \
+		exit 1; \
+	fi; \
+	grep -q 'install.build_catalog_path is required for final builder workflow evidence' "$(VERIFY_LOG_DIR)/final-plan-incomplete.out"; \
+	$(MAKE) --no-print-directory final-profile-input-checklist CONFIG="$$config_file" >"$(VERIFY_LOG_DIR)/final-input-checklist.out" 2>"$(VERIFY_LOG_DIR)/final-input-checklist.err"; \
+	grep -q 'final-profile-input-checklist: missing final inputs' "$(VERIFY_LOG_DIR)/final-input-checklist.out"; \
+	grep -q '# Final Profile Input Checklist' "$(FINAL_PROFILE_INPUT_CHECKLIST_MD)"; \
+	grep -q 'Do not run the live profile matrix from this checklist' "$(FINAL_PROFILE_INPUT_CHECKLIST_MD)"; \
+	if grep -q '## Commands' "$(FINAL_PROFILE_INPUT_CHECKLIST_MD)"; then \
+		echo "verify-final-targets: input checklist exposed runnable profile commands"; \
+		exit 1; \
+	fi; \
+	grep -q '"checklistOnly": true' "$(FINAL_PROFILE_INPUT_CHECKLIST)"; \
+	grep -q '"readyForFinalPlan": false' "$(FINAL_PROFILE_INPUT_CHECKLIST)"; \
+	grep -q 'install.build_catalog_path is required for final builder workflow evidence' "$(FINAL_PROFILE_INPUT_CHECKLIST)"; \
+	set +e; \
+	$(MAKE) --no-print-directory audit-final-profile-matrix >"$(VERIFY_LOG_DIR)/final-audit-missing-dirs.out" 2>"$(VERIFY_LOG_DIR)/final-audit-missing-dirs.err"; \
+	rc="$$?"; \
+	set -e; \
+	if [ "$$rc" -eq 0 ]; then \
+		echo "verify-final-targets: audit-final-profile-matrix accepted missing run dirs"; \
+		exit 1; \
+	fi; \
+	grep -q 'set CORE_RUN_DIR=... STORAGE_RUN_DIR=... BUILDER_RUN_DIR=...' "$(VERIFY_LOG_DIR)/final-audit-missing-dirs.err"; \
+	mkdir -p "$(VERIFY_LOG_DIR)/final-audit-run/core" "$(VERIFY_LOG_DIR)/final-audit-run/storage" "$(VERIFY_LOG_DIR)/final-audit-run/builder"; \
+	set +e; \
+	$(MAKE) --no-print-directory audit-final-profile-matrix \
+		CORE_RUN_DIR="$(VERIFY_LOG_DIR)/final-audit-run/core" \
+		STORAGE_RUN_DIR="$(VERIFY_LOG_DIR)/final-audit-run/storage" \
+		BUILDER_RUN_DIR="$(VERIFY_LOG_DIR)/final-audit-run/builder" \
+		PLAN_JSON="$(VERIFY_LOG_DIR)/missing-final-plan.json" \
+		>"$(VERIFY_LOG_DIR)/final-audit-missing-plan.out" 2>"$(VERIFY_LOG_DIR)/final-audit-missing-plan.err"; \
+	rc="$$?"; \
+	set -e; \
+	if [ "$$rc" -eq 0 ]; then \
+		echo "verify-final-targets: audit-final-profile-matrix accepted missing final plan"; \
+		exit 1; \
+	fi; \
+	grep -q 'run make plan-final-profile-matrix first' "$(VERIFY_LOG_DIR)/final-audit-missing-plan.err"
 
 .PHONY: verify
 verify:
@@ -46,10 +170,182 @@ verify:
 		exit 1; \
 	fi; \
 	echo "verify stage: JSON examples passed"; \
+	echo "verify stage: client config validation"; \
+	if ! $(MAKE) --no-print-directory verify-client-config >"$(VERIFY_CLIENT_CONFIG_LOG)" 2>&1; then \
+		echo "verify: client config validation failed; inspect $(VERIFY_CLIENT_CONFIG_LOG)"; \
+		exit 1; \
+	fi; \
+	echo "verify stage: client config validation passed"; \
+	echo "verify stage: release artifact validation"; \
+	if ! $(MAKE) --no-print-directory verify-release-artifacts >"$(VERIFY_RELEASE_ARTIFACTS_LOG)" 2>&1; then \
+		echo "verify: release artifact validation failed; inspect $(VERIFY_RELEASE_ARTIFACTS_LOG)"; \
+		exit 1; \
+	fi; \
+	echo "verify stage: release artifact validation passed"; \
+	echo "verify stage: final target fail-closed checks"; \
+	if ! $(MAKE) --no-print-directory verify-final-targets >"$(VERIFY_FINAL_TARGETS_LOG)" 2>&1; then \
+		echo "verify: final target fail-closed checks failed; inspect $(VERIFY_FINAL_TARGETS_LOG)"; \
+		exit 1; \
+	fi; \
+	echo "verify stage: final target fail-closed checks passed"; \
 	echo "verify stage: clean"; \
 	$(MAKE) --no-print-directory clean >/dev/null 2>&1; \
 	echo "verify stage: clean passed"; \
 	echo "verify: all local checks passed"
+
+.PHONY: verify-local-milestone
+verify-local-milestone:
+	@set -e; \
+	echo "verify-local-milestone stage: appliance-release"; \
+	$(MAKE) --no-print-directory verify; \
+	mkdir -p "$(VERIFY_LOG_DIR)"; \
+	printf '%s\n' 'make verify passed' >"$(VERIFY_MILESTONE_RELEASE_LOG)"; \
+	echo "verify-local-milestone stage: appliance-code controlplane"; \
+	if ! (cd "$(APPLIANCE_CODE_DIR)/services/controlplane" && go test ./...) >"$(VERIFY_MILESTONE_CODE_CONTROLPLANE_LOG)" 2>&1; then \
+		echo "verify-local-milestone: appliance-code controlplane failed; inspect $(VERIFY_MILESTONE_CODE_CONTROLPLANE_LOG)"; \
+		exit 1; \
+	fi; \
+	echo "verify-local-milestone stage: appliance-code controlplane passed"; \
+	echo "verify-local-milestone stage: appliance-code control-plane chart"; \
+	if ! (cd "$(APPLIANCE_CODE_DIR)/deploy/charts/appliance-control-plane" && go test ./...) >"$(VERIFY_MILESTONE_CODE_CHART_LOG)" 2>&1; then \
+		echo "verify-local-milestone: appliance-code control-plane chart failed; inspect $(VERIFY_MILESTONE_CODE_CHART_LOG)"; \
+		exit 1; \
+	fi; \
+	echo "verify-local-milestone stage: appliance-code control-plane chart passed"; \
+	echo "verify-local-milestone stage: appliance-code UI"; \
+	if ! (cd "$(APPLIANCE_CODE_DIR)/services/ui" && go test ./...) >"$(VERIFY_MILESTONE_CODE_UI_LOG)" 2>&1; then \
+		echo "verify-local-milestone: appliance-code UI failed; inspect $(VERIFY_MILESTONE_CODE_UI_LOG)"; \
+		exit 1; \
+	fi; \
+	echo "verify-local-milestone stage: appliance-code UI passed"; \
+	echo "verify-local-milestone stage: appliance-code local e2e"; \
+	if ! $(MAKE) -C "$(APPLIANCE_CODE_DIR)/e2etests" --no-print-directory test-local >"$(VERIFY_MILESTONE_CODE_E2E_LOG)" 2>&1; then \
+		echo "verify-local-milestone: appliance-code local e2e failed; inspect $(VERIFY_MILESTONE_CODE_E2E_LOG)"; \
+		exit 1; \
+	fi; \
+	echo "verify-local-milestone stage: appliance-code local e2e passed"; \
+	echo "verify-local-milestone stage: appliance-ctl"; \
+	if ! (cd "$(APPLIANCE_CTL_DIR)" && go test ./...) >"$(VERIFY_MILESTONE_CTL_LOG)" 2>&1; then \
+		echo "verify-local-milestone: appliance-ctl failed; inspect $(VERIFY_MILESTONE_CTL_LOG)"; \
+		exit 1; \
+	fi; \
+	echo "verify-local-milestone stage: appliance-ctl passed"; \
+	python3 "$(RELEASE_SKILL_SCRIPT_DIR)/write-local-milestone-report.py" \
+		--output-json "$(VERIFY_MILESTONE_REPORT)" \
+		--output-md "$(VERIFY_MILESTONE_REPORT_MD)" \
+		--appliance-code-dir "$(APPLIANCE_CODE_DIR)" \
+		--appliance-ctl-dir "$(APPLIANCE_CTL_DIR)" \
+		--release-log-dir "$(VERIFY_LOG_DIR)" >/dev/null; \
+	echo "verify-local-milestone: all non-live milestone checks passed"
+
+.PHONY: plan-profile-matrix
+plan-profile-matrix:
+	@config_path="$${CONFIG:-$${APPLIANCE_RELEASE_CONFIG:-}}"; \
+	if [ -z "$${config_path}" ]; then \
+		echo "plan-profile-matrix: set CONFIG=/abs/path/to/appliance-release.config.yaml or APPLIANCE_RELEASE_CONFIG" >&2; \
+		exit 2; \
+	fi; \
+	mkdir -p "$(CURDIR)/.run/appliance-release"; \
+	python3 "$(RELEASE_SKILL_SCRIPT_DIR)/plan-profile-matrix.py" \
+		--config "$${config_path}" \
+		$${RELEASE_VERSION:+--release-version "$${RELEASE_VERSION}"} \
+		$${REQUIRE_BUILDER_WORKFLOW:+--require-builder-workflow} \
+		--output-json "$(CURDIR)/.run/appliance-release/profile-matrix-plan.json" \
+		--output-md "$(CURDIR)/.run/appliance-release/profile-matrix-plan.md"
+
+.PHONY: plan-final-profile-matrix
+plan-final-profile-matrix:
+	@config_path="$${CONFIG:-$${APPLIANCE_RELEASE_CONFIG:-}}"; \
+	if [ -z "$${config_path}" ]; then \
+		echo "plan-final-profile-matrix: set CONFIG=/abs/path/to/appliance-release.config.yaml or APPLIANCE_RELEASE_CONFIG" >&2; \
+		exit 2; \
+	fi; \
+	mkdir -p "$(CURDIR)/.run/appliance-release"; \
+	python3 "$(RELEASE_SKILL_SCRIPT_DIR)/plan-profile-matrix.py" \
+		--config "$${config_path}" \
+		$${RELEASE_VERSION:+--release-version "$${RELEASE_VERSION}"} \
+		--require-builder-workflow \
+		--output-json "$(CURDIR)/.run/appliance-release/final-profile-matrix-plan.json" \
+		--output-md "$(CURDIR)/.run/appliance-release/final-profile-matrix-plan.md"
+
+.PHONY: final-profile-input-checklist
+final-profile-input-checklist:
+	@config_path="$${CONFIG:-$${APPLIANCE_RELEASE_CONFIG:-}}"; \
+	if [ -z "$${config_path}" ]; then \
+		echo "final-profile-input-checklist: set CONFIG=/abs/path/to/appliance-release.config.yaml or APPLIANCE_RELEASE_CONFIG" >&2; \
+		exit 2; \
+	fi; \
+	mkdir -p "$(CURDIR)/.run/appliance-release"; \
+	set +e; \
+	python3 "$(RELEASE_SKILL_SCRIPT_DIR)/plan-profile-matrix.py" \
+		--config "$${config_path}" \
+		$${RELEASE_VERSION:+--release-version "$${RELEASE_VERSION}"} \
+		--require-builder-workflow \
+		--document-title "Final Profile Input Checklist" \
+		--checklist-only \
+		--output-json "$(FINAL_PROFILE_INPUT_CHECKLIST)" \
+		--output-md "$(FINAL_PROFILE_INPUT_CHECKLIST_MD)" \
+		>"$(CURDIR)/.run/appliance-release/final-profile-input-checklist.stdout.json"; \
+	rc="$$?"; \
+	set -e; \
+	if [ "$$rc" -eq 0 ]; then \
+		echo "final-profile-input-checklist: final inputs look complete; see $(FINAL_PROFILE_INPUT_CHECKLIST_MD)"; \
+	else \
+		echo "final-profile-input-checklist: missing final inputs; see $(FINAL_PROFILE_INPUT_CHECKLIST_MD)"; \
+	fi
+
+.PHONY: audit-profile-matrix
+audit-profile-matrix:
+	@if [ -z "$${CORE_RUN_DIR:-}" ] || [ -z "$${STORAGE_RUN_DIR:-}" ] || [ -z "$${BUILDER_RUN_DIR:-}" ]; then \
+		echo "audit-profile-matrix: set CORE_RUN_DIR=... STORAGE_RUN_DIR=... BUILDER_RUN_DIR=..." >&2; \
+		exit 2; \
+	fi
+	@mkdir -p "$(CURDIR)/.run/appliance-release"
+	python3 "$(RELEASE_SKILL_SCRIPT_DIR)/audit-profile-matrix-reports.py" \
+		--core-run-dir "$${CORE_RUN_DIR}" \
+		--storage-run-dir "$${STORAGE_RUN_DIR}" \
+		--builder-run-dir "$${BUILDER_RUN_DIR}" \
+		$${PLAN_JSON:+--plan-json "$${PLAN_JSON}"} \
+		$${REQUIRE_BUILDER_WORKFLOW:+--require-builder-workflow} \
+		--output-json "$${OUTPUT_JSON:-$(CURDIR)/.run/appliance-release/profile-matrix-audit.json}"
+
+.PHONY: audit-final-profile-matrix
+audit-final-profile-matrix:
+	@if [ -z "$${CORE_RUN_DIR:-}" ] || [ -z "$${STORAGE_RUN_DIR:-}" ] || [ -z "$${BUILDER_RUN_DIR:-}" ]; then \
+		echo "audit-final-profile-matrix: set CORE_RUN_DIR=... STORAGE_RUN_DIR=... BUILDER_RUN_DIR=..." >&2; \
+		exit 2; \
+	fi
+	@plan_json="$${PLAN_JSON:-$(CURDIR)/.run/appliance-release/final-profile-matrix-plan.json}"; \
+	if [ ! -f "$${plan_json}" ]; then \
+		echo "audit-final-profile-matrix: missing final plan JSON: $${plan_json}" >&2; \
+		echo "audit-final-profile-matrix: run make plan-final-profile-matrix first" >&2; \
+		exit 2; \
+	fi; \
+	mkdir -p "$(CURDIR)/.run/appliance-release"; \
+	python3 "$(RELEASE_SKILL_SCRIPT_DIR)/audit-profile-matrix-reports.py" \
+		--core-run-dir "$${CORE_RUN_DIR}" \
+		--storage-run-dir "$${STORAGE_RUN_DIR}" \
+		--builder-run-dir "$${BUILDER_RUN_DIR}" \
+		--plan-json "$${plan_json}" \
+		--require-builder-workflow \
+		--output-json "$${OUTPUT_JSON:-$(CURDIR)/.run/appliance-release/final-profile-matrix-audit.json}"
+
+.PHONY: final-readiness-report
+final-readiness-report:
+	@mkdir -p "$(CURDIR)/.run/appliance-release"
+	python3 "$(RELEASE_SKILL_SCRIPT_DIR)/write-final-readiness-report.py" \
+		--local-milestone-json "$${LOCAL_MILESTONE_JSON:-$(VERIFY_MILESTONE_REPORT)}" \
+		--final-input-checklist-json "$${FINAL_INPUT_CHECKLIST_JSON:-$(FINAL_PROFILE_INPUT_CHECKLIST)}" \
+		--final-plan-json "$${FINAL_PLAN_JSON:-$(CURDIR)/.run/appliance-release/final-profile-matrix-plan.json}" \
+		--final-audit-json "$${FINAL_AUDIT_JSON:-$(CURDIR)/.run/appliance-release/final-profile-matrix-audit.json}" \
+		--output-json "$${OUTPUT_JSON:-$(FINAL_READINESS_REPORT)}" \
+		--output-md "$${OUTPUT_MD:-$(FINAL_READINESS_REPORT_MD)}"
+
+.PHONY: assert-final-readiness
+assert-final-readiness:
+	@$(MAKE) --no-print-directory final-readiness-report >/dev/null
+	python3 "$(RELEASE_SKILL_SCRIPT_DIR)/assert-final-readiness.py" \
+		--readiness-json "$${READINESS_JSON:-$(FINAL_READINESS_REPORT)}"
 
 .PHONY: assemble-bundle
 assemble-bundle:

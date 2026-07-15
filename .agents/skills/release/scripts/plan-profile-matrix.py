@@ -1,0 +1,730 @@
+#!/usr/bin/env python3
+"""Generate reproducible appliance profile-matrix release commands.
+
+This script plans the real-environment commands but never executes them.
+"""
+
+import argparse
+from datetime import datetime, timezone
+import json
+import re
+import shlex
+import sys
+from pathlib import PurePosixPath
+from pathlib import Path
+from typing import Any, Optional
+from urllib.parse import urlparse
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from config_query import load_config  # noqa: E402
+
+
+PROFILES = ("core", "storage", "builder")
+K8S_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+OCI_REPO_RE = re.compile(r"^[a-z0-9]+([._/-][a-z0-9]+)*$")
+MAKE_TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+FORBIDDEN_SOURCE_CREDENTIAL_FIELDS = {
+    "privateKey",
+    "private_key",
+    "sshPrivateKey",
+    "ssh_private_key",
+    "token",
+    "password",
+}
+FORBIDDEN_SECRET_MARKERS = (
+    "-----BEGIN OPENSSH PRIVATE KEY-----",
+    "-----BEGIN RSA PRIVATE KEY-----",
+    "-----BEGIN EC PRIVATE KEY-----",
+)
+
+
+def lookup(data: dict, path: str, default: Any = "") -> Any:
+    value: Any = data
+    for part in path.split("."):
+        if not isinstance(value, dict) or part not in value:
+            return default
+        value = value[part]
+    return value
+
+
+def as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
+def as_str(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def shell_join(parts: list[str]) -> str:
+    return " ".join(shlex.quote(part) for part in parts)
+
+
+def validate_builder_workflow(config: dict) -> list[str]:
+    errors: list[str] = []
+    workflow_prefix = "client_verification.builder.workflow"
+    if not as_bool(lookup(config, f"{workflow_prefix}.enabled", False)):
+        errors.append("client_verification.builder.workflow.enabled must be true for final builder workflow evidence")
+    for key in ("workspace_name", "work_profile", "repo", "source_ref", "target_name"):
+        if not as_str(lookup(config, f"{workflow_prefix}.{key}", "")):
+            errors.append(f"{workflow_prefix}.{key} is required for final builder workflow evidence")
+    source_ref = as_str(lookup(config, f"{workflow_prefix}.source_ref", ""))
+    if source_ref and (
+        len(source_ref) != 40 or not all(char in "0123456789abcdef" for char in source_ref)
+    ):
+        errors.append(f"{workflow_prefix}.source_ref must be a 40-character lowercase commit SHA")
+    for key in ("poll_attempts", "poll_delay_seconds"):
+        raw = lookup(config, f"{workflow_prefix}.{key}", "")
+        if raw == "":
+            continue
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            errors.append(f"{workflow_prefix}.{key} must be a positive integer")
+            continue
+        if value <= 0:
+            errors.append(f"{workflow_prefix}.{key} must be a positive integer")
+    return errors
+
+
+def file_error(config_path: Path, value: str, label: str) -> Optional[str]:
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = config_path.parent / path
+    if not path.is_file():
+        return f"{label} does not exist: {path}"
+    return None
+
+
+def resolve_config_relative_path(config_path: Path, value: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = config_path.parent / path
+    return path
+
+
+def resolved_config_path_str(config_path: Path, value: str) -> Optional[str]:
+    if not value:
+        return None
+    return str(resolve_config_relative_path(config_path, value).resolve())
+
+
+def parse_source_credential_scalar(raw: str) -> str:
+    raw = raw.strip()
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {"'", '"'}:
+        return raw[1:-1]
+    return raw
+
+
+def load_source_credential_manifest(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    stripped = text.lstrip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        data = json.loads(text)
+        if isinstance(data, list):
+            data = {"credentials": data}
+        return data
+
+    credentials: list[dict[str, str]] = []
+    current: Optional[dict[str, str]] = None
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        stripped_line = line.lstrip(" ")
+        if stripped_line == "credentials:":
+            continue
+        if stripped_line.startswith("- "):
+            if current is not None:
+                credentials.append(current)
+            current = {}
+            remainder = stripped_line[2:].strip()
+            if remainder:
+                if ":" not in remainder:
+                    raise ValueError("expected key: value after '-' in source credential manifest")
+                key, value = remainder.split(":", 1)
+                current[key.strip()] = parse_source_credential_scalar(value)
+            continue
+        if current is None:
+            continue
+        if ":" not in stripped_line:
+            raise ValueError("expected key: value in source credential manifest")
+        key, value = stripped_line.split(":", 1)
+        current[key.strip()] = parse_source_credential_scalar(value)
+    if current is not None:
+        credentials.append(current)
+    return {"credentials": credentials}
+
+
+def valid_kubernetes_name(name: str) -> bool:
+    if not name or len(name) > 253:
+        return False
+    return all(0 < len(part) <= 63 and K8S_NAME_RE.match(part) for part in name.split("."))
+
+
+def validate_source_credentials(config_path: Path, source_credentials: str) -> list[str]:
+    errors: list[str] = []
+    if not source_credentials:
+        return errors
+    path = resolve_config_relative_path(config_path, source_credentials)
+    if not path.is_file():
+        return errors
+    try:
+        data = load_source_credential_manifest(path)
+    except Exception as exc:
+        return [f"install.source_credentials_path could not be parsed: {exc}"]
+    credentials = data.get("credentials")
+    if not isinstance(credentials, list) or not credentials:
+        return ["install.source_credentials_path must contain a non-empty credentials list"]
+    for index, cred in enumerate(credentials):
+        prefix = f"install.source_credentials_path credentials[{index}]"
+        if not isinstance(cred, dict):
+            errors.append(f"{prefix} must be a mapping")
+            continue
+        for key, value in cred.items():
+            if key in FORBIDDEN_SOURCE_CREDENTIAL_FIELDS:
+                errors.append(f"{prefix}.{key} must not contain inline secret material; use privateKeyPath")
+            if isinstance(value, str) and any(marker in value for marker in FORBIDDEN_SECRET_MARKERS):
+                errors.append(f"{prefix}.{key} appears to contain inline private key material")
+        namespace = as_str(cred.get("namespace", "appliance-builds"))
+        secret_name = as_str(cred.get("secretName", ""))
+        private_key_path = as_str(cred.get("privateKeyPath", ""))
+        known_hosts_secret = as_str(cred.get("knownHostsSecretName", ""))
+        known_hosts_path = as_str(cred.get("knownHostsPath", ""))
+        if not namespace:
+            errors.append(f"{prefix}.namespace is required or must default to appliance-builds")
+        elif not valid_kubernetes_name(namespace):
+            errors.append(f"{prefix}.namespace is not a valid Kubernetes name: {namespace}")
+        if not secret_name:
+            errors.append(f"{prefix}.secretName is required")
+        elif not valid_kubernetes_name(secret_name):
+            errors.append(f"{prefix}.secretName is not a valid Kubernetes name: {secret_name}")
+        if not private_key_path:
+            errors.append(f"{prefix}.privateKeyPath is required")
+        elif not Path(private_key_path).is_absolute():
+            errors.append(f"{prefix}.privateKeyPath must be an absolute target-host path")
+        if bool(known_hosts_secret) != bool(known_hosts_path):
+            errors.append(f"{prefix}.knownHostsSecretName and knownHostsPath must be set together")
+        if known_hosts_secret and not valid_kubernetes_name(known_hosts_secret):
+            errors.append(f"{prefix}.knownHostsSecretName is not a valid Kubernetes name: {known_hosts_secret}")
+        if known_hosts_path and not Path(known_hosts_path).is_absolute():
+            errors.append(f"{prefix}.knownHostsPath must be an absolute target-host path")
+    return errors
+
+
+def source_credential_secret_names(config_path: Path, source_credentials: str) -> set[str]:
+    if not source_credentials:
+        return set()
+    path = resolve_config_relative_path(config_path, source_credentials)
+    if not path.is_file():
+        return set()
+    data = load_source_credential_manifest(path)
+    credentials = data.get("credentials")
+    if not isinstance(credentials, list):
+        return set()
+    names: set[str] = set()
+    for cred in credentials:
+        if not isinstance(cred, dict):
+            continue
+        for key in ("secretName", "knownHostsSecretName"):
+            value = as_str(cred.get(key, ""))
+            if value:
+                names.add(value)
+    return names
+
+
+def parse_simple_list_manifest(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    stripped = text.lstrip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        data = json.loads(text)
+        if not isinstance(data, dict):
+            raise ValueError("must contain a JSON object")
+        return data
+
+    data: dict[str, Any] = {}
+    current_key = ""
+    current_item: Optional[dict[str, str]] = None
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        stripped_line = line.lstrip(" ")
+        indent = len(line) - len(stripped_line)
+        if indent == 0:
+            if ":" not in stripped_line:
+                raise ValueError("expected top-level key: value")
+            if current_item is not None and current_key:
+                data.setdefault(current_key, []).append(current_item)
+                current_item = None
+            key, value = stripped_line.split(":", 1)
+            current_key = key.strip()
+            value = value.strip()
+            if value:
+                data[current_key] = parse_source_credential_scalar(value)
+            else:
+                data.setdefault(current_key, [])
+            continue
+        if not current_key:
+            continue
+        if stripped_line.startswith("- "):
+            remainder = stripped_line[2:].strip()
+            if current_item is not None and current_key:
+                pending_lists = current_item.setdefault("__pending_lists__", {})
+                if isinstance(pending_lists, dict):
+                    pending_key = as_str(pending_lists.get("key", ""))
+                    if pending_key and ":" not in remainder:
+                        current_item.setdefault(pending_key, []).append(parse_source_credential_scalar(remainder))
+                        continue
+            if current_item is not None:
+                current_item.pop("__pending_lists__", None)
+                data.setdefault(current_key, []).append(current_item)
+            current_item = {}
+            if remainder:
+                if ":" not in remainder:
+                    raise ValueError("expected key: value after '-'")
+                key, value = remainder.split(":", 1)
+                current_item[key.strip()] = parse_source_credential_scalar(value)
+            continue
+        if current_item is None:
+            continue
+        if ":" not in stripped_line:
+            raise ValueError("expected key: value in list entry")
+        key, value = stripped_line.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if value:
+            current_item[key] = parse_source_credential_scalar(value)
+            current_item.pop("__pending_lists__", None)
+        else:
+            current_item[key] = []
+            current_item["__pending_lists__"] = {"key": key}
+    if current_item is not None and current_key:
+        current_item.pop("__pending_lists__", None)
+        data.setdefault(current_key, []).append(current_item)
+    return data
+
+
+def object_items(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def item_names(items: list[dict[str, Any]]) -> set[str]:
+    return {as_str(item.get("name", "")) for item in items if as_str(item.get("name", ""))}
+
+
+def item_ids(items: list[dict[str, Any]]) -> set[str]:
+    return {as_str(item.get("id", "")) for item in items if as_str(item.get("id", ""))}
+
+
+def build_target_lookup_names(items: list[dict[str, Any]]) -> set[str]:
+    names = item_names(items)
+    for item in items:
+        aliases = item.get("aliases")
+        if isinstance(aliases, list):
+            names.update(as_str(alias) for alias in aliases if as_str(alias))
+    return names
+
+
+def parse_csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def git_url_host(raw: str) -> str:
+    raw = raw.strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    if parsed.hostname:
+        return parsed.hostname
+    if ":" in raw and "/" not in raw.split(":", 1)[0]:
+        before_colon = raw.split(":", 1)[0]
+        if "@" in before_colon:
+            return before_colon.split("@", 1)[1]
+    return ""
+
+
+def is_ssh_git_url(raw: str) -> bool:
+    raw = raw.strip()
+    if not raw:
+        return False
+    parsed = urlparse(raw)
+    if parsed.scheme == "ssh":
+        return True
+    return ":" in raw and "/" not in raw.split(":", 1)[0] and "@" in raw.split(":", 1)[0]
+
+
+def valid_repo_relative_path(raw: str) -> bool:
+    raw = raw.strip()
+    if not raw or raw.startswith("/") or "\\" in raw:
+        return False
+    clean = PurePosixPath(raw)
+    parts = clean.parts
+    return "." not in parts and ".." not in parts
+
+
+def validate_build_catalog(config_path: Path, config: dict, build_catalog: str, source_credentials: str) -> list[str]:
+    errors: list[str] = []
+    if not build_catalog:
+        return errors
+    path = resolve_config_relative_path(config_path, build_catalog)
+    if not path.is_file():
+        return errors
+    try:
+        catalog = parse_simple_list_manifest(path)
+    except Exception as exc:
+        return [f"install.build_catalog_path could not be parsed: {exc}"]
+
+    build_targets = object_items(catalog.get("buildTargets"))
+    work_profiles = object_items(catalog.get("workProfiles"))
+    repos = object_items(catalog.get("repos"))
+    catalog_credentials = object_items(catalog.get("sourceCredentials"))
+    profile_names = item_names(work_profiles)
+    repo_names = item_names(repos)
+    target_names = build_target_lookup_names(build_targets)
+    credential_ids = item_ids(catalog_credentials)
+    credentials_by_id = {as_str(item.get("id", "")): item for item in catalog_credentials if as_str(item.get("id", ""))}
+    if not build_targets:
+        errors.append("install.build_catalog_path must declare at least one buildTargets entry")
+    expected_extra_refs = set(parse_csv(as_str(lookup(config, "build_flow.extra_oci_image_refs", ""))))
+    for index, target in enumerate(build_targets):
+        prefix = f"install.build_catalog_path buildTargets[{index}]"
+        target_name = as_str(target.get("name", ""))
+        if not target_name:
+            errors.append(f"{prefix}.name is required")
+        image_ref = as_str(target.get("builderImageDigest", ""))
+        if not image_ref:
+            errors.append(f"{prefix}.builderImageDigest is required")
+            continue
+        if "@sha256:" not in image_ref:
+            errors.append(f"{prefix}.builderImageDigest must be digest-pinned")
+        if expected_extra_refs and image_ref not in expected_extra_refs:
+            errors.append(
+                f"{prefix}.builderImageDigest is not listed in build_flow.extra_oci_image_refs: {image_ref}"
+            )
+        target_profile = as_str(target.get("workProfile", ""))
+        if target_profile and profile_names and target_profile not in profile_names:
+            errors.append(f"{prefix}.workProfile references unknown workProfiles entry: {target_profile}")
+        target_repo = as_str(target.get("repo", ""))
+        if target_repo and repo_names and target_repo not in repo_names:
+            errors.append(f"{prefix}.repo references unknown repos entry: {target_repo}")
+        execution = as_str(target.get("execution", ""))
+        if execution not in {"repo_script", "make_target"}:
+            errors.append(f"{prefix}.execution must be repo_script or make_target")
+        script_path = as_str(target.get("scriptPath", ""))
+        if execution == "repo_script" and script_path and not valid_repo_relative_path(script_path):
+            errors.append(f"{prefix}.scriptPath must be a relative path inside the repo")
+        if execution == "make_target" and not as_str(target.get("makeTarget", "")):
+            errors.append(f"{prefix}.makeTarget is required when execution is make_target")
+        make_target = as_str(target.get("makeTarget", ""))
+        if execution == "make_target" and make_target and not MAKE_TARGET_RE.match(make_target):
+            errors.append(f"{prefix}.makeTarget contains unsupported characters: {make_target}")
+        containerfile_path = as_str(target.get("containerfilePath", ""))
+        if containerfile_path and not valid_repo_relative_path(containerfile_path):
+            errors.append(f"{prefix}.containerfilePath must be a relative path inside the repo")
+        image_repository = as_str(target.get("imageRepository", ""))
+        if not image_repository:
+            errors.append(f"{prefix}.imageRepository is required")
+        elif not OCI_REPO_RE.match(image_repository):
+            errors.append(f"{prefix}.imageRepository is invalid: {image_repository}")
+
+    provisioned_secrets = source_credential_secret_names(config_path, source_credentials)
+    if catalog_credentials and not source_credentials:
+        errors.append("install.source_credentials_path is required when build catalog declares sourceCredentials")
+    for index, credential in enumerate(catalog_credentials):
+        prefix = f"install.build_catalog_path sourceCredentials[{index}]"
+        for key in ("id", "gitHost", "kubernetesSecretName"):
+            if not as_str(credential.get(key, "")):
+                errors.append(f"{prefix}.{key} is required")
+        for key in ("kubernetesSecretName", "knownHostsSecretName"):
+            secret_name = as_str(credential.get(key, ""))
+            if secret_name and not valid_kubernetes_name(secret_name):
+                errors.append(f"{prefix}.{key} is not a valid Kubernetes name: {secret_name}")
+            if provisioned_secrets and secret_name and secret_name not in provisioned_secrets:
+                errors.append(
+                    f"{prefix}.{key} is not provisioned by install.source_credentials_path: {secret_name}"
+                )
+    for index, repo in enumerate(repos):
+        repo_prefix = f"install.build_catalog_path repos[{index}]"
+        repo_url = as_str(repo.get("url", ""))
+        if not repo_url:
+            errors.append(f"{repo_prefix}.url is required")
+        source_credential_ref = as_str(repo.get("sourceCredentialRef", ""))
+        if repo_url and is_ssh_git_url(repo_url) and not source_credential_ref:
+            errors.append(f"{repo_prefix}.sourceCredentialRef is required for SSH repo URLs")
+        if source_credential_ref and credential_ids and source_credential_ref not in credential_ids:
+            errors.append(
+                f"install.build_catalog_path repos[{index}].sourceCredentialRef references unknown sourceCredentials entry: {source_credential_ref}"
+            )
+        if source_credential_ref and source_credential_ref in credentials_by_id:
+            credential = credentials_by_id[source_credential_ref]
+            repo_host = git_url_host(repo_url)
+            credential_host = as_str(credential.get("gitHost", ""))
+            if repo_host and credential_host and repo_host.lower() != credential_host.lower():
+                errors.append(
+                    f"{repo_prefix}.url host {repo_host} does not match sourceCredentials {source_credential_ref} gitHost {credential_host}"
+                )
+            if is_ssh_git_url(repo_url) and not as_str(credential.get("knownHostsSecretName", "")):
+                errors.append(
+                    f"{repo_prefix}.sourceCredentialRef uses SSH but sourceCredentials {source_credential_ref} has no knownHostsSecretName"
+                )
+
+    if as_bool(lookup(config, "client_verification.builder.workflow.enabled", False)):
+        workflow_profile = as_str(lookup(config, "client_verification.builder.workflow.work_profile", ""))
+        workflow_repo = as_str(lookup(config, "client_verification.builder.workflow.repo", ""))
+        workflow_target = as_str(lookup(config, "client_verification.builder.workflow.target_name", ""))
+        if workflow_profile and profile_names and workflow_profile not in profile_names:
+            errors.append(
+                f"client_verification.builder.workflow.work_profile is not declared in build catalog workProfiles: {workflow_profile}"
+            )
+        if workflow_repo and repo_names and workflow_repo not in repo_names:
+            errors.append(
+                f"client_verification.builder.workflow.repo is not declared in build catalog repos: {workflow_repo}"
+            )
+        if workflow_target and target_names and workflow_target not in target_names:
+            errors.append(
+                f"client_verification.builder.workflow.target_name is not declared in build catalog buildTargets: {workflow_target}"
+            )
+    return errors
+
+
+def build_command(script_path: Path, config_path: Path, profile: str, release_version: str, build_catalog: str, source_credentials: str) -> list[str]:
+    args = ["bash", str(script_path), "--config", str(config_path), "--appliance-profile", profile, "--uninstall-first", "--final-ok"]
+    if release_version:
+        args.extend(["--release-version", release_version])
+    if profile != "core":
+        args.append("--skip-build")
+    if profile == "builder":
+        if build_catalog:
+            args.extend(["--build-catalog", build_catalog])
+        if source_credentials:
+            args.extend(["--source-credentials", source_credentials])
+    return args
+
+
+def build_audit_command(script_path: Path, plan_json: Optional[Path], require_builder_workflow: bool) -> list[str]:
+    args = [
+        "python3",
+        str(script_path),
+        "--core-run-dir",
+        "<core-run-dir>",
+        "--storage-run-dir",
+        "<storage-run-dir>",
+        "--builder-run-dir",
+        "<builder-run-dir>",
+    ]
+    if plan_json:
+        args.extend(["--plan-json", str(plan_json)])
+    if require_builder_workflow:
+        args.append("--require-builder-workflow")
+    args.extend(["--output-json", "<profile-matrix-audit.json>"])
+    return args
+
+
+def suggested_final_config_overlay() -> str:
+    release_repo = SCRIPT_DIR.parents[3]
+    catalog = release_repo / ".agents" / "skills" / "release" / "references" / "build-catalog.example.yaml"
+    credentials = release_repo / ".agents" / "skills" / "release" / "references" / "source-credentials.example.yaml"
+    return "\n".join(
+        [
+            "build_flow:",
+            "  # Must include every builder/task image referenced by install.build_catalog_path.",
+            "  # Keep refs digest-pinned and make the archive/ref lists line up by position.",
+            "  extra_oci_image_archive_sources: /abs/path/on/build-host/buildah.oci.tar",
+            "  extra_oci_image_refs: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "",
+            "install:",
+            "  appliance_profile: builder",
+            f"  build_catalog_path: {catalog}",
+            f"  source_credentials_path: {credentials}",
+            "",
+            "client_verification:",
+            "  builder:",
+            "    workflow:",
+            "      enabled: true",
+            "      workspace_name: release-smoke",
+            "      work_profile: builder",
+            "      repo: app",
+            "      # Immutable lowercase 40-character commit SHA from the repo being built.",
+            "      source_ref: 0123456789abcdef0123456789abcdef01234567",
+            "      target_name: app",
+            "      poll_attempts: 60",
+            "      poll_delay_seconds: 5",
+            "      expect_success: true",
+        ]
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Plan, but do not run, the final appliance profile matrix.")
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--release-version", default="")
+    parser.add_argument("--output-json")
+    parser.add_argument("--output-md")
+    parser.add_argument("--require-builder-workflow", action="store_true")
+    parser.add_argument("--document-title", default="Appliance Profile Matrix Plan")
+    parser.add_argument("--checklist-only", action="store_true")
+    args = parser.parse_args()
+
+    config_path = Path(args.config).expanduser().resolve()
+    config = load_config(config_path)
+    release_version = args.release_version or as_str(lookup(config, "release.version", ""))
+    build_catalog = as_str(lookup(config, "install.build_catalog_path", ""))
+    source_credentials = as_str(lookup(config, "install.source_credentials_path", ""))
+    script_path = SCRIPT_DIR / "run-release-flow.sh"
+    audit_script_path = SCRIPT_DIR / "audit-profile-matrix-reports.py"
+
+    validation_errors: list[str] = []
+    for value, label in ((build_catalog, "install.build_catalog_path"), (source_credentials, "install.source_credentials_path")):
+        error = file_error(config_path, value, label)
+        if error:
+            validation_errors.append(error)
+    validation_errors.extend(validate_build_catalog(config_path, config, build_catalog, source_credentials))
+    validation_errors.extend(validate_source_credentials(config_path, source_credentials))
+    if args.require_builder_workflow:
+        validation_errors.extend(validate_builder_workflow(config))
+        if not build_catalog:
+            validation_errors.append("install.build_catalog_path is required for final builder workflow evidence")
+        if not source_credentials:
+            validation_errors.append("install.source_credentials_path is required for final builder workflow evidence")
+
+    commands = []
+    for profile in PROFILES:
+        argv = build_command(script_path, config_path, profile, release_version, build_catalog, source_credentials)
+        commands.append(
+            {
+                "profile": profile,
+                "argv": argv,
+                "command": shell_join(argv),
+                "reusesPublishedBuild": profile != "core",
+            }
+        )
+    out_json = Path(args.output_json).expanduser().resolve() if args.output_json else None
+    audit_argv = build_audit_command(audit_script_path, out_json, args.require_builder_workflow)
+    audit_command = {
+        "argv": audit_argv,
+        "command": shell_join(audit_argv),
+        "requiresBuilderWorkflow": bool(args.require_builder_workflow),
+    }
+
+    if args.checklist_only:
+        notes = [
+            "This checklist does not execute commands and is not a live run plan.",
+            "Fill every validation error, then run make plan-final-profile-matrix.",
+            "Use final-profile-matrix-plan.md, not this checklist, for live profile-matrix commands.",
+        ]
+    else:
+        notes = [
+            "This planner does not execute commands.",
+            "Run commands sequentially against the real target; each command uses --uninstall-first for clean profile evidence.",
+            "The core command performs build/publish; storage and builder use --skip-build to reuse the same complete bundle.",
+            "Each real run writes metadata/release-report.json and release-report.md in its run directory.",
+            "After all three runs finish, replace the audit command placeholders with the real run directories and run it locally.",
+        ]
+    evidence_review_checklist = [
+        "Confirm each run's metadata/release-report.json has succeeded build/publish, install, target verification, and client verification steps.",
+        "Confirm each run's release-report.md has no failed or missing unskipped step.",
+        "For core and storage runs, confirm disabled builder REST/MCP evidence shows build routes/tools are absent.",
+        "For the builder run, confirm builder REST/MCP tool evidence is present.",
+        "For final builder workflow evidence, confirm the optional workflow smoke succeeded, produced a non-empty artifactRef, and returned no source credential or private-key markers in job, step, or log evidence.",
+    ]
+
+    plan = {
+        "checklistOnly": bool(args.checklist_only),
+        "configPath": str(config_path),
+        "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "releaseVersion": release_version or None,
+        "readyForFinalPlan": not bool(validation_errors),
+        "buildCatalogPath": resolved_config_path_str(config_path, build_catalog),
+        "sourceCredentialsPath": resolved_config_path_str(config_path, source_credentials),
+        "profiles": list(PROFILES),
+        "validationErrors": validation_errors,
+        "commands": [] if args.checklist_only else commands,
+        "auditCommand": None if args.checklist_only else audit_command,
+        "suggestedConfigOverlay": suggested_final_config_overlay() if args.checklist_only else None,
+        "notes": notes,
+        "evidenceReviewChecklist": evidence_review_checklist,
+    }
+
+    if out_json:
+        out_json.parent.mkdir(parents=True, exist_ok=True)
+        out_json.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    out_md = Path(args.output_md).expanduser().resolve() if args.output_md else None
+    if out_md:
+        lines = [f"# {args.document_title}", "", f"- Generated at: `{plan['generatedAt']}`", ""]
+        if args.checklist_only:
+            lines.extend(["## Status", ""])
+            if validation_errors:
+                lines.append("- Final inputs are not complete yet. Do not run the live profile matrix from this checklist.")
+            else:
+                lines.append("- Final inputs look complete. Generate the fail-closed final plan before running any live profile matrix command.")
+            lines.append("")
+        if validation_errors:
+            lines.extend(["## Validation Errors", ""])
+            lines.extend(f"- {error}" for error in validation_errors)
+            lines.append("")
+        if args.checklist_only:
+            lines.extend(
+                [
+                    "## Suggested Config Overlay",
+                    "",
+                    "Use this as a secret-free starting point, then replace every placeholder path, digest, repo, target, and commit SHA with real product values.",
+                    "",
+                    "```yaml",
+                    plan["suggestedConfigOverlay"] or "",
+                    "```",
+                    "",
+                ]
+            )
+        lines.extend(
+            [
+                "## Resolved Inputs",
+                "",
+                f"- Config: {config_path}",
+                f"- Release version: {release_version or '(from generated release metadata)'}",
+                f"- Build catalog: {resolved_config_path_str(config_path, build_catalog) or '(not configured)'}",
+                f"- Source credentials: {resolved_config_path_str(config_path, source_credentials) or '(not configured)'}",
+                "",
+            ]
+        )
+        lines.extend(["## Notes", ""])
+        lines.extend(f"- {note}" for note in notes)
+        lines.append("")
+        if args.checklist_only:
+            lines.extend(
+                [
+                    "## Next Command",
+                    "",
+                    "```bash",
+                    "make plan-final-profile-matrix CONFIG=/abs/path/to/appliance-release.config.yaml",
+                    "```",
+                ]
+            )
+        else:
+            lines.extend(["## Commands", ""])
+            for command in commands:
+                lines.extend([f"### {command['profile']}", "", "```bash", command["command"], "```", ""])
+            lines.extend(["## Post-Run Audit Command", "", "```bash", audit_command["command"], "```", ""])
+            lines.extend(["## Evidence Review Checklist", ""])
+            lines.extend(f"- {item}" for item in evidence_review_checklist)
+        lines.append("")
+        out_md.parent.mkdir(parents=True, exist_ok=True)
+        out_md.write_text("\n".join(lines), encoding="utf-8")
+    print(json.dumps(plan, indent=2, sort_keys=True))
+    return 1 if validation_errors else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

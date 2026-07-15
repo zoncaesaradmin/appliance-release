@@ -51,6 +51,8 @@ Optional overrides:
   ARGO_VERSION=v3.5.10                        # pin a different Argo version than the chart's appVersion
   ARGO_CONTROLLER_IMAGE_REF=quay.io/argoproj/workflow-controller:v3.5.10
   ARGO_EXECUTOR_IMAGE_REF=quay.io/argoproj/argoexec:v3.5.10
+  EXTRA_OCI_IMAGE_ARCHIVE_SOURCES=/ci/inputs/buildah.tar,/ci/inputs/tooling.tar
+  EXTRA_OCI_IMAGE_REFS=registry.local/buildah@sha256:...,registry.local/tooling@sha256:...
 EOF
 }
 
@@ -84,6 +86,8 @@ USER_ARGO_CONTROLLER_IMAGE_REF="${ARGO_CONTROLLER_IMAGE_REF-}"
 USER_ARGO_EXECUTOR_IMAGE_REF="${ARGO_EXECUTOR_IMAGE_REF-}"
 USER_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE-}"
 USER_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE-}"
+USER_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES-}"
+USER_EXTRA_OCI_IMAGE_REFS="${EXTRA_OCI_IMAGE_REFS-}"
 
 set -a
 # shellcheck disable=SC1090
@@ -111,6 +115,8 @@ ARGO_CONTROLLER_IMAGE_REF="${USER_ARGO_CONTROLLER_IMAGE_REF:-${ARGO_CONTROLLER_I
 ARGO_EXECUTOR_IMAGE_REF="${USER_ARGO_EXECUTOR_IMAGE_REF:-${ARGO_EXECUTOR_IMAGE_REF:-}}"
 ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="${USER_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE:-${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE:-}}"
 ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="${USER_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE:-${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE:-}}"
+EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="${USER_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES:-${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES:-}}"
+EXTRA_OCI_IMAGE_REFS="${USER_EXTRA_OCI_IMAGE_REFS:-${EXTRA_OCI_IMAGE_REFS:-}}"
 
 # Argo Workflows is a mandatory component of the complete v1 appliance
 # (ADR 0011 in appliance-code), so it is on by default. ARGO_VERSION and
@@ -174,6 +180,25 @@ require_file() {
     echo "build-full-bundle: missing ${label}: ${path}" >&2
     exit 1
   fi
+}
+
+split_csv() {
+  local input="$1"
+  local -n out_ref="$2"
+  local item
+
+  out_ref=()
+  if [[ -z "${input}" ]]; then
+    return 0
+  fi
+
+  IFS=',' read -r -a out_ref <<<"${input}"
+  for idx in "${!out_ref[@]}"; do
+    item="${out_ref[idx]}"
+    item="${item#"${item%%[![:space:]]*}"}"
+    item="${item%"${item##*[![:space:]]}"}"
+    out_ref[idx]="${item}"
+  done
 }
 
 stage_file() {
@@ -453,6 +478,22 @@ if [[ -n "${ARGO_CRDS_DIR_SOURCE}" && ! -d "${ARGO_CRDS_DIR_SOURCE}" ]]; then
   exit 1
 fi
 
+EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST=()
+EXTRA_OCI_IMAGE_REF_LIST=()
+split_csv "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES}" EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST
+split_csv "${EXTRA_OCI_IMAGE_REFS}" EXTRA_OCI_IMAGE_REF_LIST
+if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -ne ${#EXTRA_OCI_IMAGE_REF_LIST[@]} ]]; then
+  echo "build-full-bundle: EXTRA_OCI_IMAGE_ARCHIVE_SOURCES and EXTRA_OCI_IMAGE_REFS must have the same comma-separated length" >&2
+  exit 2
+fi
+for idx in "${!EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]}"; do
+  if [[ -z "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[idx]}" || -z "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" ]]; then
+    echo "build-full-bundle: extra OCI image archive sources and refs must not contain empty entries" >&2
+    exit 2
+  fi
+  require_file "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[idx]}" "extra OCI image archive"
+done
+
 rm -rf "${ARTIFACTS_DIR}" "${WORKSPACE}"
 if is_within_dir "${EXPORT_DIR}" "${WORK_ROOT}"; then
   rm -rf "${EXPORT_DIR}"
@@ -484,6 +525,7 @@ mkdir -p "${CODE_REPO_DIR}/.run"
 ARGO_CRDS_DIR_FOR_DEV=""
 ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
 ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
+EXTRA_OCI_IMAGE_ARCHIVES_FOR_DEV=()
 
 if bool_true "${ARGO_ENABLED}"; then
   if [[ -n "${ARGO_CRDS_DIR_SOURCE}" ]]; then
@@ -513,6 +555,20 @@ if bool_true "${ARGO_ENABLED}"; then
   fi
 fi
 
+if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -gt 0 ]]; then
+  mkdir -p "${CODE_REPO_DIR}/.run/extra-oci-images"
+  for idx in "${!EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]}"; do
+    dest="${CODE_REPO_DIR}/.run/extra-oci-images/extra-oci-image-${idx}.tar"
+    cp "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[idx]}" "${dest}"
+    EXTRA_OCI_IMAGE_ARCHIVES_FOR_DEV+=("/workspace/.run/extra-oci-images/extra-oci-image-${idx}.tar")
+  done
+fi
+
+EXTRA_OCI_ARG_LINES=""
+for idx in "${!EXTRA_OCI_IMAGE_ARCHIVES_FOR_DEV[@]}"; do
+  EXTRA_OCI_ARG_LINES+="  EXTRA_OCI_ARGS+=(--extra-oci-image $(shell_quote "${EXTRA_OCI_IMAGE_ARCHIVES_FOR_DEV[idx]}") --extra-oci-image-reference $(shell_quote "${EXTRA_OCI_IMAGE_REF_LIST[idx]}"))"$'\n'
+done
+
 cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -520,6 +576,7 @@ cd /workspace
 CONTROL_PLANE_IMAGE_OUT="/workspace/.run/control-plane-image.tar"
 UI_IMAGE_OUT="/workspace/.run/appliance-ui-image.tar"
 ARGO_ARGS=()
+EXTRA_OCI_ARGS=()
 CODE_VERSION="\${CODE_VERSION:-\$(git describe --tags --always --dirty 2>/dev/null | sed 's/[^A-Za-z0-9_.-]/-/g')}"
 
 bool_true() {
@@ -547,6 +604,8 @@ if bool_true $(shell_quote "${ARGO_ENABLED}"); then
   ARGO_ARGS+=(--argo-executor-image-reference $(shell_quote "${ARGO_EXECUTOR_IMAGE_REF}"))
 fi
 
+${EXTRA_OCI_ARG_LINES}
+
 bash ./scripts/package/archive-release-input.sh \
   --out-file "/workspace/.run/release-input-${PRODUCT_VERSION}.tar.gz" \
   --code-version "\${CODE_VERSION}" \
@@ -555,7 +614,8 @@ bash ./scripts/package/archive-release-input.sh \
   --ui-image "\${UI_IMAGE_OUT}" \
   --ui-image-reference "localhost/appliance-ui:\${CODE_VERSION}" \
   --k3s-version $(shell_quote "${K3S_VERSION}") \
-  "\${ARGO_ARGS[@]}"
+  "\${ARGO_ARGS[@]}" \
+  "\${EXTRA_OCI_ARGS[@]}"
 EOF
 chmod +x "${CODE_DEV_SCRIPT_PATH}"
 

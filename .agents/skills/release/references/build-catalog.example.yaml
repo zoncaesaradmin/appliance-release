@@ -1,0 +1,34 @@
+# Example builder-profile build catalog for final release workflow smoke.
+#
+# This is product configuration, not a release artifact split. Replace the Git
+# host, repo URL, builder image digest, and output image repository for the real
+# product environment before using it.
+#
+# Do not put private keys, tokens, or passwords in this file. Git SSH access is
+# represented only by sourceCredentialRef, which resolves to Kubernetes Secret
+# names provisioned from source-credentials.example.yaml.
+workProfiles:
+  - name: builder
+    description: Default developer workflow profile for appliance builder smoke.
+
+sourceCredentials:
+  - id: git-main
+    gitHost: git.internal.example.com
+    kubernetesSecretName: git-main-deploy-key
+    knownHostsSecretName: git-main-known-hosts
+
+repos:
+  - name: app
+    url: git@git.internal.example.com:team/app.git
+    sourceCredentialRef: git-main
+
+buildTargets:
+  - name: app
+    aliases:
+      - default
+    workProfile: builder
+    repo: app
+    execution: repo_script
+    scriptPath: scripts/build-image.sh
+    imageRepository: users/alice/app
+    builderImageDigest: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

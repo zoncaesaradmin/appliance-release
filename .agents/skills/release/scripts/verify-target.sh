@@ -22,6 +22,12 @@ Options:
   --app-version-cmd CMD          Override verification.app_version_command.
   --smoke-test-cmd CMD           Override verification.smoke_test_command.
   --ui-home-cmd CMD              Override verification.ui_home_command.
+  --appliance-profile NAME       Effective installed appliance profile.
+  --source-credentials PATH      Source credential manifest used for builder
+                                 Secret readiness checks.
+  --builder-api-cmd CMD          Override verification.builder.api_command.
+  --builder-source-credentials-cmd CMD
+                                 Override verification.builder.source_credentials_command.
   --failure-log-cmd CMD          Override verification.failure_log_command.
   --argo-namespaces-cmd CMD      Override verification.argo.namespaces_command.
   --argo-crds-cmd CMD            Override verification.argo.crds_command.
@@ -38,6 +44,10 @@ SERVICE_HEALTH_CMD=""
 APP_VERSION_CMD=""
 SMOKE_TEST_CMD=""
 UI_HOME_CMD=""
+APPLIANCE_PROFILE=""
+SOURCE_CREDENTIALS_PATH=""
+BUILDER_API_CMD=""
+BUILDER_SOURCE_CREDENTIALS_CMD=""
 FAILURE_LOG_CMD=""
 ARGO_NAMESPACES_CMD=""
 ARGO_CRDS_CMD=""
@@ -72,6 +82,22 @@ while [[ $# -gt 0 ]]; do
       ;;
     --ui-home-cmd)
       UI_HOME_CMD="${2:-}"
+      shift 2
+      ;;
+    --appliance-profile)
+      APPLIANCE_PROFILE="${2:-}"
+      shift 2
+      ;;
+    --source-credentials)
+      SOURCE_CREDENTIALS_PATH="${2:-}"
+      shift 2
+      ;;
+    --builder-api-cmd)
+      BUILDER_API_CMD="${2:-}"
+      shift 2
+      ;;
+    --builder-source-credentials-cmd)
+      BUILDER_SOURCE_CREDENTIALS_CMD="${2:-}"
       shift 2
       ;;
     --failure-log-cmd)
@@ -123,6 +149,9 @@ SERVICE_HEALTH_CMD="${SERVICE_HEALTH_CMD:-$(config_get_optional "${CONFIG_PATH}"
 APP_VERSION_CMD="${APP_VERSION_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.app_version_command" || true)}"
 SMOKE_TEST_CMD="${SMOKE_TEST_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_command" || true)}"
 UI_HOME_CMD="${UI_HOME_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.ui_home_command" || true)}"
+BUILDER_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.builder.enabled" || true)"
+BUILDER_API_CMD="${BUILDER_API_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.builder.api_command" || true)}"
+BUILDER_SOURCE_CREDENTIALS_CMD="${BUILDER_SOURCE_CREDENTIALS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.builder.source_credentials_command" || true)}"
 FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.failure_log_command" || true)}"
 SMOKE_TEST_RETRIES="${SMOKE_TEST_RETRIES:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_retries" || true)}"
 SMOKE_TEST_RETRY_DELAY_SECONDS="${SMOKE_TEST_RETRY_DELAY_SECONDS:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_retry_delay_seconds" || true)}"
@@ -133,6 +162,12 @@ ARGO_CONTROLLER_CMD="${ARGO_CONTROLLER_CMD:-$(config_get_optional "${CONFIG_PATH
 ALLOW_INGRESS_WARNING="$(config_get_optional "${CONFIG_PATH}" "verification.allow_ingress_warning" || true)"
 ALLOW_VERIFY_SCHEMA_BUG="$(config_get_optional "${CONFIG_PATH}" "verification.allow_verify_schema_bug" || true)"
 CLIENT_BASE_URL="$(config_get_optional "${CONFIG_PATH}" "client_verification.base_url" || true)"
+if [[ -z "${APPLIANCE_PROFILE}" ]]; then
+  APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
+fi
+if [[ -z "${SOURCE_CREDENTIALS_PATH}" ]]; then
+  SOURCE_CREDENTIALS_PATH="$(config_get_optional "${CONFIG_PATH}" "install.source_credentials_path" || true)"
+fi
 
 STATUS_CMD="${STATUS_CMD:-sudo zonctl status --output json}"
 VERIFY_CMD="${VERIFY_CMD:-sudo zonctl verify --output json}"
@@ -141,6 +176,13 @@ APP_VERSION_CMD="${APP_VERSION_CMD:-sudo zonctl status --output json}"
 FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-sudo zonctl support-bundle --output json}"
 if [[ -z "${ARGO_ENABLED}" ]]; then
   ARGO_ENABLED="false"
+fi
+if [[ -z "${BUILDER_ENABLED}" ]]; then
+  if [[ "${APPLIANCE_PROFILE}" == "builder" ]]; then
+    BUILDER_ENABLED="true"
+  else
+    BUILDER_ENABLED="false"
+  fi
 fi
 if [[ -z "${SMOKE_TEST_RETRIES}" ]]; then
   SMOKE_TEST_RETRIES="5"
@@ -166,6 +208,9 @@ if [[ -n "${CLIENT_BASE_URL}" ]]; then
   fi
   if [[ -z "${UI_HOME_CMD}" ]]; then
     UI_HOME_CMD="body=\$(curl -kfsS $(shell_quote "${CLIENT_BASE_URL}/")) && printf '%s' \"\$body\" | grep -Eiq '<!doctype html|<html' && printf '%s' \"\$body\" | grep -Eiq 'Zon Appliance|Sign in to continue|Appliance status|Create first administrator'"
+  fi
+  if bool_true "${BUILDER_ENABLED}" && [[ -z "${BUILDER_API_CMD}" ]]; then
+    BUILDER_API_CMD="code=\$(curl -ksS -o /dev/null -w '%{http_code}' $(shell_quote "${CLIENT_BASE_URL}/api/v1/work-profiles")) && [ \"\$code\" != \"404\" ]"
   fi
 fi
 
@@ -235,12 +280,113 @@ if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_CONTROLLER_CMD}" == "sudo kubectl -n wor
   ARGO_CONTROLLER_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n workflows get deploy,pods"
 fi
 
+build_source_credentials_command() {
+  local manifest_path="$1"
+  local kubectl_cmd="kubectl"
+  if [[ -n "${BUNDLE_BIN_DIR}" ]]; then
+    kubectl_cmd="env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl"
+  fi
+  python3 - "${manifest_path}" "${kubectl_cmd}" <<'PY'
+import json
+import shlex
+import sys
+from pathlib import Path
+
+manifest_path = Path(sys.argv[1])
+kubectl_cmd = sys.argv[2]
+
+def parse_scalar(raw: str) -> str:
+    raw = raw.strip()
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {"'", '"'}:
+        return raw[1:-1]
+    return raw
+
+def load_manifest(path: Path):
+    text = path.read_text(encoding="utf-8")
+    stripped = text.lstrip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        return json.loads(text)
+
+    credentials = []
+    current = None
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        stripped_line = line.lstrip(" ")
+        if stripped_line == "credentials:":
+            continue
+        if stripped_line.startswith("- "):
+            if current is not None:
+                credentials.append(current)
+            current = {}
+            remainder = stripped_line[2:].strip()
+            if remainder:
+                if ":" not in remainder:
+                    raise ValueError("expected key: value after '-' in source credential manifest")
+                key, value = remainder.split(":", 1)
+                current[key.strip()] = parse_scalar(value)
+            continue
+        if current is None:
+            continue
+        if ":" not in stripped_line:
+            raise ValueError("expected key: value in source credential manifest")
+        key, value = stripped_line.split(":", 1)
+        current[key.strip()] = parse_scalar(value)
+    if current is not None:
+        credentials.append(current)
+    return {"credentials": credentials}
+
+data = load_manifest(manifest_path)
+credentials = data.get("credentials")
+if not isinstance(credentials, list) or not credentials:
+    raise SystemExit("source credential manifest must contain credentials")
+
+checks = []
+seen = set()
+def add_secret_key_check(namespace: str, secret_name: str, data_key: str):
+    key = (namespace, secret_name, data_key)
+    if key in seen:
+        return
+    seen.add(key)
+    template = '{{ index .data "%s" }}' % data_key
+    lookup = (
+        f"{kubectl_cmd} -n {shlex.quote(namespace)} get secret "
+        f"{shlex.quote(secret_name)} -o {shlex.quote('go-template=' + template)}"
+    )
+    checks.append(f"test -n \"$({lookup})\"")
+
+for index, cred in enumerate(credentials):
+    if not isinstance(cred, dict):
+        raise SystemExit(f"credential entry {index} must be a mapping")
+    namespace = str(cred.get("namespace") or "appliance-builds").strip()
+    secret_name = str(cred.get("secretName") or "").strip()
+    known_hosts_secret = str(cred.get("knownHostsSecretName") or "").strip()
+    if not namespace or not secret_name:
+        raise SystemExit(f"credential entry {index} requires namespace and secretName")
+    add_secret_key_check(namespace, secret_name, "ssh-privatekey")
+    if known_hosts_secret:
+        add_secret_key_check(namespace, known_hosts_secret, "known_hosts")
+
+if not checks:
+    raise SystemExit("source credential manifest did not declare any Secret data checks")
+print("sudo bash -lc " + shlex.quote(" && ".join(checks)))
+PY
+}
+
+if bool_true "${BUILDER_ENABLED}" && [[ -z "${BUILDER_SOURCE_CREDENTIALS_CMD}" && -n "${SOURCE_CREDENTIALS_PATH}" ]]; then
+  ensure_file "${SOURCE_CREDENTIALS_PATH}"
+  BUILDER_SOURCE_CREDENTIALS_CMD="$(build_source_credentials_command "${SOURCE_CREDENTIALS_PATH}")"
+fi
+
 status_code="0"
 verify_code="0"
 service_health_code="0"
 app_version_code="0"
 smoke_test_code=""
 ui_home_code=""
+builder_api_code=""
+builder_source_credentials_code=""
 failure_log_code=""
 argo_namespaces_code=""
 argo_crds_code=""
@@ -447,6 +593,22 @@ if [[ -n "${UI_HOME_CMD}" ]]; then
   fi
 fi
 
+if bool_true "${BUILDER_ENABLED}" && [[ -n "${BUILDER_API_CMD}" ]]; then
+  if run_check "builder-api" "${BUILDER_API_CMD}"; then
+    builder_api_code="0"
+  else
+    builder_api_code="$?"
+  fi
+fi
+
+if bool_true "${BUILDER_ENABLED}" && [[ -n "${BUILDER_SOURCE_CREDENTIALS_CMD}" ]]; then
+  if run_check "builder-source-credentials" "${BUILDER_SOURCE_CREDENTIALS_CMD}"; then
+    builder_source_credentials_code="0"
+  else
+    builder_source_credentials_code="$?"
+  fi
+fi
+
 if bool_true "${ARGO_ENABLED}"; then
   if run_check "argo-namespaces" "${ARGO_NAMESPACES_CMD}"; then
     argo_namespaces_code="0"
@@ -477,13 +639,19 @@ fi
 if [[ -n "${ui_home_code}" && "${ui_home_code}" != "0" ]]; then
   overall_failed="true"
 fi
+if [[ -n "${builder_api_code}" && "${builder_api_code}" != "0" ]]; then
+  overall_failed="true"
+fi
+if [[ -n "${builder_source_credentials_code}" && "${builder_source_credentials_code}" != "0" ]]; then
+  overall_failed="true"
+fi
 for code in "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}"; do
   if [[ -n "${code}" && "${code}" != "0" ]]; then
     overall_failed="true"
   fi
 done
 
-final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${UI_HOME_CMD}" "${FAILURE_LOG_CMD}" "${ARGO_ENABLED}" "${ARGO_NAMESPACES_CMD}" "${ARGO_CRDS_CMD}" "${ARGO_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${ui_home_code}" "${failure_log_code}" "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
+final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${UI_HOME_CMD}" "${BUILDER_ENABLED}" "${BUILDER_API_CMD}" "${BUILDER_SOURCE_CREDENTIALS_CMD}" "${FAILURE_LOG_CMD}" "${ARGO_ENABLED}" "${ARGO_NAMESPACES_CMD}" "${ARGO_CRDS_CMD}" "${ARGO_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${ui_home_code}" "${builder_api_code}" "${builder_source_credentials_code}" "${failure_log_code}" "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -498,6 +666,9 @@ import sys
     app_version_cmd,
     smoke_test_cmd,
     ui_home_cmd,
+    builder_enabled,
+    builder_api_cmd,
+    builder_source_credentials_cmd,
     failure_log_cmd,
     argo_enabled,
     argo_namespaces_cmd,
@@ -509,6 +680,8 @@ import sys
     app_version_code,
     smoke_test_code,
     ui_home_code,
+    builder_api_code,
+    builder_source_credentials_code,
     failure_log_code,
     argo_namespaces_code,
     argo_crds_code,
@@ -517,7 +690,7 @@ import sys
     run_dir,
     allow_ingress_warning,
     allow_verify_schema_bug,
-) = sys.argv[1:29]
+) = sys.argv[1:34]
 
 run_dir_path = Path(run_dir)
 warnings = []
@@ -589,6 +762,10 @@ if int(service_health_code) != 0 or int(app_version_code) != 0:
     final_failed = True
 if smoke_test_code and int(smoke_test_code) != 0:
     final_failed = True
+if builder_enabled == "true" and builder_api_cmd and builder_api_code and int(builder_api_code) != 0:
+    final_failed = True
+if builder_enabled == "true" and builder_source_credentials_cmd and builder_source_credentials_code and int(builder_source_credentials_code) != 0:
+    final_failed = True
 if argo_enabled == "true":
     for code in (argo_namespaces_code, argo_crds_code, argo_controller_code):
         if code and int(code) != 0:
@@ -641,6 +818,21 @@ if ui_home_cmd:
         "log": str(run_dir_path / "logs" / "ui-home.log"),
     }
 
+if builder_enabled == "true":
+    payload["checks"]["builder"] = {
+        "api": {
+            "command": builder_api_cmd,
+            "exitCode": int(builder_api_code or 0),
+            "log": str(run_dir_path / "logs" / "builder-api.log"),
+        },
+    }
+    if builder_source_credentials_cmd:
+        payload["checks"]["builder"]["sourceCredentials"] = {
+            "command": builder_source_credentials_cmd,
+            "exitCode": int(builder_source_credentials_code or 0),
+            "log": str(run_dir_path / "logs" / "builder-source-credentials.log"),
+        }
+
 if argo_enabled == "true":
     payload["checks"]["argo"] = {
         "namespaces": {
@@ -684,39 +876,17 @@ if bool_true "${final_failed}" && [[ -n "${FAILURE_LOG_CMD}" ]]; then
     log "failure log collection failed; log: ${failure_log_log}"
   fi
 
-  final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${FAILURE_LOG_CMD}" "${ARGO_ENABLED}" "${ARGO_NAMESPACES_CMD}" "${ARGO_CRDS_CMD}" "${ARGO_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${failure_log_code}" "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
+  final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${FAILURE_LOG_CMD}" "${failure_log_code}" "${RUN_DIR}" <<'PY'
 import json
 from pathlib import Path
 import sys
 
 (
     out_path,
-    config_path,
-    target_host,
-    status_cmd,
-    verify_cmd,
-    service_health_cmd,
-    app_version_cmd,
-    smoke_test_cmd,
     failure_log_cmd,
-    argo_enabled,
-    argo_namespaces_cmd,
-    argo_crds_cmd,
-    argo_controller_cmd,
-    status_code,
-    verify_code,
-    service_health_code,
-    app_version_code,
-    smoke_test_code,
     failure_log_code,
-    argo_namespaces_code,
-    argo_crds_code,
-    argo_controller_code,
-    overall_failed,
     run_dir,
-    allow_ingress_warning,
-    allow_verify_schema_bug,
-) = sys.argv[1:27]
+) = sys.argv[1:5]
 
 run_dir_path = Path(run_dir)
 payload = json.loads(Path(out_path).read_text(encoding="utf-8"))

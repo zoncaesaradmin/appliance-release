@@ -17,33 +17,22 @@ Options:
                              APPLIANCE_RELEASE_CONFIG is set or a local
                              appliance-release.config.yaml exists.
   --release-version VERSION  Release version to install. Defaults to release.version.
-  --base-url URL             Override artifact_registry.base_url.
-  --path-prefix PATH         Override artifact_registry.release_path_prefix. Default: appliance.
-  --state-dir DIR            Override target_host.state_dir.
-  --node-name NAME           Optional zonctl node name override.
-  --out-dir DIR              Override the target-host download/extract directory.
-  --bootstrap-admin-username NAME
-                             Override install.bootstrap_admin_username.
   --appliance-profile NAME   Override install.appliance_profile.
-  --output FORMAT            zonctl output format. Default: text.
+  --build-catalog PATH       Local build catalog JSON/YAML passed to zonctl.
+  --source-credentials PATH  Local source credential manifest passed to zonctl.
+                             The manifest may reference target-local key paths;
+                             private keys are not copied by this helper.
   --uninstall-first          Uninstall the previous appliance first.
-  --use-latest               Install from the latest alias instead of a versioned path.
   --run-dir DIR              Local run directory.
 EOF
 }
 
 CONFIG_PATH=""
 RELEASE_VERSION=""
-BASE_URL=""
-PATH_PREFIX=""
-STATE_DIR=""
-NODE_NAME=""
-OUT_DIR=""
-BOOTSTRAP_ADMIN_USERNAME=""
 APPLIANCE_PROFILE=""
-OUTPUT_FORMAT="text"
+BUILD_CATALOG_PATH=""
+SOURCE_CREDENTIALS_PATH=""
 UNINSTALL_FIRST=""
-USE_LATEST="false"
 RUN_DIR=""
 
 while [[ $# -gt 0 ]]; do
@@ -56,44 +45,20 @@ while [[ $# -gt 0 ]]; do
       RELEASE_VERSION="${2:-}"
       shift 2
       ;;
-    --base-url)
-      BASE_URL="${2:-}"
-      shift 2
-      ;;
-    --path-prefix)
-      PATH_PREFIX="${2:-}"
-      shift 2
-      ;;
-    --state-dir)
-      STATE_DIR="${2:-}"
-      shift 2
-      ;;
-    --node-name)
-      NODE_NAME="${2:-}"
-      shift 2
-      ;;
-    --out-dir)
-      OUT_DIR="${2:-}"
-      shift 2
-      ;;
-    --bootstrap-admin-username)
-      BOOTSTRAP_ADMIN_USERNAME="${2:-}"
-      shift 2
-      ;;
     --appliance-profile)
       APPLIANCE_PROFILE="${2:-}"
       shift 2
       ;;
-    --output)
-      OUTPUT_FORMAT="${2:-}"
+    --build-catalog)
+      BUILD_CATALOG_PATH="${2:-}"
+      shift 2
+      ;;
+    --source-credentials)
+      SOURCE_CREDENTIALS_PATH="${2:-}"
       shift 2
       ;;
     --uninstall-first)
       UNINSTALL_FIRST="true"
-      shift 1
-      ;;
-    --use-latest)
-      USE_LATEST="true"
       shift 1
       ;;
     --run-dir)
@@ -120,21 +85,13 @@ fi
 if [[ -z "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
 fi
-if [[ -z "${BASE_URL}" ]]; then
-  BASE_URL="$(config_get "${CONFIG_PATH}" "artifact_registry.base_url")"
-fi
-if [[ -z "${PATH_PREFIX}" ]]; then
-  PATH_PREFIX="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.release_path_prefix" || true)"
-fi
+BASE_URL="$(config_get "${CONFIG_PATH}" "artifact_registry.base_url")"
+PATH_PREFIX="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.release_path_prefix" || true)"
 if [[ -z "${PATH_PREFIX}" ]]; then
   PATH_PREFIX="appliance"
 fi
-if [[ -z "${STATE_DIR}" ]]; then
-  STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || true)"
-fi
-if [[ -z "${BOOTSTRAP_ADMIN_USERNAME}" ]]; then
-  BOOTSTRAP_ADMIN_USERNAME="$(config_get_optional "${CONFIG_PATH}" "install.bootstrap_admin_username" || true)"
-fi
+STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || true)"
+BOOTSTRAP_ADMIN_USERNAME="$(config_get_optional "${CONFIG_PATH}" "install.bootstrap_admin_username" || true)"
 if [[ -z "${BOOTSTRAP_ADMIN_USERNAME}" ]]; then
   BOOTSTRAP_ADMIN_USERNAME="$(config_get_optional "${CONFIG_PATH}" "client_verification.username" || true)"
 fi
@@ -147,16 +104,27 @@ fi
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="core"
 fi
+if [[ -z "${BUILD_CATALOG_PATH}" ]]; then
+  BUILD_CATALOG_PATH="$(config_get_optional "${CONFIG_PATH}" "install.build_catalog_path" || true)"
+fi
+if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
+  ensure_file "${BUILD_CATALOG_PATH}"
+fi
+if [[ -z "${SOURCE_CREDENTIALS_PATH}" ]]; then
+  SOURCE_CREDENTIALS_PATH="$(config_get_optional "${CONFIG_PATH}" "install.source_credentials_path" || true)"
+fi
+if [[ -n "${SOURCE_CREDENTIALS_PATH}" ]]; then
+  ensure_file "${SOURCE_CREDENTIALS_PATH}"
+fi
 if [[ -z "${UNINSTALL_FIRST}" ]]; then
   UNINSTALL_FIRST="$(config_get_optional "${CONFIG_PATH}" "install.uninstall_first" || true)"
 fi
-if [[ -z "${OUT_DIR}" ]]; then
-  if [[ -n "${RELEASE_VERSION}" ]]; then
-    OUT_DIR="/tmp/appliance-${RELEASE_VERSION}"
-  else
-    OUT_DIR="/tmp/appliance-release"
-  fi
+if [[ -n "${RELEASE_VERSION}" ]]; then
+  OUT_DIR="/tmp/appliance-${RELEASE_VERSION}"
+else
+  OUT_DIR="/tmp/appliance-release"
 fi
+OUTPUT_FORMAT="text"
 
 TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
 ensure_dir "${RUN_DIR}"
@@ -164,21 +132,40 @@ ensure_dir "${RUN_DIR}/logs"
 ensure_dir "${RUN_DIR}/metadata"
 
 [[ -n "${RELEASE_VERSION}" ]] || fail "--release-version is required for automated install"
-if bool_true "${USE_LATEST}"; then
-  helper_url="${BASE_URL}/${PATH_PREFIX}/latest/install-http-release.sh"
-  remote_release_dir="${BASE_URL}/${PATH_PREFIX}/latest"
-else
-  helper_url="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-http-release.sh"
-  remote_release_dir="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}"
-fi
+helper_url="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-http-release.sh"
+remote_release_dir="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}"
 
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 first_admin_password="$(resolve_secret "APPLIANCE_FIRST_ADMIN_PASSWORD" "First administrator password")"
+build_catalog_b64=""
+if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
+  build_catalog_b64="$(python3 - "${BUILD_CATALOG_PATH}" <<'PY'
+import base64
+import sys
+from pathlib import Path
+
+sys.stdout.write(base64.b64encode(Path(sys.argv[1]).read_bytes()).decode("ascii"))
+PY
+)"
+fi
+source_credentials_b64=""
+if [[ -n "${SOURCE_CREDENTIALS_PATH}" ]]; then
+  source_credentials_b64="$(python3 - "${SOURCE_CREDENTIALS_PATH}" <<'PY'
+import base64
+import sys
+from pathlib import Path
+
+sys.stdout.write(base64.b64encode(Path(sys.argv[1]).read_bytes()).decode("ascii"))
+PY
+)"
+fi
 
 remote_script='set -euo pipefail
 remote_dir='"$(shell_quote "${remote_release_dir}")"'
 product_version='"$(shell_quote "${RELEASE_VERSION}")"'
 out_dir='"$(shell_quote "${OUT_DIR}")"'
+build_catalog_b64='"$(shell_quote "${build_catalog_b64}")"'
+source_credentials_b64='"$(shell_quote "${source_credentials_b64}")"'
 bundle_archive="appliance-${product_version}-bundle.tar.gz"
 public_key_file="release-signing.pub"
 checksum_file="sha256sum.txt"
@@ -225,6 +212,18 @@ upgrade_args=(
   --state-dir '"$(shell_quote "${STATE_DIR}")"'
   --output '"$(shell_quote "${OUTPUT_FORMAT}")"'
 )
+if [[ -n "${build_catalog_b64}" ]]; then
+  build_catalog_path="${out_dir}/build-catalog.yaml"
+  printf "%s" "${build_catalog_b64}" | base64 -d > "${build_catalog_path}"
+  install_args+=(--build-catalog "${build_catalog_path}")
+  upgrade_args+=(--build-catalog "${build_catalog_path}")
+fi
+if [[ -n "${source_credentials_b64}" ]]; then
+  source_credentials_path="${out_dir}/source-credentials.yaml"
+  printf "%s" "${source_credentials_b64}" | base64 -d > "${source_credentials_path}"
+  install_args+=(--source-credentials "${source_credentials_path}")
+  upgrade_args+=(--source-credentials "${source_credentials_path}")
+fi
 capture_zonctl_step() {
   local stdout_file="$1"
   local stderr_file="$2"
@@ -256,16 +255,6 @@ install_args+=(--appliance-profile '"$(shell_quote "${APPLIANCE_PROFILE}")"')
 upgrade_args+=(--appliance-profile '"$(shell_quote "${APPLIANCE_PROFILE}")"')'
 fi
 
-if bool_true "${USE_LATEST}"; then
-  remote_script+='
-echo "[target] Using latest release alias at '"$(shell_quote "${remote_release_dir}")"'."'
-fi
-
-if [[ -n "${NODE_NAME}" ]]; then
-  remote_script+='
-install_args+=(--node-name '"$(shell_quote "${NODE_NAME}")"')
-upgrade_args+=(--node-name '"$(shell_quote "${NODE_NAME}")"')'
-fi
 remote_script+='
 echo "[target 4/5] Running host preflight..."
 sudo -n "${zonctl}" preflight --output '"$(shell_quote "${OUTPUT_FORMAT}")"'
@@ -306,7 +295,7 @@ install_log="${RUN_DIR}/logs/install.log"
 log "installing release on ${TARGET_HOST} using ${remote_release_dir}"
 run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"
 
-python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${NODE_NAME}" "${OUT_DIR}" "${BOOTSTRAP_ADMIN_USERNAME}" "${APPLIANCE_PROFILE}" "${OUTPUT_FORMAT}" "${USE_LATEST}" "${UNINSTALL_FIRST:-false}" "${install_log}" <<'PY'
+python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${BOOTSTRAP_ADMIN_USERNAME}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${SOURCE_CREDENTIALS_PATH}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${install_log}" <<'PY'
 import json
 import sys
 
@@ -319,12 +308,12 @@ import sys
     base_url,
     path_prefix,
     state_dir,
-    node_name,
     out_dir,
     bootstrap_admin_username,
     appliance_profile,
+    build_catalog_path,
+    source_credentials_path,
     output_format,
-    use_latest,
     uninstall_first,
     install_log,
 ) = sys.argv[1:17]
@@ -338,13 +327,13 @@ payload = {
     "baseUrl": base_url,
     "pathPrefix": path_prefix,
     "stateDir": state_dir or None,
-    "nodeName": node_name or None,
     "outDir": out_dir,
     "bundleDir": f"{out_dir}/appliance-{release_version}-bundle" if release_version else None,
     "bootstrapAdminUsername": bootstrap_admin_username,
     "applianceProfile": appliance_profile or None,
+    "buildCatalogPath": build_catalog_path or None,
+    "sourceCredentialsPath": source_credentials_path or None,
     "outputFormat": output_format,
-    "useLatest": use_latest == "true",
     "uninstallFirst": uninstall_first == "true",
     "log": install_log,
 }

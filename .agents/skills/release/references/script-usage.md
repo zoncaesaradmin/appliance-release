@@ -19,6 +19,24 @@ Notes:
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used both for install and Mac-side API verification.
 - Set `install.appliance_profile` in the config if you want a non-default appliance profile.
 - If you omit `install.appliance_profile`, the product default profile is `core`.
+- A `run-release-flow.sh --appliance-profile` override is forwarded to install,
+  target verification, and client verification so all phases use the same
+  effective profile.
+- For the `builder` profile, set `install.build_catalog_path` or pass
+  `--build-catalog PATH` when the bundle does not already include a
+  `config.buildCatalog` value plus matching Git-host and builder-image
+  allowlists. The file is copied to the target install temp dir and passed to
+  `zonctl`; it should contain only product config and source credential secret
+  references, never private keys or tokens.
+- If the build catalog references a builder/task image, also set
+  `build_flow.extra_oci_image_archive_sources` and
+  `build_flow.extra_oci_image_refs` so that image is included in the signed
+  bundle and preloaded on the target.
+- For Git-backed builder workflows, set `install.source_credentials_path` or
+  pass `--source-credentials PATH`. This file is a manifest of Kubernetes
+  Secret names and target-local SSH file paths; it must not contain private key
+  material. The helper copies the manifest only, not the private keys, so
+  `privateKeyPath` and `knownHostsPath` must already exist on the target host.
 
 ## 1. Full Flow
 
@@ -34,6 +52,8 @@ Common explicit example:
 /Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-flow.sh \
   --release-version 0.1.0 \
   --appliance-profile builder \
+  --build-catalog /Users/zoncaesar/ws/appliance-release/build-catalog.yaml \
+  --source-credentials /Users/zoncaesar/ws/appliance-release/source-credentials.yaml \
   --uninstall-first \
   --final-ok
 ```
@@ -44,6 +64,15 @@ This does:
 - install on the target host
 - verify on the target host
 - verify login/session/users from the Mac
+- for the `builder` profile, verify builder REST route registration from the
+  target and authenticated builder REST/MCP tool availability from the Mac
+- write a final aggregate report to
+  `.run/appliance-release/<timestamp>/metadata/release-report.json` and
+  `.run/appliance-release/<timestamp>/release-report.md`
+
+The wrapper writes the release-flow metadata and report on success and also
+best-effort on phase failure, so failed runs should still leave a useful
+handoff report in the run directory.
 
 ## 2. Build And Publish Only
 
@@ -66,6 +95,22 @@ Use this when:
 - you want the build machine to pull, build, and publish
 - you do not want to install yet
 
+After copied release-input and bundle metadata are available, the script
+validates required product artifacts, Argo release artifacts, and any
+`extraOCIImages[]` entries against the final bundle manifest. Required runtime
+checks include the control-plane image, the separate appliance UI image, and
+the appliance Helm chart. For runtime OCI images, the copied release-input
+`imageReference` must also match the final bundle manifest `imageReference`,
+so the image imported on the target is the same image Helm will deploy.
+The final bundle's `configuration/values.yaml` is also checked so
+`image.repository/tag/digest` and `ui.image.repository/tag/digest` resolve to
+those same control-plane and UI image references.
+Required release-input evidence checks include the configuration schema,
+compatibility metadata, checksums, SBOM, provenance, notices, and tests. If
+`build_flow.extra_oci_image_refs` is set, those refs must appear as
+digest-pinned `extraOCIImages[]` evidence. The validation log is written to
+`.run/appliance-release/<timestamp>/logs/release-artifact-validation.json`.
+
 ## 3. Install On Target Only
 
 Use this when the release is already published and you want only the install step.
@@ -74,6 +119,7 @@ Use this when the release is already published and you want only the install ste
 /Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/install-on-target.sh \
   --release-version 0.1.0 \
   --appliance-profile builder \
+  --source-credentials /Users/zoncaesar/ws/appliance-release/source-credentials.yaml \
   --uninstall-first
 ```
 
@@ -118,6 +164,19 @@ If your config enables `verification.argo.enabled: true`, it also checks:
 - core Argo Workflow CRDs
 - the Argo controller deployment and pods
 
+If `install.appliance_profile` is `builder`, it also checks that
+`/api/v1/work-profiles` is not a 404 from the target. Override
+`verification.builder.enabled` or `verification.builder.api_command` only when
+you need custom reachability behavior.
+
+If `install.source_credentials_path` is configured for a builder install, the
+target verifier also parses that manifest locally and checks that every
+declared private-key Secret has non-empty `ssh-privatekey` data and every
+declared `known_hosts` Secret has non-empty `known_hosts` data. Override
+`verification.builder.source_credentials_command` only when you need a custom
+Secret readiness check. This proves the pod-mount prerequisites are present;
+the actual Git clone still requires a real builder workflow run.
+
 ## 5. Verify Client/API Only
 
 Use this from the Mac if the appliance is already installed and reachable.
@@ -131,16 +190,36 @@ This script checks:
 - `POST /api/v1/auth/login`
 - `GET /api/v1/auth/session`
 - `GET /api/v1/users`
+- for the `builder` profile, authenticated `GET /api/v1/work-profiles`
+- for the `builder` profile, authenticated MCP `initialize` and `tools/list`
+  with `submit_build` present
+- for non-builder profiles, authenticated `GET /api/v1/work-profiles` returns
+  `404` by default, proving build routes are not registered when the build
+  capability is disabled
+- for non-builder profiles, authenticated MCP `initialize` and `tools/list`
+  succeed but the builder workflow tool names are absent by default
+- for non-builder profiles, direct authenticated MCP `tools/call` for
+  `submit_build` returns JSON-RPC tool-not-found, proving disabled build tools
+  cannot be invoked by name
+- when `client_verification.builder.workflow.enabled: true`, an actual
+  REST-only builder workflow smoke: create workspace, list build targets,
+  submit build, poll job status, fetch steps, and fetch logs
+- for that workflow smoke, submit and job responses must both include the same
+  non-empty `artifactRef`; this resolved image reference is copied into the
+  final release report
+- for that workflow smoke, a returned-evidence leak check that fails if job,
+  step, or log output contains private-key markers or configured source
+  credential Secret names
 - writes a clear request log for each API call with method, full URL, sanitized headers, and sanitized POST body fields
 - keeps the response body and response headers in separate log files
 
-If you want to override the host or username for a one-off test:
-
-```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/verify-client-access.sh \
-  --host https://192.168.1.101 \
-  --username admin
-```
+The real workflow smoke is intentionally opt-in because it runs a build. Use
+it for final builder-profile evidence after the build catalog, source
+credential Secrets, Git host reachability, builder image, and appliance
+registry are ready. For v1, set
+`client_verification.builder.workflow.source_ref` to an immutable lowercase
+40-character commit SHA; branch and tag resolution belongs in the control
+plane/workflow layer later.
 
 ## 6. Config File
 
@@ -148,6 +227,14 @@ Start from:
 
 ```bash
 /Users/zoncaesar/ws/appliance-release/.agents/skills/release/references/config.example.yaml
+```
+
+For final builder-profile evidence, also start from these local templates and
+replace every host, repo, image, and target path with your real product values:
+
+```bash
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/references/build-catalog.example.yaml
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/references/source-credentials.example.yaml
 ```
 
 Your usual real config lives in the repo, for example:
@@ -159,7 +246,49 @@ Your usual real config lives in the repo, for example:
 Do not use a global skill symlink here. The single place to look is the
 repo-local skill path: `.agents/skills/release/scripts`.
 
-## 7. Simplest Day-To-Day Usage
+## 7. Local Milestone Verification
+
+Before using the real build server or target host, run the non-live cross-repo
+milestone gate from the release repo:
+
+```bash
+make verify-local-milestone
+```
+
+This runs the local release checks, appliance-code control-plane tests,
+appliance-code control-plane chart tests, appliance-code UI tests,
+appliance-code local e2e/profile-gating checks, and appliance-ctl tests. It
+does not contact the real build server, publish server, or target host.
+On success it writes a durable non-live evidence summary to
+`.run/appliance-release/local-milestone-report.json`, including each checked
+repo's git branch, HEAD commit, and dirty-worktree status. It also writes the
+human-readable companion report
+`.run/appliance-release/local-milestone-report.md`.
+
+If your sibling repos are not next to `appliance-release`, override their
+paths:
+
+```bash
+make verify-local-milestone \
+  APPLIANCE_CODE_DIR=/abs/path/to/appliance-code \
+  APPLIANCE_CTL_DIR=/abs/path/to/appliance-ctl
+```
+
+## 8. Advanced Final Profile Matrix
+
+The main release workflow is still:
+
+- `run-release-flow.sh` for a normal end-to-end run
+- `make verify-local-milestone` for non-live cross-repo validation
+
+If you need the stricter final profile-matrix planning, checklist, audit, and
+readiness flow for final builder evidence, use the dedicated advanced guide:
+
+```text
+/Users/zoncaesar/ws/appliance-release/docs/final-profile-matrix.md
+```
+
+## 9. Simplest Day-To-Day Usage
 
 Most days, this is enough:
 

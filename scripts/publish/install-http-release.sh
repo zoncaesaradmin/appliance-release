@@ -33,6 +33,11 @@ Optional:
   --state-dir DIR              zonctl state directory. Default: /var/lib/zon
   --appliance-profile NAME     Product-facing appliance profile passed to
                                zonctl install/upgrade. Default: core
+  --build-catalog PATH         Target-local build catalog YAML/JSON passed to
+                               zonctl install/upgrade as control-plane config
+  --source-credentials PATH    Target-local source credential manifest used by
+                               zonctl install/upgrade to create Git SSH
+                               Kubernetes Secrets for builder workflows
   --node-name NAME             Optional zonctl --node-name override
   --bootstrap-admin-username NAME
                                Username for the first administrator created
@@ -40,7 +45,7 @@ Optional:
   --bootstrap-password-stdin   Read the first administrator password from
                                stdin for a fresh install. Ignored when the
                                helper switches to upgrade.
-  --dry-run                    Pass --dry-run to zonctl install
+  --dry-run                    Pass --dry-run to zonctl install/upgrade
   --output FORMAT              zonctl output format. Default: text
   --help                       Show this help
 
@@ -66,6 +71,8 @@ PATH_PREFIX="appliance"
 USE_LATEST="0"
 STATE_DIR="/var/lib/zon"
 APPLIANCE_PROFILE=""
+BUILD_CATALOG_PATH=""
+SOURCE_CREDENTIALS_PATH=""
 NODE_NAME=""
 BOOTSTRAP_ADMIN_USERNAME="admin"
 BOOTSTRAP_PASSWORD_STDIN="0"
@@ -100,6 +107,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --appliance-profile)
       APPLIANCE_PROFILE="${2:-}"
+      shift 2
+      ;;
+    --build-catalog)
+      BUILD_CATALOG_PATH="${2:-}"
+      shift 2
+      ;;
+    --source-credentials)
+      SOURCE_CREDENTIALS_PATH="${2:-}"
       shift 2
       ;;
     --node-name)
@@ -296,6 +311,12 @@ install_args=(
 if [[ -n "${APPLIANCE_PROFILE}" ]]; then
   install_args+=(--appliance-profile "${APPLIANCE_PROFILE}")
 fi
+if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
+  install_args+=(--build-catalog "${BUILD_CATALOG_PATH}")
+fi
+if [[ -n "${SOURCE_CREDENTIALS_PATH}" ]]; then
+  install_args+=(--source-credentials "${SOURCE_CREDENTIALS_PATH}")
+fi
 if [[ -n "${NODE_NAME}" ]]; then
   install_args+=(--node-name "${NODE_NAME}")
 fi
@@ -317,6 +338,12 @@ upgrade_args=(
 )
 if [[ -n "${APPLIANCE_PROFILE}" ]]; then
   upgrade_args+=(--appliance-profile "${APPLIANCE_PROFILE}")
+fi
+if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
+  upgrade_args+=(--build-catalog "${BUILD_CATALOG_PATH}")
+fi
+if [[ -n "${SOURCE_CREDENTIALS_PATH}" ]]; then
+  upgrade_args+=(--source-credentials "${SOURCE_CREDENTIALS_PATH}")
 fi
 if [[ -n "${NODE_NAME}" ]]; then
   upgrade_args+=(--node-name "${NODE_NAME}")

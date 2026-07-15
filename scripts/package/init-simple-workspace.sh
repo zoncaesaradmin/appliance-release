@@ -504,6 +504,22 @@ def add_artifact_file(artifact_key: str, target_dir: str, component: str, image_
     append_file_entry(source_path, f"{target_dir}/{source_path.name}", component, image_reference)
 
 
+def add_extra_oci_images():
+    images = artifacts.get("extraOCIImages")
+    if images is None:
+        return
+    if not isinstance(images, list):
+        raise SystemExit("init-simple-workspace: release-input extraOCIImages must be an array")
+    for image in images:
+        if not isinstance(image, dict):
+            raise SystemExit("init-simple-workspace: release-input extraOCIImages entries must be objects")
+        rel_path = image.get("path")
+        if not isinstance(rel_path, str) or not rel_path:
+            raise SystemExit("init-simple-workspace: release-input extraOCIImages entry is missing path")
+        source_path = release_input_dir / rel_path
+        append_file_entry(source_path, f"oci-images/{source_path.name}", "oci-images", image.get("imageReference"))
+
+
 def add_crd_artifacts():
     artifact = artifacts.get("argoCRDs")
     if not isinstance(artifact, dict):
@@ -529,6 +545,7 @@ add_artifact_file("argoWorkflowsChart", "charts", "chart")
 add_artifact_file("uiImage", "oci-images", "oci-images", image_reference_field=True)
 add_artifact_file("argoControllerImage", "oci-images", "oci-images", image_reference_field=True)
 add_artifact_file("argoExecutorImage", "oci-images", "oci-images", image_reference_field=True)
+add_extra_oci_images()
 add_crd_artifacts()
 
 config["entries"] = entries
@@ -551,7 +568,7 @@ If the release-input includes optional Argo Workflows Phase 1 artifacts, this
 workspace auto-detects them and adds them to the bundle config under:
 
 - \`charts/\` for the Argo chart
-- \`oci-images/\` for the controller and executor image archives
+- \`oci-images/\` for the controller, executor, and extra capability image archives
 - \`kubernetes/crds/\` for the CRD YAML files
 
 That prepares the release bundle contract for installer-side Argo bring-up
