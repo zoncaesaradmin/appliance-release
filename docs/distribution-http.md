@@ -199,15 +199,14 @@ configuration inputs:
 Those choices are passed into the control plane at install or upgrade time
 only; they do not produce a different bundle or publish path. For the builder
 profile, provide a build catalog unless the bundle chart values already include
-one with matching Git-host and builder-image allowlists. For Git-backed builder
-workflows, the build catalog may reference logical Git source credential IDs;
-`zonctl` derives the managed Secret names from those ids and prepares the
-target-local SSH key and `known_hosts`
-files that `zonctl` materializes into Kubernetes Secrets for build pods. Use
-read-only deploy keys, keep private key material out of the manifest, and make
-sure the target appliance can reach the configured Git host from the build
-workflow namespace. Supported product-facing profile names remain `core`,
-`builder`, and `storage` at the install/config layer.
+one with matching Git-host and builder-image allowlists. For SSH-backed builder
+workflows, the catalog only needs repo URLs; `zonctl` prepares one
+appliance-managed SSH key and `known_hosts` set, then materializes them into
+Kubernetes Secrets for build pods. Use a read-only deploy key for that managed
+identity, keep private key material out of the manifest, and make sure the
+target appliance can reach the configured Git host from the build workflow
+namespace. Supported product-facing profile names remain `core`, `builder`,
+and `storage` at the install/config layer.
 
 The same published helper now handles both fresh installs and owned existing
 installs:

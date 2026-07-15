@@ -101,9 +101,8 @@ install:
   # profile needs a build catalog and matching Git-host/builder-image policy;
   # use this when the bundle's chart values do not already include them.
   # Do not put private key or token material in this file.
-  # zonctl derives managed builder credential Secret names from
-  # sourceCredentials[].id and prepares the target-host SSH key material
-  # internally under its state directory.
+  # For SSH Git repos, zonctl prepares one appliance-managed builder SSH key
+  # and the matching known_hosts data internally under its state directory.
   # Start from:
   # /Users/zoncaesar/ws/appliance-release/.agents/skills/release/references/build-catalog.example.yaml
   # build_catalog_path: /Users/zoncaesar/ws/appliance-release/build-catalog.yaml
@@ -138,10 +137,10 @@ verification:
   builder:
     # enabled: true
     # api_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://target-ip-or-dns/api/v1/work-profiles)" && [ "$code" != "404" ]'
-    # If install.build_catalog_path declares sourceCredentials, verify-target.sh
-    # generates a kubectl Secret data-key check from the catalog's logical
-    # source credential ids. Override only when you need a custom readiness rule.
-    # source_credentials_command: 'sudo kubectl -n appliance-builds get secret builder-git-github-main-key && sudo kubectl -n appliance-builds get secret builder-git-github-main-known-hosts'
+    # If install.build_catalog_path includes SSH Git repos, verify-target.sh
+    # checks the fixed appliance-managed Secrets that builder workflows mount.
+    # Override only when you need a custom readiness rule.
+    # source_credentials_command: 'sudo kubectl -n appliance-builds get secret builder-git-key && sudo kubectl -n appliance-builds get secret builder-git-known-hosts'
   allow_ingress_warning: true
   allow_verify_schema_bug: true
 

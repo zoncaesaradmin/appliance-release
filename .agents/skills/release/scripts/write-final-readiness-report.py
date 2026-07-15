@@ -33,8 +33,8 @@ def next_actions(missing: list[str]) -> list[str]:
     if "passing non-live local milestone report" in missing:
         actions.append("Run make verify-local-milestone.")
     if any(item.startswith("strict final profile matrix plan") for item in missing):
-        actions.append("Run make final-profile-input-checklist to produce a non-failing checklist of missing builder catalog, source credential, and workflow smoke inputs.")
-        actions.append("Populate final builder build catalog, source credentials, and workflow smoke config, then run make plan-final-profile-matrix.")
+        actions.append("Run make final-profile-input-checklist to produce a non-failing checklist of missing builder catalog and workflow smoke inputs.")
+        actions.append("Populate the final builder build catalog and workflow smoke config, then run make plan-final-profile-matrix.")
     if any(item.startswith("strict final profile matrix audit") or item.startswith("passing strict final profile matrix audit") for item in missing):
         actions.append("Run the real core/storage/builder profile-matrix commands from final-profile-matrix-plan.md, then run make audit-final-profile-matrix.")
     actions.append("Run make assert-final-readiness after final plan and final audit evidence exist.")

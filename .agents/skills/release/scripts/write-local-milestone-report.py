@@ -156,7 +156,7 @@ def main() -> int:
         "gates": gates,
         "remainingLiveEvidence": [
             "real core/storage/builder profile-matrix runs",
-            "real builder workflow smoke with product builder image, source credentials, Git reachability, and registry readiness",
+            "real builder workflow smoke with product builder image, managed builder Git setup, Git reachability, and registry readiness",
             "audit of generated live release reports",
         ],
     }

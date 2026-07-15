@@ -830,13 +830,14 @@ PY
   fi
 fi
 
-python3 - "${RUN_DIR}/metadata/client-verify.json" "${CONFIG_PATH}" "${BASE_URL}" "${USERNAME}" "${BUILDER_ENABLED}" "${BUILDER_EXPECT_DISABLED}" "${BUILDER_WORKFLOW_ENABLED}" "${BUILDER_WORKFLOW_EXPECT_SUCCESS}" "${BUILD_CATALOG_PATH}" "${WORKFLOW_WORKSPACE_ID}" "${WORKFLOW_JOB_ID}" "${WORKFLOW_FINAL_STATUS}" "${LOGIN_BODY_FILE}" "${LOGIN_META_FILE}" "${LOGIN_REQUEST_FILE}" "${SESSION_BODY_FILE}" "${SESSION_META_FILE}" "${SESSION_REQUEST_FILE}" "${USERS_BODY_FILE}" "${USERS_META_FILE}" "${USERS_REQUEST_FILE}" "${DISABLED_BUILD_PROFILES_BODY_FILE}" "${DISABLED_BUILD_PROFILES_META_FILE}" "${DISABLED_BUILD_PROFILES_REQUEST_FILE}" "${DISABLED_MCP_INITIALIZE_BODY_FILE}" "${DISABLED_MCP_INITIALIZE_META_FILE}" "${DISABLED_MCP_INITIALIZE_REQUEST_FILE}" "${DISABLED_MCP_TOOLS_BODY_FILE}" "${DISABLED_MCP_TOOLS_META_FILE}" "${DISABLED_MCP_TOOLS_REQUEST_FILE}" "${DISABLED_MCP_CALL_BODY_FILE}" "${DISABLED_MCP_CALL_META_FILE}" "${DISABLED_MCP_CALL_REQUEST_FILE}" "${BUILDER_PROFILES_BODY_FILE}" "${BUILDER_PROFILES_META_FILE}" "${BUILDER_PROFILES_REQUEST_FILE}" "${MCP_INITIALIZE_BODY_FILE}" "${MCP_INITIALIZE_META_FILE}" "${MCP_INITIALIZE_REQUEST_FILE}" "${MCP_TOOLS_BODY_FILE}" "${MCP_TOOLS_META_FILE}" "${MCP_TOOLS_REQUEST_FILE}" "${WORKFLOW_CREATE_WORKSPACE_BODY_FILE}" "${WORKFLOW_CREATE_WORKSPACE_META_FILE}" "${WORKFLOW_CREATE_WORKSPACE_REQUEST_FILE}" "${WORKFLOW_TARGETS_BODY_FILE}" "${WORKFLOW_TARGETS_META_FILE}" "${WORKFLOW_TARGETS_REQUEST_FILE}" "${WORKFLOW_SUBMIT_BODY_FILE}" "${WORKFLOW_SUBMIT_META_FILE}" "${WORKFLOW_SUBMIT_REQUEST_FILE}" "${WORKFLOW_JOB_BODY_FILE}" "${WORKFLOW_JOB_META_FILE}" "${WORKFLOW_JOB_REQUEST_FILE}" "${WORKFLOW_JOB_POLL_FILE}" "${WORKFLOW_STEPS_BODY_FILE}" "${WORKFLOW_STEPS_META_FILE}" "${WORKFLOW_STEPS_REQUEST_FILE}" "${WORKFLOW_LOGS_BODY_FILE}" "${WORKFLOW_LOGS_META_FILE}" "${WORKFLOW_LOGS_REQUEST_FILE}" "${WORKFLOW_DELETE_WORKSPACE_BODY_FILE}" "${WORKFLOW_DELETE_WORKSPACE_META_FILE}" "${WORKFLOW_DELETE_WORKSPACE_REQUEST_FILE}" <<'PY'
+python3 - "${RUN_DIR}/metadata/client-verify.json" "${SCRIPT_DIR}" "${CONFIG_PATH}" "${BASE_URL}" "${USERNAME}" "${BUILDER_ENABLED}" "${BUILDER_EXPECT_DISABLED}" "${BUILDER_WORKFLOW_ENABLED}" "${BUILDER_WORKFLOW_EXPECT_SUCCESS}" "${BUILD_CATALOG_PATH}" "${WORKFLOW_WORKSPACE_ID}" "${WORKFLOW_JOB_ID}" "${WORKFLOW_FINAL_STATUS}" "${LOGIN_BODY_FILE}" "${LOGIN_META_FILE}" "${LOGIN_REQUEST_FILE}" "${SESSION_BODY_FILE}" "${SESSION_META_FILE}" "${SESSION_REQUEST_FILE}" "${USERS_BODY_FILE}" "${USERS_META_FILE}" "${USERS_REQUEST_FILE}" "${DISABLED_BUILD_PROFILES_BODY_FILE}" "${DISABLED_BUILD_PROFILES_META_FILE}" "${DISABLED_BUILD_PROFILES_REQUEST_FILE}" "${DISABLED_MCP_INITIALIZE_BODY_FILE}" "${DISABLED_MCP_INITIALIZE_META_FILE}" "${DISABLED_MCP_INITIALIZE_REQUEST_FILE}" "${DISABLED_MCP_TOOLS_BODY_FILE}" "${DISABLED_MCP_TOOLS_META_FILE}" "${DISABLED_MCP_TOOLS_REQUEST_FILE}" "${DISABLED_MCP_CALL_BODY_FILE}" "${DISABLED_MCP_CALL_META_FILE}" "${DISABLED_MCP_CALL_REQUEST_FILE}" "${BUILDER_PROFILES_BODY_FILE}" "${BUILDER_PROFILES_META_FILE}" "${BUILDER_PROFILES_REQUEST_FILE}" "${MCP_INITIALIZE_BODY_FILE}" "${MCP_INITIALIZE_META_FILE}" "${MCP_INITIALIZE_REQUEST_FILE}" "${MCP_TOOLS_BODY_FILE}" "${MCP_TOOLS_META_FILE}" "${MCP_TOOLS_REQUEST_FILE}" "${WORKFLOW_CREATE_WORKSPACE_BODY_FILE}" "${WORKFLOW_CREATE_WORKSPACE_META_FILE}" "${WORKFLOW_CREATE_WORKSPACE_REQUEST_FILE}" "${WORKFLOW_TARGETS_BODY_FILE}" "${WORKFLOW_TARGETS_META_FILE}" "${WORKFLOW_TARGETS_REQUEST_FILE}" "${WORKFLOW_SUBMIT_BODY_FILE}" "${WORKFLOW_SUBMIT_META_FILE}" "${WORKFLOW_SUBMIT_REQUEST_FILE}" "${WORKFLOW_JOB_BODY_FILE}" "${WORKFLOW_JOB_META_FILE}" "${WORKFLOW_JOB_REQUEST_FILE}" "${WORKFLOW_JOB_POLL_FILE}" "${WORKFLOW_STEPS_BODY_FILE}" "${WORKFLOW_STEPS_META_FILE}" "${WORKFLOW_STEPS_REQUEST_FILE}" "${WORKFLOW_LOGS_BODY_FILE}" "${WORKFLOW_LOGS_META_FILE}" "${WORKFLOW_LOGS_REQUEST_FILE}" "${WORKFLOW_DELETE_WORKSPACE_BODY_FILE}" "${WORKFLOW_DELETE_WORKSPACE_META_FILE}" "${WORKFLOW_DELETE_WORKSPACE_REQUEST_FILE}" <<'PY'
 import json
 from pathlib import Path
 import sys
 
 (
     out_path,
+    scripts_dir,
     config_path,
     base_url,
     username,
@@ -900,7 +901,10 @@ import sys
     workflow_delete_workspace_body,
     workflow_delete_workspace_meta,
     workflow_delete_workspace_request,
-) = sys.argv[1:65]
+) = sys.argv[1:66]
+sys.path.insert(0, scripts_dir)
+
+from build_catalog import builder_ssh_secret_names, load_build_catalog
 
 def status_code(path: str):
     code = None
@@ -960,52 +964,13 @@ def poll_history(path: str):
         out.append(json.loads(line))
     return out
 
-def parse_scalar(raw: str) -> str:
-    raw = raw.strip()
-    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {"'", '"'}:
-        return raw[1:-1]
-    return raw
-
-def sanitize_name(value: str) -> str:
-    out = []
-    last_dash = False
-    for char in value.strip().lower():
-        if char.isalnum():
-            out.append(char)
-            last_dash = False
-            continue
-        if not last_dash:
-            out.append("-")
-            last_dash = True
-    sanitized = "".join(out).strip("-")
-    return sanitized or "source"
-
 def load_source_secret_names(path: str):
     if not path:
         return []
     p = Path(path)
     if not p.is_file():
         return []
-    text = p.read_text(encoding="utf-8", errors="replace")
-    stripped = text.lstrip()
-    if stripped.startswith("{") or stripped.startswith("["):
-        data = json.loads(text)
-    else:
-        try:
-            import yaml
-        except ModuleNotFoundError as exc:
-            raise SystemExit(f"PyYAML is required to parse build catalog {path}: {exc}") from exc
-        data = yaml.safe_load(text) or {}
-
-    names = []
-    for cred in data.get("sourceCredentials", []):
-        if not isinstance(cred, dict):
-            continue
-        credential_id = sanitize_name(str(cred.get("id") or ""))
-        if credential_id:
-            names.append(f"builder-git-{credential_id}-key")
-            names.append(f"builder-git-{credential_id}-known-hosts")
-    return sorted(set(names))
+    return builder_ssh_secret_names(load_build_catalog(p))
 
 def scan_for_secret_leaks(paths, source_secret_names):
     markers = [

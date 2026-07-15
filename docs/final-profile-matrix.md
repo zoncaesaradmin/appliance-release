@@ -80,8 +80,8 @@ This does not contact the build server or target host. It validates that final
 builder workflow evidence inputs are present. When
 `install.build_catalog_path` is set, the planner also checks that builder
 target images are digest-pinned, listed in `build_flow.extra_oci_image_refs`
-when that release evidence list is configured, and that catalog SSH repos
-reference declared logical source credentials. It also cross-checks the
+when that release evidence list is configured, and that catalog SSH repos are
+structurally valid. It also cross-checks the
 optional real workflow smoke's workspace profile (`work_profile`), `repo`, and
 `target_name` against catalog `workProfiles`, `repos`, and `buildTargets`;
 `target_name` may use either a build target name or one of its aliases.

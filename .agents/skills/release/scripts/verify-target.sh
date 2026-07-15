@@ -277,50 +277,21 @@ build_source_credentials_command() {
   if [[ -n "${BUNDLE_BIN_DIR}" ]]; then
     kubectl_cmd="env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl"
   fi
-  python3 - "${catalog_path}" "${kubectl_cmd}" <<'PY'
-import json
+  python3 - "${SCRIPT_DIR}" "${catalog_path}" "${kubectl_cmd}" <<'PY'
 import shlex
 import sys
 from pathlib import Path
 
-catalog_path = Path(sys.argv[1])
-kubectl_cmd = sys.argv[2]
+scripts_dir = Path(sys.argv[1])
+catalog_path = Path(sys.argv[2])
+kubectl_cmd = sys.argv[3]
+sys.path.insert(0, str(scripts_dir))
 
-def parse_scalar(raw: str) -> str:
-    raw = raw.strip()
-    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {"'", '"'}:
-        return raw[1:-1]
-    return raw
+from build_catalog import builder_ssh_secret_names, load_build_catalog
 
-def sanitize_name(value: str) -> str:
-    out = []
-    last_dash = False
-    for char in value.strip().lower():
-        if char.isalnum():
-            out.append(char)
-            last_dash = False
-            continue
-        if not last_dash:
-            out.append("-")
-            last_dash = True
-    sanitized = "".join(out).strip("-")
-    return sanitized or "source"
-
-def load_catalog(path: Path):
-    text = path.read_text(encoding="utf-8")
-    stripped = text.lstrip()
-    if stripped.startswith("{") or stripped.startswith("["):
-        return json.loads(text)
-    try:
-        import yaml
-    except ModuleNotFoundError as exc:
-        raise SystemExit(f"PyYAML is required to parse build catalog {path}: {exc}") from exc
-    return yaml.safe_load(text) or {}
-
-data = load_catalog(catalog_path)
-credentials = data.get("sourceCredentials")
-if not isinstance(credentials, list) or not credentials:
-    raise SystemExit("build catalog must contain sourceCredentials")
+data = load_build_catalog(catalog_path)
+if not isinstance(data.get("repos"), list):
+    raise SystemExit("build catalog must contain repos")
 
 checks = []
 seen = set()
@@ -336,20 +307,18 @@ def add_secret_key_check(namespace: str, secret_name: str, data_key: str):
     )
     checks.append(f"test -n \"$({lookup})\"")
 
-for index, cred in enumerate(credentials):
-    if not isinstance(cred, dict):
-        raise SystemExit(f"sourceCredentials entry {index} must be a mapping")
-    credential_id = sanitize_name(str(cred.get("id") or ""))
-    if not credential_id:
-        raise SystemExit(f"sourceCredentials entry {index} requires id")
-    namespace = "appliance-builds"
-    secret_name = f"builder-git-{credential_id}-key"
-    known_hosts_secret = f"builder-git-{credential_id}-known-hosts"
-    add_secret_key_check(namespace, secret_name, "ssh-privatekey")
-    add_secret_key_check(namespace, known_hosts_secret, "known_hosts")
+secret_names = builder_ssh_secret_names(data)
+if not secret_names:
+    raise SystemExit("build catalog does not declare any SSH repos")
+
+namespace = "appliance-builds"
+if "builder-git-key" in secret_names:
+    add_secret_key_check(namespace, "builder-git-key", "ssh-privatekey")
+if "builder-git-known-hosts" in secret_names:
+    add_secret_key_check(namespace, "builder-git-known-hosts", "known_hosts")
 
 if not checks:
-    raise SystemExit("build catalog did not declare any source credential Secret data checks")
+    raise SystemExit("build catalog did not require any builder SSH Secret data checks")
 print("sudo bash -lc " + shlex.quote(" && ".join(checks)))
 PY
 }

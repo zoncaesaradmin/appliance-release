@@ -206,8 +206,8 @@ This script checks:
   non-empty `artifactRef`; this resolved image reference is copied into the
   final release report
 - for that workflow smoke, a returned-evidence leak check that fails if job,
-  step, or log output contains private-key markers or configured source
-  credential Secret names
+  step, or log output contains private-key markers or managed builder Git
+  Secret names
 - writes a clear request log for each API call with method, full URL, sanitized headers, and sanitized POST body fields
 - keeps the response body and response headers in separate log files
 

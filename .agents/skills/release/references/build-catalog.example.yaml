@@ -9,8 +9,8 @@
 # - each workspace profile explicitly lists its repos
 # - each repo has one canonical `url` plus optional `defaultRef`
 # - each build target is explicit under `buildTargets` and belongs to one repo
-# - private key material does not belong here; SSH access is referenced only
-#   through `sourceCredentialRef`
+# - private key material does not belong here; the appliance manages one
+#   builder SSH identity internally for all SSH Git repos
 #
 # Replace repo URLs, output image repositories, and builder image digests with
 # the real product values before using this file.
@@ -44,35 +44,26 @@ workProfiles:
       - name: forgeline
         enabledByDefault: true
 
-sourceCredentials:
-  - id: github-main
-    gitHost: github.com
-
 repos:
   - name: platformkit
     url: git@github.com:zoncaesaradmin/platformkit.git
     defaultRef: main
-    sourceCredentialRef: github-main
 
   - name: zonbundle
     url: git@github.com:zoncaesaradmin/zonbundle.git
     defaultRef: main
-    sourceCredentialRef: github-main
 
   - name: zoncore
     url: git@github.com:zoncaesaradmin/zoncore.git
     defaultRef: main
-    sourceCredentialRef: github-main
 
   - name: forgeline
     url: git@github.com:zoncaesaradmin/forgeline.git
     defaultRef: main
-    sourceCredentialRef: github-main
 
   - name: forgeline-release
     url: git@github.com:zoncaesaradmin/forgeline-release.git
     defaultRef: main
-    sourceCredentialRef: github-main
 
 buildTargets:
   - name: platformkit

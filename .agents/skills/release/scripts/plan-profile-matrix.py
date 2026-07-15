@@ -291,14 +291,11 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
     build_targets = object_items(catalog.get("buildTargets"))
     work_profiles = object_items(catalog.get("workProfiles"))
     repos = object_items(catalog.get("repos"))
-    catalog_credentials = object_items(catalog.get("sourceCredentials"))
     profile_names = item_names(work_profiles)
     repo_names = item_names(repos)
     target_names = build_target_lookup_names(build_targets)
     profile_repo_names: dict[str, set[str]] = {}
     target_repo_names: dict[str, set[str]] = {}
-    credential_ids = item_ids(catalog_credentials)
-    credentials_by_id = {as_str(item.get("id", "")): item for item in catalog_credentials if as_str(item.get("id", ""))}
     for index, profile in enumerate(work_profiles):
         prefix = f"install.build_catalog_path workProfiles[{index}]"
         profile_name = as_str(profile.get("name", ""))
@@ -369,31 +366,11 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
         elif not OCI_REPO_RE.match(image_repository):
             errors.append(f"{prefix}.imageRepository is invalid: {image_repository}")
 
-    for index, credential in enumerate(catalog_credentials):
-        prefix = f"install.build_catalog_path sourceCredentials[{index}]"
-        for key in ("id", "gitHost"):
-            if not as_str(credential.get(key, "")):
-                errors.append(f"{prefix}.{key} is required")
     for index, repo in enumerate(repos):
         repo_prefix = f"install.build_catalog_path repos[{index}]"
         repo_url = as_str(repo.get("url", ""))
         if not repo_url:
             errors.append(f"{repo_prefix}.url is required")
-        source_credential_ref = as_str(repo.get("sourceCredentialRef", ""))
-        if repo_url and is_ssh_git_url(repo_url) and not source_credential_ref:
-            errors.append(f"{repo_prefix}.sourceCredentialRef is required for SSH repo URLs")
-        if source_credential_ref and credential_ids and source_credential_ref not in credential_ids:
-            errors.append(
-                f"install.build_catalog_path repos[{index}].sourceCredentialRef references unknown sourceCredentials entry: {source_credential_ref}"
-            )
-        if source_credential_ref and source_credential_ref in credentials_by_id:
-            credential = credentials_by_id[source_credential_ref]
-            repo_host = git_url_host(repo_url)
-            credential_host = as_str(credential.get("gitHost", ""))
-            if repo_host and credential_host and repo_host.lower() != credential_host.lower():
-                errors.append(
-                    f"{repo_prefix}.url host {repo_host} does not match sourceCredentials {source_credential_ref} gitHost {credential_host}"
-                )
 
     if as_bool(lookup(config, "client_verification.builder.workflow.enabled", False)):
         workflow_profile = as_str(lookup(config, "client_verification.builder.workflow.work_profile", ""))
@@ -556,7 +533,7 @@ def main() -> int:
         "Confirm each run's release-report.md has no failed or missing unskipped step.",
         "For core and storage runs, confirm disabled builder REST/MCP evidence shows build routes/tools are absent.",
         "For the builder run, confirm builder REST/MCP tool evidence is present.",
-        "For final builder workflow evidence, confirm the optional workflow smoke succeeded, produced a non-empty artifactRef, and returned no source credential or private-key markers in job, step, or log evidence.",
+        "For final builder workflow evidence, confirm the optional workflow smoke succeeded, produced a non-empty artifactRef, and returned no managed builder Git Secret names or private-key markers in job, step, or log evidence.",
     ]
 
     plan = {

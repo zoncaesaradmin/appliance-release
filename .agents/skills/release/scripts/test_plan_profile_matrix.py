@@ -36,13 +36,9 @@ workProfiles:
   - name: builder
     repos:
       - name: app
-sourceCredentials:
-  - id: git-main
-    gitHost: git.internal.example.com
 repos:
   - name: app
     url: git@git.internal.example.com:team/app.git
-    sourceCredentialRef: git-main
 buildTargets:
   - name: app
     repo: app
@@ -309,47 +305,7 @@ client_verification:
         if plan["validationErrors"]:
             raise AssertionError(plan)
 
-
-def test_build_catalog_repos_must_reference_known_source_credentials() -> None:
-    with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
-        tmp = Path(tmp_dir)
-        write(
-            tmp / "catalog.yaml",
-            """
-sourceCredentials:
-  - id: git-main
-    gitHost: git.internal.example.com
-repos:
-  - name: app
-    url: https://git.internal.example.com/team/app.git
-    sourceCredentialRef: missing-credential
-buildTargets:
-  - name: app
-    repo: app
-    execution: repo_script
-    imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:abc123
-""".lstrip(),
-        )
-        config = tmp / "config.yaml"
-        write(
-            config,
-            f"""
-build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:abc123
-install:
-  build_catalog_path: {tmp / "catalog.yaml"}
-""".lstrip(),
-        )
-        result = run_planner(config)
-        if result.returncode == 0:
-            raise AssertionError("unknown repo sourceCredentialRef was accepted")
-        plan = json.loads(result.stdout)
-        joined = "\n".join(plan["validationErrors"])
-        if "sourceCredentialRef references unknown" not in joined:
-            raise AssertionError(plan)
-
-def test_build_catalog_ssh_repo_requires_source_credential_ref() -> None:
+def test_build_catalog_accepts_ssh_repo_without_credential_mapping() -> None:
     with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
         tmp = Path(tmp_dir)
         write(
@@ -377,11 +333,10 @@ install:
 """.lstrip(),
         )
         result = run_planner(config)
-        if result.returncode == 0:
-            raise AssertionError("SSH repo without sourceCredentialRef was accepted")
+        if result.returncode != 0:
+            raise AssertionError(result.stderr or result.stdout)
         plan = json.loads(result.stdout)
-        joined = "\n".join(plan["validationErrors"])
-        if "sourceCredentialRef is required for SSH repo URLs" not in joined:
+        if plan["validationErrors"]:
             raise AssertionError(plan)
 
 
@@ -507,8 +462,7 @@ def main() -> None:
     test_build_catalog_requires_extra_oci_image_ref()
     test_build_catalog_workflow_smoke_names_must_exist()
     test_build_catalog_workflow_smoke_accepts_target_alias()
-    test_build_catalog_repos_must_reference_known_source_credentials()
-    test_build_catalog_ssh_repo_requires_source_credential_ref()
+    test_build_catalog_accepts_ssh_repo_without_credential_mapping()
     test_build_catalog_make_target_requires_make_target_name()
     test_build_catalog_rejects_unsafe_execution_paths()
     test_reference_builder_templates_are_planner_compatible()

@@ -44,10 +44,10 @@ curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-releas
 
 For the builder profile, pass a target-local build catalog unless the bundle's
 chart values already include one with matching Git-host and builder-image
-allowlists. For Git-backed builder workflows, `zonctl` now derives the managed
-Kubernetes Secret names from `sourceCredentials[].id`, prepares persistent SSH
-key and `known_hosts` files under its state directory, and creates the Secrets
-that workflow pods mount during `git clone`.
+allowlists. For Git-backed builder workflows, `zonctl` now prepares one
+persistent appliance-managed SSH key plus `known_hosts` data under its state
+directory and creates the fixed Secrets that workflow pods mount during
+`git clone`.
 
 Start from the release skill template
 `.agents/skills/release/references/build-catalog.example.yaml`, then replace
