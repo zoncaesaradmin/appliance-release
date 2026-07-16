@@ -101,6 +101,21 @@ reachable:
 https://<appliance-host>/
 ```
 
+For MCP clients, the public endpoint is:
+
+```text
+https://<appliance-host>/mcp
+```
+
+Notes:
+
+- `/mcp` is intended mainly for authenticated non-browser MCP clients.
+- Browser pages served from the appliance origin itself may call `/mcp`
+  directly.
+- Browser tools served from a different origin, such as a localhost-hosted MCP
+  Inspector page, can be rejected by the appliance origin check and should use
+  a local proxy path instead.
+
 Notes:
 
 - if the currently installed appliance version already matches `RELEASE_VERSION`,

@@ -230,6 +230,24 @@ sudo zonctl verify --output json
 sudo zonctl support-bundle --output json
 ```
 
+The installed control plane also exposes its authenticated MCP endpoint at:
+
+```text
+https://<appliance-host>/mcp
+```
+
+Connection guidance:
+
+- treat `/mcp` as an external client endpoint for CLI tools, desktop clients,
+  automation, and agent runtimes
+- do not expect a plain browser tab opened on `/mcp` to be useful; it is a
+  JSON-RPC endpoint, not a human UI page
+- browser-based tools served from a different origin, such as localhost-hosted
+  MCP Inspector, may hit the appliance origin check and should connect through
+  their own local proxy when needed
+- same-origin appliance UI pages can use `/mcp` directly if future UI features
+  ever need that path
+
 ## Why This Is Separate From The Build Script
 
 The build script should always produce the release files in a predictable

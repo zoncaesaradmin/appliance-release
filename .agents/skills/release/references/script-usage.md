@@ -32,9 +32,9 @@ Notes:
   `build_flow.extra_oci_image_archive_sources` and
   `build_flow.extra_oci_image_refs` so that image is included in the signed
   bundle and preloaded on the target.
-- For Git-backed builder workflows, `zonctl` derives managed Secret names from
-  `sourceCredentials[].id`, prepares SSH key material under its state
-  directory, and creates the workflow-mount Secrets automatically.
+- For Git-backed builder workflows, `zonctl` prepares one appliance-managed
+  SSH key plus `known_hosts` data under its state directory and creates the
+  fixed workflow-mount Secrets automatically.
 
 ## 1. Full Flow
 
@@ -166,14 +166,12 @@ If `install.appliance_profile` is `builder`, it also checks that
 `verification.builder.enabled` or `verification.builder.api_command` only when
 you need custom reachability behavior.
 
-If `install.build_catalog_path` declares `sourceCredentials` for a builder
-install, the target verifier derives the managed Secret names from those
-logical ids and checks that every private-key Secret has non-empty
-`ssh-privatekey` data and every `known_hosts` Secret has non-empty
-`known_hosts` data. Override `verification.builder.source_credentials_command`
-only when you need a custom Secret readiness check. This proves the pod-mount
-prerequisites are present; the actual Git clone still requires a real builder
-workflow run.
+If `install.build_catalog_path` declares SSH Git repos for a builder install,
+the target verifier checks that the fixed appliance-managed Secrets have
+non-empty `ssh-privatekey` and `known_hosts` data. Override
+`verification.builder.source_credentials_command` only when you need a custom
+Secret readiness check. This proves the pod-mount prerequisites are present;
+the actual Git clone still requires a real builder workflow run.
 
 ## 5. Verify Client/API Only
 
@@ -210,6 +208,17 @@ This script checks:
   Secret names
 - writes a clear request log for each API call with method, full URL, sanitized headers, and sanitized POST body fields
 - keeps the response body and response headers in separate log files
+
+Notes about MCP access:
+
+- `/mcp` is primarily intended for authenticated external MCP clients such as
+  CLI tools, desktop clients, agent runtimes, and automation.
+- Browser pages served from the appliance UI origin can call `/mcp`
+  directly, but cross-origin browser tools are intentionally restricted by the
+  control-plane origin check.
+- A browser-based tool such as MCP Inspector should normally connect through
+  its own local proxy instead of calling the appliance `/mcp` URL directly
+  from a `localhost` page.
 
 The real workflow smoke is intentionally opt-in because it runs a build. Use
 it for final builder-profile evidence after the build catalog, Git host
