@@ -49,7 +49,7 @@ Optional overrides:
   ARGO_ENABLED=0                    # opt out entirely (control-plane-only debug build)
   ARGO_CRDS_DIR_SOURCE=/ci/inputs/argo-crds   # use a local/offline CRD copy instead of fetching from GitHub
   ARGO_VERSION=v3.5.10                        # pin a different Argo version than the chart's appVersion
-  ARGO_CONTROLLER_IMAGE_REF=quay.io/argoproj/workflow-controller:v3.5.10
+  ARGO_CONTROLLER_IMAGE_REF=localhost/appliance-argo-controller:v3.5.10
   ARGO_EXECUTOR_IMAGE_REF=quay.io/argoproj/argoexec:v3.5.10
   EXTRA_OCI_IMAGE_ARCHIVE_SOURCES=/ci/inputs/buildah.tar,/ci/inputs/tooling.tar
   EXTRA_OCI_IMAGE_REFS=registry.local/buildah@sha256:...,registry.local/tooling@sha256:...
@@ -119,14 +119,11 @@ EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="${USER_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES:-${EXTRA
 EXTRA_OCI_IMAGE_REFS="${USER_EXTRA_OCI_IMAGE_REFS:-${EXTRA_OCI_IMAGE_REFS:-}}"
 
 # Argo Workflows is a mandatory component of the complete v1 appliance
-# (ADR 0011 in appliance-code), so it is on by default. ARGO_VERSION and
-# the controller/executor image references are NOT configured here: they
-# are derived later from appliance-code's own
-# deploy/charts/argo-workflows/Chart.yaml (the chart's pinned appVersion
-# is the single source of truth), once that repo is cloned. Operators
-# never need to set an Argo version or image reference for an ordinary
-# build; ARGO_ENABLED=false remains available as an explicit escape
-# hatch for a control-plane-only debug build.
+# (ADR 0011 in appliance-code), so it is on by default. ARGO_VERSION is
+# derived later from appliance-code's own deploy/charts/argo-workflows/
+# Chart.yaml (the chart's pinned appVersion is the single source of
+# truth), once that repo is cloned. The appliance-owned controller
+# wrapper image reference is then derived from that version.
 if [[ -z "${ARGO_ENABLED}" ]]; then
   ARGO_ENABLED="true"
 fi
@@ -513,7 +510,7 @@ if bool_true "${ARGO_ENABLED}"; then
     ARGO_VERSION="$(derive_argo_version_from_code_repo)"
   fi
   if [[ -z "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" && -z "${ARGO_CONTROLLER_IMAGE_REF}" ]]; then
-    ARGO_CONTROLLER_IMAGE_REF="quay.io/argoproj/workflow-controller:${ARGO_VERSION}"
+    ARGO_CONTROLLER_IMAGE_REF="localhost/appliance-argo-controller:${ARGO_VERSION}"
   fi
   if [[ -z "${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" && -z "${ARGO_EXECUTOR_IMAGE_REF}" ]]; then
     ARGO_EXECUTOR_IMAGE_REF="quay.io/argoproj/argoexec:${ARGO_VERSION}"
@@ -541,9 +538,6 @@ if bool_true "${ARGO_ENABLED}"; then
   if [[ -n "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" ]]; then
     ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-controller-image.tar"
     cp "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/argo-controller-image.tar"
-  else
-    ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-controller-image.tar"
-    export_container_image_archive "${ARGO_CONTROLLER_IMAGE_REF}" "${CODE_REPO_DIR}/.run/argo-controller-image.tar"
   fi
 
   if [[ -n "${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" ]]; then
@@ -597,7 +591,17 @@ if bool_true $(shell_quote "${ARGO_ENABLED}"); then
     ARGO_ARGS+=(--argo-crds-dir $(shell_quote "${ARGO_CRDS_DIR_FOR_DEV}"))
   fi
 
-  ARGO_ARGS+=(--argo-controller-image $(shell_quote "${ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}"))
+  if [[ -z $(shell_quote "${ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}") ]]; then
+    make package-argo-controller-image-archive \
+      OUT_FILE="/workspace/.run/argo-controller-image.tar" \
+      ARGO_VERSION=$(shell_quote "${ARGO_VERSION}") \
+      ARGO_CONTROLLER_BASE_IMAGE=$(shell_quote "quay.io/argoproj/workflow-controller:${ARGO_VERSION}")
+    ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-controller-image.tar"
+  else
+    ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=$(shell_quote "${ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}")
+  fi
+
+  ARGO_ARGS+=(--argo-controller-image "\${ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}")
   ARGO_ARGS+=(--argo-controller-image-reference $(shell_quote "${ARGO_CONTROLLER_IMAGE_REF}"))
 
   ARGO_ARGS+=(--argo-executor-image $(shell_quote "${ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV}"))

@@ -1,5 +1,39 @@
 # Troubleshooting Reference
 
+## Runtime service logs
+
+The appliance is moving toward one fixed runtime log root on the target host:
+
+```text
+/var/log/appliance
+```
+
+For the currently migrated always-running Go services, check:
+
+```text
+/var/log/appliance/control-plane/
+/var/log/appliance/ui/
+/var/log/appliance/argo-controller/
+```
+
+Each service directory is expected to contain:
+
+```text
+startup.log
+stdout.log
+stderr.log
+```
+
+Kubernetes-native log access is still valid and remains important:
+
+```bash
+sudo kubectl -n appliance-system logs deploy/control-plane
+sudo kubectl -n appliance-system logs deploy/control-plane-ui
+sudo kubectl -n workflows logs deploy/appliance-argo-workflows
+sudo kubectl -n appliance-builds logs <pod-name>
+sudo journalctl -u k3s -f
+```
+
 ## `zonctl status`
 
 Reports installed version and K3s health:
