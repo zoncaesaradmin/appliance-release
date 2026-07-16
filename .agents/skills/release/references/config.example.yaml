@@ -92,6 +92,9 @@ build_flow:
 
 install:
   bootstrap_admin_username: admin
+  # Optional rollout/bootstrap overrides if chart naming changes again.
+  # kubernetes_namespace: appliance-system
+  # control_plane_deployment: control-plane
   # Optional product-facing appliance profile passed into the control plane.
   # Omit this to accept the v1 default profile of core.
   # Valid v1 values: core, builder, storage

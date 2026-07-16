@@ -19,17 +19,17 @@ Options:
                              appliance-release.config.yaml exists.
   --run-dir DIR              Local run directory.
   --admin-username NAME      Override install.bootstrap_admin_username.
-  --namespace NAME           Kubernetes namespace. Default: zon
+  --namespace NAME           Kubernetes namespace. Default: appliance-system
   --deployment NAME          Control-plane deployment name.
-                             Default: zon-appliance-control-plane
+                             Default: control-plane
 EOF
 }
 
 CONFIG_PATH=""
 RUN_DIR=""
 ADMIN_USERNAME=""
-NAMESPACE="zon"
-DEPLOYMENT="zon-appliance-control-plane"
+NAMESPACE=""
+DEPLOYMENT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -82,6 +82,18 @@ if [[ -z "${ADMIN_USERNAME}" ]]; then
 fi
 if [[ -z "${ADMIN_USERNAME}" ]]; then
   ADMIN_USERNAME="admin"
+fi
+if [[ -z "${NAMESPACE}" ]]; then
+  NAMESPACE="$(config_get_optional "${CONFIG_PATH}" "install.kubernetes_namespace" || true)"
+fi
+if [[ -z "${NAMESPACE}" ]]; then
+  NAMESPACE="appliance-system"
+fi
+if [[ -z "${DEPLOYMENT}" ]]; then
+  DEPLOYMENT="$(config_get_optional "${CONFIG_PATH}" "install.control_plane_deployment" || true)"
+fi
+if [[ -z "${DEPLOYMENT}" ]]; then
+  DEPLOYMENT="control-plane"
 fi
 
 TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
