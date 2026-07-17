@@ -37,6 +37,13 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 - The installer fails closed: it never silently proceeds when a required artifact is missing, invalid, or fails verification, and it never falls back to an unpinned or unverified source.
 - Secrets are generated on the target or supplied through protected files/descriptors. They never appear in Git, release artifacts, command arguments, logs, or support bundles.
 
+## Local Verification Discipline
+
+- Any time you edit this repository, run `make verify` in this repository before considering the work complete.
+- Apply this even for small code, script, workflow, test, Makefile, or documentation changes unless the user explicitly tells you not to run verification.
+- If `make verify` fails, fixing that failure becomes the first follow-up task before any further feature work or close-out.
+- Do not treat the task as done while `make verify` is failing. Either fix the failure or report the exact blocker and the failing log/location.
+
 ## Real Setup Guardrail
 
 - Do not run real-environment verification flows unless the user explicitly asks for that exact run in the current turn.

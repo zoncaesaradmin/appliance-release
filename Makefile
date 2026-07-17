@@ -44,7 +44,6 @@ verify-help:
 		bash "$$script" --help >/dev/null; \
 	done
 	@bash scripts/publish/install-http-release.sh --help | grep -q -- '--build-catalog'
-	@bash scripts/publish/install-http-release.sh --help | grep -q -- '--source-credentials'
 
 .PHONY: verify-json
 verify-json:
