@@ -95,6 +95,9 @@ fi
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   ensure_file "${BUILD_CATALOG_PATH}"
 fi
+if [[ "${APPLIANCE_PROFILE}" == "builder" && -z "${BUILD_CATALOG_PATH}" ]]; then
+  fail "builder appliance profile requires install.build_catalog_path or --build-catalog; start from .agents/skills/release/references/build-catalog.example.yaml"
+fi
 if [[ -z "${UNINSTALL_FIRST}" ]]; then
   UNINSTALL_FIRST="$(config_get_optional "${CONFIG_PATH}" "install.uninstall_first" || true)"
 fi

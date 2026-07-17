@@ -118,6 +118,9 @@ fi
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   ensure_file "${BUILD_CATALOG_PATH}"
 fi
+if [[ "${APPLIANCE_PROFILE}" == "builder" && -z "${BUILD_CATALOG_PATH}" ]]; then
+  fail "builder appliance profile requires install.build_catalog_path or --build-catalog; start from .agents/skills/release/references/build-catalog.example.yaml"
+fi
 ensure_dir "${RUN_DIR}"
 ensure_dir "${RUN_DIR}/logs"
 ensure_dir "${RUN_DIR}/metadata"
