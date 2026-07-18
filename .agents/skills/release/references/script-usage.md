@@ -51,6 +51,7 @@ Common explicit example:
   --release-version 0.1.0 \
   --appliance-profile builder \
   --build-catalog /Users/zoncaesar/ws/appliance-release/build-catalog.yaml \
+  --preserve-failed-state \
   --uninstall-first \
   --final-ok
 ```
@@ -70,6 +71,11 @@ This does:
 The wrapper writes the release-flow metadata and report on success and also
 best-effort on phase failure, so failed runs should still leave a useful
 handoff report in the run directory.
+
+For development-time target debugging, add `--preserve-failed-state` to
+forward zonctl's explicit debug mode to the target. In that mode, failed
+install/upgrade attempts are left in place for inspection instead of being
+rolled back automatically.
 
 ## 2. Build And Publish Only
 
@@ -117,6 +123,7 @@ Use this when the release is already published and you want only the install ste
   --release-version 0.1.0 \
   --appliance-profile builder \
   --build-catalog /Users/zoncaesar/ws/appliance-release/build-catalog.yaml \
+  --preserve-failed-state \
   --uninstall-first
 ```
 

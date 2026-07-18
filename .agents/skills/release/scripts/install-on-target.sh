@@ -19,6 +19,8 @@ Options:
   --release-version VERSION  Release version to install. Defaults to release.version.
   --appliance-profile NAME   Override install.appliance_profile.
   --build-catalog PATH       Local build catalog JSON/YAML passed to zonctl.
+  --preserve-failed-state    Pass zonctl's debug preserve-failed-state mode
+                             through to install/upgrade on the target.
   --uninstall-first          Uninstall the previous appliance first.
   --run-dir DIR              Local run directory.
 EOF
@@ -28,6 +30,7 @@ CONFIG_PATH=""
 RELEASE_VERSION=""
 APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
+PRESERVE_FAILED_STATE="false"
 UNINSTALL_FIRST=""
 RUN_DIR=""
 
@@ -48,6 +51,10 @@ while [[ $# -gt 0 ]]; do
     --build-catalog)
       BUILD_CATALOG_PATH="${2:-}"
       shift 2
+      ;;
+    --preserve-failed-state)
+      PRESERVE_FAILED_STATE="true"
+      shift 1
       ;;
     --uninstall-first)
       UNINSTALL_FIRST="true"
@@ -149,6 +156,7 @@ remote_dir='"$(shell_quote "${remote_release_dir}")"'
 product_version='"$(shell_quote "${RELEASE_VERSION}")"'
 out_dir='"$(shell_quote "${OUT_DIR}")"'
 build_catalog_b64='"$(shell_quote "${build_catalog_b64}")"'
+preserve_failed_state='"$(shell_quote "${PRESERVE_FAILED_STATE}")"'
 bundle_archive="appliance-${product_version}-bundle.tar.gz"
 public_key_file="release-signing.pub"
 checksum_file="sha256sum.txt"
@@ -198,6 +206,10 @@ if [[ -n "${build_catalog_b64}" ]]; then
   printf "%s" "${build_catalog_b64}" | base64 -d > "${build_catalog_path}"
   install_args+=(--build-catalog "${build_catalog_path}")
   upgrade_args+=(--build-catalog "${build_catalog_path}")
+fi
+if [[ "${preserve_failed_state}" == "true" ]]; then
+  install_args+=(--preserve-failed-state)
+  upgrade_args+=(--preserve-failed-state)
 fi
 capture_zonctl_step() {
   local stdout_file="$1"
@@ -270,7 +282,7 @@ install_log="${RUN_DIR}/logs/install.log"
 log "installing release on ${TARGET_HOST} using ${remote_release_dir}"
 run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"
 
-python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${install_log}" <<'PY'
+python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${PRESERVE_FAILED_STATE}" "${install_log}" <<'PY'
 import json
 import sys
 
@@ -288,8 +300,9 @@ import sys
     build_catalog_path,
     output_format,
     uninstall_first,
+    preserve_failed_state,
     install_log,
-) = sys.argv[1:15]
+) = sys.argv[1:16]
 
 payload = {
     "configPath": config_path,
@@ -306,6 +319,7 @@ payload = {
     "buildCatalogPath": build_catalog_path or None,
     "outputFormat": output_format,
     "uninstallFirst": uninstall_first == "true",
+    "preserveFailedState": preserve_failed_state == "true",
     "log": install_log,
 }
 

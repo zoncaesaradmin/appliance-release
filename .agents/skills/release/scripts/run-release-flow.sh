@@ -23,6 +23,8 @@ Options:
   --release-version VERSION  Release version override.
   --appliance-profile NAME   Install-time appliance profile override.
   --build-catalog PATH       Local build catalog JSON/YAML passed to zonctl.
+  --preserve-failed-state    Pass zonctl's debug preserve-failed-state mode
+                             through to install/upgrade on the target.
   --uninstall-first          Uninstall the previous appliance before install.
   --skip-bootstrap-admin     Skip explicit first-admin creation and leave
                              setup to the appliance UI or a later manual
@@ -38,6 +40,7 @@ RUN_DIR=""
 RELEASE_VERSION=""
 APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
+PRESERVE_FAILED_STATE="false"
 UNINSTALL_FIRST="false"
 SKIP_BOOTSTRAP_ADMIN="false"
 SKIP_BUILD="false"
@@ -65,6 +68,10 @@ while [[ $# -gt 0 ]]; do
     --build-catalog)
       BUILD_CATALOG_PATH="${2:-}"
       shift 2
+      ;;
+    --preserve-failed-state)
+      PRESERVE_FAILED_STATE="true"
+      shift 1
       ;;
     --uninstall-first)
       UNINSTALL_FIRST="true"
@@ -133,7 +140,7 @@ finalize_release_flow() {
   fi
   FLOW_FINALIZED="true"
 
-  python3 - "${RUN_DIR}/metadata/run-release-flow.json" "${CONFIG_PATH}" "${RUN_DIR}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${SKIP_BUILD}" "${SKIP_INSTALL}" "${SKIP_BOOTSTRAP_ADMIN}" "${UNINSTALL_FIRST}" "${exit_code}" <<'PY'
+  python3 - "${RUN_DIR}/metadata/run-release-flow.json" "${CONFIG_PATH}" "${RUN_DIR}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${SKIP_BUILD}" "${SKIP_INSTALL}" "${SKIP_BOOTSTRAP_ADMIN}" "${UNINSTALL_FIRST}" "${PRESERVE_FAILED_STATE}" "${exit_code}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -149,8 +156,9 @@ import sys
     skip_install,
     skip_bootstrap_admin,
     uninstall_first,
+    preserve_failed_state,
     exit_code,
-) = sys.argv[1:12]
+) = sys.argv[1:13]
 
 run_dir_path = Path(run_dir)
 exit_code_int = int(exit_code)
@@ -170,6 +178,7 @@ payload = {
         "targetVerifySkipped": False,
         "clientVerifySkipped": skip_bootstrap_admin == "true",
         "uninstallFirst": uninstall_first == "true",
+        "preserveFailedState": preserve_failed_state == "true",
     },
     "metadataFiles": {
         "buildPublish": str(run_dir_path / "metadata" / "build-publish.json"),
@@ -237,6 +246,9 @@ if ! bool_true "${SKIP_INSTALL}"; then
   fi
   if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
     install_args+=(--build-catalog "${BUILD_CATALOG_PATH}")
+  fi
+  if bool_true "${PRESERVE_FAILED_STATE}"; then
+    install_args+=(--preserve-failed-state)
   fi
   if bool_true "${UNINSTALL_FIRST}"; then
     install_args+=(--uninstall-first)
