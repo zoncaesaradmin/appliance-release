@@ -258,6 +258,21 @@ if [[ -f "${state_dir}/installed-state.json" ]] || systemctl list-unit-files k3s
   uninstall_stdout="$(mktemp "${out_dir}/.zonctl-uninstall-stdout.XXXXXX")"
   uninstall_stderr="$(mktemp "${out_dir}/.zonctl-uninstall-stderr.XXXXXX")"
   if capture_zonctl_step "${uninstall_stdout}" "${uninstall_stderr}" "" sudo -n "${zonctl}" uninstall --confirm yes --state-dir "${state_dir}" --output text; then
+    sudo -n systemctl daemon-reload
+    if [[ -f "${state_dir}/installed-state.json" ]]; then
+      echo "[target] zonctl uninstall returned success but left ${state_dir}/installed-state.json; removing stale ownership record before reinstall." >&2
+      sudo -n rm -f "${state_dir}/installed-state.json"
+    fi
+    if [[ -f "${state_dir}/installed-state.json" ]]; then
+      print_captured_failure "[target] Previous appliance uninstall did not remove installed-state." "${uninstall_stdout}" "${uninstall_stderr}"
+      rm -f "${uninstall_stdout}" "${uninstall_stderr}"
+      exit 1
+    fi
+    if systemctl list-unit-files k3s.service 2>/dev/null | grep -q "^k3s.service"; then
+      print_captured_failure "[target] Previous appliance uninstall did not remove k3s.service." "${uninstall_stdout}" "${uninstall_stderr}"
+      rm -f "${uninstall_stdout}" "${uninstall_stderr}"
+      exit 1
+    fi
     rm -f "${uninstall_stdout}" "${uninstall_stderr}"
   else
     print_captured_failure "[target] Previous appliance uninstall failed." "${uninstall_stdout}" "${uninstall_stderr}"
