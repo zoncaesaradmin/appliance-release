@@ -39,7 +39,7 @@ sudo journalctl -u k3s -f
 Reports installed version and K3s health:
 
 ```
-zonctl status --output json --state-dir /var/lib/zon
+zonctl status --output json --state-dir /var/lib/zon/state
 ```
 
 The command itself reports `"status": "succeeded"` even when the

@@ -72,12 +72,18 @@ already flows through it.
 `uninstall` and `factory-reset` both require an explicit, non-interactive
 confirmation token before any host mutation happens:
 
-- **`uninstall`** (preserves the data directory) requires `--confirm <token>`.
-- **`factory-reset`** (wipes the data directory) requires all of:
+- **`uninstall`** (preserves platform data) requires `--confirm <token>`.
+- **`factory-reset`** (wipes platform/K3s data and `zonctl` control state)
+  requires all of:
   - `--confirm <token>`
   - `--acknowledge-data-loss`
   - either `--backup-id <id>` referencing a backup that passes integrity
     verification, or the explicit `--force-data-loss` override.
+
+Builder workspace data is intentionally separate from `zonctl` control state:
+the default workspace root is `/data/zon/workspaces`, not under
+`--state-dir`. Factory reset preserves that workspace root unless a future,
+explicit workspace-wipe operation is added and invoked.
 
 Each gate is checked independently and in order, before `internal/teardown`
 is ever called — a request missing any one of them fails with a specific

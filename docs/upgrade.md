@@ -14,7 +14,7 @@ Like `install`, `upgrade` reads the target release's artifacts through an
 zonctl upgrade \
   --bundle-dir /path/to/extracted/target/bundle \
   --public-key /path/to/release-signing.pub \
-  --state-dir /var/lib/zon \
+  --state-dir /var/lib/zon/state \
   [--output text|json]
 ```
 

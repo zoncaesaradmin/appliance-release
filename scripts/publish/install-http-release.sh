@@ -32,7 +32,7 @@ Optional:
   --path-prefix PATH           Path under base URL. Default: appliance
   --use-latest                 Fetch from <base-url>/<path-prefix>/latest/
                                instead of the explicit version directory
-  --state-dir DIR              zonctl state directory. Default: /var/lib/zon
+  --state-dir DIR              zonctl state directory. Default: /var/lib/zon/state
   --appliance-profile NAME     Product-facing appliance profile passed to
                                zonctl install/upgrade. Default: core
   --build-catalog PATH         Target-local build catalog YAML/JSON passed to
@@ -62,7 +62,7 @@ PRODUCT_VERSION=""
 OUT_DIR=""
 PATH_PREFIX="appliance"
 USE_LATEST="0"
-STATE_DIR="/var/lib/zon"
+STATE_DIR="/var/lib/zon/state"
 APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
 NODE_NAME=""

@@ -8,7 +8,8 @@ Use it after the release files have already been published to your HTTP/HTTPS
 server. It focuses only on what an operator runs on the target Ubuntu host.
 
 All lifecycle commands below should be run with `sudo`, because the appliance
-state directory is `/var/lib/zon` and the installer owns K3s on the host.
+state directory is `/var/lib/zon/state` and the installer owns K3s on the host.
+Builder workspace data is separate and defaults to `/data/zon/workspaces`.
 
 ## Defaults Used Below
 
@@ -17,7 +18,7 @@ Set these once on the target host before running the commands:
 ```bash
 export RELEASE_BASE_URL=http://192.168.1.103:28081
 export RELEASE_VERSION=0.1.0
-export STATE_DIR=/var/lib/zon
+export STATE_DIR=/var/lib/zon/state
 export WORK_DIR=/tmp/appliance-${RELEASE_VERSION}
 ```
 
@@ -184,7 +185,7 @@ Use this path before reaching for a destructive reset.
 ## 4. Uninstall While Preserving Data
 
 Use this when you want to remove the running appliance from the host but keep
-the appliance data directory for later recovery or inspection.
+platform data and builder workspaces for later recovery or inspection.
 
 ```bash
 sudo zonctl uninstall \
@@ -202,8 +203,9 @@ Notes:
 
 ## 5. Factory Reset
 
-Use this only when you want to wipe the appliance state and return the host to
-a clean slate before reinstalling.
+Use this only when you want to wipe platform/K3s data and `zonctl` control
+state before reinstalling. Builder workspaces under `/data/zon/workspaces` are
+preserved by default.
 
 With a verified backup:
 
@@ -216,7 +218,7 @@ sudo zonctl factory-reset \
   --output text
 ```
 
-Without preserving data:
+Without preserving platform/K3s data:
 
 ```bash
 sudo zonctl factory-reset \

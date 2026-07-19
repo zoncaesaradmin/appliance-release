@@ -6,7 +6,7 @@ coordinated, offline backup and a clean-node restore.
 ## Backup
 
 ```
-zonctl backup --state-dir /var/lib/zon [--output text|json]
+zonctl backup --state-dir /var/lib/zon/state [--output text|json]
 ```
 
 Backup refuses to run if nothing is installed. Otherwise it:
@@ -26,7 +26,7 @@ The command result reports `backupId` and the total `sizeBytes` captured.
 ## Restore
 
 ```
-zonctl restore --backup-id <backup-id> --state-dir /var/lib/zon [--output text|json]
+zonctl restore --backup-id <backup-id> --state-dir /var/lib/zon/state [--output text|json]
 ```
 
 This is a **clean-node restore**: the current data directory is fully

@@ -33,13 +33,13 @@ the bundled launcher layout), default configuration, and the signed
 zonctl install \
   --bundle-dir /path/to/extracted/bundle \
   --public-key /path/to/release-signing.pub \
-  --state-dir /var/lib/zon \
+  --state-dir /var/lib/zon/state \
   [--node-name my-node] \
   [--dry-run] \
   [--output text|json]
 ```
 
-`--state-dir` defaults to `/var/lib/zon` and holds the installer lock,
+`--state-dir` defaults to `/var/lib/zon/state` and holds the installer lock,
 transaction journal, `installed-state.json`, and evidence reports.
 `--public-key` defaults to
 `/etc/zon/keys/release-signing.pub`. `--node-name` defaults to the host's
