@@ -90,6 +90,9 @@ if [[ -z "${PATH_PREFIX}" ]]; then
   PATH_PREFIX="appliance"
 fi
 STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || true)"
+if [[ -z "${STATE_DIR}" ]]; then
+  STATE_DIR="/var/lib/zon/state"
+fi
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 fi
@@ -155,6 +158,7 @@ remote_script='set -euo pipefail
 remote_dir='"$(shell_quote "${remote_release_dir}")"'
 product_version='"$(shell_quote "${RELEASE_VERSION}")"'
 out_dir='"$(shell_quote "${OUT_DIR}")"'
+state_dir='"$(shell_quote "${STATE_DIR}")"'
 build_catalog_b64='"$(shell_quote "${build_catalog_b64}")"'
 preserve_failed_state='"$(shell_quote "${PRESERVE_FAILED_STATE}")"'
 bundle_archive="appliance-${product_version}-bundle.tar.gz"
@@ -192,13 +196,13 @@ echo "[target 3/5] Bundle extracted to ${bundle_dir}."
 install_args=(
   --bundle-dir "${bundle_dir}"
   --public-key "${public_key}"
-  --state-dir '"$(shell_quote "${STATE_DIR}")"'
+  --state-dir "${state_dir}"
   --output '"$(shell_quote "${OUTPUT_FORMAT}")"'
 )
 upgrade_args=(
   --bundle-dir "${bundle_dir}"
   --public-key "${public_key}"
-  --state-dir '"$(shell_quote "${STATE_DIR}")"'
+  --state-dir "${state_dir}"
   --output '"$(shell_quote "${OUTPUT_FORMAT}")"'
 )
 if [[ -n "${build_catalog_b64}" ]]; then
@@ -250,8 +254,16 @@ echo "[target 4/5] Host preflight passed."'
 if bool_true "${UNINSTALL_FIRST:-false}"; then
   remote_script+='
 echo "[target] Uninstalling previous appliance before install..."
-if command -v zonctl >/dev/null 2>&1; then
-  sudo -n zonctl uninstall --confirm yes --state-dir '"$(shell_quote "${STATE_DIR:-/var/lib/zon/state}")"' --output text >/dev/null 2>&1 || true
+if [[ -f "${state_dir}/installed-state.json" ]] || systemctl list-unit-files k3s.service 2>/dev/null | grep -q "^k3s.service"; then
+  uninstall_stdout="$(mktemp "${out_dir}/.zonctl-uninstall-stdout.XXXXXX")"
+  uninstall_stderr="$(mktemp "${out_dir}/.zonctl-uninstall-stderr.XXXXXX")"
+  if capture_zonctl_step "${uninstall_stdout}" "${uninstall_stderr}" "" sudo -n "${zonctl}" uninstall --confirm yes --state-dir "${state_dir}" --output text; then
+    rm -f "${uninstall_stdout}" "${uninstall_stderr}"
+  else
+    print_captured_failure "[target] Previous appliance uninstall failed." "${uninstall_stdout}" "${uninstall_stderr}"
+    rm -f "${uninstall_stdout}" "${uninstall_stderr}"
+    exit 1
+  fi
 fi
 echo "[target] Previous appliance uninstall step completed."'
 fi
