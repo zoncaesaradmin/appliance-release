@@ -44,7 +44,7 @@ buildTargets:
     repo: app
     execution: repo_script
     imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:abc123
+    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
         )
         config = tmp / "config.yaml"
@@ -54,7 +54,7 @@ buildTargets:
 release:
   version: 0.1.0
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:abc123
+  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -160,7 +160,9 @@ def test_checklist_mode_suppresses_runnable_commands_when_incomplete() -> None:
             raise AssertionError(plan)
         if "source_ref: 0123456789abcdef0123456789abcdef01234567" not in overlay:
             raise AssertionError(plan)
-        if "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" not in overlay:
+        if "<real-64-hex-builder-image-digest>" not in overlay:
+            raise AssertionError(plan)
+        if "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" in overlay:
             raise AssertionError(plan)
         if "privateKey:" in overlay or "token:" in overlay or "password:" in overlay:
             raise AssertionError(plan)
@@ -186,7 +188,7 @@ buildTargets:
   - name: app
     execution: repo_script
     imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:abc123
+    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
         )
         config = tmp / "config.yaml"
@@ -207,6 +209,39 @@ install:
         if "build_flow.extra_oci_image_refs" not in joined:
             raise AssertionError(plan)
 
+
+def test_build_catalog_rejects_placeholder_builder_image_digest() -> None:
+    with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        write(
+            tmp / "catalog.yaml",
+            """
+buildTargets:
+  - name: app
+    execution: repo_script
+    imageRepository: users/alice/app
+    builderImageDigest: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+""".lstrip(),
+        )
+        config = tmp / "config.yaml"
+        write(
+            config,
+            f"""
+build_flow:
+  extra_oci_image_refs: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+install:
+  build_catalog_path: {tmp / "catalog.yaml"}
+""".lstrip(),
+        )
+        result = run_planner(config)
+        if result.returncode == 0:
+            raise AssertionError("placeholder builder image digest was accepted")
+        plan = json.loads(result.stdout)
+        joined = "\n".join(plan["validationErrors"])
+        if "sample placeholder digest" not in joined:
+            raise AssertionError(plan)
+
+
 def test_build_catalog_workflow_smoke_names_must_exist() -> None:
     with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -225,7 +260,7 @@ buildTargets:
     repo: app
     execution: repo_script
     imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:abc123
+    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
         )
         config = tmp / "config.yaml"
@@ -233,7 +268,7 @@ buildTargets:
             config,
             f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:abc123
+  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -276,7 +311,7 @@ buildTargets:
     repo: app
     execution: repo_script
     imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:abc123
+    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
         )
         config = tmp / "config.yaml"
@@ -284,7 +319,7 @@ buildTargets:
             config,
             f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:abc123
+  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -319,7 +354,7 @@ buildTargets:
     repo: app
     execution: repo_script
     imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:abc123
+    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
         )
         config = tmp / "config.yaml"
@@ -327,7 +362,7 @@ buildTargets:
             config,
             f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:abc123
+  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),
@@ -354,7 +389,7 @@ buildTargets:
     repo: app
     execution: make_target
     imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:abc123
+    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
         )
         config = tmp / "config.yaml"
@@ -362,7 +397,7 @@ buildTargets:
             config,
             f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:abc123
+  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),
@@ -398,7 +433,7 @@ buildTargets:
     repo: app
     execution: {execution}
 {extra}    imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:abc123
+    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
             )
             config = tmp / "config.yaml"
@@ -406,7 +441,7 @@ buildTargets:
                 config,
                 f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:abc123
+  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),
@@ -431,7 +466,7 @@ def test_reference_builder_templates_are_planner_compatible() -> None:
 release:
   version: 0.1.0
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 install:
   build_catalog_path: {catalog}
 client_verification:

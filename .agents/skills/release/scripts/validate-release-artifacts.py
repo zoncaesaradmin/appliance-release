@@ -4,8 +4,13 @@
 import argparse
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Optional
+
+
+IMAGE_DIGEST_RE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
+PLACEHOLDER_IMAGE_DIGEST = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 
 def first_named(root: Path, name: str) -> Optional[Path]:
@@ -94,7 +99,10 @@ def require_existing_release_path(release_input_dir: Path, rel_path: str, label:
 
 
 def image_ref_is_digest_pinned(image_ref: str) -> bool:
-    return "@sha256:" in image_ref
+    image_ref = image_ref.strip()
+    if not IMAGE_DIGEST_RE.match(image_ref):
+        return False
+    return image_ref.rsplit("@sha256:", 1)[1] != PLACEHOLDER_IMAGE_DIGEST
 
 
 def parse_csv(value: str) -> list:

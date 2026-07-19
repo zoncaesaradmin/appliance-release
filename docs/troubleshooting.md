@@ -19,10 +19,18 @@ For the currently migrated always-running Go services, check:
 Each service directory is expected to contain:
 
 ```text
-startup.log
 stdout.log
 stderr.log
+application.log
 ```
+
+Startup banners are folded into `stdout.log`; functional service flow logs are
+written to `application.log`.
+
+Service log directories are expected to be readable/traversable by the target
+host operator while remaining writable only by the owning service UID. If a
+directory shows mode `2770` and a normal operator user cannot `cd` into it,
+the deployed chart is older than the operator-readable log-directory policy.
 
 Kubernetes-native log access is still valid and remains important:
 

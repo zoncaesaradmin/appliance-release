@@ -25,6 +25,8 @@ from config_query import load_config  # noqa: E402
 PROFILES = ("core", "storage", "builder")
 OCI_REPO_RE = re.compile(r"^[a-z0-9]+([._/-][a-z0-9]+)*$")
 MAKE_TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+IMAGE_DIGEST_RE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
+PLACEHOLDER_IMAGE_DIGEST = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 
 def lookup(data: dict, path: str, default: Any = "") -> Any:
@@ -330,8 +332,10 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
         if not image_ref:
             errors.append(f"{prefix}.builderImageDigest is required")
             continue
-        if "@sha256:" not in image_ref:
-            errors.append(f"{prefix}.builderImageDigest must be digest-pinned")
+        if not IMAGE_DIGEST_RE.match(image_ref):
+            errors.append(f"{prefix}.builderImageDigest must be a sha256 image digest with 64 lowercase hex characters")
+        elif image_ref.rsplit("@sha256:", 1)[1] == PLACEHOLDER_IMAGE_DIGEST:
+            errors.append(f"{prefix}.builderImageDigest must not use the sample placeholder digest")
         if expected_extra_refs and image_ref not in expected_extra_refs:
             errors.append(
                 f"{prefix}.builderImageDigest is not listed in build_flow.extra_oci_image_refs: {image_ref}"
@@ -443,7 +447,7 @@ def suggested_final_config_overlay() -> str:
             "  # Must include every builder/task image referenced by install.build_catalog_path.",
             "  # Keep refs digest-pinned and make the archive/ref lists line up by position.",
             "  extra_oci_image_archive_sources: /abs/path/on/build-host/buildah.oci.tar",
-            "  extra_oci_image_refs: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "  extra_oci_image_refs: registry.local/buildah@sha256:<real-64-hex-builder-image-digest>",
             "",
             "install:",
             "  appliance_profile: builder",

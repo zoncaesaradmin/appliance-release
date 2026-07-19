@@ -30,7 +30,7 @@ buildTargets:
     repo: forgeline
     execution: repo_script
     imageRepository: users/example/forgeline
-    builderImageDigest: registry.local/buildah@sha256:abc123
+    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
         )
         catalog = load_build_catalog(path)
@@ -43,7 +43,7 @@ def test_json_catalog_with_https_repo_loads() -> None:
         path = Path(tmp_dir) / "catalog.json"
         write(
             path,
-            '{"repos":[{"name":"app","url":"https://github.com/example/app.git"}],"buildTargets":[{"name":"app","repo":"app","execution":"repo_script","imageRepository":"users/example/app","builderImageDigest":"registry.local/buildah@sha256:abc123"}]}',
+            '{"repos":[{"name":"app","url":"https://github.com/example/app.git"}],"buildTargets":[{"name":"app","repo":"app","execution":"repo_script","imageRepository":"users/example/app","builderImageDigest":"registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}',
         )
         catalog = load_build_catalog(path)
         if catalog["repos"][0]["url"] != "https://github.com/example/app.git":

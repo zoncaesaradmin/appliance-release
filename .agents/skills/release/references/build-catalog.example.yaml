@@ -65,6 +65,8 @@ repos:
     defaultRef: main
 
 buildTargets:
+  # Replace the fixture digest below with the real digest-pinned builder image
+  # reference listed in build_flow.extra_oci_image_refs for the release run.
   - name: platformkit
     aliases:
       - platform
@@ -72,7 +74,7 @@ buildTargets:
     execution: repo_script
     scriptPath: build.sh
     imageRepository: users/example/platformkit
-    builderImageDigest: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
   - name: zonbundle
     aliases:
@@ -81,7 +83,7 @@ buildTargets:
     execution: make_target
     makeTarget: build
     imageRepository: users/example/zonbundle
-    builderImageDigest: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
   - name: zoncore
     aliases:
@@ -90,7 +92,7 @@ buildTargets:
     execution: repo_script
     scriptPath: build.sh
     imageRepository: users/example/zoncore
-    builderImageDigest: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
   - name: forgeline
     aliases:
@@ -99,7 +101,7 @@ buildTargets:
     execution: repo_script
     scriptPath: build.sh
     imageRepository: users/example/forgeline
-    builderImageDigest: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
   - name: forgeline-release
     aliases:
@@ -108,4 +110,4 @@ buildTargets:
     execution: repo_script
     scriptPath: build.sh
     imageRepository: users/example/forgeline-release
-    builderImageDigest: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

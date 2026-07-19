@@ -93,7 +93,7 @@ ingress:
     "argoControllerImage": {"path": "images/argo-controller.tar", "digest": "sha256:controller", "sizeBytes": 10, "imageReference": "quay.io/argoproj/workflow-controller:v3.5.10"},
     "argoExecutorImage": {"path": "images/argo-executor.tar", "digest": "sha256:executor", "sizeBytes": 8, "imageReference": "quay.io/argoproj/argoexec:v3.5.10"},
     "extraOCIImages": [
-      {"path": "images/buildah.tar", "digest": "sha256:buildah", "sizeBytes": 6, "imageReference": "registry.local/buildah@sha256:abc123"}
+      {"path": "images/buildah.tar", "digest": "sha256:buildah", "sizeBytes": 6, "imageReference": "registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
     ]
   }
 }
@@ -112,7 +112,7 @@ ingress:
     {"targetPath": "kubernetes/crds/crds/workflows.yaml", "digest": "sha256:crd", "sizeBytes": 3},
     {"targetPath": "oci-images/argo-controller.tar", "digest": "sha256:controller", "sizeBytes": 10, "imageReference": "quay.io/argoproj/workflow-controller:v3.5.10"},
     {"targetPath": "oci-images/argo-executor.tar", "digest": "sha256:executor", "sizeBytes": 8, "imageReference": "quay.io/argoproj/argoexec:v3.5.10"},
-    {"targetPath": "oci-images/buildah.tar", "digest": "sha256:buildah", "sizeBytes": 6, "imageReference": "registry.local/buildah@sha256:abc123"}
+    {"targetPath": "oci-images/buildah.tar", "digest": "sha256:buildah", "sizeBytes": 6, "imageReference": "registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
   ]
 }
 """.lstrip(),
@@ -174,6 +174,21 @@ def test_rejects_tag_only_extra_oci_image() -> None:
             raise AssertionError(result.stderr)
 
 
+def test_rejects_placeholder_extra_oci_image_digest() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        release_input_path = tmp / "release-input" / "release-input.json"
+        release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
+        release_input["artifacts"]["extraOCIImages"][0]["imageReference"] = "registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        release_input_path.write_text(json.dumps(release_input), encoding="utf-8")
+        result = run_validator(tmp)
+        if result.returncode == 0:
+            raise AssertionError("placeholder extraOCIImages imageReference was accepted")
+        if "must be digest-pinned" not in result.stderr:
+            raise AssertionError(result.stderr)
+
+
 def test_rejects_missing_expected_extra_oci_image_ref() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -181,7 +196,7 @@ def test_rejects_missing_expected_extra_oci_image_ref() -> None:
         result = run_validator(
             tmp,
             "--expected-extra-oci-image-refs",
-            "registry.local/buildah@sha256:abc123,registry.local/missing@sha256:def456",
+            "registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,registry.local/missing@sha256:def456",
         )
         if result.returncode == 0:
             raise AssertionError("missing expected extra OCI image ref was accepted")
