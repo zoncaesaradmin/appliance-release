@@ -309,7 +309,7 @@ def add_secret_key_check(namespace: str, secret_name: str, data_key: str):
 
 secret_names = builder_ssh_secret_names(data)
 if not secret_names:
-    raise SystemExit("build catalog does not declare any SSH repos")
+    raise SystemExit(0)
 
 namespace = "appliance-builds"
 if "builder-git-key" in secret_names:
@@ -318,7 +318,7 @@ if "builder-git-known-hosts" in secret_names:
     add_secret_key_check(namespace, "builder-git-known-hosts", "known_hosts")
 
 if not checks:
-    raise SystemExit("build catalog did not require any builder SSH Secret data checks")
+    raise SystemExit(0)
 print("sudo bash -lc " + shlex.quote(" && ".join(checks)))
 PY
 }

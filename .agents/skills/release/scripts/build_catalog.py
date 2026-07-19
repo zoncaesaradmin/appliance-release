@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import urlparse
 
 
 def parse_scalar(raw: str) -> Any:
@@ -132,24 +131,5 @@ def parse_simple_list_manifest(text: str) -> dict[str, Any]:
     return data
 
 
-def is_ssh_git_url(raw: str) -> bool:
-    raw = raw.strip()
-    if not raw:
-        return False
-    parsed = urlparse(raw)
-    if parsed.scheme == "ssh":
-        return True
-    return ":" in raw and "/" not in raw.split(":", 1)[0] and "@" in raw.split(":", 1)[0]
-
-
 def builder_ssh_secret_names(catalog: dict[str, Any]) -> list[str]:
-    repos = catalog.get("repos")
-    if not isinstance(repos, list):
-        return []
-    for repo in repos:
-        if not isinstance(repo, dict):
-            continue
-        repo_url = str(repo.get("url") or "").strip()
-        if is_ssh_git_url(repo_url):
-            return ["builder-git-key", "builder-git-known-hosts"]
     return []

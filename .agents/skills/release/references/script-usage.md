@@ -32,9 +32,7 @@ Notes:
   `build_flow.extra_oci_image_archive_sources` and
   `build_flow.extra_oci_image_refs` so that image is included in the signed
   bundle and preloaded on the target.
-- For Git-backed builder workflows, `zonctl` prepares one appliance-managed
-  SSH key plus `known_hosts` data under its state directory and creates the
-  fixed workflow-mount Secrets automatically.
+- Builder workflow repo URLs must use HTTPS.
 
 ## 1. Full Flow
 
@@ -173,12 +171,9 @@ If `install.appliance_profile` is `builder`, it also checks that
 `verification.builder.enabled` or `verification.builder.api_command` only when
 you need custom reachability behavior.
 
-If `install.build_catalog_path` declares SSH Git repos for a builder install,
-the target verifier checks that the fixed appliance-managed Secrets have
-non-empty `ssh-privatekey` and `known_hosts` data. Override
+Builder workflow repo URLs must use HTTPS. Override
 `verification.builder.source_credentials_command` only when you need a custom
-Secret readiness check. This proves the pod-mount prerequisites are present;
-the actual Git clone still requires a real builder workflow run.
+builder-specific readiness rule.
 
 ## 5. Verify Client/API Only
 

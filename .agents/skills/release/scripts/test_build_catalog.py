@@ -11,7 +11,7 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def test_yaml_catalog_detects_ssh_repo() -> None:
+def test_yaml_catalog_with_https_repo_has_no_managed_secrets() -> None:
     with tempfile.TemporaryDirectory(prefix="build-catalog-") as tmp_dir:
         path = Path(tmp_dir) / "catalog.yaml"
         write(
@@ -24,7 +24,7 @@ workProfiles:
         enabledByDefault: true
 repos:
   - name: forgeline
-    url: git@github.com:zoncaesaradmin/forgeline.git
+    url: https://github.com/zoncaesaradmin/forgeline.git
 buildTargets:
   - name: forgeline
     repo: forgeline
@@ -34,7 +34,7 @@ buildTargets:
 """.lstrip(),
         )
         catalog = load_build_catalog(path)
-        if builder_ssh_secret_names(catalog) != ["builder-git-key", "builder-git-known-hosts"]:
+        if builder_ssh_secret_names(catalog) != []:
             raise AssertionError(catalog)
 
 
@@ -51,5 +51,5 @@ def test_json_catalog_without_ssh_repo_has_no_managed_secrets() -> None:
 
 
 if __name__ == "__main__":
-    test_yaml_catalog_detects_ssh_repo()
+    test_yaml_catalog_with_https_repo_has_no_managed_secrets()
     test_json_catalog_without_ssh_repo_has_no_managed_secrets()

@@ -38,7 +38,7 @@ workProfiles:
       - name: app
 repos:
   - name: app
-    url: git@git.internal.example.com:team/app.git
+    url: https://git.internal.example.com/team/app.git
 buildTargets:
   - name: app
     repo: app
@@ -305,7 +305,7 @@ client_verification:
         if plan["validationErrors"]:
             raise AssertionError(plan)
 
-def test_build_catalog_accepts_ssh_repo_without_credential_mapping() -> None:
+def test_build_catalog_accepts_https_repo() -> None:
     with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
         tmp = Path(tmp_dir)
         write(
@@ -313,7 +313,7 @@ def test_build_catalog_accepts_ssh_repo_without_credential_mapping() -> None:
             """
 repos:
   - name: app
-    url: git@git.internal.example.com:team/app.git
+    url: https://git.internal.example.com/team/app.git
 buildTargets:
   - name: app
     repo: app
@@ -462,7 +462,7 @@ def main() -> None:
     test_build_catalog_requires_extra_oci_image_ref()
     test_build_catalog_workflow_smoke_names_must_exist()
     test_build_catalog_workflow_smoke_accepts_target_alias()
-    test_build_catalog_accepts_ssh_repo_without_credential_mapping()
+    test_build_catalog_accepts_https_repo()
     test_build_catalog_make_target_requires_make_target_name()
     test_build_catalog_rejects_unsafe_execution_paths()
     test_reference_builder_templates_are_planner_compatible()

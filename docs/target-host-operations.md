@@ -44,18 +44,15 @@ curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-releas
 
 For the builder profile, pass a target-local build catalog unless the bundle's
 chart values already include one with matching Git-host and builder-image
-allowlists. For Git-backed builder workflows, `zonctl` now prepares one
-persistent appliance-managed SSH key plus `known_hosts` data under its state
-directory and creates the fixed Secrets that workflow pods mount during
-`git clone`.
+allowlists. Builder workflow repo URLs must use HTTPS.
 
 Start from the release skill template
 `.agents/skills/release/references/build-catalog.example.yaml`, then replace
 the placeholder Git host, repo URL, builder image digest, and output image
 repository.
 
-Use read-only deploy keys wherever possible. Those Secrets are mounted into
-build workflow pods, not into the control plane, and they are not part of the
+Do not put private keys, tokens, or passwords in the build catalog. Those
+credentials belong in separate operator-managed secret handling, not in the
 signed release bundle.
 
 ```bash
