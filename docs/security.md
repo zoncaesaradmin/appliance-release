@@ -79,11 +79,13 @@ confirmation token before any host mutation happens:
   - `--acknowledge-data-loss`
   - either `--backup-id <id>` referencing a backup that passes integrity
     verification, or the explicit `--force-data-loss` override.
+  - optional `--wipe-workspaces` when builder workspace source trees under
+    `/data/zon/workspaces` must also be removed.
 
 Builder workspace data is intentionally separate from `zonctl` control state:
 the default workspace root is `/data/zon/workspaces`, not under
-`--state-dir`. Factory reset preserves that workspace root unless a future,
-explicit workspace-wipe operation is added and invoked.
+`--state-dir`. Factory reset preserves that workspace root unless the
+destructive `--wipe-workspaces` option is explicitly passed.
 
 Each gate is checked independently and in order, before `internal/teardown`
 is ever called — a request missing any one of them fails with a specific

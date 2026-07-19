@@ -229,6 +229,18 @@ sudo zonctl factory-reset \
   --output text
 ```
 
+To also remove builder workspace source trees:
+
+```bash
+sudo zonctl factory-reset \
+  --state-dir "${STATE_DIR}" \
+  --confirm <token> \
+  --acknowledge-data-loss \
+  --force-data-loss \
+  --wipe-workspaces \
+  --output text
+```
+
 After `factory-reset`, run the fresh install again:
 
 ```bash

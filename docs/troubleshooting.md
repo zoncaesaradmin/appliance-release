@@ -5,15 +5,15 @@
 The appliance is moving toward one fixed runtime log root on the target host:
 
 ```text
-/var/log/appliance
+/data/zon/logs
 ```
 
 For the currently migrated always-running Go services, check:
 
 ```text
-/var/log/appliance/control-plane/
-/var/log/appliance/ui/
-/var/log/appliance/argo-controller/
+/data/zon/logs/control-plane/
+/data/zon/logs/ui/
+/data/zon/logs/argo-controller/
 ```
 
 Each service directory is expected to contain:

@@ -58,4 +58,6 @@ reports a real duration.
   [upgrade.md](upgrade.md).
 - `zonctl factory-reset` requires either a `--backup-id` that passes
   verification or an explicit `--force-data-loss` override before it will
-  wipe the data directory — see [security.md](security.md).
+  wipe the platform data directory. Builder workspace source trees under
+  `/data/zon/workspaces` are preserved unless `--wipe-workspaces` is also
+  passed — see [security.md](security.md).
