@@ -24,11 +24,11 @@ Notes:
   effective profile.
 - For the `builder` profile, set `install.build_catalog_path` or pass
   `--build-catalog PATH` when the bundle does not already include a
-  `config.buildCatalog` value plus matching Git-host and builder-image
-  allowlists. The file is copied to the target install temp dir and passed to
-  `zonctl`; it should contain only product config, never private keys or
-  tokens.
-- If the build catalog references a builder/task image, also set
+  `config.buildCatalog` value with workspace profiles, HTTPS repo URLs, and a
+  digest-pinned workspace provisioner image. The file is copied to the target
+  install temp dir and passed to `zonctl`; it should contain only product
+  config, never private keys or tokens.
+- If the build catalog references a workspace provisioner image, also set
   `build_flow.extra_oci_image_archive_sources` and
   `build_flow.extra_oci_image_refs` so that image is included in the signed
   bundle and preloaded on the target.

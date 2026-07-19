@@ -83,12 +83,12 @@ build_flow:
     # controller_image_archive_source: /home/zonsys/ci/inputs/argo/workflow-controller.oci.tar
     # executor_image_archive_source: /home/zonsys/ci/inputs/argo/argoexec.oci.tar
   # Optional extra OCI image archives to package into the complete signed
-  # bundle. Use this for builder/task images referenced by the build catalog,
-  # for example a pinned Buildah image. The build script expects comma-separated
-  # lists with matching lengths. extra_oci_image_refs are also used as the
-  # expected evidence list during copied release-input/final-bundle validation.
-  # extra_oci_image_archive_sources: /home/zonsys/ci/inputs/buildah.oci.tar
-  # extra_oci_image_refs: registry.local/buildah@sha256:...
+  # bundle. Use this for the workspace provisioner image referenced by the
+  # build catalog. The build script expects comma-separated lists with matching
+  # lengths. extra_oci_image_refs are also used as the expected evidence list
+  # during copied release-input/final-bundle validation.
+  # extra_oci_image_archive_sources: /home/zonsys/ci/inputs/workspace-provisioner.oci.tar
+  # extra_oci_image_refs: registry.local/workspace-provisioner@sha256:...
 
 install:
   bootstrap_admin_username: admin

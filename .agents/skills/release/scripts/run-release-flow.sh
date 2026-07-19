@@ -226,6 +226,17 @@ fi
 if bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
   log "bootstrap-admin is skipped; client/API verification will also be skipped so first-user setup can be completed later in the UI"
 fi
+if [[ "${APPLIANCE_PROFILE}" == "builder" && -n "${BUILD_CATALOG_PATH}" ]]; then
+  catalog_validation_log="${RUN_DIR}/logs/build-catalog-validation.json"
+  if ! python3 "${SCRIPT_DIR}/validate-build-catalog.py" \
+    --config "${CONFIG_PATH}" \
+    --build-catalog "${BUILD_CATALOG_PATH}" \
+    --output-json "${catalog_validation_log}" \
+    >"${catalog_validation_log}.stdout" 2>"${catalog_validation_log}.stderr"; then
+    fail "builder build catalog validation failed; see ${catalog_validation_log}"
+  fi
+  log "builder build catalog validation completed; log: ${catalog_validation_log}"
+fi
 
 if ! bool_true "${SKIP_BUILD}"; then
   build_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")

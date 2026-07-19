@@ -39,6 +39,7 @@ workProfiles:
 repos:
   - name: app
     url: https://git.internal.example.com/team/app.git
+workspaceProvisionerImageDigest: registry.local/workspace-provisioner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 buildTargets:
   - name: app
     repo: app
@@ -54,7 +55,7 @@ buildTargets:
 release:
   version: 0.1.0
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  extra_oci_image_refs: registry.local/workspace-provisioner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -160,7 +161,7 @@ def test_checklist_mode_suppresses_runnable_commands_when_incomplete() -> None:
             raise AssertionError(plan)
         if "source_ref: 0123456789abcdef0123456789abcdef01234567" not in overlay:
             raise AssertionError(plan)
-        if "<real-64-hex-builder-image-digest>" not in overlay:
+        if "<real-64-hex-workspace-provisioner-image-digest>" not in overlay:
             raise AssertionError(plan)
         if "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" in overlay:
             raise AssertionError(plan)
@@ -178,17 +179,20 @@ def test_checklist_mode_suppresses_runnable_commands_when_incomplete() -> None:
         if "## Commands" in markdown or "## Post-Run Audit Command" in markdown:
             raise AssertionError(markdown)
 
-def test_build_catalog_requires_extra_oci_image_ref() -> None:
+def test_build_catalog_requires_workspace_provisioner_extra_oci_image_ref() -> None:
     with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
         tmp = Path(tmp_dir)
         write(
             tmp / "catalog.yaml",
             """
-buildTargets:
+workProfiles:
+  - name: builder
+    repos:
+      - name: app
+repos:
   - name: app
-    execution: repo_script
-    imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    url: https://git.internal.example.com/team/app.git
+workspaceProvisionerImageDigest: registry.local/workspace-provisioner@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
         )
         config = tmp / "config.yaml"
@@ -210,17 +214,20 @@ install:
             raise AssertionError(plan)
 
 
-def test_build_catalog_rejects_placeholder_builder_image_digest() -> None:
+def test_build_catalog_rejects_placeholder_workspace_provisioner_image_digest() -> None:
     with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
         tmp = Path(tmp_dir)
         write(
             tmp / "catalog.yaml",
             """
-buildTargets:
+workProfiles:
+  - name: builder
+    repos:
+      - name: app
+repos:
   - name: app
-    execution: repo_script
-    imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    url: https://git.internal.example.com/team/app.git
+workspaceProvisionerImageDigest: registry.local/workspace-provisioner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 """.lstrip(),
         )
         config = tmp / "config.yaml"
@@ -228,14 +235,14 @@ buildTargets:
             config,
             f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  extra_oci_image_refs: registry.local/workspace-provisioner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),
         )
         result = run_planner(config)
         if result.returncode == 0:
-            raise AssertionError("placeholder builder image digest was accepted")
+            raise AssertionError("placeholder workspace provisioner image digest was accepted")
         plan = json.loads(result.stdout)
         joined = "\n".join(plan["validationErrors"])
         if "sample placeholder digest" not in joined:
@@ -255,6 +262,7 @@ workProfiles:
 repos:
   - name: app
     url: https://git.internal.example.com/team/app.git
+workspaceProvisionerImageDigest: registry.local/workspace-provisioner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 buildTargets:
   - name: default
     repo: app
@@ -268,7 +276,7 @@ buildTargets:
             config,
             f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  extra_oci_image_refs: registry.local/workspace-provisioner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -304,6 +312,7 @@ workProfiles:
 repos:
   - name: app
     url: https://git.internal.example.com/team/app.git
+workspaceProvisionerImageDigest: registry.local/workspace-provisioner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 buildTargets:
   - name: default
     aliases:
@@ -319,7 +328,7 @@ buildTargets:
             config,
             f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  extra_oci_image_refs: registry.local/workspace-provisioner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -346,9 +355,14 @@ def test_build_catalog_accepts_https_repo() -> None:
         write(
             tmp / "catalog.yaml",
             """
+workProfiles:
+  - name: builder
+    repos:
+      - name: app
 repos:
   - name: app
     url: https://git.internal.example.com/team/app.git
+workspaceProvisionerImageDigest: registry.local/workspace-provisioner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 buildTargets:
   - name: app
     repo: app
@@ -362,7 +376,7 @@ buildTargets:
             config,
             f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  extra_oci_image_refs: registry.local/workspace-provisioner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),
@@ -384,6 +398,7 @@ def test_build_catalog_make_target_requires_make_target_name() -> None:
 repos:
   - name: app
     url: https://git.internal.example.com/team/app.git
+workspaceProvisionerImageDigest: registry.local/workspace-provisioner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 buildTargets:
   - name: app
     repo: app
@@ -397,7 +412,7 @@ buildTargets:
             config,
             f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  extra_oci_image_refs: registry.local/workspace-provisioner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),
@@ -428,6 +443,7 @@ def test_build_catalog_rejects_unsafe_execution_paths() -> None:
 repos:
   - name: app
     url: https://git.internal.example.com/team/app.git
+workspaceProvisionerImageDigest: registry.local/workspace-provisioner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 buildTargets:
   - name: app
     repo: app
@@ -441,7 +457,7 @@ buildTargets:
                 config,
                 f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  extra_oci_image_refs: registry.local/workspace-provisioner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),
@@ -466,7 +482,7 @@ def test_reference_builder_templates_are_planner_compatible() -> None:
 release:
   version: 0.1.0
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  extra_oci_image_refs: registry.local/workspace-provisioner@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 install:
   build_catalog_path: {catalog}
 client_verification:
@@ -494,7 +510,8 @@ def main() -> None:
     test_generates_profile_matrix_commands()
     test_require_builder_workflow_reports_missing_config()
     test_checklist_mode_suppresses_runnable_commands_when_incomplete()
-    test_build_catalog_requires_extra_oci_image_ref()
+    test_build_catalog_requires_workspace_provisioner_extra_oci_image_ref()
+    test_build_catalog_rejects_placeholder_workspace_provisioner_image_digest()
     test_build_catalog_workflow_smoke_names_must_exist()
     test_build_catalog_workflow_smoke_accepts_target_alias()
     test_build_catalog_accepts_https_repo()

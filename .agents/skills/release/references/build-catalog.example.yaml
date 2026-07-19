@@ -8,10 +8,11 @@
 # - `workProfiles` replaces top-level `profiles`
 # - each workspace profile explicitly lists its repos
 # - each repo has one canonical `url` plus optional `defaultRef`
-# - each build target is explicit under `buildTargets` and belongs to one repo
+# - build targets are intentionally omitted here; workspace creation only
+#   materializes source repos and build target modeling will be added later
 # - repo URLs must use HTTPS
 #
-# Replace repo URLs, output image repositories, and builder image digests with
+# Replace repo URLs and the top-level workspace provisioner image digest with
 # the real product values before using this file.
 #
 # Do not put private keys, tokens, or passwords in this file.
@@ -64,50 +65,8 @@ repos:
     url: https://github.com/zoncaesaradmin/forgeline-release.git
     defaultRef: main
 
-buildTargets:
-  # Replace the fixture digest below with the real digest-pinned builder image
-  # reference listed in build_flow.extra_oci_image_refs for the release run.
-  - name: platformkit
-    aliases:
-      - platform
-    repo: platformkit
-    execution: repo_script
-    scriptPath: build.sh
-    imageRepository: users/example/platformkit
-    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-
-  - name: zonbundle
-    aliases:
-      - bundle
-    repo: zonbundle
-    execution: make_target
-    makeTarget: build
-    imageRepository: users/example/zonbundle
-    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-
-  - name: zoncore
-    aliases:
-      - core
-    repo: zoncore
-    execution: repo_script
-    scriptPath: build.sh
-    imageRepository: users/example/zoncore
-    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-
-  - name: forgeline
-    aliases:
-      - control
-    repo: forgeline
-    execution: repo_script
-    scriptPath: build.sh
-    imageRepository: users/example/forgeline
-    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-
-  - name: forgeline-release
-    aliases:
-      - release
-    repo: forgeline-release
-    execution: repo_script
-    scriptPath: build.sh
-    imageRepository: users/example/forgeline-release
-    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+# Replace the fixture digest below with the real digest-pinned workspace
+# provisioner image reference listed in build_flow.extra_oci_image_refs for the
+# release run. This image only needs the tooling required to create the
+# workspace, such as git and CA certificates; it is not a build target image.
+workspaceProvisionerImageDigest: registry.local/workspace-provisioner@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

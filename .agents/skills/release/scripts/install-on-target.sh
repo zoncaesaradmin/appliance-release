@@ -141,6 +141,17 @@ preflight_public_url() {
 preflight_public_url "${helper_url}" "install helper"
 preflight_public_url "${bundle_url}" "bundle archive"
 preflight_public_url "${checksums_url}" "checksum file"
+if [[ "${APPLIANCE_PROFILE}" == "builder" && -n "${BUILD_CATALOG_PATH}" ]]; then
+  catalog_validation_log="${RUN_DIR}/logs/build-catalog-validation.json"
+  if ! python3 "${SCRIPT_DIR}/validate-build-catalog.py" \
+    --config "${CONFIG_PATH}" \
+    --build-catalog "${BUILD_CATALOG_PATH}" \
+    --output-json "${catalog_validation_log}" \
+    >"${catalog_validation_log}.stdout" 2>"${catalog_validation_log}.stderr"; then
+    fail "builder build catalog validation failed; see ${catalog_validation_log}"
+  fi
+  log "builder build catalog validation completed; log: ${catalog_validation_log}"
+fi
 
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 build_catalog_b64=""

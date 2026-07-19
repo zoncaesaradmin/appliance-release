@@ -82,6 +82,7 @@ verify-release-artifacts:
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_assert_final_readiness.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_audit_profile_matrix_reports.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_validate_release_artifacts.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_validate_build_catalog.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_summarize_release_run.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_plan_profile_matrix.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_verify_client_access.py"

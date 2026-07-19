@@ -199,8 +199,9 @@ configuration inputs:
 Those choices are passed into the control plane at install or upgrade time
 only; they do not produce a different bundle or publish path. For the builder
 profile, provide a build catalog unless the bundle chart values already include
-one with matching Git-host and builder-image allowlists. Builder workflow repo
-URLs must use HTTPS. Keep private key material, SSH config, tokens, and
+one with workspace profiles, HTTPS repo URLs, and the digest-pinned workspace
+provisioner image. Builder workspace repo URLs must use HTTPS. Keep private key
+material, SSH config, tokens, and
 passwords out of the manifest, and make sure the target appliance can reach the
 configured Git host from the build workflow namespace. Supported
 product-facing profile names remain `core`, `builder`, and `storage` at the

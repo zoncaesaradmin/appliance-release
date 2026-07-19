@@ -293,6 +293,17 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
     build_targets = object_items(catalog.get("buildTargets"))
     work_profiles = object_items(catalog.get("workProfiles"))
     repos = object_items(catalog.get("repos"))
+    workspace_provisioner_image = as_str(catalog.get("workspaceProvisionerImageDigest", ""))
+    if not work_profiles:
+        errors.append("install.build_catalog_path must declare at least one workProfiles entry")
+    if not repos:
+        errors.append("install.build_catalog_path must declare at least one repos entry")
+    if not workspace_provisioner_image:
+        errors.append("install.build_catalog_path workspaceProvisionerImageDigest is required for workspace provisioning")
+    elif not IMAGE_DIGEST_RE.match(workspace_provisioner_image):
+        errors.append("install.build_catalog_path workspaceProvisionerImageDigest must be a sha256 image digest with 64 lowercase hex characters")
+    elif workspace_provisioner_image.rsplit("@sha256:", 1)[1] == PLACEHOLDER_IMAGE_DIGEST:
+        errors.append("install.build_catalog_path workspaceProvisionerImageDigest must not use the sample placeholder digest")
     profile_names = item_names(work_profiles)
     repo_names = item_names(repos)
     target_names = build_target_lookup_names(build_targets)
@@ -320,26 +331,17 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
             allowed_repos.add(repo_name)
         if profile_name:
             profile_repo_names[profile_name] = allowed_repos
-    if not build_targets:
-        errors.append("install.build_catalog_path must declare at least one buildTargets entry")
     expected_extra_refs = set(parse_csv(as_str(lookup(config, "build_flow.extra_oci_image_refs", ""))))
+    if workspace_provisioner_image and workspace_provisioner_image not in expected_extra_refs:
+        errors.append(
+            "install.build_catalog_path workspaceProvisionerImageDigest is not listed in build_flow.extra_oci_image_refs: "
+            + workspace_provisioner_image
+        )
     for index, target in enumerate(build_targets):
         prefix = f"install.build_catalog_path buildTargets[{index}]"
         target_name = as_str(target.get("name", ""))
         if not target_name:
             errors.append(f"{prefix}.name is required")
-        image_ref = as_str(target.get("builderImageDigest", ""))
-        if not image_ref:
-            errors.append(f"{prefix}.builderImageDigest is required")
-            continue
-        if not IMAGE_DIGEST_RE.match(image_ref):
-            errors.append(f"{prefix}.builderImageDigest must be a sha256 image digest with 64 lowercase hex characters")
-        elif image_ref.rsplit("@sha256:", 1)[1] == PLACEHOLDER_IMAGE_DIGEST:
-            errors.append(f"{prefix}.builderImageDigest must not use the sample placeholder digest")
-        if expected_extra_refs and image_ref not in expected_extra_refs:
-            errors.append(
-                f"{prefix}.builderImageDigest is not listed in build_flow.extra_oci_image_refs: {image_ref}"
-            )
         target_repo = as_str(target.get("repo", ""))
         if target_repo and repo_names and target_repo not in repo_names:
             errors.append(f"{prefix}.repo references unknown repos entry: {target_repo}")
@@ -351,7 +353,7 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
             if lookup_name and target_repo:
                 target_repo_names.setdefault(lookup_name, set()).add(target_repo)
         execution = as_str(target.get("execution", ""))
-        if execution not in {"repo_script", "make_target"}:
+        if execution and execution not in {"repo_script", "make_target"}:
             errors.append(f"{prefix}.execution must be repo_script or make_target")
         script_path = as_str(target.get("scriptPath", ""))
         if execution == "repo_script" and script_path and not valid_repo_relative_path(script_path):
@@ -365,9 +367,7 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
         if containerfile_path and not valid_repo_relative_path(containerfile_path):
             errors.append(f"{prefix}.containerfilePath must be a relative path inside the repo")
         image_repository = as_str(target.get("imageRepository", ""))
-        if not image_repository:
-            errors.append(f"{prefix}.imageRepository is required")
-        elif not OCI_REPO_RE.match(image_repository):
+        if image_repository and not OCI_REPO_RE.match(image_repository):
             errors.append(f"{prefix}.imageRepository is invalid: {image_repository}")
 
     for index, repo in enumerate(repos):
@@ -444,10 +444,10 @@ def suggested_final_config_overlay() -> str:
     return "\n".join(
         [
             "build_flow:",
-            "  # Must include every builder/task image referenced by install.build_catalog_path.",
+            "  # Must include the workspace provisioner image referenced by install.build_catalog_path.",
             "  # Keep refs digest-pinned and make the archive/ref lists line up by position.",
-            "  extra_oci_image_archive_sources: /abs/path/on/build-host/buildah.oci.tar",
-            "  extra_oci_image_refs: registry.local/buildah@sha256:<real-64-hex-builder-image-digest>",
+            "  extra_oci_image_archive_sources: /abs/path/on/build-host/workspace-provisioner.oci.tar",
+            "  extra_oci_image_refs: registry.local/workspace-provisioner@sha256:<real-64-hex-workspace-provisioner-image-digest>",
             "",
             "install:",
             "  appliance_profile: builder",
