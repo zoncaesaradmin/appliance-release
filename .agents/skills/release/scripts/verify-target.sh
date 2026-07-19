@@ -136,6 +136,7 @@ if [[ -z "${RUN_DIR}" ]]; then
 fi
 
 TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
+TARGET_STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || true)"
 STATUS_CMD="${STATUS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.status_command" || true)}"
 VERIFY_CMD="${VERIFY_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.verify_command" || true)}"
 SERVICE_HEALTH_CMD="${SERVICE_HEALTH_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.service_health_command" || true)}"
@@ -238,6 +239,7 @@ RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || tru
 
 if [[ -f "${INSTALL_METADATA_PATH}" ]]; then
   BUNDLE_DIR="$(read_install_metadata_value "${INSTALL_METADATA_PATH}" "bundleDir" || true)"
+  TARGET_STATE_DIR="${TARGET_STATE_DIR:-$(read_install_metadata_value "${INSTALL_METADATA_PATH}" "stateDir" || true)}"
   if [[ -n "${BUNDLE_DIR}" ]]; then
     BUNDLE_BIN_DIR="${BUNDLE_DIR}/bin"
   fi
@@ -246,18 +248,27 @@ if [[ -z "${BUNDLE_DIR}" && -n "${RELEASE_VERSION}" ]]; then
   BUNDLE_DIR="/tmp/appliance-${RELEASE_VERSION}/appliance-${RELEASE_VERSION}-bundle"
   BUNDLE_BIN_DIR="${BUNDLE_DIR}/bin"
 fi
+if [[ -z "${TARGET_STATE_DIR}" ]]; then
+  TARGET_STATE_DIR="/var/lib/zon/state"
+fi
 
 if [[ -n "${BUNDLE_BIN_DIR}" && "${STATUS_CMD}" == "sudo zonctl status --output json" ]]; then
-  STATUS_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} zonctl status --output json"
+  STATUS_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} zonctl status --state-dir $(shell_quote "${TARGET_STATE_DIR}") --output json"
 fi
 if [[ -n "${BUNDLE_BIN_DIR}" && "${VERIFY_CMD}" == "sudo zonctl verify --output json" ]]; then
-  VERIFY_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} zonctl verify --output json"
+  VERIFY_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} zonctl verify --state-dir $(shell_quote "${TARGET_STATE_DIR}") --output json"
+fi
+if [[ -n "${BUNDLE_BIN_DIR}" && "${APP_VERSION_CMD}" == "sudo zonctl status --output json" ]]; then
+  APP_VERSION_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} zonctl status --state-dir $(shell_quote "${TARGET_STATE_DIR}") --output json"
+fi
+if [[ "${APP_VERSION_CMD}" == "sudo cat /var/lib/zon/installed-state.json" ]]; then
+  APP_VERSION_CMD="sudo cat $(shell_quote "${TARGET_STATE_DIR}/installed-state.json")"
 fi
 if [[ -n "${BUNDLE_BIN_DIR}" && "${SERVICE_HEALTH_CMD}" == "sudo kubectl get pods -A" ]]; then
   SERVICE_HEALTH_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl get pods -A"
 fi
 if [[ -n "${BUNDLE_BIN_DIR}" && "${FAILURE_LOG_CMD}" == "sudo zonctl support-bundle --output json" ]]; then
-  FAILURE_LOG_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} zonctl support-bundle --output json"
+  FAILURE_LOG_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} zonctl support-bundle --state-dir $(shell_quote "${TARGET_STATE_DIR}") --output json"
 fi
 if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_NAMESPACES_CMD}" == "sudo kubectl get namespace workflows appliance-builds" ]]; then
   ARGO_NAMESPACES_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl get namespace workflows appliance-builds"

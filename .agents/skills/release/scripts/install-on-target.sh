@@ -251,7 +251,7 @@ if bool_true "${UNINSTALL_FIRST:-false}"; then
   remote_script+='
 echo "[target] Uninstalling previous appliance before install..."
 if command -v zonctl >/dev/null 2>&1; then
-  sudo -n zonctl uninstall --confirm yes --state-dir '"$(shell_quote "${STATE_DIR:-/var/lib/zon}")"' --output text >/dev/null 2>&1 || true
+  sudo -n zonctl uninstall --confirm yes --state-dir '"$(shell_quote "${STATE_DIR:-/var/lib/zon/state}")"' --output text >/dev/null 2>&1 || true
 fi
 echo "[target] Previous appliance uninstall step completed."'
 fi
