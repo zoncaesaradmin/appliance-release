@@ -79,10 +79,11 @@ make plan-profile-matrix \
 This does not contact the build server or target host. It validates that final
 builder workflow evidence inputs are present. When
 `install.build_catalog_path` is set, the planner checks that workspace profiles
-and HTTPS repos are declared, and that the top-level workspace provisioner
-image is digest-pinned and listed in `build_flow.extra_oci_image_refs` when
-that release evidence list is configured. Build targets are optional and are
-validated only when present. The optional real workflow smoke cross-checks the
+and HTTPS repos are declared. The generic workspace provisioner image is an
+appliance-owned bundle input, not a user catalog field; the build script
+packages a digest-pinned Alpine Git image by default unless overridden through
+`build_flow.workspace_provisioner_image_*` settings. Build targets are optional
+and are validated only when present. The optional real workflow smoke cross-checks the
 workspace profile (`work_profile`) and `repo` against catalog `workProfiles`
 and `repos`; if build targets are present, `target_name` may use either a build
 target name or one of its aliases.

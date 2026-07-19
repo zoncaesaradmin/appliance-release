@@ -82,13 +82,19 @@ build_flow:
     # Optional local archive overrides if you already mirrored the OCI images.
     # controller_image_archive_source: /home/zonsys/ci/inputs/argo/workflow-controller.oci.tar
     # executor_image_archive_source: /home/zonsys/ci/inputs/argo/argoexec.oci.tar
+  # Workspace provisioning uses an appliance-owned generic image with git and
+  # CA certificates. By default scripts/ci/build-full-bundle.sh pulls
+  # docker.io/alpine/git:latest on the build host, resolves it to an immutable
+  # @sha256 reference, packages the OCI archive, and records that digest in the
+  # signed bundle. For offline build hosts, provide both fields below instead.
+  # workspace_provisioner_image_archive_source: /home/zonsys/ci/inputs/workspace-provisioner.oci.tar
+  # workspace_provisioner_image_ref: docker.io/alpine/git@sha256:...
   # Optional extra OCI image archives to package into the complete signed
-  # bundle. Use this for the workspace provisioner image referenced by the
-  # build catalog. The build script expects comma-separated lists with matching
+  # bundle. The build script expects comma-separated lists with matching
   # lengths. extra_oci_image_refs are also used as the expected evidence list
   # during copied release-input/final-bundle validation.
-  # extra_oci_image_archive_sources: /home/zonsys/ci/inputs/workspace-provisioner.oci.tar
-  # extra_oci_image_refs: registry.local/workspace-provisioner@sha256:...
+  # extra_oci_image_archive_sources: /home/zonsys/ci/inputs/tooling.oci.tar
+  # extra_oci_image_refs: registry.local/tooling@sha256:...
 
 install:
   bootstrap_admin_username: admin

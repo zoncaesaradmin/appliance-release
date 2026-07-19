@@ -154,6 +154,8 @@ BUILD_ARGO_CONTROLLER_IMAGE_REF="$(config_get_optional "${CONFIG_PATH}" "build_f
 BUILD_ARGO_EXECUTOR_IMAGE_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.executor_image_ref" || true)"
 BUILD_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.controller_image_archive_source" || true)"
 BUILD_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.executor_image_archive_source" || true)"
+BUILD_WORKSPACE_PROVISIONER_IMAGE_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.workspace_provisioner_image_ref" || true)"
+BUILD_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.workspace_provisioner_image_archive_source" || true)"
 BUILD_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_archive_sources" || true)"
 BUILD_EXTRA_OCI_IMAGE_REFS="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_refs" || true)"
 VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
@@ -188,6 +190,8 @@ BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_CONTROLLER
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_EXECUTOR_IMAGE_REF" "${BUILD_ARGO_EXECUTOR_IMAGE_REF}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE" "${BUILD_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE" "${BUILD_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "WORKSPACE_PROVISIONER_IMAGE_REF" "${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE" "${BUILD_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE_ARCHIVE_SOURCES" "${BUILD_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE_REFS" "${BUILD_EXTRA_OCI_IMAGE_REFS}")"
 
@@ -398,8 +402,15 @@ VALIDATE_RELEASE_ARTIFACTS_ARGS=()
 if bool_true "${BUILD_ARGO_ENABLED:-false}" || bool_true "${VERIFY_ARGO_ENABLED:-false}"; then
   VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--require-argo)
 fi
-if [[ -n "${BUILD_EXTRA_OCI_IMAGE_REFS}" ]]; then
-  VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--expected-extra-oci-image-refs "${BUILD_EXTRA_OCI_IMAGE_REFS}")
+EXPECTED_EXTRA_OCI_IMAGE_REFS="${BUILD_EXTRA_OCI_IMAGE_REFS}"
+if [[ "${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}" == *@sha256:* ]]; then
+  if [[ -n "${EXPECTED_EXTRA_OCI_IMAGE_REFS}" ]]; then
+    EXPECTED_EXTRA_OCI_IMAGE_REFS+=","
+  fi
+  EXPECTED_EXTRA_OCI_IMAGE_REFS+="${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}"
+fi
+if [[ -n "${EXPECTED_EXTRA_OCI_IMAGE_REFS}" ]]; then
+  VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--expected-extra-oci-image-refs "${EXPECTED_EXTRA_OCI_IMAGE_REFS}")
 fi
 if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle" ]]; then
   log "validating copied release-input artifacts against final bundle manifest"

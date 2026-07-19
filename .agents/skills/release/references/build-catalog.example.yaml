@@ -64,9 +64,3 @@ repos:
   - name: forgeline-release
     url: https://github.com/zoncaesaradmin/forgeline-release.git
     defaultRef: main
-
-# Replace the fixture digest below with the real digest-pinned workspace
-# provisioner image reference listed in build_flow.extra_oci_image_refs for the
-# release run. This image only needs the tooling required to create the
-# workspace, such as git and CA certificates; it is not a build target image.
-workspaceProvisionerImageDigest: registry.local/workspace-provisioner@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

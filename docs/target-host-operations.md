@@ -44,13 +44,14 @@ curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-releas
 ```
 
 For the builder profile, pass a target-local build catalog unless the bundle's
-chart values already include one with workspace profiles, HTTPS repo URLs, and
-the digest-pinned workspace provisioner image. Builder workspace repo URLs must
-use HTTPS.
+chart values already include one with workspace profiles and HTTPS repo URLs.
+The generic workspace provisioner image is packaged by the release bundle and
+injected by `zonctl`; it is not a build catalog field. Builder workspace repo
+URLs must use HTTPS.
 
 Start from the release skill template
 `.agents/skills/release/references/build-catalog.example.yaml`, then replace
-the placeholder Git host, repo URL, and workspace provisioner image digest.
+the placeholder Git host and repo URL.
 
 Do not put private keys, tokens, or passwords in the build catalog. Those
 credentials belong in separate operator-managed secret handling, not in the

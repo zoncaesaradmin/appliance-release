@@ -25,10 +25,6 @@ from config_query import load_config  # noqa: E402
 PROFILES = ("core", "storage", "builder")
 OCI_REPO_RE = re.compile(r"^[a-z0-9]+([._/-][a-z0-9]+)*$")
 MAKE_TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
-IMAGE_DIGEST_RE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
-PLACEHOLDER_IMAGE_DIGEST = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-
 def lookup(data: dict, path: str, default: Any = "") -> Any:
     value: Any = data
     for part in path.split("."):
@@ -241,10 +237,6 @@ def build_target_lookup_names(items: list[dict[str, Any]]) -> set[str]:
     return names
 
 
-def parse_csv(value: str) -> list[str]:
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
 def git_url_host(raw: str) -> str:
     raw = raw.strip()
     if not raw:
@@ -293,17 +285,10 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
     build_targets = object_items(catalog.get("buildTargets"))
     work_profiles = object_items(catalog.get("workProfiles"))
     repos = object_items(catalog.get("repos"))
-    workspace_provisioner_image = as_str(catalog.get("workspaceProvisionerImageDigest", ""))
     if not work_profiles:
         errors.append("install.build_catalog_path must declare at least one workProfiles entry")
     if not repos:
         errors.append("install.build_catalog_path must declare at least one repos entry")
-    if not workspace_provisioner_image:
-        errors.append("install.build_catalog_path workspaceProvisionerImageDigest is required for workspace provisioning")
-    elif not IMAGE_DIGEST_RE.match(workspace_provisioner_image):
-        errors.append("install.build_catalog_path workspaceProvisionerImageDigest must be a sha256 image digest with 64 lowercase hex characters")
-    elif workspace_provisioner_image.rsplit("@sha256:", 1)[1] == PLACEHOLDER_IMAGE_DIGEST:
-        errors.append("install.build_catalog_path workspaceProvisionerImageDigest must not use the sample placeholder digest")
     profile_names = item_names(work_profiles)
     repo_names = item_names(repos)
     target_names = build_target_lookup_names(build_targets)
@@ -331,12 +316,6 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
             allowed_repos.add(repo_name)
         if profile_name:
             profile_repo_names[profile_name] = allowed_repos
-    expected_extra_refs = set(parse_csv(as_str(lookup(config, "build_flow.extra_oci_image_refs", ""))))
-    if workspace_provisioner_image and workspace_provisioner_image not in expected_extra_refs:
-        errors.append(
-            "install.build_catalog_path workspaceProvisionerImageDigest is not listed in build_flow.extra_oci_image_refs: "
-            + workspace_provisioner_image
-        )
     for index, target in enumerate(build_targets):
         prefix = f"install.build_catalog_path buildTargets[{index}]"
         target_name = as_str(target.get("name", ""))
@@ -375,6 +354,10 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
         repo_url = as_str(repo.get("url", ""))
         if not repo_url:
             errors.append(f"{repo_prefix}.url is required")
+            continue
+        parsed = urlparse(repo_url)
+        if parsed.scheme.lower() != "https" or not parsed.hostname:
+            errors.append(f"{repo_prefix}.url must be an https URL with a host")
 
     if as_bool(lookup(config, "client_verification.builder.workflow.enabled", False)):
         workflow_profile = as_str(lookup(config, "client_verification.builder.workflow.work_profile", ""))
@@ -444,10 +427,10 @@ def suggested_final_config_overlay() -> str:
     return "\n".join(
         [
             "build_flow:",
-            "  # Must include the workspace provisioner image referenced by install.build_catalog_path.",
-            "  # Keep refs digest-pinned and make the archive/ref lists line up by position.",
-            "  extra_oci_image_archive_sources: /abs/path/on/build-host/workspace-provisioner.oci.tar",
-            "  extra_oci_image_refs: registry.local/workspace-provisioner@sha256:<real-64-hex-workspace-provisioner-image-digest>",
+            "  # Optional: omit these to let the build host package docker.io/alpine/git:latest",
+            "  # and resolve it to a digest-pinned bundle reference automatically.",
+            "  workspace_provisioner_image_archive_source: /abs/path/on/build-host/workspace-provisioner.oci.tar",
+            "  workspace_provisioner_image_ref: docker.io/alpine/git@sha256:<real-64-hex-image-digest>",
             "",
             "install:",
             "  appliance_profile: builder",

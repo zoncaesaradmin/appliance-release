@@ -24,67 +24,7 @@ def run_validator(config: Path, catalog: Path, output: Optional[Path] = None) ->
     return subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
 
 
-def test_accepts_workspace_catalog_with_bundled_provisioner_image_ref() -> None:
-    with tempfile.TemporaryDirectory(prefix="validate-build-catalog-") as tmp_dir:
-        tmp = Path(tmp_dir)
-        catalog = tmp / "catalog.yaml"
-        image_ref = "registry.local/workspace-provisioner@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        write(
-            catalog,
-            f"""
-workProfiles:
-  - name: builder
-    repos:
-      - name: app
-repos:
-  - name: app
-    url: https://git.internal.example.com/team/app.git
-workspaceProvisionerImageDigest: {image_ref}
-""".lstrip(),
-        )
-        config = tmp / "config.yaml"
-        write(config, f"build_flow:\n  extra_oci_image_refs: {image_ref}\n")
-        output = tmp / "validation.json"
-
-        result = run_validator(config, catalog, output)
-        if result.returncode != 0:
-            raise AssertionError(result.stderr or result.stdout)
-        payload = json.loads(output.read_text(encoding="utf-8"))
-        if payload.get("valid") is not True or payload.get("validationErrors") != []:
-            raise AssertionError(payload)
-
-
-def test_rejects_placeholder_workspace_provisioner_image_ref_before_install() -> None:
-    with tempfile.TemporaryDirectory(prefix="validate-build-catalog-") as tmp_dir:
-        tmp = Path(tmp_dir)
-        catalog = tmp / "catalog.yaml"
-        image_ref = "registry.local/workspace-provisioner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-        write(
-            catalog,
-            f"""
-workProfiles:
-  - name: builder
-    repos:
-      - name: app
-repos:
-  - name: app
-    url: https://git.internal.example.com/team/app.git
-workspaceProvisionerImageDigest: {image_ref}
-""".lstrip(),
-        )
-        config = tmp / "config.yaml"
-        write(config, f"build_flow:\n  extra_oci_image_refs: {image_ref}\n")
-
-        result = run_validator(config, catalog)
-        if result.returncode == 0:
-            raise AssertionError("placeholder workspace provisioner image ref was accepted")
-        payload = json.loads(result.stdout)
-        joined = "\n".join(payload["validationErrors"])
-        if "sample placeholder digest" not in joined:
-            raise AssertionError(payload)
-
-
-def test_rejects_unbundled_workspace_provisioner_image_ref_before_install() -> None:
+def test_accepts_workspace_catalog_without_image_fields() -> None:
     with tempfile.TemporaryDirectory(prefix="validate-build-catalog-") as tmp_dir:
         tmp = Path(tmp_dir)
         catalog = tmp / "catalog.yaml"
@@ -98,25 +38,48 @@ workProfiles:
 repos:
   - name: app
     url: https://git.internal.example.com/team/app.git
-workspaceProvisionerImageDigest: registry.local/workspace-provisioner@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
         )
         config = tmp / "config.yaml"
+        write(config, "build_flow: {}\n")
+        output = tmp / "validation.json"
+
+        result = run_validator(config, catalog, output)
+        if result.returncode != 0:
+            raise AssertionError(result.stderr or result.stdout)
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        if payload.get("valid") is not True or payload.get("validationErrors") != []:
+            raise AssertionError(payload)
+
+
+def test_rejects_ssh_repo_url_before_install() -> None:
+    with tempfile.TemporaryDirectory(prefix="validate-build-catalog-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        catalog = tmp / "catalog.yaml"
         write(
-            config,
-            "build_flow:\n  extra_oci_image_refs: registry.local/other@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+            catalog,
+            """
+workProfiles:
+  - name: builder
+    repos:
+      - name: app
+repos:
+  - name: app
+    url: git@git.internal.example.com:team/app.git
+""".lstrip(),
         )
+        config = tmp / "config.yaml"
+        write(config, "build_flow: {}\n")
 
         result = run_validator(config, catalog)
         if result.returncode == 0:
-            raise AssertionError("unbundled workspace provisioner image ref was accepted")
+            raise AssertionError("SSH repo URL was accepted")
         payload = json.loads(result.stdout)
         joined = "\n".join(payload["validationErrors"])
-        if "build_flow.extra_oci_image_refs" not in joined:
+        if "must be an https URL with a host" not in joined:
             raise AssertionError(payload)
 
 
 if __name__ == "__main__":
-    test_accepts_workspace_catalog_with_bundled_provisioner_image_ref()
-    test_rejects_placeholder_workspace_provisioner_image_ref_before_install()
-    test_rejects_unbundled_workspace_provisioner_image_ref_before_install()
+    test_accepts_workspace_catalog_without_image_fields()
+    test_rejects_ssh_repo_url_before_install()

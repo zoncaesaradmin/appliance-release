@@ -51,6 +51,8 @@ Optional overrides:
   ARGO_VERSION=v3.5.10                        # pin a different Argo version than the chart's appVersion
   ARGO_CONTROLLER_IMAGE_REF=localhost/appliance-argo-controller:v3.5.10
   ARGO_EXECUTOR_IMAGE_REF=quay.io/argoproj/argoexec:v3.5.10
+  WORKSPACE_PROVISIONER_IMAGE_REF=docker.io/alpine/git:latest
+  WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE=/ci/inputs/workspace-provisioner.oci.tar
   EXTRA_OCI_IMAGE_ARCHIVE_SOURCES=/ci/inputs/buildah.tar,/ci/inputs/tooling.tar
   EXTRA_OCI_IMAGE_REFS=registry.local/buildah@sha256:...,registry.local/tooling@sha256:...
 EOF
@@ -86,6 +88,8 @@ USER_ARGO_CONTROLLER_IMAGE_REF="${ARGO_CONTROLLER_IMAGE_REF-}"
 USER_ARGO_EXECUTOR_IMAGE_REF="${ARGO_EXECUTOR_IMAGE_REF-}"
 USER_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE-}"
 USER_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE-}"
+USER_WORKSPACE_PROVISIONER_IMAGE_REF="${WORKSPACE_PROVISIONER_IMAGE_REF-}"
+USER_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE="${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE-}"
 USER_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES-}"
 USER_EXTRA_OCI_IMAGE_REFS="${EXTRA_OCI_IMAGE_REFS-}"
 
@@ -115,6 +119,8 @@ ARGO_CONTROLLER_IMAGE_REF="${USER_ARGO_CONTROLLER_IMAGE_REF:-${ARGO_CONTROLLER_I
 ARGO_EXECUTOR_IMAGE_REF="${USER_ARGO_EXECUTOR_IMAGE_REF:-${ARGO_EXECUTOR_IMAGE_REF:-}}"
 ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="${USER_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE:-${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE:-}}"
 ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="${USER_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE:-${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE:-}}"
+WORKSPACE_PROVISIONER_IMAGE_REF="${USER_WORKSPACE_PROVISIONER_IMAGE_REF:-${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:latest}}"
+WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE="${USER_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE:-${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE:-}}"
 EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="${USER_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES:-${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES:-}}"
 EXTRA_OCI_IMAGE_REFS="${USER_EXTRA_OCI_IMAGE_REFS:-${EXTRA_OCI_IMAGE_REFS:-}}"
 
@@ -270,6 +276,26 @@ export_container_image_archive() {
 
   sudo -n "${podman_bin}" pull "${image_ref}" >/dev/null
   sudo -n "${podman_bin}" save --format oci-archive -o "${output_path}" "${image_ref}" >/dev/null
+}
+
+export_digest_pinned_container_image_archive() {
+  local image_ref="$1"
+  local output_path="$2"
+  local podman_bin
+  local digest_ref
+
+  podman_bin="$(command -v podman)"
+  mkdir -p "$(dirname "${output_path}")"
+  rm -f "${output_path}"
+
+  sudo -n "${podman_bin}" pull "${image_ref}" >/dev/null
+  digest_ref="$(sudo -n "${podman_bin}" image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${image_ref}" | sed -n '1p')"
+  if [[ -z "${digest_ref}" || "${digest_ref}" != *@sha256:* ]]; then
+    echo "build-full-bundle: image ${image_ref} did not resolve to a digest-pinned reference" >&2
+    exit 1
+  fi
+  sudo -n "${podman_bin}" save --format oci-archive -o "${output_path}" "${digest_ref}" >/dev/null
+  printf '%s' "${digest_ref}"
 }
 
 # derive_argo_version_from_code_repo reads the pinned Argo version out of
@@ -474,6 +500,13 @@ if [[ -n "${ARGO_CRDS_DIR_SOURCE}" && ! -d "${ARGO_CRDS_DIR_SOURCE}" ]]; then
   echo "build-full-bundle: missing Argo CRDs directory: ${ARGO_CRDS_DIR_SOURCE}" >&2
   exit 1
 fi
+if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" ]]; then
+  require_file "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" "workspace provisioner image archive"
+  if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" != *@sha256:* ]]; then
+    echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be digest-pinned when WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE is provided" >&2
+    exit 2
+  fi
+fi
 
 EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST=()
 EXTRA_OCI_IMAGE_REF_LIST=()
@@ -548,6 +581,16 @@ if bool_true "${ARGO_ENABLED}"; then
     export_container_image_archive "${ARGO_EXECUTOR_IMAGE_REF}" "${CODE_REPO_DIR}/.run/argo-executor-image.tar"
   fi
 fi
+
+if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" ]]; then
+  WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
+  cp "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar"
+else
+  WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
+  WORKSPACE_PROVISIONER_IMAGE_REF="$(export_digest_pinned_container_image_archive "${WORKSPACE_PROVISIONER_IMAGE_REF}" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
+fi
+EXTRA_OCI_IMAGE_ARCHIVES_FOR_DEV+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
+EXTRA_OCI_IMAGE_REF_LIST+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
 
 if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -gt 0 ]]; then
   mkdir -p "${CODE_REPO_DIR}/.run/extra-oci-images"
