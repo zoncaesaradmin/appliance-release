@@ -4,14 +4,14 @@
 import tempfile
 from pathlib import Path
 
-from build_catalog import builder_ssh_secret_names, load_build_catalog
+from build_catalog import load_build_catalog
 
 
 def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def test_yaml_catalog_with_https_repo_has_no_managed_secrets() -> None:
+def test_yaml_catalog_with_https_repo_loads() -> None:
     with tempfile.TemporaryDirectory(prefix="build-catalog-") as tmp_dir:
         path = Path(tmp_dir) / "catalog.yaml"
         write(
@@ -34,11 +34,11 @@ buildTargets:
 """.lstrip(),
         )
         catalog = load_build_catalog(path)
-        if builder_ssh_secret_names(catalog) != []:
+        if catalog["repos"][0]["url"] != "https://github.com/zoncaesaradmin/forgeline.git":
             raise AssertionError(catalog)
 
 
-def test_json_catalog_without_ssh_repo_has_no_managed_secrets() -> None:
+def test_json_catalog_with_https_repo_loads() -> None:
     with tempfile.TemporaryDirectory(prefix="build-catalog-") as tmp_dir:
         path = Path(tmp_dir) / "catalog.json"
         write(
@@ -46,10 +46,10 @@ def test_json_catalog_without_ssh_repo_has_no_managed_secrets() -> None:
             '{"repos":[{"name":"app","url":"https://github.com/example/app.git"}],"buildTargets":[{"name":"app","repo":"app","execution":"repo_script","imageRepository":"users/example/app","builderImageDigest":"registry.local/buildah@sha256:abc123"}]}',
         )
         catalog = load_build_catalog(path)
-        if builder_ssh_secret_names(catalog) != []:
+        if catalog["repos"][0]["url"] != "https://github.com/example/app.git":
             raise AssertionError(catalog)
 
 
 if __name__ == "__main__":
-    test_yaml_catalog_with_https_repo_has_no_managed_secrets()
-    test_json_catalog_without_ssh_repo_has_no_managed_secrets()
+    test_yaml_catalog_with_https_repo_loads()
+    test_json_catalog_with_https_repo_loads()

@@ -904,8 +904,6 @@ import sys
 ) = sys.argv[1:66]
 sys.path.insert(0, scripts_dir)
 
-from build_catalog import builder_ssh_secret_names, load_build_catalog
-
 def status_code(path: str):
     code = None
     for line in Path(path).read_text(encoding="utf-8").splitlines():
@@ -965,12 +963,7 @@ def poll_history(path: str):
     return out
 
 def load_source_secret_names(path: str):
-    if not path:
-        return []
-    p = Path(path)
-    if not p.is_file():
-        return []
-    return builder_ssh_secret_names(load_build_catalog(p))
+    return []
 
 def scan_for_secret_leaks(paths, source_secret_names):
     markers = [

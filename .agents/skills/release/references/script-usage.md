@@ -172,8 +172,8 @@ If `install.appliance_profile` is `builder`, it also checks that
 you need custom reachability behavior.
 
 Builder workflow repo URLs must use HTTPS. Override
-`verification.builder.source_credentials_command` only when you need a custom
-builder-specific readiness rule.
+`verification.builder.source_credentials_command` only for legacy-compatible
+custom builder-specific readiness rules.
 
 ## 5. Verify Client/API Only
 

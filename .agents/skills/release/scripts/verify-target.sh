@@ -25,7 +25,7 @@ Options:
   --appliance-profile NAME       Effective installed appliance profile.
   --builder-api-cmd CMD          Override verification.builder.api_command.
   --builder-source-credentials-cmd CMD
-                                 Override verification.builder.source_credentials_command.
+                                 Legacy override for verification.builder.source_credentials_command.
   --failure-log-cmd CMD          Override verification.failure_log_command.
   --argo-namespaces-cmd CMD      Override verification.argo.namespaces_command.
   --argo-crds-cmd CMD            Override verification.argo.crds_command.
@@ -158,8 +158,6 @@ CLIENT_BASE_URL="$(config_get_optional "${CONFIG_PATH}" "client_verification.bas
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 fi
-BUILD_CATALOG_PATH="$(config_get_optional "${CONFIG_PATH}" "install.build_catalog_path" || true)"
-
 STATUS_CMD="${STATUS_CMD:-sudo zonctl status --output json}"
 VERIFY_CMD="${VERIFY_CMD:-sudo zonctl verify --output json}"
 SERVICE_HEALTH_CMD="${SERVICE_HEALTH_CMD:-sudo kubectl get pods -A}"
@@ -269,63 +267,6 @@ if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_CRDS_CMD}" == "sudo kubectl get crd work
 fi
 if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_CONTROLLER_CMD}" == "sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods" ]]; then
   ARGO_CONTROLLER_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n workflows get deploy,pods"
-fi
-
-build_source_credentials_command() {
-  local catalog_path="$1"
-  local kubectl_cmd="kubectl"
-  if [[ -n "${BUNDLE_BIN_DIR}" ]]; then
-    kubectl_cmd="env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl"
-  fi
-  python3 - "${SCRIPT_DIR}" "${catalog_path}" "${kubectl_cmd}" <<'PY'
-import shlex
-import sys
-from pathlib import Path
-
-scripts_dir = Path(sys.argv[1])
-catalog_path = Path(sys.argv[2])
-kubectl_cmd = sys.argv[3]
-sys.path.insert(0, str(scripts_dir))
-
-from build_catalog import builder_ssh_secret_names, load_build_catalog
-
-data = load_build_catalog(catalog_path)
-if not isinstance(data.get("repos"), list):
-    raise SystemExit("build catalog must contain repos")
-
-checks = []
-seen = set()
-def add_secret_key_check(namespace: str, secret_name: str, data_key: str):
-    key = (namespace, secret_name, data_key)
-    if key in seen:
-        return
-    seen.add(key)
-    template = '{{ index .data "%s" }}' % data_key
-    lookup = (
-        f"{kubectl_cmd} -n {shlex.quote(namespace)} get secret "
-        f"{shlex.quote(secret_name)} -o {shlex.quote('go-template=' + template)}"
-    )
-    checks.append(f"test -n \"$({lookup})\"")
-
-secret_names = builder_ssh_secret_names(data)
-if not secret_names:
-    raise SystemExit(0)
-
-namespace = "appliance-builds"
-if "builder-git-key" in secret_names:
-    add_secret_key_check(namespace, "builder-git-key", "ssh-privatekey")
-if "builder-git-known-hosts" in secret_names:
-    add_secret_key_check(namespace, "builder-git-known-hosts", "known_hosts")
-
-if not checks:
-    raise SystemExit(0)
-print("sudo bash -lc " + shlex.quote(" && ".join(checks)))
-PY
-}
-
-if bool_true "${BUILDER_ENABLED}" && [[ -z "${BUILDER_SOURCE_CREDENTIALS_CMD}" && -n "${BUILD_CATALOG_PATH}" ]]; then
-  ensure_file "${BUILD_CATALOG_PATH}"
-  BUILDER_SOURCE_CREDENTIALS_CMD="$(build_source_credentials_command "${BUILD_CATALOG_PATH}")"
 fi
 
 status_code="0"

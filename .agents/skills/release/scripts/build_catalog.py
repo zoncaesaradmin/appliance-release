@@ -129,7 +129,3 @@ def parse_simple_list_manifest(text: str) -> dict[str, Any]:
             current_item["__pending_lists__"] = {"key": key}
     flush_current_item()
     return data
-
-
-def builder_ssh_secret_names(catalog: dict[str, Any]) -> list[str]:
-    return []
