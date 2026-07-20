@@ -37,7 +37,7 @@ Kubernetes-native log access is still valid and remains important:
 ```bash
 sudo kubectl -n appliance-system logs deploy/control-plane
 sudo kubectl -n appliance-system logs deploy/control-plane-ui
-sudo kubectl -n workflows logs deploy/appliance-argo-workflows
+sudo kubectl -n workflows logs deploy/argo-workflows
 sudo kubectl -n appliance-builds logs <pod-name>
 sudo journalctl -u k3s -f
 ```
