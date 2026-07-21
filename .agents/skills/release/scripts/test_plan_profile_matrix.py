@@ -42,7 +42,8 @@ repos:
 buildTargets:
   - name: app
     repo: app
-    execution: repo_script
+    execution: script
+    args: [build.sh]
     imageRepository: users/alice/app
     builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
@@ -194,7 +195,8 @@ repos:
 buildTargets:
   - name: default
     repo: app
-    execution: repo_script
+    execution: script
+    args: [build.sh]
     imageRepository: users/alice/app
     builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
@@ -245,7 +247,8 @@ buildTargets:
     aliases:
       - app
     repo: app
-    execution: repo_script
+    execution: script
+    args: [build.sh]
     imageRepository: users/alice/app
     builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
@@ -292,7 +295,8 @@ repos:
 buildTargets:
   - name: app
     repo: app
-    execution: repo_script
+    execution: script
+    args: [build.sh]
     imageRepository: users/alice/app
     builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
@@ -315,19 +319,23 @@ install:
             raise AssertionError(plan)
 
 
-def test_build_catalog_make_target_requires_make_target_name() -> None:
+def test_build_catalog_make_requires_args() -> None:
     with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
         tmp = Path(tmp_dir)
         write(
             tmp / "catalog.yaml",
             """
+workProfiles:
+  - name: builder
+    repos:
+      - name: app
 repos:
   - name: app
     url: https://git.internal.example.com/team/app.git
 buildTargets:
   - name: app
     repo: app
-    execution: make_target
+    execution: make
     imageRepository: users/alice/app
     builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
@@ -344,27 +352,34 @@ install:
         )
         result = run_planner(config)
         if result.returncode == 0:
-            raise AssertionError("make_target execution without makeTarget was accepted")
+            raise AssertionError("make execution without args was accepted")
         plan = json.loads(result.stdout)
         joined = "\n".join(plan["validationErrors"])
-        if "makeTarget is required" not in joined:
+        if "args must contain exactly one make target" not in joined:
             raise AssertionError(plan)
 
 
 def test_build_catalog_rejects_unsafe_execution_paths() -> None:
     cases = [
-        ("scriptPath", "/tmp/build.sh", "repo_script", "scriptPath must be a relative path inside the repo"),
-        ("scriptPath", "../build.sh", "repo_script", "scriptPath must be a relative path inside the repo"),
-        ("containerfilePath", "deploy/../../Containerfile", "repo_script", "containerfilePath must be a relative path inside the repo"),
-        ("makeTarget", "image && whoami", "make_target", "makeTarget contains unsupported characters"),
+        ("script", ["/tmp/build.sh"], None, "args[0] must be a relative path inside the repo"),
+        ("script", ["../build.sh"], None, "args[0] must be a relative path inside the repo"),
+        ("script", ["build.sh"], "deploy/../../Containerfile", "containerfilePath must be a relative path inside the repo"),
+        ("make", ["image && whoami"], None, "args[0] contains unsupported characters"),
     ]
-    for field, value, execution, expected in cases:
+    for execution, args, containerfile_path, expected in cases:
         with tempfile.TemporaryDirectory(prefix="profile-matrix-plan-") as tmp_dir:
             tmp = Path(tmp_dir)
-            extra = f"    {field}: {value}\n"
+            args_yaml = "\n".join(f"      - {arg}" for arg in args)
+            extra = ""
+            if containerfile_path:
+                extra = f"    containerfilePath: {containerfile_path}\n"
             write(
                 tmp / "catalog.yaml",
                 f"""
+workProfiles:
+  - name: builder
+    repos:
+      - name: app
 repos:
   - name: app
     url: https://git.internal.example.com/team/app.git
@@ -372,6 +387,8 @@ buildTargets:
   - name: app
     repo: app
     execution: {execution}
+    args:
+{args_yaml}
 {extra}    imageRepository: users/alice/app
     builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
@@ -388,7 +405,7 @@ install:
             )
             result = run_planner(config)
             if result.returncode == 0:
-                raise AssertionError(f"unsafe catalog value {field}={value!r} was accepted")
+                raise AssertionError(f"unsafe catalog value execution={execution!r} args={args!r} was accepted")
             plan = json.loads(result.stdout)
             joined = "\n".join(plan["validationErrors"])
             if expected not in joined:
@@ -435,7 +452,7 @@ def main() -> None:
     test_build_catalog_workflow_smoke_names_must_exist()
     test_build_catalog_workflow_smoke_accepts_target_alias()
     test_build_catalog_accepts_https_repo()
-    test_build_catalog_make_target_requires_make_target_name()
+    test_build_catalog_make_requires_args()
     test_build_catalog_rejects_unsafe_execution_paths()
     test_reference_builder_templates_are_planner_compatible()
     print("plan-profile-matrix tests passed")

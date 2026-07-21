@@ -8,14 +8,30 @@
 # - `workProfiles` replaces top-level `profiles`
 # - each workspace profile explicitly lists its repos
 # - each repo has one canonical `url` plus optional `defaultRef`
-# - build targets are intentionally omitted here; workspace creation only
-#   materializes source repos and build target modeling will be added later
+# - build targets are authored under `repos[].buildTargets` (preferred).
+#   zonctl and the control plane flatten them to a top-level list at load time.
+#   Top-level `buildTargets` with an explicit `repo` field remain accepted.
+# - A target whose `name` equals the parent repo name is the whole-repo entry
+#   and maps to one explicit execution + args list. There is no ForgeLine
+#   expand-all / build_components semantics.
+# - execution is `make` or `script`; mode-specific input is `args` (v1: one entry).
+#   Legacy `make_target`/`repo_script` + `makeTarget`/`scriptPath` are still
+#   accepted and normalized at load time.
 # - repo URLs must use HTTPS
+# - `defaultRef` is only for workspace prepare/sync (branch names are fine).
+#   Current-workspace builds do not clone and do not use defaultRef; they build
+#   whatever is already on disk under
+#   /data/zon/workspaces/<workspace-name>/<repo-name>/
 #
-# Replace repo URLs and the top-level workspace provisioner image digest with
-# the real product values before using this file.
+# Before using this file in a real install:
+# - replace repo URLs and defaultRef values with real product values
+# - replace builderImageDigest values with digest-pinned images that are
+#   present in the signed air-gap bundle (extra OCI images)
+# - replace imageRepository prefixes with the operator's artifact layout
 #
 # Do not put private keys, tokens, or passwords in this file.
+# Do not use the all-zero / ascending hex placeholder digest
+# 0123456789abcdef... — zonctl and the control plane reject it.
 workProfiles:
   - name: platform-dev
     description: Platform development multi-repo workspace profile.
@@ -48,10 +64,33 @@ repos:
   - name: platformkit
     url: https://github.com/zoncaesaradmin/platformkit.git
     defaultRef: main
+    buildTargets:
+      # Repo-named target: explicit make recipe for the whole repo.
+      - name: platformkit
+        description: Build the platformkit Makefile default image set.
+        execution: make
+        args: [build]
+        imageRepository: users/example/platformkit
+        builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      # Second target on the same repo: different explicit make args.
+      - name: platformkit-api
+        description: Build only the platformkit API image.
+        execution: make
+        args: [api]
+        imageRepository: users/example/platformkit-api
+        builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
   - name: zonbundle
     url: https://github.com/zoncaesaradmin/zonbundle.git
     defaultRef: main
+    buildTargets:
+      - name: zonbundle
+        aliases: [bundle]
+        description: Build the zonbundle artifact via make.
+        execution: make
+        args: [build]
+        imageRepository: users/example/zonbundle
+        builderImageDigest: registry.local/buildah@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
   - name: zoncore
     url: https://github.com/zoncaesaradmin/zoncore.git
@@ -60,6 +99,13 @@ repos:
   - name: forgeline
     url: https://github.com/zoncaesaradmin/forgeline.git
     defaultRef: main
+    buildTargets:
+      - name: forgeline
+        description: Run the forgeline repo build script.
+        execution: script
+        args: [build.sh]
+        imageRepository: users/example/forgeline
+        builderImageDigest: registry.local/buildah@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 
   - name: forgeline-release
     url: https://github.com/zoncaesaradmin/forgeline-release.git

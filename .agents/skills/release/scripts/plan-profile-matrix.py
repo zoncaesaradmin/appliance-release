@@ -332,16 +332,34 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
             if lookup_name and target_repo:
                 target_repo_names.setdefault(lookup_name, set()).add(target_repo)
         execution = as_str(target.get("execution", ""))
-        if execution and execution not in {"repo_script", "make_target"}:
-            errors.append(f"{prefix}.execution must be repo_script or make_target")
-        script_path = as_str(target.get("scriptPath", ""))
-        if execution == "repo_script" and script_path and not valid_repo_relative_path(script_path):
-            errors.append(f"{prefix}.scriptPath must be a relative path inside the repo")
-        if execution == "make_target" and not as_str(target.get("makeTarget", "")):
-            errors.append(f"{prefix}.makeTarget is required when execution is make_target")
-        make_target = as_str(target.get("makeTarget", ""))
-        if execution == "make_target" and make_target and not MAKE_TARGET_RE.match(make_target):
-            errors.append(f"{prefix}.makeTarget contains unsupported characters: {make_target}")
+        if execution in {"make_target", "make"}:
+            execution = "make"
+        elif execution in {"repo_script", "script"}:
+            execution = "script"
+        args = []
+        raw_args = target.get("args")
+        if isinstance(raw_args, list):
+            args = [as_str(item) for item in raw_args if as_str(item)]
+        if not args:
+            if execution == "make":
+                make_target = as_str(target.get("makeTarget", ""))
+                if make_target:
+                    args = [make_target]
+            elif execution == "script":
+                script_path = as_str(target.get("scriptPath", ""))
+                args = [script_path or "build.sh"]
+        if execution and execution not in {"script", "make"}:
+            errors.append(f"{prefix}.execution must be make or script")
+        if execution == "script":
+            if len(args) != 1:
+                errors.append(f"{prefix}.args must contain exactly one script path when execution is script")
+            elif not valid_repo_relative_path(args[0]):
+                errors.append(f"{prefix}.args[0] must be a relative path inside the repo")
+        if execution == "make":
+            if len(args) != 1:
+                errors.append(f"{prefix}.args must contain exactly one make target when execution is make")
+            elif not MAKE_TARGET_RE.match(args[0]):
+                errors.append(f"{prefix}.args[0] contains unsupported characters: {args[0]}")
         containerfile_path = as_str(target.get("containerfilePath", ""))
         if containerfile_path and not valid_repo_relative_path(containerfile_path):
             errors.append(f"{prefix}.containerfilePath must be a relative path inside the repo")
