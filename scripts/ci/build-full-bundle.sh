@@ -661,7 +661,6 @@ mkdir -p "${CODE_REPO_DIR}/.run"
 ARGO_CRDS_DIR_FOR_DEV=""
 ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
 ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
-EXTRA_OCI_IMAGE_ARCHIVES_FOR_DEV=()
 
 if bool_true "${ARGO_ENABLED}"; then
   if [[ -n "${ARGO_CRDS_DIR_SOURCE}" ]]; then
@@ -688,6 +687,14 @@ if bool_true "${ARGO_ENABLED}"; then
   fi
 fi
 
+# Build the final archive/reference pairs carefully. EXTRA_OCI_IMAGE_REF_LIST is
+# the user-configured extra refs only (e.g. automation-dev). Do not append the
+# workspace provisioner ref onto that list before pairing archives, or the
+# provisioner archive will be labeled with the automation-dev reference and
+# install-time ctr import will fail RequireReference checks.
+PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES=()
+PACKAGED_EXTRA_OCI_IMAGE_REFS=()
+
 if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" ]]; then
   WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
   cp "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar"
@@ -702,28 +709,35 @@ else
   WORKSPACE_PROVISIONER_IMAGE_REF="$(workspace_provisioner_bundle_ref "${WORKSPACE_PROVISIONER_PULL_REF}")"
   export_bundled_extra_oci_image_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "${WORKSPACE_PROVISIONER_IMAGE_REF}" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar"
 fi
-EXTRA_OCI_IMAGE_ARCHIVES_FOR_DEV+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
-EXTRA_OCI_IMAGE_REF_LIST+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
+PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
+PACKAGED_EXTRA_OCI_IMAGE_REFS+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
 
 if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -gt 0 ]]; then
   mkdir -p "${CODE_REPO_DIR}/.run/extra-oci-images"
   for idx in "${!EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]}"; do
     dest="${CODE_REPO_DIR}/.run/extra-oci-images/extra-oci-image-${idx}.tar"
     cp "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[idx]}" "${dest}"
-    EXTRA_OCI_IMAGE_ARCHIVES_FOR_DEV+=("/workspace/.run/extra-oci-images/extra-oci-image-${idx}.tar")
+    PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES+=("/workspace/.run/extra-oci-images/extra-oci-image-${idx}.tar")
+    PACKAGED_EXTRA_OCI_IMAGE_REFS+=("${EXTRA_OCI_IMAGE_REF_LIST[idx]}")
   done
 elif [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -gt 0 ]]; then
   mkdir -p "${CODE_REPO_DIR}/.run/extra-oci-images"
   for idx in "${!EXTRA_OCI_IMAGE_PULL_REF_LIST[@]}"; do
     dest="${CODE_REPO_DIR}/.run/extra-oci-images/extra-oci-image-${idx}.tar"
     export_bundled_extra_oci_image_archive "${EXTRA_OCI_IMAGE_PULL_REF_LIST[idx]}" "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" "${dest}"
-    EXTRA_OCI_IMAGE_ARCHIVES_FOR_DEV+=("/workspace/.run/extra-oci-images/extra-oci-image-${idx}.tar")
+    PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES+=("/workspace/.run/extra-oci-images/extra-oci-image-${idx}.tar")
+    PACKAGED_EXTRA_OCI_IMAGE_REFS+=("${EXTRA_OCI_IMAGE_REF_LIST[idx]}")
   done
 fi
 
+if [[ ${#PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES[@]} -ne ${#PACKAGED_EXTRA_OCI_IMAGE_REFS[@]} ]]; then
+  echo "build-full-bundle: internal error: packaged extra OCI archives (${#PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES[@]}) and refs (${#PACKAGED_EXTRA_OCI_IMAGE_REFS[@]}) length mismatch" >&2
+  exit 1
+fi
+
 EXTRA_OCI_ARG_LINES=""
-for idx in "${!EXTRA_OCI_IMAGE_ARCHIVES_FOR_DEV[@]}"; do
-  EXTRA_OCI_ARG_LINES+="  EXTRA_OCI_ARGS+=(--extra-oci-image $(shell_quote "${EXTRA_OCI_IMAGE_ARCHIVES_FOR_DEV[idx]}") --extra-oci-image-reference $(shell_quote "${EXTRA_OCI_IMAGE_REF_LIST[idx]}"))"$'\n'
+for idx in "${!PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES[@]}"; do
+  EXTRA_OCI_ARG_LINES+="  EXTRA_OCI_ARGS+=(--extra-oci-image $(shell_quote "${PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES[idx]}") --extra-oci-image-reference $(shell_quote "${PACKAGED_EXTRA_OCI_IMAGE_REFS[idx]}"))"$'\n'
 done
 
 cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF

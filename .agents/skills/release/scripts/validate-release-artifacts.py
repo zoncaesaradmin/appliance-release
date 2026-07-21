@@ -307,6 +307,16 @@ def validate_extra_oci_images(
         image_path = require_existing_release_path(
             release_input_dir, rel_path, f"extraOCIImages[{idx}]"
         )
+        # Catch archive/reference pairing bugs for known appliance-owned images.
+        # Example failure mode: workspace-provisioner.tar labeled as automation-dev.
+        path_name = image_path.name.lower()
+        ref_lower = image_ref.lower()
+        for token in ("workspace-provisioner", "automation-dev"):
+            if token in path_name and token not in ref_lower:
+                raise ValueError(
+                    f"release-input artifacts.extraOCIImages[{idx}] path {rel_path!r} "
+                    f"implies imageReference containing {token!r}, got {image_ref!r}"
+                )
         bundle_path = f"oci-images/{image_path.name}"
         entry = require_bundle_entry(entries_by_path, bundle_path, f"extraOCIImages[{idx}]")
         require_matching_bundle_image_reference(entry, image_ref, bundle_path, f"extraOCIImages[{idx}]")

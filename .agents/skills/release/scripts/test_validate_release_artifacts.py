@@ -256,12 +256,42 @@ def test_rejects_mismatched_ui_values_image_reference() -> None:
             raise AssertionError(result.stderr)
 
 
+def test_rejects_workspace_provisioner_path_ref_mismatch() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        old_path = tmp / "release-input" / "images" / "buildah.tar"
+        new_path = tmp / "release-input" / "images" / "workspace-provisioner-image.tar"
+        old_path.rename(new_path)
+        release_input_path = tmp / "release-input" / "release-input.json"
+        release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
+        release_input["artifacts"]["extraOCIImages"][0]["path"] = "images/workspace-provisioner-image.tar"
+        # Keep the wrong automation-dev-style ref to simulate the pairing bug.
+        release_input["artifacts"]["extraOCIImages"][0]["imageReference"] = (
+            "registry.local/automation-dev@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+        release_input_path.write_text(json.dumps(release_input), encoding="utf-8")
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for entry in manifest["entries"]:
+            if entry.get("targetPath") == "oci-images/buildah.tar":
+                entry["targetPath"] = "oci-images/workspace-provisioner-image.tar"
+                entry["imageReference"] = release_input["artifacts"]["extraOCIImages"][0]["imageReference"]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = run_validator(tmp)
+        if result.returncode == 0:
+            raise AssertionError("workspace-provisioner path/ref mismatch was accepted")
+        if "implies imageReference containing 'workspace-provisioner'" not in result.stderr:
+            raise AssertionError(result.stderr)
+
+
 def main() -> None:
     test_positive_case()
     test_positive_case_with_nested_bundle_root()
     test_allows_empty_directory_artifacts()
     test_rejects_tag_only_extra_oci_image()
     test_rejects_missing_expected_extra_oci_image_ref()
+    test_rejects_workspace_provisioner_path_ref_mismatch()
     test_rejects_missing_ui_bundle_entry()
     test_rejects_mismatched_ui_bundle_image_reference()
     test_rejects_mismatched_ui_values_image_reference()
