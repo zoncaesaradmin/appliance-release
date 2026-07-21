@@ -67,6 +67,8 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 - Specifically, do not run `run-release-flow.sh --skip-build --skip-install` or similar "verify against the real setup only" commands on behalf of the user.
 - Do not use the user's real build server, publish server, or target device for validation after code changes unless the user explicitly asks for that execution in the current turn.
 - Hand off the exact command(s) for the user to run instead of consuming the real setup automatically.
+- Real build/publish/target hosts are **read-only by default** for the agent. SSH may be used to inspect logs and state, but the agent must not modify files or content on those hosts (`scp` uploads, remote edits, `git reset`/`checkout`/`clean`, package installs, image imports, cluster changes) unless the user explicitly authorizes that write in the current turn. Change code locally and sync through git / the release skill instead of hot-fixing the build server.
+- Do not edit user runtime files outside the repo (for example `~/appliance-release.config.yaml` or `~/build-catalog.yaml`). Change only in-repo examples/references and tell the user what to copy into their personal config.
 
 ## Repository Boundary
 

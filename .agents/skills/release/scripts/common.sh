@@ -189,7 +189,11 @@ render_ensure_remote_release_repo_cmd() {
   local remote_cwd="$1"
   local repo_source="$2"
   local repo_ref="$3"
-  local pull_cmd="$4"
+  # pull_cmd is retained for callers/metadata compatibility but intentionally
+  # unused: the build-host checkout is skill-managed and must sync to the
+  # configured ref even when the working tree is dirty (for example after an
+  # accidental scp during debugging).
+  local _pull_cmd="${4:-}"
 
   local quoted_cwd quoted_source quoted_ref
   quoted_cwd="$(shell_quote "${remote_cwd}")"
@@ -201,19 +205,52 @@ set -euo pipefail
 repo_path=${quoted_cwd}
 repo_source=${quoted_source}
 repo_ref=${quoted_ref}
-if [[ -d "\${repo_path}/.git" ]]; then
+
+sync_existing_release_repo() {
   cd "\${repo_path}"
-$(if [[ -n "${pull_cmd}" ]]; then printf '  %s\n' "${pull_cmd}"; fi)
-elif [[ -e "\${repo_path}" ]]; then
-  echo "ensure remote release repo: path exists but is not a git checkout: \${repo_path}" >&2
-  exit 1
-else
+  git remote set-url origin "\${repo_source}"
+  # Shallow-friendly update: fetch the configured ref and make the working
+  # tree match it exactly. Discard local modifications/untracked files so a
+  # previous manual copy or interrupted edit cannot block the release flow.
+  if [[ -n "\${repo_ref}" ]]; then
+    if ! git fetch --prune --depth 1 origin "\${repo_ref}"; then
+      echo "ensure remote release repo: fetch failed for \${repo_source} ref \${repo_ref}; recloning" >&2
+      return 1
+    fi
+  else
+    if ! git fetch --prune --depth 1 origin; then
+      echo "ensure remote release repo: fetch failed for \${repo_source}; recloning" >&2
+      return 1
+    fi
+  fi
+  git reset --hard FETCH_HEAD
+  git clean -fd
+  echo "ensure remote release repo: synced \${repo_path} to \$(git rev-parse --short HEAD)"
+}
+
+clone_release_repo() {
   mkdir -p "\$(dirname "\${repo_path}")"
+  rm -rf "\${repo_path}"
   if [[ -n "\${repo_ref}" ]]; then
     git clone --depth 1 --branch "\${repo_ref}" "\${repo_source}" "\${repo_path}"
   else
     git clone --depth 1 "\${repo_source}" "\${repo_path}"
   fi
+  echo "ensure remote release repo: cloned \${repo_source} into \${repo_path}"
+}
+
+if [[ -d "\${repo_path}/.git" ]]; then
+  if ! sync_existing_release_repo; then
+    echo "ensure remote release repo: removing unusable checkout at \${repo_path}" >&2
+    rm -rf "\${repo_path}"
+    clone_release_repo
+  fi
+elif [[ -e "\${repo_path}" ]]; then
+  echo "ensure remote release repo: path exists but is not a git checkout; replacing \${repo_path}" >&2
+  rm -rf "\${repo_path}"
+  clone_release_repo
+else
+  clone_release_repo
 fi
 EOF
 }

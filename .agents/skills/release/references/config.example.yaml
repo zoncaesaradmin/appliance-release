@@ -24,6 +24,9 @@ release_workspace:
   # outside a git checkout or when you need a different upstream URL.
   remote_repo_source: git@github.com:zoncaesaradmin/appliance-release.git
   remote_repo_ref: main
+  # The build-host checkout at remote_repo_path is skill-managed: missing paths
+  # are cloned, existing checkouts are fetched and hard-reset to remote_repo_ref,
+  # and local dirty files are discarded. Do not hand-edit files on the build host.
   # Export directory produced on the build machine.
   # The skill injects this as EXPORT_DIR for both build and publish so the
   # publish step does not accidentally use a stale export from an older run.
@@ -61,6 +64,10 @@ build_flow:
   # Optional but less secure alternative if you really want the token in config:
   # registry_token: your-registry-token
   git_pull_command: git pull
+  # NOTE: build-and-publish.sh no longer runs git_pull_command against the
+  # build-host checkout. It clones or hard-resets release_workspace.remote_repo_path
+  # to remote_repo_ref so dirty local files cannot block the flow. Keep this key
+  # only for older docs/tooling compatibility.
   bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
   bootstrap_needs_sudo: true
   build_needs_sudo: true
