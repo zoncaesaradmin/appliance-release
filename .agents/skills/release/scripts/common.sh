@@ -172,3 +172,48 @@ run_ssh_captured() {
   set -e
   return "${cmd_status}"
 }
+
+skill_release_repo_root() {
+  local script_dir="$1"
+  (cd "${script_dir}/../../../.." && pwd)
+}
+
+resolve_local_git_origin() {
+  local repo_root="$1"
+  if git -C "${repo_root}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "${repo_root}" remote get-url origin 2>/dev/null || true
+  fi
+}
+
+render_ensure_remote_release_repo_cmd() {
+  local remote_cwd="$1"
+  local repo_source="$2"
+  local repo_ref="$3"
+  local pull_cmd="$4"
+
+  local quoted_cwd quoted_source quoted_ref
+  quoted_cwd="$(shell_quote "${remote_cwd}")"
+  quoted_source="$(shell_quote "${repo_source}")"
+  quoted_ref="$(shell_quote "${repo_ref}")"
+
+  cat <<EOF
+set -euo pipefail
+repo_path=${quoted_cwd}
+repo_source=${quoted_source}
+repo_ref=${quoted_ref}
+if [[ -d "\${repo_path}/.git" ]]; then
+  cd "\${repo_path}"
+$(if [[ -n "${pull_cmd}" ]]; then printf '  %s\n' "${pull_cmd}"; fi)
+elif [[ -e "\${repo_path}" ]]; then
+  echo "ensure remote release repo: path exists but is not a git checkout: \${repo_path}" >&2
+  exit 1
+else
+  mkdir -p "\$(dirname "\${repo_path}")"
+  if [[ -n "\${repo_ref}" ]]; then
+    git clone --depth 1 --branch "\${repo_ref}" "\${repo_source}" "\${repo_path}"
+  else
+    git clone --depth 1 "\${repo_source}" "\${repo_path}"
+  fi
+fi
+EOF
+}

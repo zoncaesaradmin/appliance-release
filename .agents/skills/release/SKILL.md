@@ -115,7 +115,7 @@ This skill should orchestrate, not invent infrastructure behavior.
 For the current three-repo flow:
 
 - the user usually pushes repo changes first
-- the build host then runs `git pull` in `appliance-release`
+- the build host ensures `appliance-release` exists at `release_workspace.remote_repo_path` (cloning on first use, then `git pull` on later runs)
 - the build host bootstrap may require `sudo`
 - remote build runs the release repo's CI-style bundle build
 - remote publish runs the release repo's publish flow against the HTTP server

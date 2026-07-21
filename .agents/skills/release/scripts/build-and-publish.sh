@@ -108,6 +108,8 @@ fi
 if [[ -z "${REMOTE_CWD}" ]]; then
   REMOTE_CWD="$(config_get "${CONFIG_PATH}" "release_workspace.remote_repo_path")"
 fi
+REMOTE_REPO_SOURCE="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_repo_source" || true)"
+REMOTE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_repo_ref" || true)"
 if [[ -z "${GIT_PULL_CMD}" ]]; then
   GIT_PULL_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.git_pull_command" || true)"
 fi
@@ -135,6 +137,15 @@ fi
 
 [[ -n "${BUILD_CMD}" ]] || fail "build command not provided and build_flow.build_command is missing"
 [[ -n "${PUBLISH_CMD}" ]] || fail "publish command not provided and build_flow.publish_command is missing"
+
+SKILL_RELEASE_REPO_ROOT="$(skill_release_repo_root "${SCRIPT_DIR}")"
+if [[ -z "${REMOTE_REPO_SOURCE}" ]]; then
+  REMOTE_REPO_SOURCE="$(resolve_local_git_origin "${SKILL_RELEASE_REPO_ROOT}")"
+fi
+[[ -n "${REMOTE_REPO_SOURCE}" ]] || fail "release_workspace.remote_repo_source is required when the build host checkout is missing; set it in config or run from a local appliance-release git checkout"
+if [[ -z "${REMOTE_REPO_REF}" ]]; then
+  REMOTE_REPO_REF="main"
+fi
 
 require_cmd rsync
 require_cmd ssh
@@ -202,10 +213,8 @@ PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PRODUCT_VER
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "EXPORT_DIR" "${REMOTE_EXPORT_DIR}")"
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_PUBLIC_BASE_URL" "${PUBLISH_PUBLIC_BASE_URL}")"
 
-git_pull_remote_cmd=""
-if [[ -n "${GIT_PULL_CMD}" ]]; then
-  git_pull_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${GIT_PULL_CMD}"
-fi
+release_repo_sync_remote_cmd=""
+release_repo_sync_remote_cmd="$(render_ensure_remote_release_repo_cmd "${REMOTE_CWD}" "${REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" "${GIT_PULL_CMD}")"
 bootstrap_remote_cmd=""
 if [[ -n "${BOOTSTRAP_CMD}" ]]; then
   bootstrap_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BOOTSTRAP_CMD}"
@@ -218,9 +227,9 @@ bootstrap_log="${RUN_DIR}/logs/bootstrap.log"
 build_log="${RUN_DIR}/logs/build.log"
 publish_log="${RUN_DIR}/logs/publish.log"
 
-if [[ -n "${git_pull_remote_cmd}" ]]; then
-  log "running remote git pull on ${BUILD_HOST}"
-  run_ssh_logged "${BUILD_HOST}" "${git_pull_log}" "${git_pull_remote_cmd}"
+if [[ -n "${release_repo_sync_remote_cmd}" ]]; then
+  log "ensuring remote appliance-release checkout on ${BUILD_HOST} (${REMOTE_CWD})"
+  run_ssh_logged "${BUILD_HOST}" "${git_pull_log}" "${release_repo_sync_remote_cmd}"
 fi
 
 build_sudo_password=""
@@ -429,7 +438,7 @@ fi
 remote_release_commit_cmd="cd $(shell_quote "${REMOTE_CWD}") && git rev-parse HEAD"
 remote_release_commit="$(ssh "${BUILD_HOST}" "bash -lc $(shell_quote "${remote_release_commit_cmd}")" 2>/dev/null || true)"
 
-python3 - "${RUN_DIR}" "${CONFIG_PATH}" "${BUILD_HOST}" "${REMOTE_CWD}" "${RELEASE_VERSION}" "${GIT_PULL_CMD}" "${BOOTSTRAP_CMD}" "${BUILD_CMD}" "${PUBLISH_CMD}" "${remote_release_commit}" <<'PY'
+python3 - "${RUN_DIR}" "${CONFIG_PATH}" "${BUILD_HOST}" "${REMOTE_CWD}" "${RELEASE_VERSION}" "${GIT_PULL_CMD}" "${BOOTSTRAP_CMD}" "${BUILD_CMD}" "${PUBLISH_CMD}" "${remote_release_commit}" "${REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -445,7 +454,9 @@ run_dir = Path(sys.argv[1])
     build_cmd,
     publish_cmd,
     remote_release_commit,
-) = sys.argv[2:11]
+    remote_repo_source,
+    remote_repo_ref,
+) = sys.argv[2:13]
 
 def read_text(path: Path):
     if path.is_file():
@@ -512,6 +523,8 @@ payload = {
     "remoteWorkingDirectory": remote_cwd,
     "releaseVersion": release_version or None,
     "remoteReleaseCommit": remote_release_commit or None,
+    "remoteRepoSource": remote_repo_source or None,
+    "remoteRepoRef": remote_repo_ref or None,
     "gitPullCommand": git_pull_cmd or None,
     "bootstrapCommand": bootstrap_cmd or None,
     "buildCommand": build_cmd,

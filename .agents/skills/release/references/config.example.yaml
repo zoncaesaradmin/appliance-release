@@ -16,8 +16,14 @@ target_host:
   state_dir: /var/lib/zon
 
 release_workspace:
-  # Remote appliance-release checkout on the build machine.
+  # Remote appliance-release checkout on the build machine. If this path does not
+  # exist yet, build-and-publish.sh clones it before bootstrap/build.
   remote_repo_path: /home/zonsys/ws/appliance-release
+  # Optional when running the skill from a local appliance-release git checkout:
+  # defaults to that checkout's origin remote. Set explicitly for automation
+  # outside a git checkout or when you need a different upstream URL.
+  remote_repo_source: git@github.com:zoncaesaradmin/appliance-release.git
+  remote_repo_ref: main
   # Export directory produced on the build machine.
   # The skill injects this as EXPORT_DIR for both build and publish so the
   # publish step does not accidentally use a stale export from an older run.
