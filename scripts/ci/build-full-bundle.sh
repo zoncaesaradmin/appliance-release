@@ -287,13 +287,36 @@ export_container_image_archive() {
   sudo -n "${podman_bin}" save --format oci-archive -o "${output_path}" "${image_ref}" >/dev/null
 }
 
+# Target platform for bundled OCI images. The appliance ships amd64 only;
+# inspect/copy must use the same overrides so the digest in the bundle
+# reference matches the single-platform manifest written into the archive.
+# Without overrides, skopeo inspect of a multi-arch tag returns the index
+# digest while skopeo copy materializes a platform manifest — and labeling
+# the archive with the index digest breaks ctr/CRI resolution at install.
+BUNDLE_IMAGE_OS="${BUNDLE_IMAGE_OS:-linux}"
+BUNDLE_IMAGE_ARCH="${BUNDLE_IMAGE_ARCH:-amd64}"
+
+oci_image_repository() {
+  local ref="${1#docker://}"
+  if [[ "${ref}" == *@sha256:* ]]; then
+    printf '%s' "${ref%@sha256:*}"
+    return
+  fi
+  if [[ "${ref}" =~ ^(.+):([^:/]+)$ ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+    return
+  fi
+  printf '%s' "${ref}"
+}
+
 resolve_container_image_digest() {
   local image_ref="$1"
   local skopeo_bin podman_bin auth_file skopeo_image digest
+  local -a overrides=(--override-os "${BUNDLE_IMAGE_OS}" --override-arch "${BUNDLE_IMAGE_ARCH}")
 
   skopeo_bin="$(command -v skopeo || true)"
   if [[ -n "${skopeo_bin}" ]]; then
-    digest="$(sudo -n "${skopeo_bin}" inspect "docker://${image_ref#docker://}" --format '{{.Digest}}' 2>/dev/null || true)"
+    digest="$(sudo -n "${skopeo_bin}" inspect "${overrides[@]}" "docker://${image_ref#docker://}" --format '{{.Digest}}' 2>/dev/null || true)"
   else
     podman_bin="$(command -v podman || true)"
     if [[ -z "${podman_bin}" ]]; then
@@ -306,11 +329,11 @@ resolve_container_image_digest() {
       digest="$(sudo -n "${podman_bin}" run --rm \
         -v "${auth_file}:/tmp/auth.json:ro,Z" \
         "${skopeo_image}" \
-        inspect --authfile /tmp/auth.json "docker://${image_ref#docker://}" --format '{{.Digest}}' 2>/dev/null || true)"
+        inspect --authfile /tmp/auth.json "${overrides[@]}" "docker://${image_ref#docker://}" --format '{{.Digest}}' 2>/dev/null || true)"
     else
       digest="$(sudo -n "${podman_bin}" run --rm \
         "${skopeo_image}" \
-        inspect "docker://${image_ref#docker://}" --format '{{.Digest}}' 2>/dev/null || true)"
+        inspect "${overrides[@]}" "docker://${image_ref#docker://}" --format '{{.Digest}}' 2>/dev/null || true)"
     fi
   fi
 
@@ -329,23 +352,89 @@ workspace_provisioner_bundle_ref() {
   printf 'registry.local/workspace-provisioner@%s' "${digest}"
 }
 
+validate_bundled_oci_archive_reference() {
+  local archive_path="$1"
+  local bundle_ref="$2"
+
+  python3 - "${archive_path}" "${bundle_ref}" <<'PY'
+import json
+import sys
+import tarfile
+
+archive, expected_ref = sys.argv[1], sys.argv[2]
+if "@" not in expected_ref:
+    raise SystemExit(f"bundle reference {expected_ref!r} is not digest-pinned")
+expected_digest = expected_ref.split("@", 1)[1]
+with tarfile.open(archive) as tar:
+    try:
+        idx = json.load(tar.extractfile("index.json"))
+    except KeyError as exc:
+        raise SystemExit(f"oci archive {archive} is missing index.json") from exc
+manifests = idx.get("manifests") or []
+if not manifests:
+    raise SystemExit(f"oci archive {archive} has no manifests in index.json")
+chosen = None
+for manifest in manifests:
+    ann = (manifest.get("annotations") or {}).get("org.opencontainers.image.ref.name")
+    if ann == expected_ref:
+        chosen = manifest
+        break
+if chosen is None:
+    chosen = manifests[0]
+content_digest = str(chosen.get("digest") or "").strip()
+if content_digest != expected_digest:
+    raise SystemExit(
+        f"oci archive {archive} manifest digest {content_digest} does not match "
+        f"bundle reference digest {expected_digest} (ref {expected_ref}). "
+        "Export must copy the digest-pinned platform image and label the archive "
+        "with that same digest."
+    )
+ann = (chosen.get("annotations") or {}).get("org.opencontainers.image.ref.name") or ""
+if ann and ann != expected_ref:
+    raise SystemExit(
+        f"oci archive {archive} annotation ref {ann!r} does not match bundle reference {expected_ref!r}"
+    )
+if "@" in ann:
+    ann_digest = ann.split("@", 1)[1]
+    if ann_digest != content_digest:
+        raise SystemExit(
+            f"oci archive {archive} annotation digest {ann_digest} does not match "
+            f"archived manifest digest {content_digest}"
+        )
+PY
+}
+
 export_bundled_extra_oci_image_archive() {
   local pull_ref="$1"
   local bundle_ref="$2"
   local output_path="$3"
   local skopeo_bin podman_bin auth_file skopeo_image copy_cmd
+  local digest repo source_ref
+  local -a overrides=(--override-os "${BUNDLE_IMAGE_OS}" --override-arch "${BUNDLE_IMAGE_ARCH}")
 
   if [[ "${bundle_ref}" != *@sha256:* ]]; then
     echo "build-full-bundle: bundle reference ${bundle_ref} must be digest-pinned when exporting from ${pull_ref}" >&2
     exit 2
   fi
 
+  digest="${bundle_ref##*@}"
+  if [[ "${digest}" != sha256:* ]]; then
+    echo "build-full-bundle: bundle reference ${bundle_ref} must end with @sha256:<digest>" >&2
+    exit 2
+  fi
+
+  # Copy by the digest embedded in the bundle ref, not by a mutable tag.
+  # Tag inspect + tag copy can disagree (multi-arch index vs platform
+  # manifest), which leaves ctr unable to resolve the annotated name.
+  repo="$(oci_image_repository "${pull_ref}")"
+  source_ref="${repo}@${digest}"
+
   mkdir -p "$(dirname "${output_path}")"
   rm -f "${output_path}"
 
   skopeo_bin="$(command -v skopeo || true)"
   if [[ -n "${skopeo_bin}" ]]; then
-    copy_cmd=(sudo -n "${skopeo_bin}" copy "docker://${pull_ref#docker://}" "oci-archive:${output_path}:${bundle_ref}")
+    copy_cmd=(sudo -n "${skopeo_bin}" copy "${overrides[@]}" "docker://${source_ref}" "oci-archive:${output_path}:${bundle_ref}")
   else
     podman_bin="$(command -v podman || true)"
     if [[ -z "${podman_bin}" ]]; then
@@ -364,18 +453,21 @@ EOF
       -v "$(dirname "${output_path}"):/out:Z"
       "${skopeo_image}"
       copy --authfile /tmp/auth.json
-      "docker://${pull_ref#docker://}"
+      "${overrides[@]}"
+      "docker://${source_ref}"
       "oci-archive:/out/$(basename "${output_path}"):${bundle_ref}"
     )
   fi
 
   if ! "${copy_cmd[@]}" >/dev/null; then
     cat >&2 <<EOF
-build-full-bundle: failed to export ${bundle_ref} from ${pull_ref}
+build-full-bundle: failed to export ${bundle_ref} from ${source_ref} (pull ref ${pull_ref})
 build-full-bundle: ensure the build host can pull GHCR (make dev-registry-login in appliance-code) or pre-export the archive locally
 EOF
     exit 1
   fi
+
+  validate_bundled_oci_archive_reference "${output_path}" "${bundle_ref}"
 }
 
 # derive_argo_version_from_code_repo reads the pinned Argo version out of

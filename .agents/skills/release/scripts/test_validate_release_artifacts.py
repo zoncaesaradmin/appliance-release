@@ -285,6 +285,75 @@ def test_rejects_workspace_provisioner_path_ref_mismatch() -> None:
             raise AssertionError(result.stderr)
 
 
+def write_mismatched_oci_archive(path: Path, annotated_ref: str, content_digest: str) -> None:
+    import io
+    import tarfile
+
+    index = {
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.index.v1+json",
+        "manifests": [
+            {
+                "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                "digest": content_digest,
+                "size": 2,
+                "annotations": {"org.opencontainers.image.ref.name": annotated_ref},
+            }
+        ],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(path, "w") as tar:
+        payload = json.dumps(index).encode("utf-8")
+        info = tarfile.TarInfo(name="index.json")
+        info.size = len(payload)
+        tar.addfile(info, io.BytesIO(payload))
+
+
+def test_rejects_oci_archive_annotation_digest_mismatch() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        content_digest = "sha256:5e1543841d987081a1e0e37305039b2bb9908592a4cddad95b4c4c49d07653a3"
+        annotated_ref = (
+            "registry.local/workspace-provisioner@"
+            "sha256:77418e6e7c7f434c4a98eaff04ef16840cf03649c881c03948e3e213923e3136"
+        )
+        archive_path = tmp / "release-input" / "images" / "workspace-provisioner-image.tar"
+        write_mismatched_oci_archive(archive_path, annotated_ref, content_digest)
+        release_input_path = tmp / "release-input" / "release-input.json"
+        release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
+        release_input["artifacts"]["extraOCIImages"] = [
+            {
+                "path": "images/workspace-provisioner-image.tar",
+                "digest": "sha256:workspace-provisioner",
+                "sizeBytes": archive_path.stat().st_size,
+                "imageReference": annotated_ref,
+            }
+        ]
+        release_input_path.write_text(json.dumps(release_input), encoding="utf-8")
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["entries"] = [
+            entry
+            for entry in manifest["entries"]
+            if entry.get("targetPath") != "oci-images/buildah.tar"
+        ]
+        manifest["entries"].append(
+            {
+                "targetPath": "oci-images/workspace-provisioner-image.tar",
+                "digest": "sha256:workspace-provisioner",
+                "sizeBytes": archive_path.stat().st_size,
+                "imageReference": annotated_ref,
+            }
+        )
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = run_validator(tmp)
+        if result.returncode == 0:
+            raise AssertionError("OCI archive annotation/content digest mismatch was accepted")
+        if "does not match imageReference digest" not in result.stderr and "annotation digest" not in result.stderr:
+            raise AssertionError(result.stderr)
+
+
 def main() -> None:
     test_positive_case()
     test_positive_case_with_nested_bundle_root()
@@ -292,6 +361,7 @@ def main() -> None:
     test_rejects_tag_only_extra_oci_image()
     test_rejects_missing_expected_extra_oci_image_ref()
     test_rejects_workspace_provisioner_path_ref_mismatch()
+    test_rejects_oci_archive_annotation_digest_mismatch()
     test_rejects_missing_ui_bundle_entry()
     test_rejects_mismatched_ui_bundle_image_reference()
     test_rejects_mismatched_ui_values_image_reference()

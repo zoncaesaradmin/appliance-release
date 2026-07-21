@@ -100,12 +100,16 @@ build_flow:
   # then pulls docker.io/alpine/git:latest and packages it as
   # registry.local/workspace-provisioner@sha256:... so install-time ctr import
   # resolves the exact bundled reference.
-  # For a pinned/offline tryout, export once then set both fields:
-  #   digest="$(skopeo inspect docker://docker.io/alpine/git:latest --format '{{.Digest}}')"
-  #   skopeo copy docker://docker.io/alpine/git:latest \
+  # For a pinned/offline tryout, export once then set both fields. Use the same
+  # platform overrides for inspect and copy so the annotated digest matches the
+  # archived single-platform manifest (amd64 appliance):
+  #   digest="$(skopeo inspect --override-os linux --override-arch amd64 \
+  #     docker://docker.io/alpine/git:latest --format '{{.Digest}}')"
+  #   skopeo copy --override-os linux --override-arch amd64 \
+  #     docker://docker.io/alpine/git@${digest} \
   #     oci-archive:/home/zonsys/ci/inputs/workspace-provisioner.oci.tar:registry.local/workspace-provisioner@${digest}
   # workspace_provisioner_image_archive_source: /home/zonsys/ci/inputs/workspace-provisioner.oci.tar
-  # workspace_provisioner_image_ref: registry.local/workspace-provisioner@sha256:77418e6e7c7f434c4a98eaff04ef16840cf03649c881c03948e3e213923e3136
+  # workspace_provisioner_image_ref: registry.local/workspace-provisioner@sha256:<platform-manifest-digest>
   # Builder-profile builds require the bundled automation-dev (CI/dev-container)
   # image. zonctl picks the automation-dev@sha256 ref from the bundle and injects
   # config.builderImageDigest. Catalogs must not set per-target builder digests.

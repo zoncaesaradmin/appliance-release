@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import sys
+import tarfile
 from typing import Optional
 
 
@@ -96,6 +97,59 @@ def require_existing_release_path(release_input_dir: Path, rel_path: str, label:
     if not path.exists():
         raise ValueError(f"release-input {label} path is missing on disk: {path}")
     return path
+
+
+def require_oci_archive_reference_matches_content(path: Path, image_ref: str, label: str) -> None:
+    """When path is an OCI layout archive, require annotation digest == content digest == image_ref."""
+    try:
+        with tarfile.open(path) as tar:
+            try:
+                idx_file = tar.extractfile("index.json")
+            except KeyError:
+                return
+            if idx_file is None:
+                return
+            index = json.load(idx_file)
+    except (tarfile.TarError, OSError, json.JSONDecodeError):
+        # Stub/non-OCI archives used in unit fixtures are allowed through.
+        return
+
+    manifests = index.get("manifests") if isinstance(index, dict) else None
+    if not isinstance(manifests, list) or not manifests:
+        raise ValueError(f"{label} OCI archive {path} has no manifests in index.json")
+
+    expected_digest = image_ref.split("@", 1)[1]
+    chosen = None
+    for manifest in manifests:
+        if not isinstance(manifest, dict):
+            continue
+        ann = (manifest.get("annotations") or {}).get("org.opencontainers.image.ref.name")
+        if ann == image_ref:
+            chosen = manifest
+            break
+    if chosen is None:
+        chosen = manifests[0] if isinstance(manifests[0], dict) else None
+    if not isinstance(chosen, dict):
+        raise ValueError(f"{label} OCI archive {path} has an invalid manifest entry")
+
+    content_digest = str(chosen.get("digest") or "").strip()
+    if content_digest != expected_digest:
+        raise ValueError(
+            f"{label} OCI archive {path} manifest digest {content_digest} does not match "
+            f"imageReference digest {expected_digest}"
+        )
+    ann = (chosen.get("annotations") or {}).get("org.opencontainers.image.ref.name") or ""
+    if ann and ann != image_ref:
+        raise ValueError(
+            f"{label} OCI archive {path} annotation ref {ann!r} does not match imageReference {image_ref!r}"
+        )
+    if "@" in ann:
+        ann_digest = ann.split("@", 1)[1]
+        if ann_digest != content_digest:
+            raise ValueError(
+                f"{label} OCI archive {path} annotation digest {ann_digest} does not match "
+                f"archived manifest digest {content_digest}"
+            )
 
 
 def image_ref_is_digest_pinned(image_ref: str) -> bool:
@@ -306,6 +360,9 @@ def validate_extra_oci_images(
             )
         image_path = require_existing_release_path(
             release_input_dir, rel_path, f"extraOCIImages[{idx}]"
+        )
+        require_oci_archive_reference_matches_content(
+            image_path, image_ref, f"extraOCIImages[{idx}]"
         )
         # Catch archive/reference pairing bugs for known appliance-owned images.
         # Example failure mode: workspace-provisioner.tar labeled as automation-dev.
