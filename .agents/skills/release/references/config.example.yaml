@@ -83,37 +83,39 @@ build_flow:
     # controller_image_archive_source: /home/zonsys/ci/inputs/argo/workflow-controller.oci.tar
     # executor_image_archive_source: /home/zonsys/ci/inputs/argo/argoexec.oci.tar
   # Workspace provisioning uses an appliance-owned generic image with git and
-  # CA certificates. By default scripts/ci/build-full-bundle.sh pulls
-  # docker.io/alpine/git:latest on the build host, resolves it to an immutable
-  # @sha256 reference, packages the OCI archive, and records that digest in the
-  # signed bundle. For offline build hosts, provide both fields below instead.
-  # workspace_provisioner_image_archive_source: /home/zonsys/ci/inputs/workspace-provisioner.oci.tar
-  # workspace_provisioner_image_ref: docker.io/alpine/git@sha256:...
-  # Optional extra OCI image archives to package into the complete signed
-  # bundle. The build script expects comma-separated lists with matching
-  # lengths. extra_oci_image_refs are also used as the expected evidence list
-  # during copied release-input/final-bundle validation.
-  # extra_oci_image_archive_sources: /home/zonsys/ci/inputs/tooling.oci.tar
-  # extra_oci_image_refs: registry.local/tooling@sha256:...
+  # CA certificates. Online build hosts can omit both fields: build-full-bundle.sh
+  # then pulls docker.io/alpine/git:latest, resolves @sha256, and packages it.
+  # For a pinned/offline tryout, export once then set both fields:
+  #   skopeo copy docker://docker.io/alpine/git:latest \
+  #     oci-archive:/home/zonsys/ci/inputs/workspace-provisioner.oci.tar
+  workspace_provisioner_image_archive_source: /home/zonsys/ci/inputs/workspace-provisioner.oci.tar
+  workspace_provisioner_image_ref: docker.io/alpine/git@sha256:77418e6e7c7f434c4a98eaff04ef16840cf03649c881c03948e3e213923e3136
+  # Builder-profile builds require the bundled automation-dev (CI/dev-container)
+  # image. zonctl picks the automation-dev@sha256 ref from the bundle and injects
+  # config.builderImageDigest. Catalogs must not set per-target builder digests.
+  # Export once on a machine that can pull GHCR (REGISTRY_USER / REGISTRY_TOKEN):
+  #   skopeo copy docker://ghcr.io/zoncaesaradmin/development-container/automation-dev:v0.1.0 \
+  #     oci-archive:/home/zonsys/ci/inputs/automation-dev.oci.tar
+  # Digest below matches published :v0.1.0 / :latest as of this example; re-resolve
+  # after a new development-container publish:
+  #   skopeo inspect docker://ghcr.io/zoncaesaradmin/development-container/automation-dev:v0.1.0 --format '{{.Digest}}'
+  extra_oci_image_archive_sources: /home/zonsys/ci/inputs/automation-dev.oci.tar
+  extra_oci_image_refs: registry.local/automation-dev@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
 
 install:
   bootstrap_admin_username: admin
   # Optional rollout/bootstrap overrides if chart naming changes again.
-  # kubernetes_namespace: appliance-system
+  # rollout_namespace: appliance-system
   # control_plane_deployment: control-plane
-  # Optional product-facing appliance profile passed into the control plane.
-  # Omit this to accept the v1 default profile of core.
+  # Product-facing appliance profile passed into the control plane.
   # Valid v1 values: core, builder, storage
-  # appliance_profile: core
-  # Optional local build catalog JSON/YAML. This is copied to the target
-  # install temp dir and passed to zonctl as product config. The builder
-  # profile needs a build catalog and matching Git-host/builder-image policy;
-  # use this when the bundle's chart values do not already include them.
+  appliance_profile: builder
+  # Local build catalog JSON/YAML. Copied to the target install temp dir and
+  # passed to zonctl as product config. Required for a useful builder tryout.
   # Do not put private keys, tokens, or passwords in this file.
   # Builder workflow repo URLs must use HTTPS.
-  # Start from:
-  # /Users/zoncaesar/ws/appliance-release/.agents/skills/release/references/build-catalog.example.yaml
-  # build_catalog_path: /Users/zoncaesar/build-catalog.yaml 
+  # Start from references/build-catalog.example.yaml (no builderImageDigest keys).
+  build_catalog_path: /Users/zoncaesar/build-catalog.yaml
   uninstall_first: true
 
 verification:

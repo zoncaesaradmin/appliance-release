@@ -23,15 +23,19 @@
 #   whatever is already on disk under
 #   /data/zon/workspaces/<workspace-name>/<repo-name>/
 #
+# Builder image:
+# Optional per-target builderImageDigest. Prefer the short bundle name
+# (default when omitted):
+#   builderImageDigest: automation-dev
+# Install resolves that to the digest-pinned automation-dev image packaged in
+# the signed bundle. Advanced overrides may use a digest-pinned reference that
+# is present in the bundle. Do not paste GHCR tags.
+#
 # Before using this file in a real install:
 # - replace repo URLs and defaultRef values with real product values
-# - replace builderImageDigest values with digest-pinned images that are
-#   present in the signed air-gap bundle (extra OCI images)
 # - replace imageRepository prefixes with the operator's artifact layout
 #
 # Do not put private keys, tokens, or passwords in this file.
-# Do not use the all-zero / ascending hex placeholder digest
-# 0123456789abcdef... — zonctl and the control plane reject it.
 workProfiles:
   - name: platform-dev
     description: Platform development multi-repo workspace profile.
@@ -71,14 +75,14 @@ repos:
         execution: make
         args: [build]
         imageRepository: users/example/platformkit
-        builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        builderImageDigest: automation-dev
       # Second target on the same repo: different explicit make args.
       - name: platformkit-api
         description: Build only the platformkit API image.
         execution: make
         args: [api]
         imageRepository: users/example/platformkit-api
-        builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        builderImageDigest: automation-dev
 
   - name: zonbundle
     url: https://github.com/zoncaesaradmin/zonbundle.git
@@ -90,7 +94,7 @@ repos:
         execution: make
         args: [build]
         imageRepository: users/example/zonbundle
-        builderImageDigest: registry.local/buildah@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        builderImageDigest: automation-dev
 
   - name: zoncore
     url: https://github.com/zoncaesaradmin/zoncore.git
@@ -105,7 +109,7 @@ repos:
         execution: script
         args: [build.sh]
         imageRepository: users/example/forgeline
-        builderImageDigest: registry.local/buildah@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+        builderImageDigest: automation-dev
 
   - name: forgeline-release
     url: https://github.com/zoncaesaradmin/forgeline-release.git

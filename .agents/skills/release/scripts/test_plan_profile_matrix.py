@@ -45,7 +45,6 @@ buildTargets:
     execution: script
     args: [build.sh]
     imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
         )
         config = tmp / "config.yaml"
@@ -198,7 +197,6 @@ buildTargets:
     execution: script
     args: [build.sh]
     imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
         )
         config = tmp / "config.yaml"
@@ -250,7 +248,6 @@ buildTargets:
     execution: script
     args: [build.sh]
     imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
         )
         config = tmp / "config.yaml"
@@ -298,7 +295,6 @@ buildTargets:
     execution: script
     args: [build.sh]
     imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
         )
         config = tmp / "config.yaml"
@@ -337,7 +333,6 @@ buildTargets:
     repo: app
     execution: make
     imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
         )
         config = tmp / "config.yaml"
@@ -390,7 +385,6 @@ buildTargets:
     args:
 {args_yaml}
 {extra}    imageRepository: users/alice/app
-    builderImageDigest: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """.lstrip(),
             )
             config = tmp / "config.yaml"
