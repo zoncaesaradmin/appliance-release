@@ -149,17 +149,25 @@ def require_oci_archive_reference_matches_content(path: Path, image_ref: str, la
             f"imageReference digest {expected_digest}"
         )
     ann = (chosen.get("annotations") or {}).get("org.opencontainers.image.ref.name") or ""
-    if ann and ann != image_ref:
-        raise ValueError(
-            f"{label} OCI archive {path} annotation ref {ann!r} does not match imageReference {image_ref!r}"
-        )
+    if not ann:
+        return
+    local_name = image_ref.split("@", 1)[0]
+    allowed = {image_ref, local_name, f"{local_name}:bundled"}
+    if ann in allowed:
+        return
+    if ann.startswith(local_name + ":") and "@" not in ann:
+        return
     if "@" in ann:
         ann_digest = ann.split("@", 1)[1]
-        if ann_digest != content_digest:
-            raise ValueError(
-                f"{label} OCI archive {path} annotation digest {ann_digest} does not match "
-                f"archived manifest digest {content_digest}"
-            )
+        if ann_digest == content_digest:
+            return
+        raise ValueError(
+            f"{label} OCI archive {path} annotation digest {ann_digest} does not match "
+            f"archived manifest digest {content_digest}"
+        )
+    raise ValueError(
+        f"{label} OCI archive {path} annotation ref {ann!r} does not match imageReference {image_ref!r}"
+    )
 
 
 def image_ref_is_digest_pinned(image_ref: str) -> bool:

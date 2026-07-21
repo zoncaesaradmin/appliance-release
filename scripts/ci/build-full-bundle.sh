@@ -343,20 +343,22 @@ print(digest)
 PY
 }
 
-# Rewrite org.opencontainers.image.ref.name on the first (platform) manifest so
-# ctr import registers the exact digest-pinned name workloads will resolve.
+# Rewrite org.opencontainers.image.ref.name to a tag-form local name. Digest-
+# pinned names (name@sha256:...) are applied at install with `ctr image tag`
+# because ctr import often ignores digest-form annotations and creates
+# import-DATE@sha256:... names that kubelet/CRI cannot resolve.
 relabel_oci_archive_reference() {
   local archive_path="$1"
-  local bundle_ref="$2"
+  local annotation_ref="$2"
 
-  python3 - "${archive_path}" "${bundle_ref}" <<'PY'
+  python3 - "${archive_path}" "${annotation_ref}" <<'PY'
 import io
 import json
+import os
 import sys
 import tarfile
 
-archive, bundle_ref = sys.argv[1], sys.argv[2]
-expected_digest = bundle_ref.split("@", 1)[1]
+archive, annotation_ref = sys.argv[1], sys.argv[2]
 
 with tarfile.open(archive) as tar:
     members = tar.getmembers()
@@ -376,14 +378,8 @@ manifests = index.get("manifests") or []
 if not manifests:
     raise SystemExit(f"oci archive {archive} has no manifests in index.json")
 
-content_digest = str(manifests[0].get("digest") or "").strip()
-if content_digest != expected_digest:
-    raise SystemExit(
-        f"cannot label {archive} as {bundle_ref}: archived manifest is {content_digest}"
-    )
-
 annotations = dict(manifests[0].get("annotations") or {})
-annotations["org.opencontainers.image.ref.name"] = bundle_ref
+annotations["org.opencontainers.image.ref.name"] = annotation_ref
 manifests[0]["annotations"] = annotations
 index["manifests"] = manifests
 files["index.json"] = json.dumps(index, separators=(",", ":"), sort_keys=False).encode("utf-8")
@@ -403,8 +399,6 @@ with tarfile.open(tmp_path, "w") as out:
             out.addfile(info, io.BytesIO(data))
         else:
             out.addfile(member)
-
-import os
 
 os.replace(tmp_path, archive)
 PY
@@ -444,12 +438,17 @@ if content_digest != expected_digest:
     raise SystemExit(
         f"oci archive {archive} manifest digest {content_digest} does not match "
         f"bundle reference digest {expected_digest} (ref {expected_ref}). "
-        "Export must label the archive with the archived platform manifest digest."
+        "Export must archive the platform manifest whose digest is embedded in the bundle ref."
     )
 ann = (chosen.get("annotations") or {}).get("org.opencontainers.image.ref.name") or ""
-if ann != expected_ref:
+local_name = expected_ref.split("@", 1)[0]
+allowed = {expected_ref, local_name, f"{local_name}:bundled"}
+if ann and ann not in allowed and not (
+    ann.startswith(local_name + ":") and "@" not in ann
+):
     raise SystemExit(
-        f"oci archive {archive} annotation ref {ann!r} does not match bundle reference {expected_ref!r}"
+        f"oci archive {archive} annotation ref {ann!r} is incompatible with bundle reference {expected_ref!r} "
+        f"(expected one of {sorted(allowed)} or {local_name}:<tag>)"
     )
 PY
 }
@@ -520,6 +519,7 @@ finalize_bundled_oci_archive() {
 
   content_digest="$(oci_archive_manifest_digest "${archive_path}")"
   bundle_ref="${local_name}@${content_digest}"
+  annotation_ref="${local_name}:bundled"
 
   if [[ -n "${optional_expected_ref}" && "${optional_expected_ref}" == *@sha256:* ]]; then
     expected_digest="${optional_expected_ref##*@}"
@@ -531,7 +531,9 @@ EOF
     fi
   fi
 
-  relabel_oci_archive_reference "${archive_path}" "${bundle_ref}"
+  # Annotate with a tag-form name for reliable ctr import. Install-time zonctl
+  # then runs `ctr image tag` to create the digest-pinned bundle_ref workloads use.
+  relabel_oci_archive_reference "${archive_path}" "${annotation_ref}"
   validate_bundled_oci_archive_reference "${archive_path}" "${bundle_ref}"
   printf '%s' "${bundle_ref}"
 }
@@ -550,7 +552,7 @@ export_bundled_extra_oci_image_archive() {
     exit 2
   fi
 
-  skopeo_copy_oci_archive "${pull_ref}" "${output_path}" "${local_name}"
+  skopeo_copy_oci_archive "${pull_ref}" "${output_path}" "${local_name}:bundled"
   finalize_bundled_oci_archive "${output_path}" "${local_name}" "${local_or_expected_ref}"
 }
 
