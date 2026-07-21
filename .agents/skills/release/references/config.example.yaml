@@ -88,19 +88,20 @@ build_flow:
   # For a pinned/offline tryout, export once then set both fields:
   #   skopeo copy docker://docker.io/alpine/git:latest \
   #     oci-archive:/home/zonsys/ci/inputs/workspace-provisioner.oci.tar
-  workspace_provisioner_image_archive_source: /home/zonsys/ci/inputs/workspace-provisioner.oci.tar
-  workspace_provisioner_image_ref: docker.io/alpine/git@sha256:77418e6e7c7f434c4a98eaff04ef16840cf03649c881c03948e3e213923e3136
+  # workspace_provisioner_image_archive_source: /home/zonsys/ci/inputs/workspace-provisioner.oci.tar
+  # workspace_provisioner_image_ref: docker.io/alpine/git@sha256:77418e6e7c7f434c4a98eaff04ef16840cf03649c881c03948e3e213923e3136
   # Builder-profile builds require the bundled automation-dev (CI/dev-container)
   # image. zonctl picks the automation-dev@sha256 ref from the bundle and injects
   # config.builderImageDigest. Catalogs must not set per-target builder digests.
-  # Export once on a machine that can pull GHCR (REGISTRY_USER / REGISTRY_TOKEN):
-  #   skopeo copy docker://ghcr.io/zoncaesaradmin/development-container/automation-dev:v0.1.0 \
-  #     oci-archive:/home/zonsys/ci/inputs/automation-dev.oci.tar
-  # Digest below matches published :v0.1.0 / :latest as of this example; re-resolve
-  # after a new development-container publish:
-  #   skopeo inspect docker://ghcr.io/zoncaesaradmin/development-container/automation-dev:v0.1.0 --format '{{.Digest}}'
-  extra_oci_image_archive_sources: /home/zonsys/ci/inputs/automation-dev.oci.tar
+  # Online build hosts can pull from GHCR during the bundle build (requires skopeo
+  # and the same REGISTRY_USER / REGISTRY_TOKEN bootstrap used for appliance-code):
+  extra_oci_image_pull_refs: ghcr.io/zoncaesaradmin/development-container/automation-dev:v0.1.0
   extra_oci_image_refs: registry.local/automation-dev@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
+  # Offline/pinned alternative: export once, then use archive sources instead of pull refs:
+  #   skopeo copy docker://ghcr.io/zoncaesaradmin/development-container/automation-dev:v0.1.0 \
+  #     oci-archive:/home/zonsys/ci/inputs/automation-dev.oci.tar:registry.local/automation-dev@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
+  # extra_oci_image_archive_sources: /home/zonsys/ci/inputs/automation-dev.oci.tar
+  # extra_oci_image_refs: registry.local/automation-dev@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
 
 install:
   bootstrap_admin_username: admin

@@ -55,6 +55,10 @@ Optional overrides:
   WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE=/ci/inputs/workspace-provisioner.oci.tar
   EXTRA_OCI_IMAGE_ARCHIVE_SOURCES=/ci/inputs/buildah.tar,/ci/inputs/tooling.tar
   EXTRA_OCI_IMAGE_REFS=registry.local/buildah@sha256:...,registry.local/tooling@sha256:...
+  EXTRA_OCI_IMAGE_PULL_REFS=ghcr.io/org/automation-dev:v0.1.0
+  # When EXTRA_OCI_IMAGE_PULL_REFS is set (same length as EXTRA_OCI_IMAGE_REFS),
+  # build-full-bundle pulls each image online with skopeo and exports it under the
+  # digest-pinned registry.local bundle reference. Omit archive sources in that case.
 EOF
 }
 
@@ -92,6 +96,7 @@ USER_WORKSPACE_PROVISIONER_IMAGE_REF="${WORKSPACE_PROVISIONER_IMAGE_REF-}"
 USER_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE="${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE-}"
 USER_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES-}"
 USER_EXTRA_OCI_IMAGE_REFS="${EXTRA_OCI_IMAGE_REFS-}"
+USER_EXTRA_OCI_IMAGE_PULL_REFS="${EXTRA_OCI_IMAGE_PULL_REFS-}"
 
 set -a
 # shellcheck disable=SC1090
@@ -123,6 +128,7 @@ WORKSPACE_PROVISIONER_IMAGE_REF="${USER_WORKSPACE_PROVISIONER_IMAGE_REF:-${WORKS
 WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE="${USER_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE:-${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE:-}}"
 EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="${USER_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES:-${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES:-}}"
 EXTRA_OCI_IMAGE_REFS="${USER_EXTRA_OCI_IMAGE_REFS:-${EXTRA_OCI_IMAGE_REFS:-}}"
+EXTRA_OCI_IMAGE_PULL_REFS="${USER_EXTRA_OCI_IMAGE_PULL_REFS:-${EXTRA_OCI_IMAGE_PULL_REFS:-}}"
 
 # Argo Workflows is a mandatory component of the complete v1 appliance
 # (ADR 0011 in appliance-code), so it is on by default. ARGO_VERSION is
@@ -296,6 +302,55 @@ export_digest_pinned_container_image_archive() {
   fi
   sudo -n "${podman_bin}" save --format oci-archive -o "${output_path}" "${digest_ref}" >/dev/null
   printf '%s' "${digest_ref}"
+}
+
+export_bundled_extra_oci_image_archive() {
+  local pull_ref="$1"
+  local bundle_ref="$2"
+  local output_path="$3"
+  local skopeo_bin podman_bin auth_file skopeo_image copy_cmd
+
+  if [[ "${bundle_ref}" != *@sha256:* ]]; then
+    echo "build-full-bundle: bundle reference ${bundle_ref} must be digest-pinned when exporting from ${pull_ref}" >&2
+    exit 2
+  fi
+
+  mkdir -p "$(dirname "${output_path}")"
+  rm -f "${output_path}"
+
+  skopeo_bin="$(command -v skopeo || true)"
+  if [[ -n "${skopeo_bin}" ]]; then
+    copy_cmd=(sudo -n "${skopeo_bin}" copy "docker://${pull_ref#docker://}" "oci-archive:${output_path}:${bundle_ref}")
+  else
+    podman_bin="$(command -v podman || true)"
+    if [[ -z "${podman_bin}" ]]; then
+      cat >&2 <<EOF
+build-full-bundle: skopeo or podman is required to export ${bundle_ref} from ${pull_ref}
+build-full-bundle: install skopeo on the build host, or pre-export the archive and set EXTRA_OCI_IMAGE_ARCHIVE_SOURCES instead
+EOF
+      exit 1
+    fi
+
+    skopeo_image="quay.io/skopeo/stable:latest"
+    auth_file="${HOME}/.config/containers/auth.json"
+    copy_cmd=(
+      sudo -n "${podman_bin}" run --rm
+      -v "${auth_file}:/tmp/auth.json:ro,Z"
+      -v "$(dirname "${output_path}"):/out:Z"
+      "${skopeo_image}"
+      copy --authfile /tmp/auth.json
+      "docker://${pull_ref#docker://}"
+      "oci-archive:/out/$(basename "${output_path}"):${bundle_ref}"
+    )
+  fi
+
+  if ! "${copy_cmd[@]}" >/dev/null; then
+    cat >&2 <<EOF
+build-full-bundle: failed to export ${bundle_ref} from ${pull_ref}
+build-full-bundle: ensure the build host can pull GHCR (make dev-registry-login in appliance-code) or pre-export the archive locally
+EOF
+    exit 1
+  fi
 }
 
 # derive_argo_version_from_code_repo reads the pinned Argo version out of
@@ -510,19 +565,45 @@ fi
 
 EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST=()
 EXTRA_OCI_IMAGE_REF_LIST=()
+EXTRA_OCI_IMAGE_PULL_REF_LIST=()
 split_csv "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES}" EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST
 split_csv "${EXTRA_OCI_IMAGE_REFS}" EXTRA_OCI_IMAGE_REF_LIST
-if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -ne ${#EXTRA_OCI_IMAGE_REF_LIST[@]} ]]; then
-  echo "build-full-bundle: EXTRA_OCI_IMAGE_ARCHIVE_SOURCES and EXTRA_OCI_IMAGE_REFS must have the same comma-separated length" >&2
+split_csv "${EXTRA_OCI_IMAGE_PULL_REFS}" EXTRA_OCI_IMAGE_PULL_REF_LIST
+if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -gt 0 && ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -gt 0 ]]; then
+  echo "build-full-bundle: set either EXTRA_OCI_IMAGE_ARCHIVE_SOURCES or EXTRA_OCI_IMAGE_PULL_REFS, not both" >&2
   exit 2
 fi
-for idx in "${!EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]}"; do
-  if [[ -z "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[idx]}" || -z "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" ]]; then
-    echo "build-full-bundle: extra OCI image archive sources and refs must not contain empty entries" >&2
+if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -gt 0 ]]; then
+  if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -ne ${#EXTRA_OCI_IMAGE_REF_LIST[@]} ]]; then
+    echo "build-full-bundle: EXTRA_OCI_IMAGE_ARCHIVE_SOURCES and EXTRA_OCI_IMAGE_REFS must have the same comma-separated length" >&2
     exit 2
   fi
-  require_file "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[idx]}" "extra OCI image archive"
-done
+  for idx in "${!EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]}"; do
+    if [[ -z "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[idx]}" || -z "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" ]]; then
+      echo "build-full-bundle: extra OCI image archive sources and refs must not contain empty entries" >&2
+      exit 2
+    fi
+    require_file "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[idx]}" "extra OCI image archive"
+  done
+elif [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -gt 0 ]]; then
+  if [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -ne ${#EXTRA_OCI_IMAGE_REF_LIST[@]} ]]; then
+    echo "build-full-bundle: EXTRA_OCI_IMAGE_PULL_REFS and EXTRA_OCI_IMAGE_REFS must have the same comma-separated length" >&2
+    exit 2
+  fi
+  for idx in "${!EXTRA_OCI_IMAGE_PULL_REF_LIST[@]}"; do
+    if [[ -z "${EXTRA_OCI_IMAGE_PULL_REF_LIST[idx]}" || -z "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" ]]; then
+      echo "build-full-bundle: extra OCI image pull refs and bundle refs must not contain empty entries" >&2
+      exit 2
+    fi
+    if [[ "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" != *@sha256:* ]]; then
+      echo "build-full-bundle: EXTRA_OCI_IMAGE_REFS[${idx}] must be digest-pinned when EXTRA_OCI_IMAGE_PULL_REFS is used" >&2
+      exit 2
+    fi
+  done
+elif [[ ${#EXTRA_OCI_IMAGE_REF_LIST[@]} -gt 0 ]]; then
+  echo "build-full-bundle: EXTRA_OCI_IMAGE_REFS is set without matching EXTRA_OCI_IMAGE_ARCHIVE_SOURCES or EXTRA_OCI_IMAGE_PULL_REFS" >&2
+  exit 2
+fi
 
 rm -rf "${ARTIFACTS_DIR}" "${WORKSPACE}"
 if is_within_dir "${EXPORT_DIR}" "${WORK_ROOT}"; then
@@ -597,6 +678,13 @@ if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -gt 0 ]]; then
   for idx in "${!EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]}"; do
     dest="${CODE_REPO_DIR}/.run/extra-oci-images/extra-oci-image-${idx}.tar"
     cp "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[idx]}" "${dest}"
+    EXTRA_OCI_IMAGE_ARCHIVES_FOR_DEV+=("/workspace/.run/extra-oci-images/extra-oci-image-${idx}.tar")
+  done
+elif [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -gt 0 ]]; then
+  mkdir -p "${CODE_REPO_DIR}/.run/extra-oci-images"
+  for idx in "${!EXTRA_OCI_IMAGE_PULL_REF_LIST[@]}"; do
+    dest="${CODE_REPO_DIR}/.run/extra-oci-images/extra-oci-image-${idx}.tar"
+    export_bundled_extra_oci_image_archive "${EXTRA_OCI_IMAGE_PULL_REF_LIST[idx]}" "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" "${dest}"
     EXTRA_OCI_IMAGE_ARCHIVES_FOR_DEV+=("/workspace/.run/extra-oci-images/extra-oci-image-${idx}.tar")
   done
 fi

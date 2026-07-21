@@ -158,6 +158,7 @@ BUILD_WORKSPACE_PROVISIONER_IMAGE_REF="$(config_get_optional "${CONFIG_PATH}" "b
 BUILD_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.workspace_provisioner_image_archive_source" || true)"
 BUILD_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_archive_sources" || true)"
 BUILD_EXTRA_OCI_IMAGE_REFS="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_refs" || true)"
+BUILD_EXTRA_OCI_IMAGE_PULL_REFS="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_pull_refs" || true)"
 VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
 PUBLISH_PUBLIC_BASE_URL="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.base_url" || true)"
 if [[ -z "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
@@ -194,6 +195,7 @@ BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "WORKSPACE_PROVI
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE" "${BUILD_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE_ARCHIVE_SOURCES" "${BUILD_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE_REFS" "${BUILD_EXTRA_OCI_IMAGE_REFS}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE_PULL_REFS" "${BUILD_EXTRA_OCI_IMAGE_PULL_REFS}")"
 
 PUBLISH_ENV_PREFIX=""
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PRODUCT_VERSION" "${RELEASE_VERSION}")"
