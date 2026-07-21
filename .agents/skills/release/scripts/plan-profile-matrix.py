@@ -446,9 +446,9 @@ def suggested_final_config_overlay() -> str:
         [
             "build_flow:",
             "  # Optional: omit these to let the build host package docker.io/alpine/git:latest",
-            "  # and resolve it to a digest-pinned bundle reference automatically.",
+            "  # as registry.local/workspace-provisioner@sha256:... automatically.",
             "  workspace_provisioner_image_archive_source: /abs/path/on/build-host/workspace-provisioner.oci.tar",
-            "  workspace_provisioner_image_ref: docker.io/alpine/git@sha256:<real-64-hex-image-digest>",
+            "  workspace_provisioner_image_ref: registry.local/workspace-provisioner@sha256:<real-64-hex-image-digest>",
             "",
             "install:",
             "  appliance_profile: builder",

@@ -53,6 +53,9 @@ Optional overrides:
   ARGO_EXECUTOR_IMAGE_REF=quay.io/argoproj/argoexec:v3.5.10
   WORKSPACE_PROVISIONER_IMAGE_REF=docker.io/alpine/git:latest
   WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE=/ci/inputs/workspace-provisioner.oci.tar
+  # When WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE is omitted, WORKSPACE_PROVISIONER_IMAGE_REF
+  # is the upstream pull ref (default docker.io/alpine/git:latest). The bundle stores the image
+  # as registry.local/workspace-provisioner@sha256:... so ctr import resolves the exact reference.
   EXTRA_OCI_IMAGE_ARCHIVE_SOURCES=/ci/inputs/buildah.tar,/ci/inputs/tooling.tar
   EXTRA_OCI_IMAGE_REFS=registry.local/buildah@sha256:...,registry.local/tooling@sha256:...
   EXTRA_OCI_IMAGE_PULL_REFS=ghcr.io/org/automation-dev:v0.1.0
@@ -284,24 +287,46 @@ export_container_image_archive() {
   sudo -n "${podman_bin}" save --format oci-archive -o "${output_path}" "${image_ref}" >/dev/null
 }
 
-export_digest_pinned_container_image_archive() {
+resolve_container_image_digest() {
   local image_ref="$1"
-  local output_path="$2"
-  local podman_bin
-  local digest_ref
+  local skopeo_bin podman_bin auth_file skopeo_image digest
 
-  podman_bin="$(command -v podman)"
-  mkdir -p "$(dirname "${output_path}")"
-  rm -f "${output_path}"
+  skopeo_bin="$(command -v skopeo || true)"
+  if [[ -n "${skopeo_bin}" ]]; then
+    digest="$(sudo -n "${skopeo_bin}" inspect "docker://${image_ref#docker://}" --format '{{.Digest}}' 2>/dev/null || true)"
+  else
+    podman_bin="$(command -v podman || true)"
+    if [[ -z "${podman_bin}" ]]; then
+      echo "build-full-bundle: skopeo or podman is required to resolve digest for ${image_ref}" >&2
+      exit 1
+    fi
+    skopeo_image="quay.io/skopeo/stable:latest"
+    auth_file="${HOME}/.config/containers/auth.json"
+    if [[ -f "${auth_file}" ]]; then
+      digest="$(sudo -n "${podman_bin}" run --rm \
+        -v "${auth_file}:/tmp/auth.json:ro,Z" \
+        "${skopeo_image}" \
+        inspect --authfile /tmp/auth.json "docker://${image_ref#docker://}" --format '{{.Digest}}' 2>/dev/null || true)"
+    else
+      digest="$(sudo -n "${podman_bin}" run --rm \
+        "${skopeo_image}" \
+        inspect "docker://${image_ref#docker://}" --format '{{.Digest}}' 2>/dev/null || true)"
+    fi
+  fi
 
-  sudo -n "${podman_bin}" pull "${image_ref}" >/dev/null
-  digest_ref="$(sudo -n "${podman_bin}" image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${image_ref}" | sed -n '1p')"
-  if [[ -z "${digest_ref}" || "${digest_ref}" != *@sha256:* ]]; then
-    echo "build-full-bundle: image ${image_ref} did not resolve to a digest-pinned reference" >&2
+  if [[ -z "${digest}" || "${digest}" != sha256:* ]]; then
+    echo "build-full-bundle: image ${image_ref} did not resolve to a sha256 digest" >&2
     exit 1
   fi
-  sudo -n "${podman_bin}" save --format oci-archive -o "${output_path}" "${digest_ref}" >/dev/null
-  printf '%s' "${digest_ref}"
+  printf '%s' "${digest}"
+}
+
+workspace_provisioner_bundle_ref() {
+  local pull_ref="$1"
+  local digest
+
+  digest="$(resolve_container_image_digest "${pull_ref}")"
+  printf 'registry.local/workspace-provisioner@%s' "${digest}"
 }
 
 export_bundled_extra_oci_image_archive() {
@@ -557,8 +582,8 @@ if [[ -n "${ARGO_CRDS_DIR_SOURCE}" && ! -d "${ARGO_CRDS_DIR_SOURCE}" ]]; then
 fi
 if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" ]]; then
   require_file "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" "workspace provisioner image archive"
-  if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" != *@sha256:* ]]; then
-    echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be digest-pinned when WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE is provided" >&2
+  if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" != registry.local/workspace-provisioner@sha256:* ]]; then
+    echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be registry.local/workspace-provisioner@sha256:... when WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE is provided" >&2
     exit 2
   fi
 fi
@@ -667,8 +692,15 @@ if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" ]]; then
   WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
   cp "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar"
 else
+  WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:latest}"
+  if [[ "${WORKSPACE_PROVISIONER_PULL_REF}" == registry.local/workspace-provisioner@sha256:* ]]; then
+    echo "build-full-bundle: online workspace provisioner export uses WORKSPACE_PROVISIONER_IMAGE_REF as an upstream pull ref (default docker.io/alpine/git:latest); got bundle ref ${WORKSPACE_PROVISIONER_PULL_REF}" >&2
+    echo "build-full-bundle: set WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE when supplying a pre-exported registry.local/workspace-provisioner archive" >&2
+    exit 2
+  fi
   WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
-  WORKSPACE_PROVISIONER_IMAGE_REF="$(export_digest_pinned_container_image_archive "${WORKSPACE_PROVISIONER_IMAGE_REF}" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
+  WORKSPACE_PROVISIONER_IMAGE_REF="$(workspace_provisioner_bundle_ref "${WORKSPACE_PROVISIONER_PULL_REF}")"
+  export_bundled_extra_oci_image_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "${WORKSPACE_PROVISIONER_IMAGE_REF}" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar"
 fi
 EXTRA_OCI_IMAGE_ARCHIVES_FOR_DEV+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
 EXTRA_OCI_IMAGE_REF_LIST+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
