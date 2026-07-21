@@ -204,6 +204,20 @@ def test_rejects_missing_expected_extra_oci_image_ref() -> None:
             raise AssertionError(result.stderr)
 
 
+def test_allows_expected_extra_oci_image_ref_with_stale_advisory_digest() -> None:
+    """Config pins may lag the derived platform digest; match by repository name."""
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        result = run_validator(
+            tmp,
+            "--expected-extra-oci-image-refs",
+            "registry.local/buildah@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        )
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+
+
 def test_rejects_missing_ui_bundle_entry() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -360,6 +374,7 @@ def main() -> None:
     test_allows_empty_directory_artifacts()
     test_rejects_tag_only_extra_oci_image()
     test_rejects_missing_expected_extra_oci_image_ref()
+    test_allows_expected_extra_oci_image_ref_with_stale_advisory_digest()
     test_rejects_workspace_provisioner_path_ref_mismatch()
     test_rejects_oci_archive_annotation_digest_mismatch()
     test_rejects_missing_ui_bundle_entry()

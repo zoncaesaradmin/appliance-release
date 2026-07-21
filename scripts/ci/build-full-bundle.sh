@@ -54,14 +54,14 @@ Optional overrides:
   WORKSPACE_PROVISIONER_IMAGE_REF=docker.io/alpine/git:latest
   WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE=/ci/inputs/workspace-provisioner.oci.tar
   # When WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE is omitted, WORKSPACE_PROVISIONER_IMAGE_REF
-  # is the upstream pull ref (default docker.io/alpine/git:latest). The bundle stores the image
-  # as registry.local/workspace-provisioner@sha256:... so ctr import resolves the exact reference.
+  # is the upstream pull ref (default docker.io/alpine/git:latest). The build copies the
+  # linux/amd64 image, then sets registry.local/workspace-provisioner@sha256:<archived
+  # platform manifest digest> from the archive contents (never from skopeo inspect).
   EXTRA_OCI_IMAGE_ARCHIVE_SOURCES=/ci/inputs/buildah.tar,/ci/inputs/tooling.tar
   EXTRA_OCI_IMAGE_REFS=registry.local/buildah@sha256:...,registry.local/tooling@sha256:...
   EXTRA_OCI_IMAGE_PULL_REFS=ghcr.io/org/automation-dev:v0.1.0
-  # When EXTRA_OCI_IMAGE_PULL_REFS is set (same length as EXTRA_OCI_IMAGE_REFS),
-  # build-full-bundle pulls each image online with skopeo and exports it under the
-  # digest-pinned registry.local bundle reference. Omit archive sources in that case.
+  # EXTRA_OCI_IMAGE_REFS names the local registry.local/... reference. Digests in those
+  # refs are optional advisory pins; the archived platform manifest digest always wins.
 EOF
 }
 
@@ -287,12 +287,11 @@ export_container_image_archive() {
   sudo -n "${podman_bin}" save --format oci-archive -o "${output_path}" "${image_ref}" >/dev/null
 }
 
-# Target platform for bundled OCI images. The appliance ships amd64 only;
-# inspect/copy must use the same overrides so the digest in the bundle
-# reference matches the single-platform manifest written into the archive.
-# Without overrides, skopeo inspect of a multi-arch tag returns the index
-# digest while skopeo copy materializes a platform manifest — and labeling
-# the archive with the index digest breaks ctr/CRI resolution at install.
+# Target platform for bundled OCI images. The appliance ships amd64 only.
+# skopeo inspect of a multi-arch tag often returns the *index* digest even with
+# overrides; skopeo copy materializes a *platform* manifest. Never trust inspect
+# Digests as bundle pins. Always copy for the target platform, then derive
+# registry.local/<name>@sha256:<archived-manifest-digest> from index.json.
 BUNDLE_IMAGE_OS="${BUNDLE_IMAGE_OS:-linux}"
 BUNDLE_IMAGE_ARCH="${BUNDLE_IMAGE_ARCH:-amd64}"
 
@@ -309,47 +308,106 @@ oci_image_repository() {
   printf '%s' "${ref}"
 }
 
-resolve_container_image_digest() {
-  local image_ref="$1"
-  local skopeo_bin podman_bin auth_file skopeo_image digest
-  local -a overrides=(--override-os "${BUNDLE_IMAGE_OS}" --override-arch "${BUNDLE_IMAGE_ARCH}")
-
-  skopeo_bin="$(command -v skopeo || true)"
-  if [[ -n "${skopeo_bin}" ]]; then
-    digest="$(sudo -n "${skopeo_bin}" inspect "${overrides[@]}" "docker://${image_ref#docker://}" --format '{{.Digest}}' 2>/dev/null || true)"
-  else
-    podman_bin="$(command -v podman || true)"
-    if [[ -z "${podman_bin}" ]]; then
-      echo "build-full-bundle: skopeo or podman is required to resolve digest for ${image_ref}" >&2
-      exit 1
-    fi
-    skopeo_image="quay.io/skopeo/stable:latest"
-    auth_file="${HOME}/.config/containers/auth.json"
-    if [[ -f "${auth_file}" ]]; then
-      digest="$(sudo -n "${podman_bin}" run --rm \
-        -v "${auth_file}:/tmp/auth.json:ro,Z" \
-        "${skopeo_image}" \
-        inspect --authfile /tmp/auth.json "${overrides[@]}" "docker://${image_ref#docker://}" --format '{{.Digest}}' 2>/dev/null || true)"
-    else
-      digest="$(sudo -n "${podman_bin}" run --rm \
-        "${skopeo_image}" \
-        inspect "${overrides[@]}" "docker://${image_ref#docker://}" --format '{{.Digest}}' 2>/dev/null || true)"
-    fi
+# Strip optional @sha256:... from a bundle imageReference, leaving the local name
+# (e.g. registry.local/automation-dev).
+oci_bundle_local_name() {
+  local ref="${1#docker://}"
+  if [[ "${ref}" == *@sha256:* ]]; then
+    printf '%s' "${ref%@sha256:*}"
+    return
   fi
-
-  if [[ -z "${digest}" || "${digest}" != sha256:* ]]; then
-    echo "build-full-bundle: image ${image_ref} did not resolve to a sha256 digest" >&2
-    exit 1
-  fi
-  printf '%s' "${digest}"
+  printf '%s' "${ref}"
 }
 
-workspace_provisioner_bundle_ref() {
-  local pull_ref="$1"
-  local digest
+oci_archive_manifest_digest() {
+  local archive_path="$1"
 
-  digest="$(resolve_container_image_digest "${pull_ref}")"
-  printf 'registry.local/workspace-provisioner@%s' "${digest}"
+  python3 - "${archive_path}" <<'PY'
+import json
+import sys
+import tarfile
+
+archive = sys.argv[1]
+with tarfile.open(archive) as tar:
+    try:
+        idx = json.load(tar.extractfile("index.json"))
+    except KeyError as exc:
+        raise SystemExit(f"oci archive {archive} is missing index.json") from exc
+manifests = idx.get("manifests") or []
+if not manifests:
+    raise SystemExit(f"oci archive {archive} has no manifests in index.json")
+digest = str(manifests[0].get("digest") or "").strip()
+if not digest.startswith("sha256:") or len(digest) != len("sha256:") + 64:
+    raise SystemExit(f"oci archive {archive} has invalid manifest digest {digest!r}")
+print(digest)
+PY
+}
+
+# Rewrite org.opencontainers.image.ref.name on the first (platform) manifest so
+# ctr import registers the exact digest-pinned name workloads will resolve.
+relabel_oci_archive_reference() {
+  local archive_path="$1"
+  local bundle_ref="$2"
+
+  python3 - "${archive_path}" "${bundle_ref}" <<'PY'
+import io
+import json
+import sys
+import tarfile
+
+archive, bundle_ref = sys.argv[1], sys.argv[2]
+expected_digest = bundle_ref.split("@", 1)[1]
+
+with tarfile.open(archive) as tar:
+    members = tar.getmembers()
+    files = {}
+    for member in members:
+        if member.isfile():
+            extracted = tar.extractfile(member)
+            if extracted is None:
+                raise SystemExit(f"failed to read {member.name} from {archive}")
+            files[member.name] = extracted.read()
+
+if "index.json" not in files:
+    raise SystemExit(f"oci archive {archive} is missing index.json")
+
+index = json.loads(files["index.json"])
+manifests = index.get("manifests") or []
+if not manifests:
+    raise SystemExit(f"oci archive {archive} has no manifests in index.json")
+
+content_digest = str(manifests[0].get("digest") or "").strip()
+if content_digest != expected_digest:
+    raise SystemExit(
+        f"cannot label {archive} as {bundle_ref}: archived manifest is {content_digest}"
+    )
+
+annotations = dict(manifests[0].get("annotations") or {})
+annotations["org.opencontainers.image.ref.name"] = bundle_ref
+manifests[0]["annotations"] = annotations
+index["manifests"] = manifests
+files["index.json"] = json.dumps(index, separators=(",", ":"), sort_keys=False).encode("utf-8")
+
+tmp_path = archive + ".relabel.tmp"
+with tarfile.open(tmp_path, "w") as out:
+    for member in members:
+        name = member.name
+        if name in files and member.isfile():
+            data = files[name]
+            info = tarfile.TarInfo(name=name)
+            info.size = len(data)
+            info.mode = member.mode
+            info.mtime = member.mtime
+            info.uid = member.uid
+            info.gid = member.gid
+            out.addfile(info, io.BytesIO(data))
+        else:
+            out.addfile(member)
+
+import os
+
+os.replace(tmp_path, archive)
+PY
 }
 
 validate_bundled_oci_archive_reference() {
@@ -386,65 +444,39 @@ if content_digest != expected_digest:
     raise SystemExit(
         f"oci archive {archive} manifest digest {content_digest} does not match "
         f"bundle reference digest {expected_digest} (ref {expected_ref}). "
-        "Export must copy the digest-pinned platform image and label the archive "
-        "with that same digest."
+        "Export must label the archive with the archived platform manifest digest."
     )
 ann = (chosen.get("annotations") or {}).get("org.opencontainers.image.ref.name") or ""
-if ann and ann != expected_ref:
+if ann != expected_ref:
     raise SystemExit(
         f"oci archive {archive} annotation ref {ann!r} does not match bundle reference {expected_ref!r}"
     )
-if "@" in ann:
-    ann_digest = ann.split("@", 1)[1]
-    if ann_digest != content_digest:
-        raise SystemExit(
-            f"oci archive {archive} annotation digest {ann_digest} does not match "
-            f"archived manifest digest {content_digest}"
-        )
 PY
 }
 
-export_bundled_extra_oci_image_archive() {
-  local pull_ref="$1"
-  local bundle_ref="$2"
-  local output_path="$3"
-  local skopeo_bin podman_bin auth_file skopeo_image copy_cmd
-  local digest repo source_ref
+skopeo_copy_oci_archive() {
+  local source_ref="$1"
+  local output_path="$2"
+  local dest_name="$3"
+  local skopeo_bin podman_bin auth_file skopeo_image
   local -a overrides=(--override-os "${BUNDLE_IMAGE_OS}" --override-arch "${BUNDLE_IMAGE_ARCH}")
-
-  if [[ "${bundle_ref}" != *@sha256:* ]]; then
-    echo "build-full-bundle: bundle reference ${bundle_ref} must be digest-pinned when exporting from ${pull_ref}" >&2
-    exit 2
-  fi
-
-  digest="${bundle_ref##*@}"
-  if [[ "${digest}" != sha256:* ]]; then
-    echo "build-full-bundle: bundle reference ${bundle_ref} must end with @sha256:<digest>" >&2
-    exit 2
-  fi
-
-  # Copy by the digest embedded in the bundle ref, not by a mutable tag.
-  # Tag inspect + tag copy can disagree (multi-arch index vs platform
-  # manifest), which leaves ctr unable to resolve the annotated name.
-  repo="$(oci_image_repository "${pull_ref}")"
-  source_ref="${repo}@${digest}"
+  local -a copy_cmd
 
   mkdir -p "$(dirname "${output_path}")"
   rm -f "${output_path}"
 
   skopeo_bin="$(command -v skopeo || true)"
   if [[ -n "${skopeo_bin}" ]]; then
-    copy_cmd=(sudo -n "${skopeo_bin}" copy "${overrides[@]}" "docker://${source_ref}" "oci-archive:${output_path}:${bundle_ref}")
+    copy_cmd=(sudo -n "${skopeo_bin}" copy "${overrides[@]}" "docker://${source_ref#docker://}" "oci-archive:${output_path}:${dest_name}")
   else
     podman_bin="$(command -v podman || true)"
     if [[ -z "${podman_bin}" ]]; then
       cat >&2 <<EOF
-build-full-bundle: skopeo or podman is required to export ${bundle_ref} from ${pull_ref}
-build-full-bundle: install skopeo on the build host, or pre-export the archive and set EXTRA_OCI_IMAGE_ARCHIVE_SOURCES instead
+build-full-bundle: skopeo or podman is required to export ${dest_name} from ${source_ref}
+build-full-bundle: install skopeo on the build host, or pre-export the archive and set EXTRA_OCI_IMAGE_ARCHIVE_SOURCES / WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE instead
 EOF
       exit 1
     fi
-
     skopeo_image="quay.io/skopeo/stable:latest"
     auth_file="${HOME}/.config/containers/auth.json"
     copy_cmd=(
@@ -454,20 +486,72 @@ EOF
       "${skopeo_image}"
       copy --authfile /tmp/auth.json
       "${overrides[@]}"
-      "docker://${source_ref}"
-      "oci-archive:/out/$(basename "${output_path}"):${bundle_ref}"
+      "docker://${source_ref#docker://}"
+      "oci-archive:/out/$(basename "${output_path}"):${dest_name}"
     )
   fi
 
   if ! "${copy_cmd[@]}" >/dev/null; then
     cat >&2 <<EOF
-build-full-bundle: failed to export ${bundle_ref} from ${source_ref} (pull ref ${pull_ref})
-build-full-bundle: ensure the build host can pull GHCR (make dev-registry-login in appliance-code) or pre-export the archive locally
+build-full-bundle: failed to export ${dest_name} from ${source_ref}
+build-full-bundle: ensure the build host can pull the image (make dev-registry-login in appliance-code for GHCR) or pre-export the archive locally
 EOF
     exit 1
   fi
+}
 
-  validate_bundled_oci_archive_reference "${output_path}" "${bundle_ref}"
+# Finalize any OCI archive (online copy or pre-exported) so imageReference equals
+# the archived platform manifest digest. Prints the canonical bundle ref.
+finalize_bundled_oci_archive() {
+  local archive_path="$1"
+  local local_name="$2"
+  local optional_expected_ref="${3:-}"
+  local content_digest bundle_ref expected_digest
+
+  local_name="$(oci_bundle_local_name "${local_name}")"
+  if [[ -z "${local_name}" || "${local_name}" == *@* ]]; then
+    echo "build-full-bundle: invalid local OCI name '${local_name}'" >&2
+    exit 2
+  fi
+  if [[ ! -f "${archive_path}" ]]; then
+    echo "build-full-bundle: missing OCI archive ${archive_path}" >&2
+    exit 1
+  fi
+
+  content_digest="$(oci_archive_manifest_digest "${archive_path}")"
+  bundle_ref="${local_name}@${content_digest}"
+
+  if [[ -n "${optional_expected_ref}" && "${optional_expected_ref}" == *@sha256:* ]]; then
+    expected_digest="${optional_expected_ref##*@}"
+    if [[ "${expected_digest}" != "${content_digest}" ]]; then
+      cat >&2 <<EOF
+build-full-bundle: configured pin ${optional_expected_ref} does not match archived platform manifest ${content_digest}
+build-full-bundle: using content-derived reference ${bundle_ref} (update your config pin to this digest to silence this warning)
+EOF
+    fi
+  fi
+
+  relabel_oci_archive_reference "${archive_path}" "${bundle_ref}"
+  validate_bundled_oci_archive_reference "${archive_path}" "${bundle_ref}"
+  printf '%s' "${bundle_ref}"
+}
+
+# Online export: copy pull_ref for the appliance platform, then label from content.
+# optional_expected_ref, when set, is only an advisory pin (name + optional digest).
+export_bundled_extra_oci_image_archive() {
+  local pull_ref="$1"
+  local local_or_expected_ref="$2"
+  local output_path="$3"
+  local local_name
+
+  local_name="$(oci_bundle_local_name "${local_or_expected_ref}")"
+  if [[ "${local_name}" != registry.local/* ]]; then
+    echo "build-full-bundle: bundle local name must be under registry.local/ (got ${local_name})" >&2
+    exit 2
+  fi
+
+  skopeo_copy_oci_archive "${pull_ref}" "${output_path}" "${local_name}"
+  finalize_bundled_oci_archive "${output_path}" "${local_name}" "${local_or_expected_ref}"
 }
 
 # derive_argo_version_from_code_repo reads the pinned Argo version out of
@@ -674,8 +758,8 @@ if [[ -n "${ARGO_CRDS_DIR_SOURCE}" && ! -d "${ARGO_CRDS_DIR_SOURCE}" ]]; then
 fi
 if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" ]]; then
   require_file "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" "workspace provisioner image archive"
-  if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" != registry.local/workspace-provisioner@sha256:* ]]; then
-    echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be registry.local/workspace-provisioner@sha256:... when WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE is provided" >&2
+  if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_REF}" && "${WORKSPACE_PROVISIONER_IMAGE_REF}" != registry.local/workspace-provisioner && "${WORKSPACE_PROVISIONER_IMAGE_REF}" != registry.local/workspace-provisioner@sha256:* ]]; then
+    echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be registry.local/workspace-provisioner[@sha256:...] when WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE is provided (digest is derived from the archive)" >&2
     exit 2
   fi
 fi
@@ -701,6 +785,11 @@ if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -gt 0 ]]; then
       exit 2
     fi
     require_file "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[idx]}" "extra OCI image archive"
+    local_name="$(oci_bundle_local_name "${EXTRA_OCI_IMAGE_REF_LIST[idx]}")"
+    if [[ "${local_name}" != registry.local/* ]]; then
+      echo "build-full-bundle: EXTRA_OCI_IMAGE_REFS[${idx}] must be a registry.local/... name (optional @sha256 digest is derived from the archived platform manifest)" >&2
+      exit 2
+    fi
   done
 elif [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -gt 0 ]]; then
   if [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -ne ${#EXTRA_OCI_IMAGE_REF_LIST[@]} ]]; then
@@ -712,8 +801,9 @@ elif [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -gt 0 ]]; then
       echo "build-full-bundle: extra OCI image pull refs and bundle refs must not contain empty entries" >&2
       exit 2
     fi
-    if [[ "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" != *@sha256:* ]]; then
-      echo "build-full-bundle: EXTRA_OCI_IMAGE_REFS[${idx}] must be digest-pinned when EXTRA_OCI_IMAGE_PULL_REFS is used" >&2
+    local_name="$(oci_bundle_local_name "${EXTRA_OCI_IMAGE_REF_LIST[idx]}")"
+    if [[ "${local_name}" != registry.local/* ]]; then
+      echo "build-full-bundle: EXTRA_OCI_IMAGE_REFS[${idx}] must be a registry.local/... name (optional @sha256 digest is derived from the archived platform manifest)" >&2
       exit 2
     fi
   done
@@ -790,16 +880,16 @@ PACKAGED_EXTRA_OCI_IMAGE_REFS=()
 if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" ]]; then
   WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
   cp "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar"
+  WORKSPACE_PROVISIONER_IMAGE_REF="$(finalize_bundled_oci_archive "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar" "registry.local/workspace-provisioner" "${WORKSPACE_PROVISIONER_IMAGE_REF:-}")"
 else
   WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:latest}"
-  if [[ "${WORKSPACE_PROVISIONER_PULL_REF}" == registry.local/workspace-provisioner@sha256:* ]]; then
-    echo "build-full-bundle: online workspace provisioner export uses WORKSPACE_PROVISIONER_IMAGE_REF as an upstream pull ref (default docker.io/alpine/git:latest); got bundle ref ${WORKSPACE_PROVISIONER_PULL_REF}" >&2
+  if [[ "${WORKSPACE_PROVISIONER_PULL_REF}" == registry.local/workspace-provisioner || "${WORKSPACE_PROVISIONER_PULL_REF}" == registry.local/workspace-provisioner@sha256:* ]]; then
+    echo "build-full-bundle: online workspace provisioner export uses WORKSPACE_PROVISIONER_IMAGE_REF as an upstream pull ref (default docker.io/alpine/git:latest); got bundle name ${WORKSPACE_PROVISIONER_PULL_REF}" >&2
     echo "build-full-bundle: set WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE when supplying a pre-exported registry.local/workspace-provisioner archive" >&2
     exit 2
   fi
   WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
-  WORKSPACE_PROVISIONER_IMAGE_REF="$(workspace_provisioner_bundle_ref "${WORKSPACE_PROVISIONER_PULL_REF}")"
-  export_bundled_extra_oci_image_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "${WORKSPACE_PROVISIONER_IMAGE_REF}" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar"
+  WORKSPACE_PROVISIONER_IMAGE_REF="$(export_bundled_extra_oci_image_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "registry.local/workspace-provisioner" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
 fi
 PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
 PACKAGED_EXTRA_OCI_IMAGE_REFS+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
@@ -809,16 +899,17 @@ if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -gt 0 ]]; then
   for idx in "${!EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]}"; do
     dest="${CODE_REPO_DIR}/.run/extra-oci-images/extra-oci-image-${idx}.tar"
     cp "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[idx]}" "${dest}"
+    derived_ref="$(finalize_bundled_oci_archive "${dest}" "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" "${EXTRA_OCI_IMAGE_REF_LIST[idx]}")"
     PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES+=("/workspace/.run/extra-oci-images/extra-oci-image-${idx}.tar")
-    PACKAGED_EXTRA_OCI_IMAGE_REFS+=("${EXTRA_OCI_IMAGE_REF_LIST[idx]}")
+    PACKAGED_EXTRA_OCI_IMAGE_REFS+=("${derived_ref}")
   done
 elif [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -gt 0 ]]; then
   mkdir -p "${CODE_REPO_DIR}/.run/extra-oci-images"
   for idx in "${!EXTRA_OCI_IMAGE_PULL_REF_LIST[@]}"; do
     dest="${CODE_REPO_DIR}/.run/extra-oci-images/extra-oci-image-${idx}.tar"
-    export_bundled_extra_oci_image_archive "${EXTRA_OCI_IMAGE_PULL_REF_LIST[idx]}" "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" "${dest}"
+    derived_ref="$(export_bundled_extra_oci_image_archive "${EXTRA_OCI_IMAGE_PULL_REF_LIST[idx]}" "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" "${dest}")"
     PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES+=("/workspace/.run/extra-oci-images/extra-oci-image-${idx}.tar")
-    PACKAGED_EXTRA_OCI_IMAGE_REFS+=("${EXTRA_OCI_IMAGE_REF_LIST[idx]}")
+    PACKAGED_EXTRA_OCI_IMAGE_REFS+=("${derived_ref}")
   done
 fi
 

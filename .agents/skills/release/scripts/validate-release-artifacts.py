@@ -99,6 +99,16 @@ def require_existing_release_path(release_input_dir: Path, rel_path: str, label:
     return path
 
 
+def image_ref_repository(image_ref: str) -> str:
+    """Return the name portion of a ref (strip @digest and :tag)."""
+    image_ref = image_ref.strip()
+    if "@" in image_ref:
+        image_ref = image_ref.split("@", 1)[0]
+    if re.search(r":[^/]+$", image_ref):
+        image_ref = image_ref.rsplit(":", 1)[0]
+    return image_ref
+
+
 def require_oci_archive_reference_matches_content(path: Path, image_ref: str, label: str) -> None:
     """When path is an OCI layout archive, require annotation digest == content digest == image_ref."""
     try:
@@ -378,7 +388,17 @@ def validate_extra_oci_images(
         entry = require_bundle_entry(entries_by_path, bundle_path, f"extraOCIImages[{idx}]")
         require_matching_bundle_image_reference(entry, image_ref, bundle_path, f"extraOCIImages[{idx}]")
         checked.append(image_ref)
-    missing_expected = sorted(set(expected_refs) - set(checked))
+    # Expected refs from config may carry stale advisory digests. Match by repository
+    # name so online builds that derive the platform manifest digest still pass.
+    checked_repos = {image_ref_repository(ref) for ref in checked}
+    missing_expected = []
+    for expected in expected_refs:
+        if expected in checked:
+            continue
+        if image_ref_repository(expected) in checked_repos:
+            continue
+        missing_expected.append(expected)
+    missing_expected = sorted(missing_expected)
     if missing_expected:
         raise ValueError(
             "release-input artifacts.extraOCIImages is missing expected image refs: "

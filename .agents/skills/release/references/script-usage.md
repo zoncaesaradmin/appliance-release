@@ -108,8 +108,10 @@ The final bundle's `configuration/values.yaml` is also checked so
 those same control-plane and UI image references.
 Required release-input evidence checks include the configuration schema,
 compatibility metadata, checksums, SBOM, provenance, notices, and tests. If
-`build_flow.extra_oci_image_refs` is set, those refs must appear as
-digest-pinned `extraOCIImages[]` evidence. The validation log is written to
+`build_flow.extra_oci_image_refs` is set, those local names (for example
+`registry.local/automation-dev`) must appear in digest-pinned `extraOCIImages[]`
+evidence. Digests in the config refs are advisory; the build derives the
+platform manifest digest from each OCI archive. The validation log is written to
 `.run/appliance-release/<timestamp>/logs/release-artifact-validation.json`.
 
 ## 3. Install On Target Only

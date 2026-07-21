@@ -97,31 +97,33 @@ build_flow:
     # executor_image_archive_source: /home/zonsys/ci/inputs/argo/argoexec.oci.tar
   # Workspace provisioning uses an appliance-owned generic image with git and
   # CA certificates. Online build hosts can omit both fields: build-full-bundle.sh
-  # then pulls docker.io/alpine/git:latest and packages it as
-  # registry.local/workspace-provisioner@sha256:... so install-time ctr import
-  # resolves the exact bundled reference.
-  # For a pinned/offline tryout, export once then set both fields. Use the same
-  # platform overrides for inspect and copy so the annotated digest matches the
-  # archived single-platform manifest (amd64 appliance):
-  #   digest="$(skopeo inspect --override-os linux --override-arch amd64 \
-  #     docker://docker.io/alpine/git:latest --format '{{.Digest}}')"
+  # then pulls docker.io/alpine/git:latest for linux/amd64, reads the archived
+  # platform manifest digest from index.json, and labels the archive as
+  # registry.local/workspace-provisioner@sha256:<that-digest>. Do not pin digests
+  # from `skopeo inspect` alone — multi-arch index digests will not match the archive.
+  # For a pinned/offline tryout, export once then set the archive source (digest is
+  # derived from the archive; the ref name is optional):
   #   skopeo copy --override-os linux --override-arch amd64 \
-  #     docker://docker.io/alpine/git@${digest} \
-  #     oci-archive:/home/zonsys/ci/inputs/workspace-provisioner.oci.tar:registry.local/workspace-provisioner@${digest}
+  #     docker://docker.io/alpine/git:latest \
+  #     oci-archive:/home/zonsys/ci/inputs/workspace-provisioner.oci.tar:registry.local/workspace-provisioner
   # workspace_provisioner_image_archive_source: /home/zonsys/ci/inputs/workspace-provisioner.oci.tar
-  # workspace_provisioner_image_ref: registry.local/workspace-provisioner@sha256:<platform-manifest-digest>
+  # workspace_provisioner_image_ref: registry.local/workspace-provisioner
   # Builder-profile builds require the bundled automation-dev (CI/dev-container)
   # image. zonctl picks the automation-dev@sha256 ref from the bundle and injects
   # config.builderImageDigest. Catalogs must not set per-target builder digests.
   # Online build hosts can pull from GHCR during the bundle build (requires skopeo
-  # and the same REGISTRY_USER / REGISTRY_TOKEN bootstrap used for appliance-code):
+  # and the same REGISTRY_USER / REGISTRY_TOKEN bootstrap used for appliance-code).
+  # Digests in extra_oci_image_refs are advisory; the build overwrites them with the
+  # archived platform manifest digest:
   extra_oci_image_pull_refs: ghcr.io/zoncaesaradmin/development-container/automation-dev:v0.1.0
-  extra_oci_image_refs: registry.local/automation-dev@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
-  # Offline/pinned alternative: export once, then use archive sources instead of pull refs:
-  #   skopeo copy docker://ghcr.io/zoncaesaradmin/development-container/automation-dev:v0.1.0 \
-  #     oci-archive:/home/zonsys/ci/inputs/automation-dev.oci.tar:registry.local/automation-dev@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
+  extra_oci_image_refs: registry.local/automation-dev
+  # Offline/pinned alternative: export once, then use archive sources instead of pull refs.
+  # The build derives registry.local/automation-dev@sha256:<platform-digest> from the archive:
+  #   skopeo copy --override-os linux --override-arch amd64 \
+  #     docker://ghcr.io/zoncaesaradmin/development-container/automation-dev:v0.1.0 \
+  #     oci-archive:/home/zonsys/ci/inputs/automation-dev.oci.tar:registry.local/automation-dev
   # extra_oci_image_archive_sources: /home/zonsys/ci/inputs/automation-dev.oci.tar
-  # extra_oci_image_refs: registry.local/automation-dev@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
+  # extra_oci_image_refs: registry.local/automation-dev
 
 install:
   bootstrap_admin_username: admin
