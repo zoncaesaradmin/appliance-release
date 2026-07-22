@@ -17,6 +17,8 @@
 # - execution is `make` or `script`; mode-specific input is `args` (v1: one entry).
 #   Legacy `make_target`/`repo_script` + `makeTarget`/`scriptPath` are still
 #   accepted and normalized at load time.
+# - script args must be repo-relative paths that exist in that checkout
+#   (for example `scripts/build.sh`, not a bare `build.sh` at repo root).
 # - repo URLs must use HTTPS
 # - `defaultRef` is only for workspace prepare/sync (branch names are fine).
 #   Current-workspace builds do not clone and do not use defaultRef; they build
@@ -34,6 +36,7 @@
 # Before using this file in a real install:
 # - replace repo URLs and defaultRef values with real product values
 # - replace imageRepository prefixes with the operator's artifact layout
+# - keep make/script args aligned with each repo's real Makefile/scripts
 #
 # Do not put private keys, tokens, or passwords in this file.
 workProfiles:
@@ -69,19 +72,18 @@ repos:
     url: https://github.com/zoncaesaradmin/platformkit.git
     defaultRef: main
     buildTargets:
-      # Repo-named target: explicit make recipe for the whole repo.
+      # platformkit is a shared Go module; `make build` compile-checks ./...
       - name: platformkit
-        description: Build the platformkit Makefile default image set.
+        description: Compile-check the platformkit Go module (make build).
         execution: make
         args: [build]
         imageRepository: users/example/platformkit
         builderImageDigest: automation-dev
-      # Second target on the same repo: different explicit make args.
-      - name: platformkit-api
-        description: Build only the platformkit API image.
+      - name: platformkit-test
+        description: Run platformkit unit tests (make test).
         execution: make
-        args: [api]
-        imageRepository: users/example/platformkit-api
+        args: [test]
+        imageRepository: users/example/platformkit-test
         builderImageDigest: automation-dev
 
   - name: zonbundle
@@ -104,11 +106,19 @@ repos:
     url: https://github.com/zoncaesaradmin/forgeline.git
     defaultRef: main
     buildTargets:
+      # Root Makefile `build` delegates to app/Makefile and builds bin/forgeline.
+      # Prefer make over a script path; scripts/build.sh is only a thin wrapper.
       - name: forgeline
-        description: Run the forgeline repo build script.
-        execution: script
-        args: [build.sh]
+        description: Build the forgeline app binary (make build).
+        execution: make
+        args: [build]
         imageRepository: users/example/forgeline
+        builderImageDigest: automation-dev
+      - name: forgeline-bridge
+        description: Build the forgeline bridge binary (make build-bridge).
+        execution: make
+        args: [build-bridge]
+        imageRepository: users/example/forgeline-bridge
         builderImageDigest: automation-dev
 
   - name: forgeline-release
