@@ -265,7 +265,9 @@ echo "[target 4/5] Host preflight passed."'
 if bool_true "${UNINSTALL_FIRST:-false}"; then
   remote_script+='
 echo "[target] Uninstalling previous appliance before install..."
-if [[ -f "${state_dir}/installed-state.json" ]] || systemctl list-unit-files k3s.service 2>/dev/null | grep -q "^k3s.service"; then
+# Also clear hosts left mid-install (--preserve-failed-state / crash): those
+# keep transaction.json in-progress even when installed-state is absent.
+if [[ -f "${state_dir}/installed-state.json" ]] || [[ -f "${state_dir}/transaction.json" ]] || systemctl list-unit-files k3s.service 2>/dev/null | grep -q "^k3s.service"; then
   uninstall_stdout="$(mktemp "${out_dir}/.zonctl-uninstall-stdout.XXXXXX")"
   uninstall_stderr="$(mktemp "${out_dir}/.zonctl-uninstall-stderr.XXXXXX")"
   if capture_zonctl_step "${uninstall_stdout}" "${uninstall_stderr}" "" sudo -n "${zonctl}" uninstall --confirm yes --state-dir "${state_dir}" --output text; then
