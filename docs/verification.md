@@ -5,6 +5,20 @@ and requires no network access — that's a hard invariant of this
 repository (see [security.md](security.md#offline-operation)), not just
 this guide's recommendation.
 
+## Storage and builder artifact evidence
+
+Storage is a positive artifact-service profile, not merely a negative builder
+profile. Target verification waits for the zot Deployment and dedicated PVC.
+Client verification checks the profile-gated catalog route, `/v2/` bearer
+challenge, API-token-backed registry token issuance, filtered catalog access,
+and anonymous, denied-scope, malformed-token, and token-revocation behavior.
+
+Builder requires the same artifact evidence in addition to builder workflow
+evidence; core requires artifact routes to remain absent. Optional OCI,
+ORAS/referrer, and offline smoke commands under
+`client_verification.artifact` must pass when configured. Credentials are
+provided only through process-local `APPLIANCE_REGISTRY_*` variables.
+
 ## Verifying a Bundle Before Installing
 
 `zonctl install` and `zonctl upgrade` already perform every check

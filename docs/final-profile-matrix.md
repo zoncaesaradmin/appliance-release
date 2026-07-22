@@ -88,6 +88,20 @@ workspace profile (`work_profile`) and `repo` against catalog `workProfiles`
 and `repos`; if build targets are present, `target_name` may use either a build
 target name or one of its aliases.
 
+The plan also fixes the capability evidence matrix:
+
+- `core`: artifact routes and build routes absent.
+- `storage`: zot/artifact checks positive; build/workflow routes absent.
+- `builder`: both zot/artifact and build/workflow checks positive.
+
+Artifact-positive runs require zot Deployment/PVC readiness, a `/v2/` bearer
+challenge, API-token-to-registry-token issuance, filtered catalog access, and
+anonymous, denied-scope, malformed-token, and revoked-token evidence. Optional
+`client_verification.artifact.oci_smoke_command`,
+`oras_smoke_command`, and `offline_smoke_command` checks are required to pass
+when configured. They receive registry credentials only through process-local
+environment variables and must not print them.
+
 ## 3. Final Audit
 
 After the real runs finish, audit their generated reports locally:
@@ -119,7 +133,9 @@ python3 /Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/aud
 This checks each `metadata/release-report.json` for successful unskipped
 steps, matching profile names, disabled builder REST/MCP evidence for `core`
 and `storage`, builder MCP tool evidence for `builder`, and final workflow
-smoke evidence when `--require-builder-workflow` is set. When `--plan-json` is
+smoke evidence when `--require-builder-workflow` is set. It additionally
+enforces the artifact capability matrix and configured OCI/ORAS/offline smoke
+results. When `--plan-json` is
 provided, it also verifies the audited reports match the generated plan's
 profile list, release version, builder-workflow requirement, and expected
 builder build-catalog/source-credential manifest paths.

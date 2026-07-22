@@ -530,6 +530,7 @@ def main() -> int:
             "This planner does not execute commands.",
             "Run commands sequentially against the real target; each command uses --uninstall-first for clean profile evidence.",
             "The core command performs build/publish; storage and builder use --skip-build to reuse the same complete bundle.",
+            "Artifact verification is negative for core and positive for both storage and builder; storage remains negative for build/workflow routes.",
             "Each real run writes metadata/release-report.json and release-report.md in its run directory.",
             "After all three runs finish, replace the audit command placeholders with the real run directories and run it locally.",
         ]
@@ -537,6 +538,8 @@ def main() -> int:
         "Confirm each run's metadata/release-report.json has succeeded build/publish, install, target verification, and client verification steps.",
         "Confirm each run's release-report.md has no failed or missing unskipped step.",
         "For core and storage runs, confirm disabled builder REST/MCP evidence shows build routes/tools are absent.",
+        "Confirm core has negative artifact route evidence, while storage and builder have zot pod/PVC readiness, /v2 bearer challenge, token/catalog, anonymous/denied/malformed-token, and revocation evidence.",
+        "When OCI, ORAS, or offline artifact smoke commands are configured, confirm each completed successfully.",
         "For the builder run, confirm builder REST/MCP tool evidence is present.",
         "For final builder workflow evidence, confirm the optional workflow smoke succeeded, produced a non-empty artifactRef, and returned no managed builder Git Secret names or private-key markers in job, step, or log evidence.",
     ]
@@ -549,6 +552,11 @@ def main() -> int:
         "readyForFinalPlan": not bool(validation_errors),
         "buildCatalogPath": resolved_config_path_str(config_path, build_catalog),
         "profiles": list(PROFILES),
+        "expectedCapabilities": {
+            "core": {"artifact": False, "builder": False},
+            "storage": {"artifact": True, "builder": False},
+            "builder": {"artifact": True, "builder": True},
+        },
         "validationErrors": validation_errors,
         "commands": [] if args.checklist_only else commands,
         "auditCommand": None if args.checklist_only else audit_command,

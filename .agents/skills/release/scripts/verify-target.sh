@@ -26,6 +26,7 @@ Options:
   --builder-api-cmd CMD          Override verification.builder.api_command.
   --builder-source-credentials-cmd CMD
                                  Legacy override for verification.builder.source_credentials_command.
+  --artifact-readiness-cmd CMD   Override verification.artifact.readiness_command.
   --failure-log-cmd CMD          Override verification.failure_log_command.
   --argo-namespaces-cmd CMD      Override verification.argo.namespaces_command.
   --argo-crds-cmd CMD            Override verification.argo.crds_command.
@@ -45,6 +46,7 @@ UI_HOME_CMD=""
 APPLIANCE_PROFILE=""
 BUILDER_API_CMD=""
 BUILDER_SOURCE_CREDENTIALS_CMD=""
+ARTIFACT_READINESS_CMD=""
 FAILURE_LOG_CMD=""
 ARGO_NAMESPACES_CMD=""
 ARGO_CRDS_CMD=""
@@ -91,6 +93,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --builder-source-credentials-cmd)
       BUILDER_SOURCE_CREDENTIALS_CMD="${2:-}"
+      shift 2
+      ;;
+    --artifact-readiness-cmd)
+      ARTIFACT_READINESS_CMD="${2:-}"
       shift 2
       ;;
     --failure-log-cmd)
@@ -146,6 +152,8 @@ UI_HOME_CMD="${UI_HOME_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification
 BUILDER_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.builder.enabled" || true)"
 BUILDER_API_CMD="${BUILDER_API_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.builder.api_command" || true)}"
 BUILDER_SOURCE_CREDENTIALS_CMD="${BUILDER_SOURCE_CREDENTIALS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.builder.source_credentials_command" || true)}"
+ARTIFACT_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.artifact.enabled" || true)"
+ARTIFACT_READINESS_CMD="${ARTIFACT_READINESS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.artifact.readiness_command" || true)}"
 FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.failure_log_command" || true)}"
 SMOKE_TEST_RETRIES="${SMOKE_TEST_RETRIES:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_retries" || true)}"
 SMOKE_TEST_RETRY_DELAY_SECONDS="${SMOKE_TEST_RETRY_DELAY_SECONDS:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_retry_delay_seconds" || true)}"
@@ -173,6 +181,15 @@ if [[ -z "${BUILDER_ENABLED}" ]]; then
   else
     BUILDER_ENABLED="false"
   fi
+fi
+if [[ -z "${ARTIFACT_ENABLED}" ]]; then
+  case "${APPLIANCE_PROFILE}" in
+    storage|builder) ARTIFACT_ENABLED="true" ;;
+    *) ARTIFACT_ENABLED="false" ;;
+  esac
+fi
+if bool_true "${ARTIFACT_ENABLED}"; then
+  ARTIFACT_READINESS_CMD="${ARTIFACT_READINESS_CMD:-sudo kubectl -n registry wait --for=condition=Available deployment/appliance-registry --timeout=120s && sudo kubectl -n registry get pvc appliance-registry-data}"
 fi
 if [[ -z "${SMOKE_TEST_RETRIES}" ]]; then
   SMOKE_TEST_RETRIES="5"
@@ -279,6 +296,9 @@ fi
 if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_CONTROLLER_CMD}" == "sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods" ]]; then
   ARGO_CONTROLLER_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n workflows get deploy,pods"
 fi
+if [[ -n "${BUNDLE_BIN_DIR}" && "${ARTIFACT_READINESS_CMD}" == "sudo kubectl -n registry wait --for=condition=Available deployment/appliance-registry --timeout=120s && sudo kubectl -n registry get pvc appliance-registry-data" ]]; then
+  ARTIFACT_READINESS_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n registry wait --for=condition=Available deployment/appliance-registry --timeout=120s && env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n registry get pvc appliance-registry-data"
+fi
 
 status_code="0"
 verify_code="0"
@@ -288,6 +308,7 @@ smoke_test_code=""
 ui_home_code=""
 builder_api_code=""
 builder_source_credentials_code=""
+artifact_readiness_code=""
 failure_log_code=""
 argo_namespaces_code=""
 argo_crds_code=""
@@ -510,6 +531,14 @@ if bool_true "${BUILDER_ENABLED}" && [[ -n "${BUILDER_SOURCE_CREDENTIALS_CMD}" ]
   fi
 fi
 
+if bool_true "${ARTIFACT_ENABLED}" && [[ -n "${ARTIFACT_READINESS_CMD}" ]]; then
+  if run_check "artifact-readiness" "${ARTIFACT_READINESS_CMD}"; then
+    artifact_readiness_code="0"
+  else
+    artifact_readiness_code="$?"
+  fi
+fi
+
 if bool_true "${ARGO_ENABLED}"; then
   if run_check "argo-namespaces" "${ARGO_NAMESPACES_CMD}"; then
     argo_namespaces_code="0"
@@ -544,6 +573,9 @@ if [[ -n "${builder_api_code}" && "${builder_api_code}" != "0" ]]; then
   overall_failed="true"
 fi
 if [[ -n "${builder_source_credentials_code}" && "${builder_source_credentials_code}" != "0" ]]; then
+  overall_failed="true"
+fi
+if [[ -n "${artifact_readiness_code}" && "${artifact_readiness_code}" != "0" ]]; then
   overall_failed="true"
 fi
 for code in "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}"; do
@@ -764,6 +796,24 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 print("true" if final_failed else "false")
 PY
 )"
+
+python3 - "${RUN_DIR}/metadata/verify.json" "${ARTIFACT_ENABLED}" "${ARTIFACT_READINESS_CMD}" "${artifact_readiness_code}" "${RUN_DIR}" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+out_path, enabled, command, exit_code, run_dir = sys.argv[1:6]
+payload = json.loads(Path(out_path).read_text(encoding="utf-8"))
+payload.setdefault("checks", {})["artifact"] = {
+    "enabled": enabled == "true",
+    "readiness": {
+        "command": command,
+        "exitCode": int(exit_code or 0) if command else None,
+        "log": str(Path(run_dir) / "logs" / "artifact-readiness.log"),
+    },
+}
+Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
 
 if bool_true "${final_failed}" && [[ -n "${FAILURE_LOG_CMD}" ]]; then
   failure_log_log="${RUN_DIR}/logs/failure-logs.log"

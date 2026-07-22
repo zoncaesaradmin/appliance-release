@@ -20,7 +20,10 @@ Install:             ctr import (gets :bundled or import-DATE) → ctr image tag
 Runtime:             config.*ImageDigest == digest pin → Argo pod image (IfNotPresent)
 ```
 
-Names today: `workspace-provisioner` (alpine/git), `automation-dev` (builder).
+Names today: `workspace-provisioner` (alpine/git), `automation-dev` (builder),
+and first-class `zot` (artifact service). Zot archives use
+`registry.local/zot:bundled` plus `registry.local/zot@sha256:<platform-digest>`;
+they are never represented as anonymous `extraOCIImages`.
 
 Never trust `skopeo inspect` alone for pins (multi-arch index ≠ platform manifest).
 
@@ -44,6 +47,11 @@ Never trust `skopeo inspect` alone for pins (multi-arch index ≠ platform manif
    - Pod `image:` = provisioner digest pin
 8. **Build submit** → Argo build pod
    - `ResolveBuilderImage("automation-dev", …)` → automation-dev digest pin
+9. **Artifact service** (`appliance-ctl` registry release + `appliance-code` chart/control-plane)
+   - `artifacts.zotImage` + `artifacts.zotChart` + `compatibility.zotVersion`
+   - preload/tag zot before Helm; install registry only for `artifact` capability
+   - registry chart/PVC/public verification key → internal zot URL → Traefik `/v2`
+   - storage and builder prove challenge/token/catalog/OCI/ORAS; core proves routes absent
 
 Online pulls happen **only on the build host** during bundle assembly. Target install/runtime must not need Docker Hub/GHCR.
 
@@ -57,6 +65,8 @@ Online pulls happen **only on the build host** during bundle assembly. Target in
 | Digests in Helm values | `PrepareValuesFile` | chart ConfigMap, `config.Load`, chart schema |
 | Catalog `automation-dev` alias | catalog / examples | `ResolveBuilderImage`, `builderImageReference` |
 | Offline images present | preload/tag | Argo `IfNotPresent` pods |
+| Zot image/chart/version | `build-full-bundle.sh` + `archive-release-input.sh` | release-input schema, bundle assembly, source resolution, registry Helm release, release validator |
+| Artifact capability | profile map | zot preload/deploy, control-plane adapter/routes, `/v2`, profile-matrix evidence |
 | Builder Git HTTPS access | UI `PUT /builder/git-access` → CP secret `builder-git-access` | `resolveWorkspaceGitCredential` → Argo mount + `GIT_ASKPASS` clone |
 | Writable tool home for builds | Argo `HOME`/`GOPATH`/`GOCACHE` under `/tmp/appliance-home` | automation-dev image ENV (`/home/vscode/...`) must be overridden |
 | Catalog make/script args | `build-catalog.example.yaml` / operator catalog | Must match real repo Makefile/scripts (forgeline: `make build`, not root `build.sh`) |
@@ -70,6 +80,8 @@ Online pulls happen **only on the build host** during bundle assembly. Target in
 - **Tag/import algorithm** → `preload.go` / tests; install+upgrade fake-ctr tests
 - **PrepareValuesFile keys** → chart `configmap.yaml` env names; config Load; chart_test
 - **Argo image / pullPolicy** → offline contract; preload completeness
+- **Zot version/image/chart** → archive-first platform digest, `:bundled` annotation, first-class release-input fields, bundle compatibility, registry chart install, validator fixtures
+- **Artifact profile behavior** → storage/builder positive zot pod/PVC + token/catalog/OCI/ORAS evidence; core negative artifact routes; storage negative build routes
 - **Git clone / credential mount** → `buildergit` secret shape (`host`/`username`/`token`); `argo.gitAuthPreamble` + workspace-prepare tests; UI git-access form; docs/developer-workflows-v1.md
 - **Builder HOME/GOPATH** → `argo.workflowToolHomeEnv` + build preamble mkdir; automation-dev image ENV; platformkit/forgeline make targets
 - **Build catalog targets** → real Makefile/script paths in each product repo; `build-catalog.example.yaml`; operator `build-catalog.yaml`
@@ -78,7 +90,7 @@ Online pulls happen **only on the build host** during bundle assembly. Target in
 
 ## Gate before saying “done”
 
-1. Logical walk of stages 1–8 above for the change.
+1. Logical walk of stages 1–9 above for the change.
 2. List every producer/consumer pair touched; confirm both sides + tests updated.
 3. `make verify` in **each** edited repo among the three.
 4. Confirm contract tests still encode `:bundled` accept + tag-to-digest (ctl) and annotation/digest/path pairing (release).

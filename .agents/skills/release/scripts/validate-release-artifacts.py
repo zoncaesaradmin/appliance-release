@@ -92,6 +92,16 @@ def require_matching_bundle_image_reference(entry: dict, expected_ref: str, bund
         )
 
 
+def require_matching_bundle_digest(entry: dict, artifact: dict, bundle_path: str, label: str) -> None:
+    expected = artifact_digest(artifact)
+    actual = str(entry.get("digest") or "").strip()
+    if actual != expected:
+        raise ValueError(
+            f"bundle manifest entry {bundle_path} digest mismatch for {label}: "
+            f"expected {expected}, got {actual}"
+        )
+
+
 def require_existing_release_path(release_input_dir: Path, rel_path: str, label: str) -> Path:
     path = release_input_dir / rel_path
     if not path.exists():
@@ -319,6 +329,75 @@ def validate_argo(artifacts: dict, release_input_dir: Path, entries_by_path: dic
     return checked
 
 
+def validate_zot(
+    release_input: dict,
+    bundle_manifest: dict,
+    artifacts: dict,
+    release_input_dir: Path,
+    entries_by_path: dict[str, dict],
+) -> list:
+    compatibility = release_input.get("compatibility")
+    if not isinstance(compatibility, dict):
+        raise ValueError("release-input compatibility must be an object")
+    zot_version = str(compatibility.get("zotVersion") or "").strip()
+    if not zot_version or zot_version.lower() == "latest":
+        raise ValueError("release-input compatibility.zotVersion must be an exact non-latest version")
+    bundle_compatibility = bundle_manifest.get("compatibility")
+    if not isinstance(bundle_compatibility, dict):
+        raise ValueError("bundle manifest compatibility must be an object")
+    bundle_zot_version = str(bundle_compatibility.get("zotVersion") or "").strip()
+    if bundle_zot_version != zot_version:
+        raise ValueError(
+            "bundle manifest compatibility.zotVersion mismatch: "
+            f"expected {zot_version}, got {bundle_zot_version}"
+        )
+
+    chart = require_artifact(artifacts, "zotChart")
+    chart_path = require_file_artifact(artifacts, "zotChart", release_input_dir)
+    chart_candidates = (
+        f"charts/{chart_path.name}",
+        f"chart/{chart_path.name}",
+        f"chart/appliance-registry-{chart_path.name}",
+    )
+    chart_bundle_path = next((path for path in chart_candidates if path in entries_by_path), "")
+    if not chart_bundle_path:
+        raise ValueError(
+            "bundle manifest is missing zotChart; expected one of: "
+            + ", ".join(chart_candidates)
+        )
+    chart_entry = require_bundle_entry(entries_by_path, chart_bundle_path, "zotChart")
+    require_matching_bundle_digest(chart_entry, chart, chart_bundle_path, "zotChart")
+
+    image = require_artifact(artifacts, "zotImage")
+    image_path = require_file_artifact(artifacts, "zotImage", release_input_dir)
+    image_ref = require_image_reference(image, "zotImage")
+    if not re.fullmatch(r"registry\.local/zot@sha256:[0-9a-f]{64}", image_ref):
+        raise ValueError(
+            "release-input artifacts.zotImage.imageReference must be "
+            "registry.local/zot@sha256:<64 lowercase hex>"
+        )
+    if "zot" not in image_path.name.lower():
+        raise ValueError(
+            f"release-input artifacts.zotImage.path must identify zot, got {image['path']!r}"
+        )
+    require_oci_archive_reference_matches_content(image_path, image_ref, "zotImage")
+    with tarfile.open(image_path) as tar:
+        index = json.load(tar.extractfile("index.json"))
+    annotation = (
+        (index.get("manifests") or [{}])[0].get("annotations") or {}
+    ).get("org.opencontainers.image.ref.name")
+    if annotation != "registry.local/zot:bundled":
+        raise ValueError(
+            "zotImage OCI archive annotation must be 'registry.local/zot:bundled', "
+            f"got {annotation!r}"
+        )
+    image_bundle_path = f"oci-images/{image_path.name}"
+    image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "zotImage")
+    require_matching_bundle_digest(image_entry, image, image_bundle_path, "zotImage")
+    require_matching_bundle_image_reference(image_entry, image_ref, image_bundle_path, "zotImage")
+    return ["zotChart", "zotImage", f"zotVersion={zot_version}"]
+
+
 def validate_required_artifacts(artifacts: dict, release_input_dir: Path, entries_by_path: dict) -> list:
     checked = []
     runtime_targets = {"applianceChart": "charts"}
@@ -462,6 +541,13 @@ def main() -> int:
             artifacts, release_input_path.parent, entries_by_path
         ),
         "runtimeValues": validate_runtime_values(artifacts, bundle_values),
+        "zot": validate_zot(
+            release_input,
+            bundle_manifest,
+            artifacts,
+            release_input_path.parent,
+            entries_by_path,
+        ),
         "argo": validate_argo(artifacts, release_input_path.parent, entries_by_path)
         if args.require_argo
         else [],

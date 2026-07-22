@@ -39,7 +39,9 @@ release_workspace:
   remote_bundle_dir: /tmp/appliance-product-ci/workspace/out/appliance-0.1.0-bundle
 
 artifact_registry:
-  # Public HTTP/HTTPS base URL serving the published release files.
+  # RELEASE DISTRIBUTION ONLY: public HTTP/HTTPS base URL serving signed
+  # installer/bundle files. This is not the in-appliance zot OCI registry;
+  # appliance clients use client_verification.base_url plus /v2/.
   # Example: http://192.168.1.103:28081
   base_url: http://artifact-host-or-ip:28081
   # SSH target used by the build machine's publish command when needed.
@@ -108,6 +110,16 @@ build_flow:
   #     oci-archive:/home/zonsys/ci/inputs/workspace-provisioner.oci.tar:registry.local/workspace-provisioner
   # workspace_provisioner_image_archive_source: /home/zonsys/ci/inputs/workspace-provisioner.oci.tar
   # workspace_provisioner_image_ref: registry.local/workspace-provisioner
+  # Zot is a required first-class image/chart contract in every complete bundle.
+  # It is activated at install time only for storage and builder profiles.
+  # Online builds pull this exact version on the build host, copy linux/amd64,
+  # and derive registry.local/zot@sha256:<index.json platform digest>. The
+  # archive is relabeled registry.local/zot:bundled for reliable ctr import.
+  zot:
+    version: 2.1.8
+    image_pull_ref: ghcr.io/project-zot/zot-linux-amd64:v2.1.8
+    # Offline/premirrored alternative; version and digest are still validated:
+    # image_archive_source: /home/zonsys/ci/inputs/zot.oci.tar
   # Builder-profile builds require the bundled automation-dev (CI/dev-container)
   # image. zonctl picks the automation-dev@sha256 ref from the bundle and injects
   # config.builderImageDigest. Catalogs must not set per-target builder digests.
@@ -132,7 +144,7 @@ install:
   # control_plane_deployment: control-plane
   # Product-facing appliance profile passed into the control plane.
   # Valid v1 values: core, builder, storage
-  appliance_profile: builder
+  appliance_profile: storage
   # Local build catalog JSON/YAML. Copied to the target install temp dir and
   # passed to zonctl as product config. Required for a useful builder tryout.
   # Do not put private keys, tokens, or passwords in this file.
@@ -174,6 +186,11 @@ verification:
     # custom builder-specific readiness rule.
   allow_ingress_warning: true
   allow_verify_schema_bug: true
+  # Defaults enabled for storage/builder and disabled for core. The default
+  # readiness command waits for the zot Deployment and confirms its PVC.
+  artifact:
+    # enabled: true
+    # readiness_command: sudo kubectl -n registry wait --for=condition=Available deployment/appliance-registry --timeout=120s && sudo kubectl -n registry get pvc appliance-registry-data
 
 client_verification:
   # Example: https://192.168.1.101
@@ -212,3 +229,14 @@ client_verification:
       # poll_delay_seconds: 5
       # expect_success: true
       # delete_workspace_on_success: false
+  # Defaults enabled for storage/builder and disabled for core. Built-in checks
+  # cover capability routing, /v2 bearer challenge, API-token issuance,
+  # filtered catalog access, anonymous/denied/malformed-token rejection, and
+  # token revocation. Optional smoke commands receive only process-local
+  # APPLIANCE_REGISTRY_URL, APPLIANCE_REGISTRY_USERNAME, and
+  # APPLIANCE_REGISTRY_TOKEN environment variables; never echo them.
+  artifact:
+    # enabled: true
+    # oci_smoke_command: /abs/path/to/oci-push-pull-smoke.sh
+    # oras_smoke_command: /abs/path/to/oras-referrer-smoke.sh
+    # offline_smoke_command: /abs/path/to/assert-no-public-egress-smoke.sh

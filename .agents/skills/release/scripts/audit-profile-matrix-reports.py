@@ -145,6 +145,45 @@ def audit_builder(report: dict[str, Any], require_workflow: bool, errors: list[s
             errors.append("builder: workflow secret leak check did not pass")
 
 
+def audit_artifact(profile: str, report: dict[str, Any], errors: list[str]) -> None:
+    target = step(report, "targetVerify")
+    target_artifact = target.get("artifact") if isinstance(target.get("artifact"), dict) else {}
+    client = step(report, "clientVerify")
+    artifact = client.get("artifact") if isinstance(client.get("artifact"), dict) else {}
+    expected_enabled = profile in {"storage", "builder"}
+    if artifact.get("enabled") is not expected_enabled:
+        errors.append(f"{profile}: client artifact enabled is {artifact.get('enabled')!r}, want {expected_enabled}")
+    if target_artifact.get("enabled") is not expected_enabled:
+        errors.append(f"{profile}: target artifact enabled is {target_artifact.get('enabled')!r}, want {expected_enabled}")
+    if not expected_enabled:
+        if artifact.get("catalogStatusCode") != 404:
+            errors.append(f"{profile}: disabled artifact catalog status is {artifact.get('catalogStatusCode')!r}, want 404")
+        if artifact.get("v2ChallengeStatusCode") not in (404, 503):
+            errors.append(f"{profile}: disabled /v2/ status is {artifact.get('v2ChallengeStatusCode')!r}, want 404 or 503")
+        return
+    if target_artifact.get("readinessExitCode") != 0:
+        errors.append(f"{profile}: zot pod/PVC readiness exit is {target_artifact.get('readinessExitCode')!r}, want 0")
+    required = {
+        "catalogStatusCode": lambda value: isinstance(value, int) and value < 400,
+        "catalogFiltered": lambda value: value is True,
+        "anonymousCatalogStatusCode": lambda value: value in (401, 403),
+        "v2ChallengeStatusCode": lambda value: value == 401,
+        "tokenIssuanceStatusCode": lambda value: isinstance(value, int) and value < 400,
+        "deniedScopeStatusCode": lambda value: value in (401, 403),
+        "malformedTokenStatusCode": lambda value: value in (401, 403),
+        "tokenRevokeStatusCode": lambda value: isinstance(value, int) and value < 300,
+        "revokedCredentialStatusCode": lambda value: value in (401, 403),
+        "revokedTokenChecked": lambda value: value is True,
+    }
+    for field, valid in required.items():
+        if not valid(artifact.get(field)):
+            errors.append(f"{profile}: artifact {field} evidence is invalid: {artifact.get(field)!r}")
+    for field in ("ociSmoke", "orasSmoke", "offlineSmoke"):
+        smoke = artifact.get(field)
+        if isinstance(smoke, dict) and smoke.get("configured") is True and smoke.get("exitCode") != 0:
+            errors.append(f"{profile}: configured {field} did not pass")
+
+
 def build_summary(reports: dict[str, dict[str, Any]], errors: list[str]) -> dict[str, Any]:
     return {
         "status": "failed" if errors else "passed",
@@ -241,6 +280,7 @@ def main() -> int:
 
     for profile, report in reports.items():
         audit_common(profile, report, errors)
+        audit_artifact(profile, report, errors)
     plan_requires_workflow = audit_plan(plan, reports, errors)
     if "core" in reports:
         audit_non_builder("core", reports["core"], errors)

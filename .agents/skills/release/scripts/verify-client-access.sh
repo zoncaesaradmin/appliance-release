@@ -127,6 +127,10 @@ USERS_META_FILE="${RUN_DIR}/logs/client-users-meta.txt"
 USERS_REQUEST_FILE="${RUN_DIR}/logs/client-users-request.json"
 BUILDER_ENABLED="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.enabled" || true)"
 BUILDER_EXPECT_DISABLED="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.expect_disabled" || true)"
+ARTIFACT_ENABLED="$(config_get_optional "${CONFIG_PATH}" "client_verification.artifact.enabled" || true)"
+ARTIFACT_OCI_SMOKE_CMD="$(config_get_optional "${CONFIG_PATH}" "client_verification.artifact.oci_smoke_command" || true)"
+ARTIFACT_ORAS_SMOKE_CMD="$(config_get_optional "${CONFIG_PATH}" "client_verification.artifact.oras_smoke_command" || true)"
+ARTIFACT_OFFLINE_SMOKE_CMD="$(config_get_optional "${CONFIG_PATH}" "client_verification.artifact.offline_smoke_command" || true)"
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 fi
@@ -140,6 +144,12 @@ if [[ -z "${BUILDER_ENABLED}" ]]; then
   else
     BUILDER_ENABLED="false"
   fi
+fi
+if [[ -z "${ARTIFACT_ENABLED}" ]]; then
+  case "${APPLIANCE_PROFILE}" in
+    storage|builder) ARTIFACT_ENABLED="true" ;;
+    *) ARTIFACT_ENABLED="false" ;;
+  esac
 fi
 if [[ -z "${BUILDER_EXPECT_DISABLED}" ]]; then
   if bool_true "${BUILDER_ENABLED}"; then
@@ -1244,6 +1254,32 @@ if builder_enabled == "true":
             raise SystemExit(f"builder workflow final status = {workflow_final_status!r}, want 'succeeded'")
 
 Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+
+artifact_args=(
+  --base-url "${BASE_URL}"
+  --username "${USERNAME}"
+  --run-dir "${RUN_DIR}"
+  --oci-smoke-command "${ARTIFACT_OCI_SMOKE_CMD}"
+  --oras-smoke-command "${ARTIFACT_ORAS_SMOKE_CMD}"
+  --offline-smoke-command "${ARTIFACT_OFFLINE_SMOKE_CMD}"
+)
+if bool_true "${ARTIFACT_ENABLED}"; then
+  artifact_args+=(--enabled)
+fi
+APPLIANCE_ACCESS_TOKEN="${TOKEN}" python3 "${SCRIPT_DIR}/verify-artifact-access.py" \
+  "${artifact_args[@]}" >"${RUN_DIR}/logs/client-artifact-verification.json"
+python3 - "${RUN_DIR}/metadata/client-verify.json" "${RUN_DIR}/metadata/artifact-client-verify.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+client_path, artifact_path = map(Path, sys.argv[1:3])
+client = json.loads(client_path.read_text(encoding="utf-8"))
+client.setdefault("checks", {})["artifact"] = json.loads(
+    artifact_path.read_text(encoding="utf-8")
+)
+client_path.write_text(json.dumps(client, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
 
 log "client verification metadata written to ${RUN_DIR}/metadata/client-verify.json"

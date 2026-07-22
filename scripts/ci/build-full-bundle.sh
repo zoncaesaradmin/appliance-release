@@ -62,6 +62,12 @@ Optional overrides:
   EXTRA_OCI_IMAGE_PULL_REFS=ghcr.io/org/automation-dev:v0.1.0
   # EXTRA_OCI_IMAGE_REFS names the local registry.local/... reference. Digests in those
   # refs are optional advisory pins; the archived platform manifest digest always wins.
+  ZOT_VERSION=2.1.8
+  ZOT_IMAGE_PULL_REF=ghcr.io/project-zot/zot-linux-amd64:v2.1.8
+  ZOT_IMAGE_ARCHIVE_SOURCE=/ci/inputs/zot.oci.tar
+  # Zot is a first-class release artifact, not an EXTRA_OCI image. Online builds
+  # copy linux/amd64 on the build host; offline builds may supply an archive.
+  # Both paths derive registry.local/zot@sha256:<platform-digest> from index.json.
 EOF
 }
 
@@ -97,6 +103,9 @@ USER_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURC
 USER_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE-}"
 USER_WORKSPACE_PROVISIONER_IMAGE_REF="${WORKSPACE_PROVISIONER_IMAGE_REF-}"
 USER_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE="${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE-}"
+USER_ZOT_VERSION="${ZOT_VERSION-}"
+USER_ZOT_IMAGE_PULL_REF="${ZOT_IMAGE_PULL_REF-}"
+USER_ZOT_IMAGE_ARCHIVE_SOURCE="${ZOT_IMAGE_ARCHIVE_SOURCE-}"
 USER_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES-}"
 USER_EXTRA_OCI_IMAGE_REFS="${EXTRA_OCI_IMAGE_REFS-}"
 USER_EXTRA_OCI_IMAGE_PULL_REFS="${EXTRA_OCI_IMAGE_PULL_REFS-}"
@@ -129,6 +138,9 @@ ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="${USER_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURC
 ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="${USER_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE:-${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE:-}}"
 WORKSPACE_PROVISIONER_IMAGE_REF="${USER_WORKSPACE_PROVISIONER_IMAGE_REF:-${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:latest}}"
 WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE="${USER_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE:-${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE:-}}"
+ZOT_VERSION="${USER_ZOT_VERSION:-${ZOT_VERSION:-2.1.8}}"
+ZOT_IMAGE_PULL_REF="${USER_ZOT_IMAGE_PULL_REF:-${ZOT_IMAGE_PULL_REF:-ghcr.io/project-zot/zot-linux-amd64:v${ZOT_VERSION}}}"
+ZOT_IMAGE_ARCHIVE_SOURCE="${USER_ZOT_IMAGE_ARCHIVE_SOURCE:-${ZOT_IMAGE_ARCHIVE_SOURCE:-}}"
 EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="${USER_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES:-${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES:-}}"
 EXTRA_OCI_IMAGE_REFS="${USER_EXTRA_OCI_IMAGE_REFS:-${EXTRA_OCI_IMAGE_REFS:-}}"
 EXTRA_OCI_IMAGE_PULL_REFS="${USER_EXTRA_OCI_IMAGE_PULL_REFS:-${EXTRA_OCI_IMAGE_PULL_REFS:-}}"
@@ -765,6 +777,16 @@ if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" ]]; then
     exit 2
   fi
 fi
+if [[ -z "${ZOT_VERSION}" || "${ZOT_VERSION}" == *latest* ]]; then
+  echo "build-full-bundle: ZOT_VERSION must be an exact non-latest version" >&2
+  exit 2
+fi
+if [[ -n "${ZOT_IMAGE_ARCHIVE_SOURCE}" ]]; then
+  require_file "${ZOT_IMAGE_ARCHIVE_SOURCE}" "zot image archive"
+elif [[ "${ZOT_IMAGE_PULL_REF}" == *:latest || "${ZOT_IMAGE_PULL_REF}" == registry.local/* ]]; then
+  echo "build-full-bundle: ZOT_IMAGE_PULL_REF must be a version-pinned upstream image when no archive is supplied" >&2
+  exit 2
+fi
 
 EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST=()
 EXTRA_OCI_IMAGE_REF_LIST=()
@@ -826,6 +848,12 @@ mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}" "$
 clone_repo "${CODE_REPO_SOURCE}" "${CODE_REPO_REF}" "${CODE_REPO_DIR}"
 clone_repo "${CTL_REPO_SOURCE}" "${CTL_REPO_REF}" "${CTL_REPO_DIR}"
 
+ZOT_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-registry/Chart.yaml")"
+if [[ -z "${ZOT_CHART_APP_VERSION}" || "${ZOT_CHART_APP_VERSION}" != "${ZOT_VERSION}" ]]; then
+  echo "build-full-bundle: ZOT_VERSION ${ZOT_VERSION} must match appliance-registry chart appVersion ${ZOT_CHART_APP_VERSION:-<missing>}" >&2
+  exit 2
+fi
+
 require_appliance_code_bootstrap
 
 if bool_true "${ARGO_ENABLED}"; then
@@ -878,6 +906,14 @@ fi
 # install-time ctr import will fail RequireReference checks.
 PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES=()
 PACKAGED_EXTRA_OCI_IMAGE_REFS=()
+
+ZOT_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/zot-image.tar"
+if [[ -n "${ZOT_IMAGE_ARCHIVE_SOURCE}" ]]; then
+  cp "${ZOT_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/zot-image.tar"
+  ZOT_IMAGE_REF="$(finalize_bundled_oci_archive "${CODE_REPO_DIR}/.run/zot-image.tar" "registry.local/zot")"
+else
+  ZOT_IMAGE_REF="$(export_bundled_extra_oci_image_archive "${ZOT_IMAGE_PULL_REF}" "registry.local/zot" "${CODE_REPO_DIR}/.run/zot-image.tar")"
+fi
 
 if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" ]]; then
   WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
@@ -980,6 +1016,9 @@ bash ./scripts/package/archive-release-input.sh \
   --ui-image "\${UI_IMAGE_OUT}" \
   --ui-image-reference "localhost/appliance-ui:\${CODE_VERSION}" \
   --k3s-version $(shell_quote "${K3S_VERSION}") \
+  --zot-version $(shell_quote "${ZOT_VERSION}") \
+  --zot-image $(shell_quote "${ZOT_IMAGE_ARCHIVE_FOR_DEV}") \
+  --zot-image-reference $(shell_quote "${ZOT_IMAGE_REF}") \
   "\${ARGO_ARGS[@]}" \
   "\${EXTRA_OCI_ARGS[@]}"
 EOF

@@ -49,6 +49,22 @@ def write_report(
             "artifactRef": "users/alice/app:v1" if workflow else None,
             "secretLeakCheckPassed": True if workflow else None,
         },
+        "artifact": {
+            "enabled": profile in {"storage", "builder"},
+            "catalogStatusCode": 200 if profile in {"storage", "builder"} else 404,
+            "catalogFiltered": True if profile in {"storage", "builder"} else False,
+            "anonymousCatalogStatusCode": 401 if profile in {"storage", "builder"} else 404,
+            "v2ChallengeStatusCode": 401 if profile in {"storage", "builder"} else 404,
+            "tokenIssuanceStatusCode": 200 if profile in {"storage", "builder"} else None,
+            "deniedScopeStatusCode": 403 if profile in {"storage", "builder"} else None,
+            "malformedTokenStatusCode": 401 if profile in {"storage", "builder"} else None,
+            "tokenRevokeStatusCode": 204 if profile in {"storage", "builder"} else None,
+            "revokedCredentialStatusCode": 401 if profile in {"storage", "builder"} else None,
+            "revokedTokenChecked": True if profile in {"storage", "builder"} else None,
+            "ociSmoke": {"configured": False},
+            "orasSmoke": {"configured": False},
+            "offlineSmoke": {"configured": False},
+        },
     }
     report = {
         "overallStatus": "passed",
@@ -58,7 +74,13 @@ def write_report(
         "steps": {
             "buildPublish": {"status": "passed" if profile == "core" else "skipped"},
             "install": {"status": "passed"},
-            "targetVerify": {"status": "passed"},
+            "targetVerify": {
+                "status": "passed",
+                "artifact": {
+                    "enabled": profile in {"storage", "builder"},
+                    "readinessExitCode": 0 if profile in {"storage", "builder"} else None,
+                },
+            },
             "clientVerify": {
                 **client,
                 "builderWorkProfilesStatusCode": 200 if profile == "builder" else None,

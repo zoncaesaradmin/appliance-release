@@ -72,7 +72,10 @@ def test_complete_report() -> None:
             {
                 "failed": False,
                 "warnings": ["allowed ingress warning"],
-                "checks": {"serviceHealth": {"exitCode": 0, "log": str(run_dir / "logs" / "service.log")}},
+                "checks": {
+                    "serviceHealth": {"exitCode": 0, "log": str(run_dir / "logs" / "service.log")},
+                    "artifact": {"enabled": True, "readiness": {"exitCode": 0}},
+                },
             },
         )
         write_json(
@@ -82,6 +85,19 @@ def test_complete_report() -> None:
                 "username": "admin",
                 "checks": {
                     "login": {"statusCode": 200},
+                    "artifact": {
+                        "enabled": True,
+                        "catalogStatusCode": 200,
+                        "catalogFiltered": True,
+                        "anonymousCatalogStatusCode": 401,
+                        "v2ChallengeStatusCode": 401,
+                        "tokenIssuanceStatusCode": 200,
+                        "deniedScopeStatusCode": 403,
+                        "malformedTokenStatusCode": 401,
+                        "tokenRevokeStatusCode": 204,
+                        "revokedCredentialStatusCode": 401,
+                        "revokedTokenChecked": True,
+                    },
                     "builder": {
                         "workProfiles": {"statusCode": 200},
                         "mcpToolsList": {
@@ -135,6 +151,10 @@ def test_complete_report() -> None:
         if "submit_build" not in report["steps"]["clientVerify"]["builderToolsPresent"]:
             raise AssertionError(report)
         if report["steps"]["clientVerify"]["builderWorkProfilesStatusCode"] != 200:
+            raise AssertionError(report)
+        if report["steps"]["targetVerify"]["artifact"]["readinessExitCode"] != 0:
+            raise AssertionError(report)
+        if report["steps"]["clientVerify"]["artifact"]["tokenIssuanceStatusCode"] != 200:
             raise AssertionError(report)
         if report["steps"]["clientVerify"]["disabledBuildWorkProfilesStatusCode"] != 404:
             raise AssertionError(report)

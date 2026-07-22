@@ -10,6 +10,7 @@ import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -33,6 +34,35 @@ class FakeApplianceHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        artifact_enabled = bool(getattr(self.server, "artifact_enabled", False))
+        if parsed.path == "/v2/":
+            if not artifact_enabled:
+                self._write_json(404, {"code": "not_found"})
+                return
+            self._write_json(
+                401,
+                {"errors": [{"code": "UNAUTHORIZED"}]},
+                {"WWW-Authenticate": 'Bearer realm="/api/v1/registry/token",service="zot"'},
+            )
+            return
+        if parsed.path == "/api/v1/registry/repositories":
+            if not artifact_enabled:
+                self._write_json(404, {"code": "not_found"})
+            elif self.headers.get("Authorization", "").startswith("Bearer "):
+                self._write_json(200, {"repositories": []})
+            else:
+                self._write_json(401, {"code": "unauthorized"})
+            return
+        if parsed.path == "/api/v1/registry/token" and artifact_enabled:
+            scope = (parse_qs(parsed.query).get("scope") or [""])[0]
+            if getattr(self.server, "artifact_token_revoked", False):
+                self._write_json(401, {"code": "unauthorized"})
+            elif scope.startswith("repository:denied/"):
+                self._write_json(403, {"code": "denied"})
+            else:
+                self._write_json(200, {"token": "signed-registry-token"})
+            return
         if self.path == "/api/v1/auth/session":
             self._write_json(200, {"username": "admin", "authMethod": "session"})
             return
@@ -59,6 +89,9 @@ class FakeApplianceHandler(BaseHTTPRequestHandler):
 
         if self.path == "/api/v1/auth/login":
             self._write_json(200, {"accessToken": "fake-access-token"})
+            return
+        if self.path == "/api/v1/tokens" and getattr(self.server, "artifact_enabled", False):
+            self._write_json(201, {"id": "token-1", "token": "apt_fake.registry-token"})
             return
 
         if self.path == "/mcp":
@@ -89,11 +122,20 @@ class FakeApplianceHandler(BaseHTTPRequestHandler):
                 return
         self._write_json(404, {"code": "not_found"})
 
+    def do_DELETE(self) -> None:
+        if self.path == "/api/v1/tokens/token-1" and getattr(self.server, "artifact_enabled", False):
+            self.server.artifact_token_revoked = True
+            self.send_response(204)
+            self.end_headers()
+            return
+        self._write_json(404, {"code": "not_found"})
+
 
 def test_disabled_build_direct_mcp_call_is_verified() -> None:
     with tempfile.TemporaryDirectory(prefix="verify-client-access-") as tmp_dir:
         tmp = Path(tmp_dir)
         server = ThreadingHTTPServer(("127.0.0.1", 0), FakeApplianceHandler)
+        server.artifact_enabled = False
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
@@ -150,6 +192,47 @@ def test_disabled_build_direct_mcp_call_is_verified() -> None:
             raise AssertionError(body)
 
 
+def test_positive_artifact_access_is_verified() -> None:
+    with tempfile.TemporaryDirectory(prefix="verify-artifact-access-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), FakeApplianceHandler)
+        server.artifact_enabled = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            run_dir = tmp / "run"
+            env = os.environ.copy()
+            env["APPLIANCE_ACCESS_TOKEN"] = "session-token"
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(ROOT / ".agents/skills/release/scripts/verify-artifact-access.py"),
+                    "--base-url",
+                    f"http://127.0.0.1:{server.server_port}",
+                    "--username",
+                    "admin",
+                    "--run-dir",
+                    str(run_dir),
+                    "--enabled",
+                ],
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+        if result.returncode != 0:
+            raise AssertionError(result.stdout)
+        evidence = json.loads(
+            (run_dir / "metadata" / "artifact-client-verify.json").read_text(encoding="utf-8")
+        )
+        if evidence.get("tokenIssued") is not True or evidence.get("deniedScopeStatusCode") != 403:
+            raise AssertionError(evidence)
+
+
 if __name__ == "__main__":
     test_disabled_build_direct_mcp_call_is_verified()
+    test_positive_artifact_access_is_verified()
     print("verify-client-access tests passed")

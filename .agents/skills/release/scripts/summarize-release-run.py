@@ -83,6 +83,7 @@ def summarize_target_verify(verify: Optional[dict], run_dir: Path, skipped: bool
     if not verify:
         return out
     checks = verify.get("checks") if isinstance(verify.get("checks"), dict) else {}
+    artifact = checks.get("artifact") if isinstance(checks.get("artifact"), dict) else {}
     out.update(
         {
             "failed": verify.get("failed"),
@@ -95,6 +96,10 @@ def summarize_target_verify(verify: Optional[dict], run_dir: Path, skipped: bool
                 }
                 for name, check in checks.items()
                 if isinstance(check, dict)
+            },
+            "artifact": {
+                "enabled": artifact.get("enabled"),
+                "readinessExitCode": (artifact.get("readiness") or {}).get("exitCode"),
             },
         }
     )
@@ -109,6 +114,7 @@ def summarize_client_verify(client: Optional[dict], run_dir: Path, skipped: bool
     builder = checks.get("builder") if isinstance(checks.get("builder"), dict) else None
     disabled = checks.get("disabledBuildRoutes") if isinstance(checks.get("disabledBuildRoutes"), dict) else None
     workflow = builder.get("workflow") if isinstance(builder, dict) and isinstance(builder.get("workflow"), dict) else None
+    artifact = checks.get("artifact") if isinstance(checks.get("artifact"), dict) else {}
     out.update(
         {
             "baseUrl": client.get("baseUrl"),
@@ -146,6 +152,22 @@ def summarize_client_verify(client: Optional[dict], run_dir: Path, skipped: bool
                 "secretLeakCheckPassed": (workflow.get("secretLeakCheck") or {}).get("passed")
                 if workflow
                 else None,
+            },
+            "artifact": {
+                "enabled": artifact.get("enabled"),
+                "catalogStatusCode": artifact.get("catalogStatusCode"),
+                "catalogFiltered": artifact.get("catalogFiltered"),
+                "anonymousCatalogStatusCode": artifact.get("anonymousCatalogStatusCode"),
+                "v2ChallengeStatusCode": artifact.get("v2ChallengeStatusCode"),
+                "tokenIssuanceStatusCode": artifact.get("tokenIssuanceStatusCode"),
+                "deniedScopeStatusCode": artifact.get("deniedScopeStatusCode"),
+                "malformedTokenStatusCode": artifact.get("malformedTokenStatusCode"),
+                "tokenRevokeStatusCode": artifact.get("tokenRevokeStatusCode"),
+                "revokedCredentialStatusCode": artifact.get("revokedCredentialStatusCode"),
+                "revokedTokenChecked": artifact.get("revokedTokenChecked"),
+                "ociSmoke": artifact.get("ociSmoke"),
+                "orasSmoke": artifact.get("orasSmoke"),
+                "offlineSmoke": artifact.get("offlineSmoke"),
             },
         }
     )
