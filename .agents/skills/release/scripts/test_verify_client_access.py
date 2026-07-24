@@ -77,6 +77,11 @@ class FakeApplianceHandler(BaseHTTPRequestHandler):
                 self._write_json(401, {"code": "unauthorized"})
             elif scope.startswith("repository:denied/"):
                 if getattr(self.server, "artifact_denied_scope_returns_token", False):
+                    actions = (
+                        ["pull", "push"]
+                        if getattr(self.server, "artifact_denied_scope_granted_actions", False)
+                        else []
+                    )
                     self._write_json(
                         200,
                         {
@@ -86,7 +91,7 @@ class FakeApplianceHandler(BaseHTTPRequestHandler):
                                         {
                                             "type": "repository",
                                             "name": "denied/release-smoke",
-                                            "actions": [],
+                                            "actions": actions,
                                         }
                                     ]
                                 }
@@ -346,9 +351,112 @@ def test_positive_artifact_access_accepts_denied_scope_token_with_empty_actions(
             raise AssertionError(evidence)
 
 
+def test_verify_client_access_defaults_admin_denied_scope_to_informational() -> None:
+    with tempfile.TemporaryDirectory(prefix="verify-client-access-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), FakeApplianceHandler)
+        server.artifact_enabled = True
+        server.artifact_denied_scope_returns_token = True
+        server.artifact_denied_scope_granted_actions = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            base_url = f"http://127.0.0.1:{server.server_port}"
+            config_path = tmp / "config.json"
+            run_dir = tmp / "run"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "client_verification": {
+                            "base_url": base_url,
+                            "username": "admin",
+                            "builder": {"enabled": False, "expect_disabled": True},
+                            "artifact": {"enabled": True},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            env = os.environ.copy()
+            env["APPLIANCE_FIRST_ADMIN_PASSWORD"] = "fake-password"
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(SCRIPT),
+                    "--config",
+                    str(config_path),
+                    "--run-dir",
+                    str(run_dir),
+                    "--appliance-profile",
+                    "storage",
+                    "--final-ok",
+                ],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+
+        if result.returncode != 0:
+            raise AssertionError(result.stdout)
+
+        metadata = json.loads((run_dir / "metadata" / "client-verify.json").read_text(encoding="utf-8"))
+        artifact = metadata["checks"]["artifact"]
+        if artifact["deniedScopeEnforced"] is not False:
+            raise AssertionError(artifact)
+        if artifact["deniedScopeGranted"] is not True:
+            raise AssertionError(artifact)
+
+
+def test_artifact_access_fails_when_denied_scope_is_enforced() -> None:
+    with tempfile.TemporaryDirectory(prefix="verify-artifact-access-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), FakeApplianceHandler)
+        server.artifact_enabled = True
+        server.artifact_denied_scope_returns_token = True
+        server.artifact_denied_scope_granted_actions = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            run_dir = tmp / "run"
+            env = os.environ.copy()
+            env["APPLIANCE_ACCESS_TOKEN"] = "session-token"
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(ROOT / ".agents/skills/release/scripts/verify-artifact-access.py"),
+                    "--base-url",
+                    f"http://127.0.0.1:{server.server_port}",
+                    "--username",
+                    "non-admin",
+                    "--run-dir",
+                    str(run_dir),
+                    "--enabled",
+                    "--expect-denied-scope",
+                ],
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+        if result.returncode == 0:
+            raise AssertionError("expected verify-artifact-access to fail when denied scope is enforced")
+        if "denied registry scope token granted pull/push actions" not in result.stdout:
+            raise AssertionError(result.stdout)
+
+
 if __name__ == "__main__":
     test_disabled_build_direct_mcp_call_is_verified()
     test_positive_artifact_access_is_verified()
     test_artifact_access_reports_html_v2_misroute()
     test_positive_artifact_access_accepts_denied_scope_token_with_empty_actions()
+    test_verify_client_access_defaults_admin_denied_scope_to_informational()
+    test_artifact_access_fails_when_denied_scope_is_enforced()
     print("verify-client-access tests passed")

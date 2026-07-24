@@ -128,6 +128,7 @@ USERS_REQUEST_FILE="${RUN_DIR}/logs/client-users-request.json"
 BUILDER_ENABLED="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.enabled" || true)"
 BUILDER_EXPECT_DISABLED="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.expect_disabled" || true)"
 ARTIFACT_ENABLED="$(config_get_optional "${CONFIG_PATH}" "client_verification.artifact.enabled" || true)"
+ARTIFACT_EXPECT_DENIED_SCOPE="$(config_get_optional "${CONFIG_PATH}" "client_verification.artifact.expect_denied_scope" || true)"
 ARTIFACT_OCI_SMOKE_CMD="$(config_get_optional "${CONFIG_PATH}" "client_verification.artifact.oci_smoke_command" || true)"
 ARTIFACT_ORAS_SMOKE_CMD="$(config_get_optional "${CONFIG_PATH}" "client_verification.artifact.oras_smoke_command" || true)"
 ARTIFACT_OFFLINE_SMOKE_CMD="$(config_get_optional "${CONFIG_PATH}" "client_verification.artifact.offline_smoke_command" || true)"
@@ -150,6 +151,13 @@ if [[ -z "${ARTIFACT_ENABLED}" ]]; then
     storage|builder) ARTIFACT_ENABLED="true" ;;
     *) ARTIFACT_ENABLED="false" ;;
   esac
+fi
+if [[ -z "${ARTIFACT_EXPECT_DENIED_SCOPE}" ]]; then
+  if [[ "${USERNAME}" == "admin" ]]; then
+    ARTIFACT_EXPECT_DENIED_SCOPE="false"
+  else
+    ARTIFACT_EXPECT_DENIED_SCOPE="true"
+  fi
 fi
 if [[ -z "${BUILDER_EXPECT_DISABLED}" ]]; then
   if bool_true "${BUILDER_ENABLED}"; then
@@ -1266,6 +1274,9 @@ artifact_args=(
 )
 if bool_true "${ARTIFACT_ENABLED}"; then
   artifact_args+=(--enabled)
+fi
+if bool_true "${ARTIFACT_EXPECT_DENIED_SCOPE}"; then
+  artifact_args+=(--expect-denied-scope)
 fi
 APPLIANCE_ACCESS_TOKEN="${TOKEN}" python3 "${SCRIPT_DIR}/verify-artifact-access.py" \
   "${artifact_args[@]}" >"${RUN_DIR}/logs/client-artifact-verification.json"

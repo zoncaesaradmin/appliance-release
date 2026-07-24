@@ -57,6 +57,7 @@ def write_report(
             "v2ChallengeStatusCode": 401 if profile in {"storage", "builder"} else 404,
             "tokenIssuanceStatusCode": 200 if profile in {"storage", "builder"} else None,
             "deniedScopeStatusCode": 200 if profile in {"storage", "builder"} else None,
+            "deniedScopeEnforced": False if profile in {"storage", "builder"} else None,
             "deniedScopeGranted": False if profile in {"storage", "builder"} else None,
             "malformedTokenStatusCode": 401 if profile in {"storage", "builder"} else None,
             "tokenRevokeStatusCode": 204 if profile in {"storage", "builder"} else None,
@@ -92,7 +93,11 @@ def write_report(
     if bad:
         for key, value in bad.items():
             if key == "client":
-                report["steps"]["clientVerify"].update(value)
+                for client_key, client_value in value.items():
+                    if isinstance(client_value, dict) and isinstance(report["steps"]["clientVerify"].get(client_key), dict):
+                        report["steps"]["clientVerify"][client_key].update(client_value)
+                    else:
+                        report["steps"]["clientVerify"][client_key] = client_value
             else:
                 report[key] = value
     path = run_dir / "metadata" / "release-report.json"
@@ -260,6 +265,45 @@ def test_fails_when_required_builder_workflow_missing() -> None:
             raise AssertionError(summary)
 
 
+def test_passes_when_denied_scope_grant_is_informational() -> None:
+    with tempfile.TemporaryDirectory(prefix="profile-matrix-audit-") as tmp_dir:
+        root = Path(tmp_dir)
+        core, storage, builder = root / "core", root / "storage", root / "builder"
+        write_report(core, "core")
+        write_report(
+            storage,
+            "storage",
+            bad={"client": {"artifact": {"deniedScopeEnforced": False, "deniedScopeGranted": True}}},
+        )
+        write_report(builder, "builder", workflow=True)
+        result = run_auditor(core, storage, builder, "--require-builder-workflow")
+        if result.returncode != 0:
+            raise AssertionError(result.stderr or result.stdout)
+        summary = json.loads(result.stdout)
+        if summary["status"] != "passed":
+            raise AssertionError(summary)
+
+
+def test_fails_when_enforced_denied_scope_is_granted() -> None:
+    with tempfile.TemporaryDirectory(prefix="profile-matrix-audit-") as tmp_dir:
+        root = Path(tmp_dir)
+        core, storage, builder = root / "core", root / "storage", root / "builder"
+        write_report(core, "core")
+        write_report(storage, "storage")
+        write_report(
+            builder,
+            "builder",
+            workflow=True,
+            bad={"client": {"artifact": {"deniedScopeEnforced": True, "deniedScopeGranted": True}}},
+        )
+        result = run_auditor(core, storage, builder, "--require-builder-workflow")
+        if result.returncode == 0:
+            raise AssertionError("granted denied-scope token was accepted while enforcement was enabled")
+        summary = json.loads(result.stdout)
+        if "want False when denied-scope enforcement is enabled" not in "\n".join(summary["errors"]):
+            raise AssertionError(summary)
+
+
 def test_fails_when_markdown_report_is_missing() -> None:
     with tempfile.TemporaryDirectory(prefix="profile-matrix-audit-") as tmp_dir:
         root = Path(tmp_dir)
@@ -318,6 +362,8 @@ def main() -> None:
     test_fails_when_disabled_build_route_is_registered()
     test_fails_when_builder_route_is_missing()
     test_fails_when_required_builder_workflow_missing()
+    test_passes_when_denied_scope_grant_is_informational()
+    test_fails_when_enforced_denied_scope_is_granted()
     test_fails_when_markdown_report_is_missing()
     test_fails_when_matrix_step_pattern_is_wrong()
     test_failure_writes_output_json_with_all_load_errors()

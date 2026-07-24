@@ -97,6 +97,7 @@ def main() -> int:
     parser.add_argument("--username", required=True)
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--enabled", action="store_true")
+    parser.add_argument("--expect-denied-scope", action="store_true")
     parser.add_argument("--oci-smoke-command", default="")
     parser.add_argument("--oras-smoke-command", default="")
     parser.add_argument("--offline-smoke-command", default="")
@@ -187,6 +188,7 @@ def main() -> int:
         denied_status, _, denied_body = request(
             f"{base}/api/v1/registry/token?{denied_query}", basic=(args.username, api_token)
         )
+        evidence["deniedScopeEnforced"] = args.expect_denied_scope
         evidence["deniedScopeStatusCode"] = denied_status
         if denied_status in (401, 403):
             evidence["deniedScopeGranted"] = False
@@ -199,7 +201,7 @@ def main() -> int:
             evidence["deniedScopeGranted"] = token_grants_action(
                 denied_claims, "denied/release-smoke", "pull"
             ) or token_grants_action(denied_claims, "denied/release-smoke", "push")
-            if evidence["deniedScopeGranted"]:
+            if args.expect_denied_scope and evidence["deniedScopeGranted"]:
                 raise ValueError("denied registry scope token granted pull/push actions")
         else:
             raise ValueError(

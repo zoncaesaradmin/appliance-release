@@ -236,6 +236,10 @@ client_verification:
   # APPLIANCE_REGISTRY_TOKEN environment variables; never echo them.
   artifact:
     # enabled: true
+    # Defaults to false for username=admin because administrators legitimately
+    # receive broad registry pull/push grants. Set this to true only when the
+    # configured verification user should be denied a probe repository scope.
+    # expect_denied_scope: false
     # oci_smoke_command: /abs/path/to/oci-push-pull-smoke.sh
     # oras_smoke_command: /abs/path/to/oras-referrer-smoke.sh
     # offline_smoke_command: /abs/path/to/assert-no-public-egress-smoke.sh

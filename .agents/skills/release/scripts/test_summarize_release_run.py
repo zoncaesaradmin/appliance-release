@@ -93,6 +93,7 @@ def test_complete_report() -> None:
                         "v2ChallengeStatusCode": 401,
                         "tokenIssuanceStatusCode": 200,
                         "deniedScopeStatusCode": 200,
+                        "deniedScopeEnforced": False,
                         "deniedScopeGranted": False,
                         "malformedTokenStatusCode": 401,
                         "tokenRevokeStatusCode": 204,
@@ -156,6 +157,8 @@ def test_complete_report() -> None:
         if report["steps"]["targetVerify"]["artifact"]["readinessExitCode"] != 0:
             raise AssertionError(report)
         if report["steps"]["clientVerify"]["artifact"]["tokenIssuanceStatusCode"] != 200:
+            raise AssertionError(report)
+        if report["steps"]["clientVerify"]["artifact"]["deniedScopeEnforced"] is not False:
             raise AssertionError(report)
         if report["steps"]["clientVerify"]["disabledBuildWorkProfilesStatusCode"] != 404:
             raise AssertionError(report)

@@ -163,6 +163,7 @@ def summarize_client_verify(client: Optional[dict], run_dir: Path, skipped: bool
                 "v2ChallengeStatusCode": artifact.get("v2ChallengeStatusCode"),
                 "tokenIssuanceStatusCode": artifact.get("tokenIssuanceStatusCode"),
                 "deniedScopeStatusCode": artifact.get("deniedScopeStatusCode"),
+                "deniedScopeEnforced": artifact.get("deniedScopeEnforced"),
                 "deniedScopeGranted": artifact.get("deniedScopeGranted"),
                 "malformedTokenStatusCode": artifact.get("malformedTokenStatusCode"),
                 "tokenRevokeStatusCode": artifact.get("tokenRevokeStatusCode"),

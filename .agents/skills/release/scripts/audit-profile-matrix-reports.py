@@ -170,7 +170,6 @@ def audit_artifact(profile: str, report: dict[str, Any], errors: list[str]) -> N
         "v2ChallengeStatusCode": lambda value: value == 401,
         "tokenIssuanceStatusCode": lambda value: isinstance(value, int) and value < 400,
         "deniedScopeStatusCode": lambda value: value in (200, 401, 403),
-        "deniedScopeGranted": lambda value: value is False,
         "malformedTokenStatusCode": lambda value: value in (401, 403),
         "tokenRevokeStatusCode": lambda value: isinstance(value, int) and value < 300,
         "revokedCredentialStatusCode": lambda value: value in (401, 403),
@@ -179,6 +178,10 @@ def audit_artifact(profile: str, report: dict[str, Any], errors: list[str]) -> N
     for field, valid in required.items():
         if not valid(artifact.get(field)):
             errors.append(f"{profile}: artifact {field} evidence is invalid: {artifact.get(field)!r}")
+    if artifact.get("deniedScopeEnforced") is True and artifact.get("deniedScopeGranted") is not False:
+        errors.append(
+            f"{profile}: artifact deniedScopeGranted is {artifact.get('deniedScopeGranted')!r}, want False when denied-scope enforcement is enabled"
+        )
     for field in ("ociSmoke", "orasSmoke", "offlineSmoke"):
         smoke = artifact.get(field)
         if isinstance(smoke, dict) and smoke.get("configured") is True and smoke.get("exitCode") != 0:
