@@ -134,7 +134,7 @@ def main() -> int:
         f"{base}/api/v1/tokens",
         method="POST",
         token=access_token,
-        body={"name": "release-artifact-smoke", "lifetimeSeconds": 900},
+        body={"name": "release-artifact-smoke", "lifetimeSeconds": 3600},
     )
     if create_status != 201:
         raise ValueError(f"API-token creation returned HTTP {create_status}")
