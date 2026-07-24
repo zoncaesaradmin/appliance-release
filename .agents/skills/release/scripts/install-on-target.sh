@@ -320,10 +320,10 @@ echo "zonctl is now available at /usr/local/bin/zonctl on the target host."'
 
 install_log="${RUN_DIR}/logs/install.log"
 log "installing release on ${TARGET_HOST} using ${remote_release_dir}"
-install_exit_code=0
-if ! run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"; then
-  install_exit_code=$?
-fi
+set +e
+run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"
+install_exit_code=$?
+set -e
 
 python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${PRESERVE_FAILED_STATE}" "${install_log}" "${install_exit_code}" <<'PY'
 import json
