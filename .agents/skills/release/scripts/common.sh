@@ -185,6 +185,63 @@ resolve_local_git_origin() {
   fi
 }
 
+default_local_sibling_repo_dir() {
+  local release_repo_root="$1"
+  local repo_name="$2"
+  printf '%s/%s\n' "$(cd "${release_repo_root}/.." && pwd)" "${repo_name}"
+}
+
+assert_local_repo_clean_for_remote_ref() {
+  local repo_path="$1"
+  local label="$2"
+  local remote_ref="${3:-main}"
+
+  if [[ ! -d "${repo_path}" ]]; then
+    log "live release preflight: ${label} not found at ${repo_path}; skipping local repo guard"
+    return 0
+  fi
+  if ! git -C "${repo_path}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    log "live release preflight: ${label} at ${repo_path} is not a git checkout; skipping local repo guard"
+    return 0
+  fi
+
+  local head branch short_head status_lines remote_tracking ahead_count
+  head="$(git -C "${repo_path}" rev-parse HEAD 2>/dev/null || true)"
+  short_head="${head:0:12}"
+  branch="$(git -C "${repo_path}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  status_lines="$(git -C "${repo_path}" status --short 2>/dev/null || true)"
+
+  if [[ -n "${status_lines}" ]]; then
+    fail "live release preflight: ${label} at ${repo_path} has uncommitted changes (branch ${branch:-detached}, HEAD ${short_head:-unknown}); the remote build clones ${remote_ref} and will ignore local edits. Commit/push or stash these changes, or run make verify-local-milestone for non-live cross-repo validation."
+  fi
+
+  remote_tracking="origin/${remote_ref}"
+  if ! git -C "${repo_path}" rev-parse --verify --quiet "${remote_tracking}^{commit}" >/dev/null 2>&1; then
+    log "live release preflight: ${label} has no local ${remote_tracking} ref; skipping ahead-of-remote check"
+    return 0
+  fi
+
+  ahead_count="$(git -C "${repo_path}" rev-list --count "${remote_tracking}..HEAD" 2>/dev/null || true)"
+  if [[ -z "${ahead_count}" || "${ahead_count}" == "0" ]]; then
+    return 0
+  fi
+
+  fail "live release preflight: ${label} at ${repo_path} is ahead of ${remote_tracking} by ${ahead_count} commit(s) (branch ${branch:-detached}, HEAD ${short_head:-unknown}); the remote build uses ${remote_tracking}, so those local commits will not be included. Push them before rerunning the live release flow, or use make verify-local-milestone for non-live validation."
+}
+
+preflight_live_release_inputs() {
+  local release_repo_root="$1"
+  local release_ref="${2:-main}"
+  local code_ref="${3:-main}"
+  local ctl_ref="${4:-main}"
+  local code_repo_dir="${APPLIANCE_CODE_DIR:-$(default_local_sibling_repo_dir "${release_repo_root}" appliance-code)}"
+  local ctl_repo_dir="${APPLIANCE_CTL_DIR:-$(default_local_sibling_repo_dir "${release_repo_root}" appliance-ctl)}"
+
+  assert_local_repo_clean_for_remote_ref "${release_repo_root}" "appliance-release" "${release_ref}"
+  assert_local_repo_clean_for_remote_ref "${code_repo_dir}" "appliance-code" "${code_ref}"
+  assert_local_repo_clean_for_remote_ref "${ctl_repo_dir}" "appliance-ctl" "${ctl_ref}"
+}
+
 render_ensure_remote_release_repo_cmd() {
   local remote_cwd="$1"
   local repo_source="$2"

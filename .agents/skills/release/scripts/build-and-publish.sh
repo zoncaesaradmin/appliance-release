@@ -110,6 +110,8 @@ if [[ -z "${REMOTE_CWD}" ]]; then
 fi
 REMOTE_REPO_SOURCE="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_repo_source" || true)"
 REMOTE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_repo_ref" || true)"
+CODE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.code_repo_ref" || true)"
+CTL_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.ctl_repo_ref" || true)"
 if [[ -z "${GIT_PULL_CMD}" ]]; then
   GIT_PULL_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.git_pull_command" || true)"
 fi
@@ -145,6 +147,12 @@ fi
 [[ -n "${REMOTE_REPO_SOURCE}" ]] || fail "release_workspace.remote_repo_source is required when the build host checkout is missing; set it in config or run from a local appliance-release git checkout"
 if [[ -z "${REMOTE_REPO_REF}" ]]; then
   REMOTE_REPO_REF="main"
+fi
+if [[ -z "${CODE_REPO_REF}" ]]; then
+  CODE_REPO_REF="main"
+fi
+if [[ -z "${CTL_REPO_REF}" ]]; then
+  CTL_REPO_REF="main"
 fi
 
 require_cmd rsync
@@ -184,6 +192,9 @@ ensure_dir "${RUN_DIR}/logs"
 ensure_dir "${RUN_DIR}/artifacts"
 ensure_dir "${RUN_DIR}/metadata"
 
+log "running local live-build repo preflight against release=${REMOTE_REPO_REF}, appliance-code=${CODE_REPO_REF}, appliance-ctl=${CTL_REPO_REF}"
+preflight_live_release_inputs "${SKILL_RELEASE_REPO_ROOT}" "${REMOTE_REPO_REF}" "${CODE_REPO_REF}" "${CTL_REPO_REF}"
+
 append_env_assignment() {
   local current="$1"
   local name="$2"
@@ -217,6 +228,8 @@ fi
 BUILD_ENV_PREFIX=""
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "PRODUCT_VERSION" "${RELEASE_VERSION}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXPORT_DIR" "${REMOTE_EXPORT_DIR}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "CODE_REPO_REF" "${CODE_REPO_REF}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "CTL_REPO_REF" "${CTL_REPO_REF}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_ENABLED" "${BUILD_ARGO_ENABLED}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_REQUIRED" "${BUILD_ARGO_REQUIRED}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_VERSION" "${BUILD_ARGO_VERSION}")"
@@ -265,6 +278,9 @@ fi
 
 if [[ -n "${bootstrap_remote_cmd}" ]]; then
   bootstrap_env_prefix=""
+  if [[ -n "${CODE_REPO_REF}" ]]; then
+    bootstrap_env_prefix="${bootstrap_env_prefix}export CODE_REPO_REF=$(shell_quote "${CODE_REPO_REF}") ; "
+  fi
   if [[ -n "${BOOTSTRAP_REGISTRY_USER}" ]]; then
     bootstrap_env_prefix="${bootstrap_env_prefix}export REGISTRY_USER=$(shell_quote "${BOOTSTRAP_REGISTRY_USER}") ; "
   fi

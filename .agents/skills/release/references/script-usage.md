@@ -312,3 +312,9 @@ export APPLIANCE_FIRST_ADMIN_PASSWORD='ins3965!'
 
 /Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-flow.sh --uninstall-first --final-ok
 ```
+
+Before the remote build starts, the live wrapper now checks the local
+`appliance-release`, `appliance-code`, and `appliance-ctl` repos and fails
+closed if any of them are dirty or ahead of the remote ref the build host will
+clone. This prevents a long live run from silently building stale remote `main`
+while your local cross-repo fixes are still only in the workspace.
