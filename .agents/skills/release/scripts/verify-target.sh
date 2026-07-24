@@ -172,8 +172,21 @@ VERIFY_CMD="${VERIFY_CMD:-sudo zonctl verify --output json}"
 SERVICE_HEALTH_CMD="${SERVICE_HEALTH_CMD:-sudo kubectl get pods -A}"
 APP_VERSION_CMD="${APP_VERSION_CMD:-sudo zonctl status --output json}"
 FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-sudo zonctl support-bundle --output json}"
+
+profile_supports_workflows() {
+  case "$1" in
+    core|builder) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+ARGO_SKIP_REASON=""
 if [[ -z "${ARGO_ENABLED}" ]]; then
-  ARGO_ENABLED="false"
+  if profile_supports_workflows "${APPLIANCE_PROFILE}"; then
+    ARGO_ENABLED="true"
+  else
+    ARGO_ENABLED="false"
+  fi
 fi
 if [[ -z "${BUILDER_ENABLED}" ]]; then
   if [[ "${APPLIANCE_PROFILE}" == "builder" ]]; then
@@ -199,6 +212,14 @@ if [[ -z "${SMOKE_TEST_RETRY_DELAY_SECONDS}" ]]; then
 fi
 if [[ -n "${ARGO_NAMESPACES_CMD}" || -n "${ARGO_CRDS_CMD}" || -n "${ARGO_CONTROLLER_CMD}" ]]; then
   ARGO_ENABLED="true"
+fi
+if bool_true "${ARGO_ENABLED}" && ! profile_supports_workflows "${APPLIANCE_PROFILE}"; then
+  ARGO_ENABLED="false"
+  ARGO_SKIP_REASON="skipping Argo verification because appliance profile ${APPLIANCE_PROFILE:-unknown} does not enable workflows"
+  ARGO_NAMESPACES_CMD=""
+  ARGO_CRDS_CMD=""
+  ARGO_CONTROLLER_CMD=""
+  log "${ARGO_SKIP_REASON}"
 fi
 if bool_true "${ARGO_ENABLED}"; then
   ARGO_NAMESPACES_CMD="${ARGO_NAMESPACES_CMD:-sudo kubectl get namespace workflows appliance-builds}"
@@ -584,7 +605,7 @@ for code in "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_cod
   fi
 done
 
-final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${UI_HOME_CMD}" "${BUILDER_ENABLED}" "${BUILDER_API_CMD}" "${BUILDER_SOURCE_CREDENTIALS_CMD}" "${FAILURE_LOG_CMD}" "${ARGO_ENABLED}" "${ARGO_NAMESPACES_CMD}" "${ARGO_CRDS_CMD}" "${ARGO_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${ui_home_code}" "${builder_api_code}" "${builder_source_credentials_code}" "${failure_log_code}" "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
+final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${UI_HOME_CMD}" "${BUILDER_ENABLED}" "${BUILDER_API_CMD}" "${BUILDER_SOURCE_CREDENTIALS_CMD}" "${FAILURE_LOG_CMD}" "${ARGO_ENABLED}" "${ARGO_SKIP_REASON}" "${ARGO_NAMESPACES_CMD}" "${ARGO_CRDS_CMD}" "${ARGO_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${ui_home_code}" "${builder_api_code}" "${builder_source_credentials_code}" "${failure_log_code}" "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -604,6 +625,7 @@ import sys
     builder_source_credentials_cmd,
     failure_log_cmd,
     argo_enabled,
+    argo_skip_reason,
     argo_namespaces_cmd,
     argo_crds_cmd,
     argo_controller_cmd,
@@ -623,7 +645,7 @@ import sys
     run_dir,
     allow_ingress_warning,
     allow_verify_schema_bug,
-) = sys.argv[1:34]
+) = sys.argv[1:35]
 
 run_dir_path = Path(run_dir)
 warnings = []
@@ -690,6 +712,10 @@ elif verify_ingress_only_warning and allow_ingress_warning == "true":
 else:
     if int(verify_code) != 0:
         final_failed = True
+
+if argo_skip_reason:
+    warnings.append(argo_skip_reason)
+    known_issues.append("argo-verification-skipped-for-profile")
 
 if int(service_health_code) != 0 or int(app_version_code) != 0:
     final_failed = True
@@ -766,8 +792,13 @@ if builder_enabled == "true":
             "log": str(run_dir_path / "logs" / "builder-source-credentials.log"),
         }
 
+payload["checks"]["argo"] = {
+    "enabled": argo_enabled == "true",
+    "skipReason": argo_skip_reason or None,
+}
+
 if argo_enabled == "true":
-    payload["checks"]["argo"] = {
+    payload["checks"]["argo"].update({
         "namespaces": {
             "command": argo_namespaces_cmd,
             "exitCode": int(argo_namespaces_code or 0),
@@ -783,7 +814,7 @@ if argo_enabled == "true":
             "exitCode": int(argo_controller_code or 0),
             "log": str(run_dir_path / "logs" / "argo-controller.log"),
         },
-    }
+    })
 
 if failure_log_cmd:
     payload["failureLogs"] = {

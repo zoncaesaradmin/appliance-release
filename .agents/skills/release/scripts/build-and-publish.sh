@@ -173,6 +173,7 @@ BUILD_ZOT_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_fl
 BUILD_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_archive_sources" || true)"
 BUILD_EXTRA_OCI_IMAGE_REFS="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_refs" || true)"
 BUILD_EXTRA_OCI_IMAGE_PULL_REFS="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_pull_refs" || true)"
+APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
 PUBLISH_PUBLIC_BASE_URL="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.base_url" || true)"
 if [[ -z "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
@@ -193,6 +194,25 @@ append_env_assignment() {
   fi
   printf '%s%s=%s ' "${current}" "${name}" "$(shell_quote "${value}")"
 }
+
+profile_supports_workflows() {
+  case "$1" in
+    core|builder) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+EFFECTIVE_VERIFY_ARGO_ENABLED="${VERIFY_ARGO_ENABLED}"
+if [[ -z "${EFFECTIVE_VERIFY_ARGO_ENABLED}" ]]; then
+  if profile_supports_workflows "${APPLIANCE_PROFILE}"; then
+    EFFECTIVE_VERIFY_ARGO_ENABLED="true"
+  else
+    EFFECTIVE_VERIFY_ARGO_ENABLED="false"
+  fi
+elif bool_true "${EFFECTIVE_VERIFY_ARGO_ENABLED}" && ! profile_supports_workflows "${APPLIANCE_PROFILE}"; then
+  EFFECTIVE_VERIFY_ARGO_ENABLED="false"
+  log "skipping Argo release-artifact requirement because appliance profile ${APPLIANCE_PROFILE:-unknown} does not enable workflows"
+fi
 
 BUILD_ENV_PREFIX=""
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "PRODUCT_VERSION" "${RELEASE_VERSION}")"
@@ -416,7 +436,7 @@ elif [[ -n "${REMOTE_BUNDLE_DIR}" ]]; then
 fi
 
 VALIDATE_RELEASE_ARTIFACTS_ARGS=()
-if bool_true "${BUILD_ARGO_ENABLED:-false}" || bool_true "${VERIFY_ARGO_ENABLED:-false}"; then
+if bool_true "${BUILD_ARGO_ENABLED:-false}" || bool_true "${EFFECTIVE_VERIFY_ARGO_ENABLED:-false}"; then
   VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--require-argo)
 fi
 EXPECTED_EXTRA_OCI_IMAGE_REFS="${BUILD_EXTRA_OCI_IMAGE_REFS}"

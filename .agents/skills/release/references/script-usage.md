@@ -162,7 +162,8 @@ This script checks:
 - the browser UI home route returning the expected appliance UI shell when `client_verification.base_url` or `verification.ui_home_command` is configured
 - support bundle collection on failure
 
-If your config enables `verification.argo.enabled: true`, it also checks:
+For workflow-capable profiles (`core` and `builder`), it also checks Argo by
+default, unless you explicitly disable `verification.argo.enabled`:
 
 - `workflows` and `appliance-builds` namespaces
 - core Argo Workflow CRDs

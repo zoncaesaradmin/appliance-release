@@ -165,11 +165,10 @@ verification:
   # with a host-specific reachable URL.
   smoke_test_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
   failure_log_command: sudo zonctl support-bundle --output json
-  # Matches build_flow.argo above: Argo Workflows is installed by default,
-  # so verification checks it by default too — confirming the two
-  # namespaces, the core CRDs, and that the controller deployment
-  # actually becomes Available (not just that helm/K3s reported success).
-  # Set this to false only if build_flow.argo.enabled is also false.
+  # Argo verification now follows the installed profile capability by default:
+  # core/builder profiles verify workflows, storage skips those checks even if
+  # this block is left enabled from an older config. Keep this true only when
+  # you want Argo checks for a workflow-capable profile.
   argo:
     enabled: true
     namespaces_command: sudo kubectl get namespace workflows appliance-builds
