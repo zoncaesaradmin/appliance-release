@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 from pathlib import Path
@@ -42,6 +43,28 @@ def looks_like_html(body: bytes, headers: dict[str, str]) -> bool:
         return True
     snippet = body[:200].lstrip().lower()
     return snippet.startswith(b"<!doctype html") or snippet.startswith(b"<html")
+
+
+def decode_jwt_claims(token: str) -> dict:
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise ValueError("registry token is not a JWT")
+    payload = parts[1]
+    padding = "=" * (-len(payload) % 4)
+    decoded = base64.urlsafe_b64decode(payload + padding)
+    return json.loads(decoded.decode("utf-8"))
+
+
+def token_grants_action(claims: dict, repository: str, action: str) -> bool:
+    for entry in claims.get("access") or []:
+        if entry.get("type") != "repository":
+            continue
+        if entry.get("name") != repository:
+            continue
+        actions = entry.get("actions") or []
+        if action in actions:
+            return True
+    return False
 
 
 def run_smoke(label: str, command: str, env: dict[str, str], logs: Path) -> dict:
@@ -161,12 +184,27 @@ def main() -> int:
         denied_query = urllib.parse.urlencode(
             {"service": "zot", "scope": "repository:denied/release-smoke:pull,push"}
         )
-        denied_status, _, _ = request(
+        denied_status, _, denied_body = request(
             f"{base}/api/v1/registry/token?{denied_query}", basic=(args.username, api_token)
         )
         evidence["deniedScopeStatusCode"] = denied_status
-        if denied_status not in (401, 403):
-            raise ValueError(f"denied registry scope returned HTTP {denied_status}; want 401/403")
+        if denied_status in (401, 403):
+            evidence["deniedScopeGranted"] = False
+        elif denied_status == 200:
+            denied_token = json.loads(denied_body)
+            denied_token_value = str(denied_token.get("token") or denied_token.get("access_token") or "")
+            if not denied_token_value:
+                raise ValueError("denied registry scope response omitted token")
+            denied_claims = decode_jwt_claims(denied_token_value)
+            evidence["deniedScopeGranted"] = token_grants_action(
+                denied_claims, "denied/release-smoke", "pull"
+            ) or token_grants_action(denied_claims, "denied/release-smoke", "push")
+            if evidence["deniedScopeGranted"]:
+                raise ValueError("denied registry scope token granted pull/push actions")
+        else:
+            raise ValueError(
+                f"denied registry scope returned HTTP {denied_status}; want 200 with no granted actions or 401/403"
+            )
 
         smoke_env = os.environ.copy()
         smoke_env.update(

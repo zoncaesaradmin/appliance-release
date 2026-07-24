@@ -8,6 +8,7 @@ import os
 import subprocess
 import tempfile
 import threading
+import base64
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -15,6 +16,14 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = ROOT / ".agents" / "skills" / "release" / "scripts" / "verify-client-access.sh"
+
+
+def fake_jwt(payload: dict) -> str:
+    header = {"alg": "none", "typ": "JWT"}
+    encode = lambda value: base64.urlsafe_b64encode(  # noqa: E731
+        json.dumps(value, separators=(",", ":")).encode("utf-8")
+    ).decode("ascii").rstrip("=")
+    return f"{encode(header)}.{encode(payload)}."
 
 
 class FakeApplianceHandler(BaseHTTPRequestHandler):
@@ -67,7 +76,25 @@ class FakeApplianceHandler(BaseHTTPRequestHandler):
             if getattr(self.server, "artifact_token_revoked", False):
                 self._write_json(401, {"code": "unauthorized"})
             elif scope.startswith("repository:denied/"):
-                self._write_json(403, {"code": "denied"})
+                if getattr(self.server, "artifact_denied_scope_returns_token", False):
+                    self._write_json(
+                        200,
+                        {
+                            "token": fake_jwt(
+                                {
+                                    "access": [
+                                        {
+                                            "type": "repository",
+                                            "name": "denied/release-smoke",
+                                            "actions": [],
+                                        }
+                                    ]
+                                }
+                            )
+                        },
+                    )
+                else:
+                    self._write_json(403, {"code": "denied"})
             else:
                 self._write_json(200, {"token": "signed-registry-token"})
             return
@@ -278,8 +305,50 @@ def test_artifact_access_reports_html_v2_misroute() -> None:
             raise AssertionError(result.stdout)
 
 
+def test_positive_artifact_access_accepts_denied_scope_token_with_empty_actions() -> None:
+    with tempfile.TemporaryDirectory(prefix="verify-artifact-access-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), FakeApplianceHandler)
+        server.artifact_enabled = True
+        server.artifact_denied_scope_returns_token = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            run_dir = tmp / "run"
+            env = os.environ.copy()
+            env["APPLIANCE_ACCESS_TOKEN"] = "session-token"
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(ROOT / ".agents/skills/release/scripts/verify-artifact-access.py"),
+                    "--base-url",
+                    f"http://127.0.0.1:{server.server_port}",
+                    "--username",
+                    "admin",
+                    "--run-dir",
+                    str(run_dir),
+                    "--enabled",
+                ],
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+        if result.returncode != 0:
+            raise AssertionError(result.stdout)
+        evidence = json.loads(
+            (run_dir / "metadata" / "artifact-client-verify.json").read_text(encoding="utf-8")
+        )
+        if evidence.get("deniedScopeStatusCode") != 200 or evidence.get("deniedScopeGranted") is not False:
+            raise AssertionError(evidence)
+
+
 if __name__ == "__main__":
     test_disabled_build_direct_mcp_call_is_verified()
     test_positive_artifact_access_is_verified()
     test_artifact_access_reports_html_v2_misroute()
+    test_positive_artifact_access_accepts_denied_scope_token_with_empty_actions()
     print("verify-client-access tests passed")
