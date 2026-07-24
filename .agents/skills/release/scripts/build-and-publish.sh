@@ -145,6 +145,10 @@ if [[ -z "${REMOTE_REPO_SOURCE}" ]]; then
   REMOTE_REPO_SOURCE="$(resolve_local_git_origin "${SKILL_RELEASE_REPO_ROOT}")"
 fi
 [[ -n "${REMOTE_REPO_SOURCE}" ]] || fail "release_workspace.remote_repo_source is required when the build host checkout is missing; set it in config or run from a local appliance-release git checkout"
+EFFECTIVE_REMOTE_REPO_SOURCE="$(normalize_readonly_git_source "${REMOTE_REPO_SOURCE}")"
+if [[ "${EFFECTIVE_REMOTE_REPO_SOURCE}" != "${REMOTE_REPO_SOURCE}" ]]; then
+  log "normalizing release workspace repo source from ${REMOTE_REPO_SOURCE} to read-only ${EFFECTIVE_REMOTE_REPO_SOURCE} for build-host sync"
+fi
 if [[ -z "${REMOTE_REPO_REF}" ]]; then
   REMOTE_REPO_REF="main"
 fi
@@ -253,7 +257,7 @@ PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "EXPORT_DIR"
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_PUBLIC_BASE_URL" "${PUBLISH_PUBLIC_BASE_URL}")"
 
 release_repo_sync_remote_cmd=""
-release_repo_sync_remote_cmd="$(render_ensure_remote_release_repo_cmd "${REMOTE_CWD}" "${REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" "${GIT_PULL_CMD}")"
+release_repo_sync_remote_cmd="$(render_ensure_remote_release_repo_cmd "${REMOTE_CWD}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" "${GIT_PULL_CMD}")"
 bootstrap_remote_cmd=""
 if [[ -n "${BOOTSTRAP_CMD}" ]]; then
   bootstrap_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BOOTSTRAP_CMD}"
@@ -480,7 +484,7 @@ fi
 remote_release_commit_cmd="cd $(shell_quote "${REMOTE_CWD}") && git rev-parse HEAD"
 remote_release_commit="$(ssh "${BUILD_HOST}" "bash -lc $(shell_quote "${remote_release_commit_cmd}")" 2>/dev/null || true)"
 
-python3 - "${RUN_DIR}" "${CONFIG_PATH}" "${BUILD_HOST}" "${REMOTE_CWD}" "${RELEASE_VERSION}" "${GIT_PULL_CMD}" "${BOOTSTRAP_CMD}" "${BUILD_CMD}" "${PUBLISH_CMD}" "${remote_release_commit}" "${REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" <<'PY'
+python3 - "${RUN_DIR}" "${CONFIG_PATH}" "${BUILD_HOST}" "${REMOTE_CWD}" "${RELEASE_VERSION}" "${GIT_PULL_CMD}" "${BOOTSTRAP_CMD}" "${BUILD_CMD}" "${PUBLISH_CMD}" "${remote_release_commit}" "${REMOTE_REPO_SOURCE}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -497,8 +501,9 @@ run_dir = Path(sys.argv[1])
     publish_cmd,
     remote_release_commit,
     remote_repo_source,
+    effective_remote_repo_source,
     remote_repo_ref,
-) = sys.argv[2:13]
+) = sys.argv[2:14]
 
 def read_text(path: Path):
     if path.is_file():
@@ -566,6 +571,7 @@ payload = {
     "releaseVersion": release_version or None,
     "remoteReleaseCommit": remote_release_commit or None,
     "remoteRepoSource": remote_repo_source or None,
+    "effectiveRemoteRepoSource": effective_remote_repo_source or None,
     "remoteRepoRef": remote_repo_ref or None,
     "gitPullCommand": git_pull_cmd or None,
     "bootstrapCommand": bootstrap_cmd or None,

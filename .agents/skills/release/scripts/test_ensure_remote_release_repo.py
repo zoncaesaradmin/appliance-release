@@ -27,22 +27,49 @@ def render(remote_cwd: str, repo_source: str, repo_ref: str, pull_cmd: str) -> s
     return proc.stdout
 
 
+def normalize(repo_source: str) -> str:
+    proc = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{COMMON_SH}"; '
+                f'normalize_readonly_git_source "{repo_source}"'
+            ),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return proc.stdout.strip()
+
+
+def test_normalize_github_ssh_source_to_https() -> None:
+    normalized = normalize("git@github.com:zoncaesaradmin/appliance-release.git")
+    assert normalized == "https://github.com/zoncaesaradmin/appliance-release.git"
+
+
+def test_leave_non_github_source_unchanged() -> None:
+    source = "git@gitlab.example.com:zon/appliance-release.git"
+    assert normalize(source) == source
+
+
 def test_clone_when_missing() -> None:
     cmd = render(
         "/home/zonsys/ws/appliance-release",
-        "git@github.com:zoncaesaradmin/appliance-release.git",
+        "https://github.com/zoncaesaradmin/appliance-release.git",
         "main",
         "git pull",
     )
     assert "clone_release_repo()" in cmd
     assert "git clone --depth 1 --branch" in cmd
-    assert "git@github.com:zoncaesaradmin/appliance-release.git" in cmd
+    assert "https://github.com/zoncaesaradmin/appliance-release.git" in cmd
 
 
 def test_existing_checkout_hard_resets_instead_of_pull() -> None:
     cmd = render(
         "/home/zonsys/ws/appliance-release",
-        "git@github.com:zoncaesaradmin/appliance-release.git",
+        "https://github.com/zoncaesaradmin/appliance-release.git",
         "main",
         "git pull",
     )
@@ -57,7 +84,7 @@ def test_existing_checkout_hard_resets_instead_of_pull() -> None:
 def test_non_git_path_is_replaced() -> None:
     cmd = render(
         "/home/zonsys/ws/appliance-release",
-        "git@github.com:zoncaesaradmin/appliance-release.git",
+        "https://github.com/zoncaesaradmin/appliance-release.git",
         "main",
         "",
     )
@@ -68,7 +95,7 @@ def test_non_git_path_is_replaced() -> None:
 def test_failed_sync_reclones() -> None:
     cmd = render(
         "/home/zonsys/ws/appliance-release",
-        "git@github.com:zoncaesaradmin/appliance-release.git",
+        "https://github.com/zoncaesaradmin/appliance-release.git",
         "main",
         "git pull",
     )
@@ -76,6 +103,8 @@ def test_failed_sync_reclones() -> None:
 
 
 def main() -> None:
+    test_normalize_github_ssh_source_to_https()
+    test_leave_non_github_source_unchanged()
     test_clone_when_missing()
     test_existing_checkout_hard_resets_instead_of_pull()
     test_non_git_path_is_replaced()

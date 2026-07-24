@@ -22,7 +22,7 @@ release_workspace:
   # Optional when running the skill from a local appliance-release git checkout:
   # defaults to that checkout's origin remote. Set explicitly for automation
   # outside a git checkout or when you need a different upstream URL.
-  remote_repo_source: git@github.com:zoncaesaradmin/appliance-release.git
+  remote_repo_source: https://github.com/zoncaesaradmin/appliance-release.git
   remote_repo_ref: main
   # The build-host checkout at remote_repo_path is skill-managed: missing paths
   # are cloned, existing checkouts are fetched and hard-reset to remote_repo_ref,

@@ -185,6 +185,24 @@ resolve_local_git_origin() {
   fi
 }
 
+normalize_readonly_git_source() {
+  local source="${1:-}"
+  case "${source}" in
+    git@github.com:*)
+      printf 'https://github.com/%s\n' "${source#git@github.com:}"
+      ;;
+    ssh://git@github.com/*)
+      printf 'https://github.com/%s\n' "${source#ssh://git@github.com/}"
+      ;;
+    ssh://git@github.com:22/*)
+      printf 'https://github.com/%s\n' "${source#ssh://git@github.com:22/}"
+      ;;
+    *)
+      printf '%s\n' "${source}"
+      ;;
+  esac
+}
+
 default_local_sibling_repo_dir() {
   local release_repo_root="$1"
   local repo_name="$2"
