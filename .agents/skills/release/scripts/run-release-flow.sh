@@ -46,6 +46,7 @@ SKIP_BOOTSTRAP_ADMIN="false"
 SKIP_BUILD="false"
 SKIP_INSTALL="false"
 FINAL_OK="false"
+CURRENT_STEP="startup"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -139,6 +140,53 @@ finalize_release_flow() {
     return 0
   fi
   FLOW_FINALIZED="true"
+
+  if [[ "${CURRENT_STEP}" == "install" ]] \
+    && ! bool_true "${SKIP_INSTALL}" \
+    && [[ ! -f "${RUN_DIR}/metadata/install.json" ]] \
+    && [[ -f "${RUN_DIR}/logs/install.log" ]]; then
+    python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${UNINSTALL_FIRST}" "${PRESERVE_FAILED_STATE}" "${RUN_DIR}/logs/install.log" "${exit_code}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+(
+    out_path,
+    config_path,
+    release_version,
+    appliance_profile,
+    build_catalog_path,
+    uninstall_first,
+    preserve_failed_state,
+    install_log,
+    exit_code,
+) = sys.argv[1:10]
+
+payload = {
+    "configPath": config_path,
+    "targetHost": None,
+    "helperUrl": None,
+    "installMethod": "direct-http-zonctl-auto",
+    "releaseVersion": release_version or None,
+    "baseUrl": None,
+    "pathPrefix": None,
+    "stateDir": None,
+    "outDir": None,
+    "bundleDir": f"/tmp/appliance-{release_version}/appliance-{release_version}-bundle" if release_version else None,
+    "applianceProfile": appliance_profile or None,
+    "buildCatalogPath": build_catalog_path or None,
+    "outputFormat": "text",
+    "uninstallFirst": uninstall_first == "true",
+    "preserveFailedState": preserve_failed_state == "true",
+    "log": install_log,
+    "status": "passed" if int(exit_code) == 0 else "failed",
+    "exitCode": int(exit_code),
+    "inferred": True,
+}
+
+Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+  fi
 
   python3 - "${RUN_DIR}/metadata/run-release-flow.json" "${CONFIG_PATH}" "${RUN_DIR}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${SKIP_BUILD}" "${SKIP_INSTALL}" "${SKIP_BOOTSTRAP_ADMIN}" "${UNINSTALL_FIRST}" "${PRESERVE_FAILED_STATE}" "${exit_code}" <<'PY'
 import json
@@ -239,6 +287,7 @@ if [[ "${APPLIANCE_PROFILE}" == "builder" && -n "${BUILD_CATALOG_PATH}" ]]; then
 fi
 
 if ! bool_true "${SKIP_BUILD}"; then
+  CURRENT_STEP="buildPublish"
   build_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
   if [[ -n "${RELEASE_VERSION}" ]]; then
     build_args+=(--release-version "${RELEASE_VERSION}")
@@ -248,6 +297,7 @@ if ! bool_true "${SKIP_BUILD}"; then
 fi
 
 if ! bool_true "${SKIP_INSTALL}"; then
+  CURRENT_STEP="install"
   install_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
   if [[ -n "${RELEASE_VERSION}" ]]; then
     install_args+=(--release-version "${RELEASE_VERSION}")
@@ -269,6 +319,7 @@ if ! bool_true "${SKIP_INSTALL}"; then
 fi
 
 if ! bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
+  CURRENT_STEP="bootstrapAdmin"
   log "starting explicit first-admin bootstrap phase"
   bash "${SCRIPT_DIR}/bootstrap-admin-on-target.sh" --config "${CONFIG_PATH}" --run-dir "${RUN_DIR}"
 fi
@@ -277,10 +328,12 @@ target_verify_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
 if [[ -n "${APPLIANCE_PROFILE}" ]]; then
   target_verify_args+=(--appliance-profile "${APPLIANCE_PROFILE}")
 fi
+CURRENT_STEP="targetVerify"
 log "starting target verification phase"
 bash "${SCRIPT_DIR}/verify-target.sh" "${target_verify_args[@]}"
 
 if ! bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
+  CURRENT_STEP="clientVerify"
   client_verify_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
   if [[ -n "${APPLIANCE_PROFILE}" ]]; then
     client_verify_args+=(--appliance-profile "${APPLIANCE_PROFILE}")
@@ -288,6 +341,8 @@ if ! bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
   log "starting client/API verification phase"
   bash "${SCRIPT_DIR}/verify-client-access.sh" "${client_verify_args[@]}"
 fi
+
+CURRENT_STEP="done"
 
 finalize_release_flow 0
 trap - EXIT
