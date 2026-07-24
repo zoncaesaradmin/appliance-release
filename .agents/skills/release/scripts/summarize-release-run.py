@@ -61,7 +61,8 @@ def summarize_build(build: Optional[dict], run_dir: Path, skipped: bool) -> dict
 
 
 def summarize_install(install: Optional[dict], run_dir: Path, skipped: bool) -> dict:
-    out = {"status": step_status(skipped, install)}
+    failed = install.get("status") == "failed" if install else None
+    out = {"status": step_status(skipped, install, failed)}
     if not install:
         return out
     out.update(
@@ -72,6 +73,7 @@ def summarize_install(install: Optional[dict], run_dir: Path, skipped: bool) -> 
             "bundleDir": install.get("bundleDir"),
             "installMode": install.get("installMode"),
             "log": rel(install.get("log"), run_dir),
+            "exitCode": install.get("exitCode"),
         }
     )
     return out

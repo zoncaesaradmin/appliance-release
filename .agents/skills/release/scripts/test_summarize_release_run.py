@@ -244,10 +244,63 @@ def test_wrapper_failure_marks_report_failed() -> None:
             raise AssertionError(report)
 
 
+def test_failed_install_metadata_marks_install_failed() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-run-summary-") as tmp_dir:
+        run_dir = Path(tmp_dir)
+        metadata_dir = run_dir / "metadata"
+        write_json(
+            metadata_dir / "run-release-flow.json",
+            {
+                "runDir": str(run_dir),
+                "releaseVersion": "0.1.0",
+                "status": "failed",
+                "exitCode": 1,
+                "steps": {
+                    "buildPublishSkipped": True,
+                    "installSkipped": False,
+                    "bootstrapAdminSkipped": True,
+                    "targetVerifySkipped": True,
+                    "clientVerifySkipped": True,
+                },
+                "metadataFiles": {
+                    "install": str(metadata_dir / "install.json"),
+                },
+            },
+        )
+        write_json(
+            metadata_dir / "install.json",
+            {
+                "targetHost": "target",
+                "releaseVersion": "0.1.0",
+                "applianceProfile": "storage",
+                "bundleDir": "/tmp/appliance",
+                "installMode": "install",
+                "log": str(run_dir / "logs" / "install.log"),
+                "status": "failed",
+                "exitCode": 17,
+            },
+        )
+        result = subprocess.run(
+            ["python3", str(SUMMARIZER), "--run-dir", str(run_dir)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+        report = json.loads((metadata_dir / "release-report.json").read_text(encoding="utf-8"))
+        if report["steps"]["install"]["status"] != "failed":
+            raise AssertionError(report)
+        if report["steps"]["install"]["exitCode"] != 17:
+            raise AssertionError(report)
+
+
 def main() -> None:
     test_complete_report()
     test_missing_unskipped_metadata_fails_summary_status()
     test_wrapper_failure_marks_report_failed()
+    test_failed_install_metadata_marks_install_failed()
     print("summarize-release-run tests passed")
 
 

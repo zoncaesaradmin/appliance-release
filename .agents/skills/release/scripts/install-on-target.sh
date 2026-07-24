@@ -320,9 +320,12 @@ echo "zonctl is now available at /usr/local/bin/zonctl on the target host."'
 
 install_log="${RUN_DIR}/logs/install.log"
 log "installing release on ${TARGET_HOST} using ${remote_release_dir}"
-run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"
+install_exit_code=0
+if ! run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"; then
+  install_exit_code=$?
+fi
 
-python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${PRESERVE_FAILED_STATE}" "${install_log}" <<'PY'
+python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${PRESERVE_FAILED_STATE}" "${install_log}" "${install_exit_code}" <<'PY'
 import json
 import sys
 
@@ -342,7 +345,8 @@ import sys
     uninstall_first,
     preserve_failed_state,
     install_log,
-) = sys.argv[1:16]
+    install_exit_code,
+) = sys.argv[1:17]
 
 payload = {
     "configPath": config_path,
@@ -361,6 +365,8 @@ payload = {
     "uninstallFirst": uninstall_first == "true",
     "preserveFailedState": preserve_failed_state == "true",
     "log": install_log,
+    "status": "passed" if int(install_exit_code) == 0 else "failed",
+    "exitCode": int(install_exit_code),
 }
 
 with open(out_path, "w", encoding="utf-8") as handle:
@@ -369,3 +375,7 @@ with open(out_path, "w", encoding="utf-8") as handle:
 PY
 
 log "install metadata written to ${RUN_DIR}/metadata/install.json"
+
+if [[ "${install_exit_code}" -ne 0 ]]; then
+  exit "${install_exit_code}"
+fi
