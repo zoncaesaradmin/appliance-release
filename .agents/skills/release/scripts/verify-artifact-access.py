@@ -36,6 +36,14 @@ def request(url: str, *, method: str = "GET", token: str = "", basic: tuple[str,
         return exc.code, dict(exc.headers), exc.read()
 
 
+def looks_like_html(body: bytes, headers: dict[str, str]) -> bool:
+    content_type = headers.get("Content-Type") or headers.get("content-type") or ""
+    if "html" in content_type.lower():
+        return True
+    snippet = body[:200].lstrip().lower()
+    return snippet.startswith(b"<!doctype html") or snippet.startswith(b"<html")
+
+
 def run_smoke(label: str, command: str, env: dict[str, str], logs: Path) -> dict:
     if not command:
         return {"configured": False}
@@ -84,8 +92,8 @@ def main() -> int:
         f"{base}/api/v1/registry/repositories", token=access_token
     )
     anonymous_catalog_status, _, _ = request(f"{base}/api/v1/registry/repositories")
-    challenge_status, challenge_headers, _ = request(f"{base}/v2/")
-    malformed_status, _, _ = request(f"{base}/v2/", token="malformed")
+    challenge_status, challenge_headers, challenge_body = request(f"{base}/v2/")
+    malformed_status, malformed_headers, malformed_body = request(f"{base}/v2/", token="malformed")
     evidence.update(
         {
             "catalogStatusCode": catalog_status,
@@ -111,8 +119,15 @@ def main() -> int:
     if anonymous_catalog_status not in (401, 403):
         raise ValueError(f"anonymous registry catalog returned HTTP {anonymous_catalog_status}; want 401/403")
     if challenge_status != 401 or not evidence["v2Challenge"]:
-        raise ValueError("registry /v2/ did not return a bearer authentication challenge")
+        if looks_like_html(challenge_body, challenge_headers):
+            raise ValueError("registry /v2/ resolved to HTML instead of the OCI registry; check the public /v2 route or host matching")
+        raise ValueError(
+            f"registry /v2/ did not return a bearer authentication challenge "
+            f"(status {challenge_status}, WWW-Authenticate={evidence['v2Challenge']!r})"
+        )
     if malformed_status not in (401, 403):
+        if looks_like_html(malformed_body, malformed_headers):
+            raise ValueError("registry /v2/ with a malformed token resolved to HTML instead of the OCI registry; check the public /v2 route or host matching")
         raise ValueError(f"malformed registry token returned HTTP {malformed_status}; want 401/403")
 
     create_status, _, create_body = request(

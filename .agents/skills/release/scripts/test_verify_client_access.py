@@ -40,6 +40,14 @@ class FakeApplianceHandler(BaseHTTPRequestHandler):
             if not artifact_enabled:
                 self._write_json(404, {"code": "not_found"})
                 return
+            if getattr(self.server, "artifact_v2_html", False):
+                body = b"<!doctype html><html><body>ui</body></html>"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             self._write_json(
                 401,
                 {"errors": [{"code": "UNAUTHORIZED"}]},
@@ -232,7 +240,46 @@ def test_positive_artifact_access_is_verified() -> None:
             raise AssertionError(evidence)
 
 
+def test_artifact_access_reports_html_v2_misroute() -> None:
+    with tempfile.TemporaryDirectory(prefix="verify-artifact-access-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), FakeApplianceHandler)
+        server.artifact_enabled = True
+        server.artifact_v2_html = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            run_dir = tmp / "run"
+            env = os.environ.copy()
+            env["APPLIANCE_ACCESS_TOKEN"] = "session-token"
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(ROOT / ".agents/skills/release/scripts/verify-artifact-access.py"),
+                    "--base-url",
+                    f"http://127.0.0.1:{server.server_port}",
+                    "--username",
+                    "admin",
+                    "--run-dir",
+                    str(run_dir),
+                    "--enabled",
+                ],
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+        if result.returncode == 0:
+            raise AssertionError("expected verify-artifact-access to fail when /v2/ serves HTML")
+        if "resolved to HTML instead of the OCI registry" not in result.stdout:
+            raise AssertionError(result.stdout)
+
+
 if __name__ == "__main__":
     test_disabled_build_direct_mcp_call_is_verified()
     test_positive_artifact_access_is_verified()
+    test_artifact_access_reports_html_v2_misroute()
     print("verify-client-access tests passed")
