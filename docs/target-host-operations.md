@@ -84,9 +84,10 @@ Notes:
   `/etc/systemd/resolved.conf.d/`) so CoreDNS can bind `:53`, seeds a managed
   `/etc/hosts` entry for the node hostname → LAN IPv4 (so short names that
   previously resolved only via the stub/MagicDNS still pass
-  `internal-dns-resolvable`), and restores both on uninstall/rollback. The
-  `dns` namespace is an explicit privileged Pod Security Admission exception
-  for hostNetwork only.
+  `internal-dns-resolvable`), and restores the stub on uninstall/rollback while
+  leaving the `/etc/hosts` entry in place for the next preflight. Standalone
+  `zonctl preflight` also seeds that hosts entry. The `dns` namespace is an
+  explicit privileged Pod Security Admission exception for hostNetwork only.
 
 What this does:
 
