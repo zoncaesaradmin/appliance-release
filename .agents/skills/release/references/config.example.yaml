@@ -151,6 +151,14 @@ install:
   # Builder workflow repo URLs must use HTTPS.
   # Start from references/build-catalog.example.yaml (no builderImageDigest keys).
   build_catalog_path: /Users/zoncaesar/build-catalog.yaml
+  # Canonical client-reachable public host the appliance should advertise in
+  # canonicalOrigin and the OCI registry token realm. Set this to the real DNS
+  # name clients can resolve, or to the appliance IP when DNS is unavailable.
+  # public_host: appliance.example.internal
+  # Extra TLS SANs, in addition to the node-name and public_host, as a
+  # comma-separated list. Useful when you want the appliance certificate to be
+  # accepted on both the DNS name and the appliance IP.
+  # additional_tls_sans_csv: 192.168.1.101
   uninstall_first: true
 
 verification:
@@ -189,7 +197,7 @@ verification:
   # readiness command waits for the zot Deployment and confirms its PVC.
   artifact:
     # enabled: true
-    # readiness_command: sudo kubectl -n registry wait --for=condition=Available deployment/appliance-registry --timeout=120s && sudo kubectl -n registry get pvc appliance-registry-data
+    # readiness_command: sudo kubectl -n registry wait --for=condition=Available deployment/artifact-registry --timeout=120s && sudo kubectl -n registry get pvc appliance-registry-data
 
 client_verification:
   # Example: https://192.168.1.101

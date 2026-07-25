@@ -123,6 +123,8 @@ Use this when the release is already published and you want only the install ste
   --release-version 0.1.0 \
   --appliance-profile builder \
   --build-catalog /Users/zoncaesar/ws/appliance-release/build-catalog.yaml \
+  --public-host 192.168.1.101 \
+  --tls-san zonsyssrv1 \
   --preserve-failed-state \
   --uninstall-first
 ```
@@ -142,6 +144,10 @@ This script:
 - runs `zonctl preflight`
 - runs `zonctl install` on a fresh host
 - automatically switches to `zonctl upgrade` when the target already has an owned appliance install
+- can advertise one explicit client-reachable public host for the appliance
+  and registry realm with `--public-host`
+- can include both DNS and IP certificate identities with repeatable
+  `--tls-san` flags or `install.additional_tls_sans_csv`
 - uses the first-admin password from env only for a fresh install bootstrap
 
 ## 4. Verify Target Only

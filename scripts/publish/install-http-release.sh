@@ -38,6 +38,11 @@ Optional:
   --build-catalog PATH         Target-local build catalog YAML/JSON passed to
                                zonctl install/upgrade as control-plane config
   --node-name NAME             Optional zonctl --node-name override
+  --public-host HOST           Canonical client-reachable public host zonctl
+                               should advertise in appliance URLs and the
+                               registry token realm
+  --tls-san SAN                Additional TLS SAN to include on the appliance
+                               certificate. Repeatable
   --dry-run                    Pass --dry-run to zonctl install/upgrade
   --output FORMAT              zonctl output format. Default: text
   --help                       Show this help
@@ -66,6 +71,8 @@ STATE_DIR="/var/lib/zon/state"
 APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
 NODE_NAME=""
+PUBLIC_HOST=""
+TLS_SANS=()
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
 
@@ -105,6 +112,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --node-name)
       NODE_NAME="${2:-}"
+      shift 2
+      ;;
+    --public-host)
+      PUBLIC_HOST="${2:-}"
+      shift 2
+      ;;
+    --tls-san)
+      TLS_SANS+=("${2:-}")
       shift 2
       ;;
     --dry-run)
@@ -283,6 +298,12 @@ fi
 if [[ -n "${NODE_NAME}" ]]; then
   install_args+=(--node-name "${NODE_NAME}")
 fi
+if [[ -n "${PUBLIC_HOST}" ]]; then
+  install_args+=(--public-host "${PUBLIC_HOST}")
+fi
+for tls_san in "${TLS_SANS[@]}"; do
+  install_args+=(--tls-san "${tls_san}")
+done
 if [[ "${DRY_RUN}" == "1" ]]; then
   install_args+=(--dry-run)
 fi
@@ -301,6 +322,12 @@ fi
 if [[ -n "${NODE_NAME}" ]]; then
   upgrade_args+=(--node-name "${NODE_NAME}")
 fi
+if [[ -n "${PUBLIC_HOST}" ]]; then
+  upgrade_args+=(--public-host "${PUBLIC_HOST}")
+fi
+for tls_san in "${TLS_SANS[@]}"; do
+  upgrade_args+=(--tls-san "${tls_san}")
+done
 if [[ "${DRY_RUN}" == "1" ]]; then
   upgrade_args+=(--dry-run)
 fi
