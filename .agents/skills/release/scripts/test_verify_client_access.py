@@ -310,6 +310,57 @@ def test_artifact_access_reports_html_v2_misroute() -> None:
             raise AssertionError(result.stdout)
 
 
+def test_disabled_artifact_access_rejects_ui_catchall_html() -> None:
+    class HTMLDisabledHandler(FakeApplianceHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            if parsed.path == "/v2/":
+                body = b"<!doctype html><html><body>ui</body></html>"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if parsed.path == "/api/v1/registry/repositories":
+                self._write_json(404, {"code": "not_found"})
+                return
+            super().do_GET()
+
+    with tempfile.TemporaryDirectory(prefix="verify-artifact-access-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), HTMLDisabledHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            run_dir = tmp / "run"
+            env = os.environ.copy()
+            env["APPLIANCE_ACCESS_TOKEN"] = "session-token"
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(ROOT / ".agents" / "skills" / "release" / "scripts" / "verify-artifact-access.py"),
+                    "--base-url",
+                    f"http://127.0.0.1:{server.server_port}",
+                    "--username",
+                    "admin",
+                    "--run-dir",
+                    str(run_dir),
+                ],
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+        if result.returncode == 0:
+            raise AssertionError("expected disabled /v2 HTML catch-all to fail")
+        if "UI catch-all" not in result.stdout:
+            raise AssertionError(result.stdout)
+
+
 def test_positive_artifact_access_accepts_denied_scope_token_with_empty_actions() -> None:
     with tempfile.TemporaryDirectory(prefix="verify-artifact-access-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -456,6 +507,7 @@ if __name__ == "__main__":
     test_disabled_build_direct_mcp_call_is_verified()
     test_positive_artifact_access_is_verified()
     test_artifact_access_reports_html_v2_misroute()
+    test_disabled_artifact_access_rejects_ui_catchall_html()
     test_positive_artifact_access_accepts_denied_scope_token_with_empty_actions()
     test_verify_client_access_defaults_admin_denied_scope_to_informational()
     test_artifact_access_fails_when_denied_scope_is_enforced()

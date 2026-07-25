@@ -133,6 +133,12 @@ def main() -> int:
         if catalog_status != 404:
             raise ValueError(f"disabled artifact route returned HTTP {catalog_status}; want 404")
         if challenge_status not in (404, 503):
+            if looks_like_html(challenge_body, challenge_headers):
+                raise ValueError(
+                    "disabled /v2/ returned HTML from the UI catch-all instead of 404/503; "
+                    "the control-plane IngressRoute must exclude PathPrefix(`/v2`) when the "
+                    "registry release is not installed"
+                )
             raise ValueError(f"disabled /v2/ returned HTTP {challenge_status}; want 404 or 503")
         output.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         print(json.dumps(evidence, sort_keys=True))
