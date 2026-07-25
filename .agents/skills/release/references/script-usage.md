@@ -22,6 +22,10 @@ Notes:
 - A `run-release-flow.sh --appliance-profile` override is forwarded to install,
   target verification, and client verification so all phases use the same
   effective profile.
+- Set `install.public_host` in the config when you want the appliance to
+  advertise a stable logical DNS name instead of the machine hostname.
+- For advanced extra SANs beyond the chosen public host, use
+  `install.additional_tls_sans_csv` in the config.
 - For the `builder` profile, set `install.build_catalog_path` or pass
   `--build-catalog PATH` when the bundle does not already include a
   `config.buildCatalog` value with workspace profiles, HTTPS repo URLs, and a

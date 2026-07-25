@@ -40,6 +40,7 @@ RUN_DIR=""
 RELEASE_VERSION=""
 APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
+TLS_SANS=()
 PRESERVE_FAILED_STATE="false"
 UNINSTALL_FIRST="false"
 SKIP_BOOTSTRAP_ADMIN="false"
@@ -123,6 +124,17 @@ fi
 if [[ -z "${BUILD_CATALOG_PATH}" ]]; then
   BUILD_CATALOG_PATH="$(config_get_optional "${CONFIG_PATH}" "install.build_catalog_path" || true)"
 fi
+ADDITIONAL_TLS_SANS_CSV="$(config_get_optional "${CONFIG_PATH}" "install.additional_tls_sans_csv" || true)"
+if [[ -n "${ADDITIONAL_TLS_SANS_CSV}" ]]; then
+  IFS=',' read -r -a configured_tls_sans <<<"${ADDITIONAL_TLS_SANS_CSV}"
+  for configured_san in "${configured_tls_sans[@]}"; do
+    configured_san="${configured_san#"${configured_san%%[![:space:]]*}"}"
+    configured_san="${configured_san%"${configured_san##*[![:space:]]}"}"
+    if [[ -n "${configured_san}" ]]; then
+      TLS_SANS+=("${configured_san}")
+    fi
+  done
+fi
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   ensure_file "${BUILD_CATALOG_PATH}"
 fi
@@ -188,7 +200,7 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
   fi
 
-  python3 - "${RUN_DIR}/metadata/run-release-flow.json" "${CONFIG_PATH}" "${RUN_DIR}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${SKIP_BUILD}" "${SKIP_INSTALL}" "${SKIP_BOOTSTRAP_ADMIN}" "${UNINSTALL_FIRST}" "${PRESERVE_FAILED_STATE}" "${exit_code}" <<'PY'
+  python3 - "${RUN_DIR}/metadata/run-release-flow.json" "${CONFIG_PATH}" "${RUN_DIR}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${ADDITIONAL_TLS_SANS_CSV}" "${SKIP_BUILD}" "${SKIP_INSTALL}" "${SKIP_BOOTSTRAP_ADMIN}" "${UNINSTALL_FIRST}" "${PRESERVE_FAILED_STATE}" "${exit_code}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -200,13 +212,14 @@ import sys
     release_version,
     appliance_profile,
     build_catalog_path,
+    additional_tls_sans_csv,
     skip_build,
     skip_install,
     skip_bootstrap_admin,
     uninstall_first,
     preserve_failed_state,
     exit_code,
-) = sys.argv[1:13]
+) = sys.argv[1:14]
 
 run_dir_path = Path(run_dir)
 exit_code_int = int(exit_code)
@@ -217,6 +230,7 @@ payload = {
     "releaseVersion": release_version or None,
     "applianceProfile": appliance_profile or None,
     "buildCatalogPath": build_catalog_path or None,
+    "additionalTLSSANsCSV": additional_tls_sans_csv or None,
     "status": "passed" if exit_code_int == 0 else "failed",
     "exitCode": exit_code_int,
     "steps": {
@@ -271,6 +285,9 @@ fi
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   log "build catalog: ${BUILD_CATALOG_PATH}"
 fi
+if ((${#TLS_SANS[@]} > 0)); then
+  log "additional TLS SANs: ${TLS_SANS[*]}"
+fi
 if bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
   log "bootstrap-admin is skipped; client/API verification will also be skipped so first-user setup can be completed later in the UI"
 fi
@@ -307,6 +324,11 @@ if ! bool_true "${SKIP_INSTALL}"; then
   fi
   if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
     install_args+=(--build-catalog "${BUILD_CATALOG_PATH}")
+  fi
+  if ((${#TLS_SANS[@]} > 0)); then
+    for tls_san in "${TLS_SANS[@]}"; do
+      install_args+=(--tls-san "${tls_san}")
+    done
   fi
   if bool_true "${PRESERVE_FAILED_STATE}"; then
     install_args+=(--preserve-failed-state)
