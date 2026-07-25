@@ -398,6 +398,75 @@ def validate_zot(
     return ["zotChart", "zotImage", f"zotVersion={zot_version}"]
 
 
+def validate_dns(
+    release_input: dict,
+    bundle_manifest: dict,
+    artifacts: dict,
+    release_input_dir: Path,
+    entries_by_path: dict[str, dict],
+) -> list:
+    compatibility = release_input.get("compatibility")
+    if not isinstance(compatibility, dict):
+        raise ValueError("release-input compatibility must be an object")
+    dns_version = str(compatibility.get("dnsVersion") or "").strip()
+    if not dns_version or dns_version.lower() == "latest":
+        raise ValueError("release-input compatibility.dnsVersion must be an exact non-latest version")
+    bundle_compatibility = bundle_manifest.get("compatibility")
+    if not isinstance(bundle_compatibility, dict):
+        raise ValueError("bundle manifest compatibility must be an object")
+    bundle_dns_version = str(bundle_compatibility.get("dnsVersion") or "").strip()
+    if bundle_dns_version != dns_version:
+        raise ValueError(
+            "bundle manifest compatibility.dnsVersion mismatch: "
+            f"expected {dns_version}, got {bundle_dns_version}"
+        )
+
+    chart = require_artifact(artifacts, "dnsChart")
+    chart_path = require_file_artifact(artifacts, "dnsChart", release_input_dir)
+    chart_candidates = (
+        f"charts/{chart_path.name}",
+        f"chart/{chart_path.name}",
+        f"chart/appliance-dns-{chart_path.name}",
+    )
+    chart_bundle_path = next((path for path in chart_candidates if path in entries_by_path), "")
+    if not chart_bundle_path:
+        raise ValueError(
+            "bundle manifest is missing dnsChart; expected one of: "
+            + ", ".join(chart_candidates)
+        )
+    chart_entry = require_bundle_entry(entries_by_path, chart_bundle_path, "dnsChart")
+    require_matching_bundle_digest(chart_entry, chart, chart_bundle_path, "dnsChart")
+
+    image = require_artifact(artifacts, "dnsImage")
+    image_path = require_file_artifact(artifacts, "dnsImage", release_input_dir)
+    image_ref = require_image_reference(image, "dnsImage")
+    if not re.fullmatch(r"registry\.local/coredns@sha256:[0-9a-f]{64}", image_ref):
+        raise ValueError(
+            "release-input artifacts.dnsImage.imageReference must be "
+            "registry.local/coredns@sha256:<64 lowercase hex>"
+        )
+    if "coredns" not in image_path.name.lower() and "dns" not in image_path.name.lower():
+        raise ValueError(
+            f"release-input artifacts.dnsImage.path must identify coredns, got {image['path']!r}"
+        )
+    require_oci_archive_reference_matches_content(image_path, image_ref, "dnsImage")
+    with tarfile.open(image_path) as tar:
+        index = json.load(tar.extractfile("index.json"))
+    annotation = (
+        (index.get("manifests") or [{}])[0].get("annotations") or {}
+    ).get("org.opencontainers.image.ref.name")
+    if annotation != "registry.local/coredns:bundled":
+        raise ValueError(
+            "dnsImage OCI archive annotation must be 'registry.local/coredns:bundled', "
+            f"got {annotation!r}"
+        )
+    image_bundle_path = f"oci-images/{image_path.name}"
+    image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "dnsImage")
+    require_matching_bundle_digest(image_entry, image, image_bundle_path, "dnsImage")
+    require_matching_bundle_image_reference(image_entry, image_ref, image_bundle_path, "dnsImage")
+    return ["dnsChart", "dnsImage", f"dnsVersion={dns_version}"]
+
+
 def validate_required_artifacts(artifacts: dict, release_input_dir: Path, entries_by_path: dict) -> list:
     checked = []
     runtime_targets = {"applianceChart": "charts"}
@@ -542,6 +611,13 @@ def main() -> int:
         ),
         "runtimeValues": validate_runtime_values(artifacts, bundle_values),
         "zot": validate_zot(
+            release_input,
+            bundle_manifest,
+            artifacts,
+            release_input_path.parent,
+            entries_by_path,
+        ),
+        "dns": validate_dns(
             release_input,
             bundle_manifest,
             artifacts,

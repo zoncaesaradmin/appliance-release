@@ -154,6 +154,9 @@ BUILDER_API_CMD="${BUILDER_API_CMD:-$(config_get_optional "${CONFIG_PATH}" "veri
 BUILDER_SOURCE_CREDENTIALS_CMD="${BUILDER_SOURCE_CREDENTIALS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.builder.source_credentials_command" || true)}"
 ARTIFACT_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.artifact.enabled" || true)"
 ARTIFACT_READINESS_CMD="${ARTIFACT_READINESS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.artifact.readiness_command" || true)}"
+DNS_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.dns.enabled" || true)"
+DNS_READINESS_CMD="${DNS_READINESS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.dns.readiness_command" || true)}"
+DNS_ABSENCE_CMD="${DNS_ABSENCE_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.dns.absence_command" || true)}"
 FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.failure_log_command" || true)}"
 SMOKE_TEST_RETRIES="${SMOKE_TEST_RETRIES:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_retries" || true)}"
 SMOKE_TEST_RETRY_DELAY_SECONDS="${SMOKE_TEST_RETRY_DELAY_SECONDS:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_retry_delay_seconds" || true)}"
@@ -197,12 +200,25 @@ if [[ -z "${BUILDER_ENABLED}" ]]; then
 fi
 if [[ -z "${ARTIFACT_ENABLED}" ]]; then
   case "${APPLIANCE_PROFILE}" in
-    storage|builder) ARTIFACT_ENABLED="true" ;;
+    storage|builder|storage-lan-dns) ARTIFACT_ENABLED="true" ;;
     *) ARTIFACT_ENABLED="false" ;;
   esac
 fi
 if bool_true "${ARTIFACT_ENABLED}"; then
   ARTIFACT_READINESS_CMD="${ARTIFACT_READINESS_CMD:-sudo kubectl -n registry wait --for=condition=Available deployment/artifact-registry --timeout=120s && sudo kubectl -n registry get pvc appliance-registry-data}"
+fi
+if [[ -z "${DNS_ENABLED}" ]]; then
+  case "${APPLIANCE_PROFILE}" in
+    lan-dns|storage-lan-dns) DNS_ENABLED="true" ;;
+    *) DNS_ENABLED="false" ;;
+  esac
+fi
+if bool_true "${DNS_ENABLED}"; then
+  # hostNetwork CoreDNS answers on the node itself; dig @127.0.0.1 proves the
+  # LAN data plane without needing the release-skill config to hardcode a LAN IP.
+  DNS_READINESS_CMD="${DNS_READINESS_CMD:-sudo kubectl -n dns wait --for=condition=Available deployment/appliance-dns --timeout=120s && dig +short @127.0.0.1 -p 53 appliance.appliance.local A | grep -E '^[0-9.]+$'}"
+else
+  DNS_ABSENCE_CMD="${DNS_ABSENCE_CMD:-! sudo helm status appliance-dns --namespace dns >/dev/null 2>&1}"
 fi
 if [[ -z "${SMOKE_TEST_RETRIES}" ]]; then
   SMOKE_TEST_RETRIES="5"
@@ -330,6 +346,8 @@ ui_home_code=""
 builder_api_code=""
 builder_source_credentials_code=""
 artifact_readiness_code=""
+dns_readiness_code=""
+dns_absence_code=""
 failure_log_code=""
 argo_namespaces_code=""
 argo_crds_code=""
@@ -560,6 +578,20 @@ if bool_true "${ARTIFACT_ENABLED}" && [[ -n "${ARTIFACT_READINESS_CMD}" ]]; then
   fi
 fi
 
+if bool_true "${DNS_ENABLED}" && [[ -n "${DNS_READINESS_CMD}" ]]; then
+  if run_check "dns-readiness" "${DNS_READINESS_CMD}"; then
+    dns_readiness_code="0"
+  else
+    dns_readiness_code="$?"
+  fi
+elif ! bool_true "${DNS_ENABLED}" && [[ -n "${DNS_ABSENCE_CMD}" ]]; then
+  if run_check "dns-absence" "${DNS_ABSENCE_CMD}"; then
+    dns_absence_code="0"
+  else
+    dns_absence_code="$?"
+  fi
+fi
+
 if bool_true "${ARGO_ENABLED}"; then
   if run_check "argo-namespaces" "${ARGO_NAMESPACES_CMD}"; then
     argo_namespaces_code="0"
@@ -597,6 +629,12 @@ if [[ -n "${builder_source_credentials_code}" && "${builder_source_credentials_c
   overall_failed="true"
 fi
 if [[ -n "${artifact_readiness_code}" && "${artifact_readiness_code}" != "0" ]]; then
+  overall_failed="true"
+fi
+if [[ -n "${dns_readiness_code}" && "${dns_readiness_code}" != "0" ]]; then
+  overall_failed="true"
+fi
+if [[ -n "${dns_absence_code}" && "${dns_absence_code}" != "0" ]]; then
   overall_failed="true"
 fi
 for code in "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}"; do
@@ -843,6 +881,32 @@ payload.setdefault("checks", {})["artifact"] = {
         "log": str(Path(run_dir) / "logs" / "artifact-readiness.log"),
     },
 }
+Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+
+python3 - "${RUN_DIR}/metadata/verify.json" "${DNS_ENABLED}" "${DNS_READINESS_CMD}" "${dns_readiness_code}" "${DNS_ABSENCE_CMD}" "${dns_absence_code}" "${RUN_DIR}" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+out_path, enabled, readiness_cmd, readiness_code, absence_cmd, absence_code, run_dir = sys.argv[1:8]
+payload = json.loads(Path(out_path).read_text(encoding="utf-8"))
+dns = {
+    "enabled": enabled == "true",
+}
+if enabled == "true":
+    dns["readiness"] = {
+        "command": readiness_cmd,
+        "exitCode": int(readiness_code or 0) if readiness_cmd else None,
+        "log": str(Path(run_dir) / "logs" / "dns-readiness.log"),
+    }
+else:
+    dns["absence"] = {
+        "command": absence_cmd,
+        "exitCode": int(absence_code or 0) if absence_cmd else None,
+        "log": str(Path(run_dir) / "logs" / "dns-absence.log"),
+    }
+payload.setdefault("checks", {})["dns"] = dns
 Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
 

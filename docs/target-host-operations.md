@@ -67,12 +67,20 @@ curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-releas
 
 Notes:
 
-- valid v1 profiles are `core`, `builder`, and `storage`
+- valid v1 profiles are `core`, `builder`, `storage`, `lan-dns`, and `storage-lan-dns`
 - profile selection does not change the published bundle files or create a different SKU
 - omitting `--appliance-profile` keeps the default `core` profile
 - build catalog files are install-time product config, not release artifacts
 - the target appliance must be able to reach the configured Git host from the
   build workflow namespace, because cloning happens inside a workflow pod
+- `lan-dns` and `storage-lan-dns` install the appliance-owned CoreDNS release
+  (`appliance-dns` in namespace `dns`) with hostNetwork on UDP/TCP 53. Point
+  LAN clients at the appliance's LAN IP as their resolver; the default local
+  zone answers `appliance.appliance.local` (and the short hostname label) with
+  the install-time IPv4. Port 53 must be free on the host (for example stop or
+  reconfigure `systemd-resolved` binding to `*:53`) or install preflight fails
+  closed. The `dns` namespace uses hostNetwork and is an explicit exception to
+  the Restricted Pod Security Admission profile for that namespace only.
 
 What this does:
 

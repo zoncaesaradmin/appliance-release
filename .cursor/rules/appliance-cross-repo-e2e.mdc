@@ -21,9 +21,12 @@ Runtime:             config.*ImageDigest == digest pin → Argo pod image (IfNot
 ```
 
 Names today: `workspace-provisioner` (alpine/git), `automation-dev` (builder),
-and first-class `zot` (artifact service). Zot archives use
-`registry.local/zot:bundled` plus `registry.local/zot@sha256:<platform-digest>`;
-they are never represented as anonymous `extraOCIImages`.
+first-class `zot` (artifact service), and first-class `coredns` (LAN DNS).
+Zot archives use `registry.local/zot:bundled` plus
+`registry.local/zot@sha256:<platform-digest>`; CoreDNS uses
+`registry.local/coredns:bundled` plus
+`registry.local/coredns@sha256:<platform-digest>`. Neither is an anonymous
+`extraOCIImages` entry.
 
 Never trust `skopeo inspect` alone for pins (multi-arch index ≠ platform manifest).
 

@@ -193,7 +193,7 @@ factory-reset cases, see [target-host-operations.md](target-host-operations.md).
 The published `install-http-release.sh` helper also accepts product
 configuration inputs:
 
-- `--appliance-profile <core|builder|storage>`
+- `--appliance-profile <core|builder|storage|lan-dns|storage-lan-dns>`
 - `--build-catalog /target/local/build-catalog.yaml`
 
 Those choices are passed into the control plane at install or upgrade time
@@ -204,8 +204,12 @@ provisioner image. Builder workspace repo URLs must use HTTPS. Keep private key
 material, SSH config, tokens, and
 passwords out of the manifest, and make sure the target appliance can reach the
 configured Git host from the build workflow namespace. Supported
-product-facing profile names remain `core`, `builder`, and `storage` at the
-install/config layer.
+product-facing profile names at the install/config layer are `core`,
+`builder`, `storage`, `lan-dns`, and `storage-lan-dns`.
+
+At this phase, `lan-dns` and `storage-lan-dns` are profile/capability wiring
+choices only. They do not yet add a separate DNS workload to the published
+bundle.
 
 The same published helper now handles both fresh installs and owned existing
 installs:

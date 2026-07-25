@@ -13,8 +13,9 @@ That exact IP is fine to use if the client machine can reach the appliance at
 that address. If your appliance is reachable at a different hostname or IP,
 replace it consistently in the commands below.
 
-These examples assume the appliance is installed with the `storage` or
-`builder` profile and that the artifact capability is enabled.
+These examples assume the appliance is installed with the `storage`,
+`builder`, or `storage-lan-dns` profile and that the artifact capability is
+enabled.
 
 For OCI tools, use the appliance's canonical advertised registry host. In a
 healthy setup this should match the host or IP you intentionally configured as
@@ -173,7 +174,7 @@ curl -ksS \
 ## Notes
 
 - `core` profile should not expose this registry path at all.
-- `storage` and `builder` profiles should expose it.
+- `storage`, `builder`, and `storage-lan-dns` profiles should expose it.
 - Use the appliance username plus API token for registry clients.
 - Use the appliance API access token only for `/api/v1/...` API calls.
 - Do not use the appliance API access token directly for `podman login` or
@@ -184,7 +185,7 @@ curl -ksS \
   registry auth, and that identity should be resolvable/reachable by every
   client machine.
 - Install-time recommendation:
-  set `--public-host` or `install.public_host` to the one client-reachable
+  set `install.public_host` in the release config to the one client-reachable
   identity you want the appliance to advertise in `canonicalOrigin` and the
   registry bearer realm.
 - If you want clients to start with either hostname or IP, add the other form

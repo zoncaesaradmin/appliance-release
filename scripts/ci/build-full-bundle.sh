@@ -68,6 +68,12 @@ Optional overrides:
   # Zot is a first-class release artifact, not an EXTRA_OCI image. Online builds
   # copy linux/amd64 on the build host; offline builds may supply an archive.
   # Both paths derive registry.local/zot@sha256:<platform-digest> from index.json.
+  DNS_VERSION=1.14.4
+  DNS_IMAGE_PULL_REF=registry.k8s.io/coredns/coredns:v1.14.4
+  DNS_IMAGE_ARCHIVE_SOURCE=/ci/inputs/coredns.oci.tar
+  # CoreDNS is also a first-class release artifact (like zot), packaged for the
+  # lan-dns / storage-lan-dns appliance profiles. Same online/offline export
+  # rules as Zot; derives registry.local/coredns@sha256:<platform-digest>.
 EOF
 }
 
@@ -106,6 +112,9 @@ USER_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE="${WORKSPACE_PROVISIONER_IMAGE_A
 USER_ZOT_VERSION="${ZOT_VERSION-}"
 USER_ZOT_IMAGE_PULL_REF="${ZOT_IMAGE_PULL_REF-}"
 USER_ZOT_IMAGE_ARCHIVE_SOURCE="${ZOT_IMAGE_ARCHIVE_SOURCE-}"
+USER_DNS_VERSION="${DNS_VERSION-}"
+USER_DNS_IMAGE_PULL_REF="${DNS_IMAGE_PULL_REF-}"
+USER_DNS_IMAGE_ARCHIVE_SOURCE="${DNS_IMAGE_ARCHIVE_SOURCE-}"
 USER_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES-}"
 USER_EXTRA_OCI_IMAGE_REFS="${EXTRA_OCI_IMAGE_REFS-}"
 USER_EXTRA_OCI_IMAGE_PULL_REFS="${EXTRA_OCI_IMAGE_PULL_REFS-}"
@@ -144,6 +153,13 @@ ZOT_VERSION="${USER_ZOT_VERSION:-${ZOT_VERSION:-2.1.8}}"
 ZOT_VERSION="${ZOT_VERSION#v}"
 ZOT_IMAGE_PULL_REF="${USER_ZOT_IMAGE_PULL_REF:-${ZOT_IMAGE_PULL_REF:-ghcr.io/project-zot/zot-linux-amd64:v${ZOT_VERSION}}}"
 ZOT_IMAGE_ARCHIVE_SOURCE="${USER_ZOT_IMAGE_ARCHIVE_SOURCE:-${ZOT_IMAGE_ARCHIVE_SOURCE:-}}"
+# compatibility.dnsVersion is unprefixed (1.14.4). Chart appVersion and the
+# upstream registry.k8s.io tag use a leading v (v1.14.4). Normalize before
+# constructing the pull ref, same as ZOT_VERSION above.
+DNS_VERSION="${USER_DNS_VERSION:-${DNS_VERSION:-1.14.4}}"
+DNS_VERSION="${DNS_VERSION#v}"
+DNS_IMAGE_PULL_REF="${USER_DNS_IMAGE_PULL_REF:-${DNS_IMAGE_PULL_REF:-registry.k8s.io/coredns/coredns:v${DNS_VERSION}}}"
+DNS_IMAGE_ARCHIVE_SOURCE="${USER_DNS_IMAGE_ARCHIVE_SOURCE:-${DNS_IMAGE_ARCHIVE_SOURCE:-}}"
 EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="${USER_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES:-${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES:-}}"
 EXTRA_OCI_IMAGE_REFS="${USER_EXTRA_OCI_IMAGE_REFS:-${EXTRA_OCI_IMAGE_REFS:-}}"
 EXTRA_OCI_IMAGE_PULL_REFS="${USER_EXTRA_OCI_IMAGE_PULL_REFS:-${EXTRA_OCI_IMAGE_PULL_REFS:-}}"
@@ -790,6 +806,16 @@ elif [[ "${ZOT_IMAGE_PULL_REF}" == *:latest || "${ZOT_IMAGE_PULL_REF}" == regist
   echo "build-full-bundle: ZOT_IMAGE_PULL_REF must be a version-pinned upstream image when no archive is supplied" >&2
   exit 2
 fi
+if [[ -z "${DNS_VERSION}" || "${DNS_VERSION}" == *latest* ]]; then
+  echo "build-full-bundle: DNS_VERSION must be an exact non-latest version" >&2
+  exit 2
+fi
+if [[ -n "${DNS_IMAGE_ARCHIVE_SOURCE}" ]]; then
+  require_file "${DNS_IMAGE_ARCHIVE_SOURCE}" "coredns image archive"
+elif [[ "${DNS_IMAGE_PULL_REF}" == *:latest || "${DNS_IMAGE_PULL_REF}" == registry.local/* ]]; then
+  echo "build-full-bundle: DNS_IMAGE_PULL_REF must be a version-pinned upstream image when no archive is supplied" >&2
+  exit 2
+fi
 
 EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST=()
 EXTRA_OCI_IMAGE_REF_LIST=()
@@ -858,6 +884,13 @@ if [[ -z "${ZOT_CHART_APP_VERSION}" || "${ZOT_CHART_APP_VERSION#v}" != "${ZOT_VE
   exit 2
 fi
 
+DNS_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-dns/Chart.yaml")"
+# Chart.yaml may use Helm/upstream form v1.14.4 while DNS_VERSION is 1.14.4.
+if [[ -z "${DNS_CHART_APP_VERSION}" || "${DNS_CHART_APP_VERSION#v}" != "${DNS_VERSION}" ]]; then
+  echo "build-full-bundle: DNS_VERSION ${DNS_VERSION} must match appliance-dns chart appVersion ${DNS_CHART_APP_VERSION:-<missing>}" >&2
+  exit 2
+fi
+
 require_appliance_code_bootstrap
 
 if bool_true "${ARGO_ENABLED}"; then
@@ -917,6 +950,14 @@ if [[ -n "${ZOT_IMAGE_ARCHIVE_SOURCE}" ]]; then
   ZOT_IMAGE_REF="$(finalize_bundled_oci_archive "${CODE_REPO_DIR}/.run/zot-image.tar" "registry.local/zot")"
 else
   ZOT_IMAGE_REF="$(export_bundled_extra_oci_image_archive "${ZOT_IMAGE_PULL_REF}" "registry.local/zot" "${CODE_REPO_DIR}/.run/zot-image.tar")"
+fi
+
+DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/coredns-image.tar"
+if [[ -n "${DNS_IMAGE_ARCHIVE_SOURCE}" ]]; then
+  cp "${DNS_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/coredns-image.tar"
+  DNS_IMAGE_REF="$(finalize_bundled_oci_archive "${CODE_REPO_DIR}/.run/coredns-image.tar" "registry.local/coredns")"
+else
+  DNS_IMAGE_REF="$(export_bundled_extra_oci_image_archive "${DNS_IMAGE_PULL_REF}" "registry.local/coredns" "${CODE_REPO_DIR}/.run/coredns-image.tar")"
 fi
 
 if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" ]]; then
@@ -1023,6 +1064,9 @@ bash ./scripts/package/archive-release-input.sh \
   --zot-version $(shell_quote "${ZOT_VERSION}") \
   --zot-image $(shell_quote "${ZOT_IMAGE_ARCHIVE_FOR_DEV}") \
   --zot-image-reference $(shell_quote "${ZOT_IMAGE_REF}") \
+  --dns-version $(shell_quote "${DNS_VERSION}") \
+  --dns-image $(shell_quote "${DNS_IMAGE_ARCHIVE_FOR_DEV}") \
+  --dns-image-reference $(shell_quote "${DNS_IMAGE_REF}") \
   "\${ARGO_ARGS[@]}" \
   "\${EXTRA_OCI_ARGS[@]}"
 EOF

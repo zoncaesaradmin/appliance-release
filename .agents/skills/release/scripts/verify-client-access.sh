@@ -148,7 +148,7 @@ if [[ -z "${BUILDER_ENABLED}" ]]; then
 fi
 if [[ -z "${ARTIFACT_ENABLED}" ]]; then
   case "${APPLIANCE_PROFILE}" in
-    storage|builder) ARTIFACT_ENABLED="true" ;;
+    storage|builder|storage-lan-dns) ARTIFACT_ENABLED="true" ;;
     *) ARTIFACT_ENABLED="false" ;;
   esac
 fi

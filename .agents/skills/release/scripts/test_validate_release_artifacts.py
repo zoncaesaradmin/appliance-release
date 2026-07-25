@@ -36,6 +36,7 @@ def run_validator(tmp: Path, *extra_args: str) -> subprocess.CompletedProcess:
 
 def populate_positive_case(tmp: Path) -> None:
     zot_digest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    dns_digest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     write(tmp / "release-input" / "images" / "control-plane.tar", "control")
     write(tmp / "release-input" / "images" / "appliance-ui.tar", "ui")
     write(tmp / "release-input" / "chart" / "appliance-chart-1.0.0.tgz", "appliance chart")
@@ -56,6 +57,12 @@ def populate_positive_case(tmp: Path) -> None:
         tmp / "release-input" / "images" / "zot-image.tar",
         "registry.local/zot:bundled",
         zot_digest,
+    )
+    write(tmp / "release-input" / "chart" / "appliance-dns-1.14.4.tgz", "coredns chart")
+    write_mismatched_oci_archive(
+        tmp / "release-input" / "images" / "coredns-image.tar",
+        "registry.local/coredns:bundled",
+        dns_digest,
     )
     write(
         tmp / "bundle" / "configuration" / "values.yaml",
@@ -90,6 +97,8 @@ ingress:
     "applianceChart": {"path": "chart/appliance-chart-1.0.0.tgz", "digest": "sha256:appliance-chart", "sizeBytes": 15},
     "zotImage": {"path": "images/zot-image.tar", "digest": "sha256:zot-archive", "sizeBytes": 1024, "imageReference": "registry.local/zot@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
     "zotChart": {"path": "chart/appliance-registry-2.1.11.tgz", "digest": "sha256:zot-chart", "sizeBytes": 9},
+    "dnsImage": {"path": "images/coredns-image.tar", "digest": "sha256:dns-archive", "sizeBytes": 512, "imageReference": "registry.local/coredns@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+    "dnsChart": {"path": "chart/appliance-dns-1.14.4.tgz", "digest": "sha256:dns-chart", "sizeBytes": 11},
     "configurationSchema": {"path": "schemas/configuration.schema.json", "digest": "sha256:configuration", "sizeBytes": 2},
     "compatibility": {"path": "compatibility.json", "digest": "sha256:compatibility", "sizeBytes": 2},
     "checksums": {"path": "checksums.txt", "digest": "sha256:checksums", "sizeBytes": 9},
@@ -105,7 +114,7 @@ ingress:
       {"path": "images/buildah.tar", "digest": "sha256:buildah", "sizeBytes": 6, "imageReference": "registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
     ]
   },
-  "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "zotVersion": "2.1.11"}
+  "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "zotVersion": "2.1.11", "dnsVersion": "1.14.4"}
 }
 """.lstrip(),
     )
@@ -113,13 +122,15 @@ ingress:
         tmp / "bundle" / "release-manifest.json",
         """
 {
-  "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "zotVersion": "2.1.11"},
+  "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "zotVersion": "2.1.11", "dnsVersion": "1.14.4"},
   "entries": [
     {"targetPath": "oci-images/control-plane.tar", "digest": "sha256:control", "sizeBytes": 7, "imageReference": "internal/control-plane:1.0.0"},
     {"targetPath": "oci-images/appliance-ui.tar", "digest": "sha256:ui", "sizeBytes": 2, "imageReference": "internal/appliance-ui:1.0.0"},
     {"targetPath": "charts/appliance-chart-1.0.0.tgz", "digest": "sha256:appliance-chart", "sizeBytes": 15},
     {"targetPath": "oci-images/zot-image.tar", "digest": "sha256:zot-archive", "sizeBytes": 1024, "imageReference": "registry.local/zot@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
     {"targetPath": "charts/appliance-registry-2.1.11.tgz", "digest": "sha256:zot-chart", "sizeBytes": 9},
+    {"targetPath": "oci-images/coredns-image.tar", "digest": "sha256:dns-archive", "sizeBytes": 512, "imageReference": "registry.local/coredns@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+    {"targetPath": "charts/appliance-dns-1.14.4.tgz", "digest": "sha256:dns-chart", "sizeBytes": 11},
     {"targetPath": "configuration/values.yaml", "digest": "sha256:values", "sizeBytes": 200},
     {"targetPath": "charts/argo-workflows-1.0.0.tgz", "digest": "sha256:chart", "sizeBytes": 5},
     {"targetPath": "kubernetes/crds/crds/workflows.yaml", "digest": "sha256:crd", "sizeBytes": 3},
@@ -404,6 +415,29 @@ def test_rejects_zot_annotation_and_version_mismatch() -> None:
             raise AssertionError(result.stderr or "wrong zot version accepted")
 
 
+def test_rejects_dns_annotation_and_version_mismatch() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        write_mismatched_oci_archive(
+            tmp / "release-input" / "images" / "coredns-image.tar",
+            "registry.local/coredns:wrong",
+            "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        )
+        result = run_validator(tmp)
+        if result.returncode == 0 or "annotation must be" not in result.stderr:
+            raise AssertionError(result.stderr or "wrong dns annotation accepted")
+
+        populate_positive_case(tmp)
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["compatibility"]["dnsVersion"] = "1.14.5"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = run_validator(tmp)
+        if result.returncode == 0 or "dnsVersion mismatch" not in result.stderr:
+            raise AssertionError(result.stderr or "wrong dns version accepted")
+
+
 def main() -> None:
     test_positive_case()
     test_positive_case_with_nested_bundle_root()
@@ -414,6 +448,7 @@ def main() -> None:
     test_rejects_workspace_provisioner_path_ref_mismatch()
     test_rejects_oci_archive_annotation_digest_mismatch()
     test_rejects_zot_annotation_and_version_mismatch()
+    test_rejects_dns_annotation_and_version_mismatch()
     test_rejects_missing_ui_bundle_entry()
     test_rejects_mismatched_ui_bundle_image_reference()
     test_rejects_mismatched_ui_values_image_reference()

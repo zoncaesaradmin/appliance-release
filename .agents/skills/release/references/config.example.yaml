@@ -111,7 +111,8 @@ build_flow:
   # workspace_provisioner_image_archive_source: /home/zonsys/ci/inputs/workspace-provisioner.oci.tar
   # workspace_provisioner_image_ref: registry.local/workspace-provisioner
   # Zot is a required first-class image/chart contract in every complete bundle.
-  # It is activated at install time only for storage and builder profiles.
+  # It is activated at install time only for artifact-bearing profiles:
+  # storage, builder, and storage-lan-dns.
   # Online builds pull this exact version on the build host, copy linux/amd64,
   # and derive registry.local/zot@sha256:<index.json platform digest>. The
   # archive is relabeled registry.local/zot:bundled for reliable ctr import.
@@ -120,6 +121,17 @@ build_flow:
     image_pull_ref: ghcr.io/project-zot/zot-linux-amd64:v2.1.8
     # Offline/premirrored alternative; version and digest are still validated:
     # image_archive_source: /home/zonsys/ci/inputs/zot.oci.tar
+  # CoreDNS is also a required first-class image/chart contract in every
+  # complete bundle (same treatment as Zot above). It is activated at install
+  # time only for DNS-bearing profiles: lan-dns and storage-lan-dns.
+  # Online builds pull this exact version on the build host, copy linux/amd64,
+  # and derive registry.local/coredns@sha256:<index.json platform digest>. The
+  # archive is relabeled registry.local/coredns:bundled for reliable ctr import.
+  dns:
+    version: 1.14.4
+    image_pull_ref: registry.k8s.io/coredns/coredns:v1.14.4
+    # Offline/premirrored alternative; version and digest are still validated:
+    # image_archive_source: /home/zonsys/ci/inputs/coredns.oci.tar
   # Builder-profile builds require the bundled automation-dev (CI/dev-container)
   # image. zonctl picks the automation-dev@sha256 ref from the bundle and injects
   # config.builderImageDigest. Catalogs must not set per-target builder digests.
@@ -143,7 +155,7 @@ install:
   # rollout_namespace: appliance-system
   # control_plane_deployment: control-plane
   # Product-facing appliance profile passed into the control plane.
-  # Valid v1 values: core, builder, storage
+  # Valid v1 values: core, builder, storage, lan-dns, storage-lan-dns
   appliance_profile: storage
   # Local build catalog JSON/YAML. Copied to the target install temp dir and
   # passed to zonctl as product config. Required for a useful builder tryout.
@@ -159,6 +171,14 @@ install:
   # comma-separated list. Useful when you want the appliance certificate to be
   # accepted on both the DNS name and the appliance IP.
   # additional_tls_sans_csv: 192.168.1.101
+  # lan-dns / storage-lan-dns only: the appliance-dns chart ships with a local
+  # zone (appliance.appliance.local, chart values.localZone) that resolves the
+  # appliance hostname, and a Corefile that forwards every other query to
+  # upstream resolvers (chart values.upstreamResolvers, default 1.1.1.1,
+  # 8.8.8.8). zonctl is expected to populate localZone.ipv4 from the detected
+  # target LAN IP at install time; there is no release-skill config override
+  # for this yet, so point LAN clients at the target host's real LAN IP on
+  # UDP/TCP 53 (see docs/target-host-operations.md and docs/verification.md).
   uninstall_first: true
 
 verification:
@@ -174,9 +194,10 @@ verification:
   smoke_test_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
   failure_log_command: sudo zonctl support-bundle --output json
   # Argo verification now follows the installed profile capability by default:
-  # core/builder profiles verify workflows, storage skips those checks even if
-  # this block is left enabled from an older config. Keep this true only when
-  # you want Argo checks for a workflow-capable profile.
+  # core/builder profiles verify workflows, while storage, lan-dns, and
+  # storage-lan-dns skip those checks even if this block is left enabled from
+  # an older config. Keep this true only when you want Argo checks for a
+  # workflow-capable profile.
   argo:
     enabled: true
     namespaces_command: sudo kubectl get namespace workflows appliance-builds
@@ -193,11 +214,20 @@ verification:
     # custom builder-specific readiness rule.
   allow_ingress_warning: true
   allow_verify_schema_bug: true
-  # Defaults enabled for storage/builder and disabled for core. The default
-  # readiness command waits for the zot Deployment and confirms its PVC.
+  # Defaults enabled for storage/builder/storage-lan-dns and disabled for
+  # core/lan-dns. The default readiness command waits for the zot Deployment
+  # and confirms its PVC.
   artifact:
     # enabled: true
     # readiness_command: sudo kubectl -n registry wait --for=condition=Available deployment/artifact-registry --timeout=120s && sudo kubectl -n registry get pvc appliance-registry-data
+  # Defaults enabled for lan-dns/storage-lan-dns and disabled for
+  # core/storage/builder. The default readiness command waits for the
+  # appliance-dns Deployment, then dig(1)s the target host's own LAN IP on
+  # UDP/53 for the local zone's A record (appliance.appliance.local by
+  # default) to prove CoreDNS is actually answering, not just Ready.
+  dns:
+    # enabled: true
+    # readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/appliance-dns --timeout=120s && dig +short @192.168.1.101 -p 53 appliance.appliance.local A
 
 client_verification:
   # Example: https://192.168.1.101
@@ -236,8 +266,9 @@ client_verification:
       # poll_delay_seconds: 5
       # expect_success: true
       # delete_workspace_on_success: false
-  # Defaults enabled for storage/builder and disabled for core. Built-in checks
-  # cover capability routing, /v2 bearer challenge, API-token issuance,
+  # Defaults enabled for storage/builder/storage-lan-dns and disabled for
+  # core/lan-dns. Built-in checks cover capability routing, /v2 bearer
+  # challenge, API-token issuance,
   # filtered catalog access, anonymous/denied/malformed-token rejection, and
   # token revocation. Optional smoke commands receive only process-local
   # APPLIANCE_REGISTRY_URL, APPLIANCE_REGISTRY_USERNAME, and

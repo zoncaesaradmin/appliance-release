@@ -7,17 +7,27 @@ this guide's recommendation.
 
 ## Storage and builder artifact evidence
 
-Storage is a positive artifact-service profile, not merely a negative builder
-profile. Target verification waits for the zot Deployment and dedicated PVC.
-Client verification checks the profile-gated catalog route, `/v2/` bearer
-challenge, API-token-backed registry token issuance, filtered catalog access,
-and anonymous, denied-scope, malformed-token, and token-revocation behavior.
+Storage and storage-lan-dns are positive artifact-service profiles, not merely
+negative builder profiles. Target verification waits for the zot Deployment
+and dedicated PVC. Client verification checks the profile-gated catalog route,
+`/v2/` bearer challenge, API-token-backed registry token issuance, filtered
+catalog access, and anonymous, denied-scope, malformed-token, and
+token-revocation behavior.
 
 Builder requires the same artifact evidence in addition to builder workflow
-evidence; core requires artifact routes to remain absent. Optional OCI,
-ORAS/referrer, and offline smoke commands under
+evidence; core and lan-dns require artifact routes to remain absent. Optional
+OCI, ORAS/referrer, and offline smoke commands under
 `client_verification.artifact` must pass when configured. Credentials are
 provided only through process-local `APPLIANCE_REGISTRY_*` variables.
+
+## LAN DNS evidence
+
+`lan-dns` and `storage-lan-dns` enable the `dns` capability. Target verification
+waits for Deployment `appliance-dns` in namespace `dns`, then digs the local
+zone (`appliance.appliance.local` by default) against `127.0.0.1:53` on the
+node (CoreDNS uses hostNetwork). Non-dns profiles assert the `appliance-dns`
+Helm release is absent. Point LAN clients at the appliance's LAN IP on UDP/TCP
+53 as their resolver; see [target-host-operations.md](target-host-operations.md).
 
 ## Verifying a Bundle Before Installing
 
