@@ -75,12 +75,15 @@ Notes:
   build workflow namespace, because cloning happens inside a workflow pod
 - `lan-dns` and `storage-lan-dns` install the appliance-owned CoreDNS release
   (`appliance-dns` in namespace `dns`) with hostNetwork on UDP/TCP 53. Point
-  LAN clients at the appliance's LAN IP as their resolver; the default local
-  zone answers `appliance.appliance.local` (and the short hostname label) with
-  the install-time IPv4. Port 53 must be free on the host (for example stop or
-  reconfigure `systemd-resolved` binding to `*:53`) or install preflight fails
-  closed. The `dns` namespace uses hostNetwork and is an explicit exception to
-  the Restricted Pod Security Admission profile for that namespace only.
+  LAN clients at the appliance's LAN IP as their resolver. The local zone is
+  `appliance.local`; the A-record left-hand label is the first label of
+  `install.public_host` (or `appliance` when that host is empty or an IP), so
+  with `public_host: registry1.appliance.internal` the answer name is
+  `registry1.appliance.local`. Before preflight, `zonctl` disables Ubuntu's
+  `systemd-resolved` stub listener (`DNSStubListener=no` drop-in under
+  `/etc/systemd/resolved.conf.d/`) so CoreDNS can bind `:53`, and restores that
+  configuration on uninstall/rollback. The `dns` namespace is an explicit
+  privileged Pod Security Admission exception for hostNetwork only.
 
 What this does:
 

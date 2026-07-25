@@ -214,9 +214,21 @@ if [[ -z "${DNS_ENABLED}" ]]; then
   esac
 fi
 if bool_true "${DNS_ENABLED}"; then
-  # hostNetwork CoreDNS answers on the node itself; dig @127.0.0.1 proves the
-  # LAN data plane without needing the release-skill config to hardcode a LAN IP.
-  DNS_READINESS_CMD="${DNS_READINESS_CMD:-sudo kubectl -n dns wait --for=condition=Available deployment/appliance-dns --timeout=120s && dig +short @127.0.0.1 -p 53 appliance.appliance.local A | grep -E '^[0-9.]+$'}"
+  # Match zonctl PrepareDNSValuesFile: localZone.hostname is the first label of
+  # install.public_host (or "appliance" when public_host is empty/IP).
+  DNS_PUBLIC_HOST="$(config_get_optional "${CONFIG_PATH}" "install.public_host" || true)"
+  DNS_ZONE_HOSTNAME="appliance"
+  if [[ -n "${DNS_PUBLIC_HOST}" && ! "${DNS_PUBLIC_HOST}" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+    DNS_ZONE_HOSTNAME="${DNS_PUBLIC_HOST%%.*}"
+  fi
+  DNS_LOCAL_FQDN="${DNS_ZONE_HOSTNAME}.appliance.local"
+  # hostNetwork CoreDNS answers on the node itself. Prefer dig(1); fall back to
+  # a stdlib python UDP A-query so Ubuntu Server without dnsutils still passes.
+  # The python probe is base64-inlined because checks run over SSH on the target.
+  if [[ -z "${DNS_READINESS_CMD}" ]]; then
+    DNS_PROBE_B64="$(base64 <"${SCRIPT_DIR}/probe-lan-dns-a.py" | tr -d '\n')"
+    DNS_READINESS_CMD="sudo kubectl -n dns wait --for=condition=Available deployment/appliance-dns --timeout=120s && if command -v dig >/dev/null 2>&1; then dig +short @127.0.0.1 -p 53 $(printf '%q' "${DNS_LOCAL_FQDN}") A; else echo $(printf '%q' "${DNS_PROBE_B64}") | base64 -d | python3 - $(printf '%q' "${DNS_LOCAL_FQDN}"); fi | grep -E '^[0-9.]+$'"
+  fi
 else
   DNS_ABSENCE_CMD="${DNS_ABSENCE_CMD:-! sudo helm status appliance-dns --namespace dns >/dev/null 2>&1}"
 fi

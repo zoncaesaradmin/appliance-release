@@ -171,14 +171,13 @@ install:
   # comma-separated list. Useful when you want the appliance certificate to be
   # accepted on both the DNS name and the appliance IP.
   # additional_tls_sans_csv: 192.168.1.101
-  # lan-dns / storage-lan-dns only: the appliance-dns chart ships with a local
-  # zone (appliance.appliance.local, chart values.localZone) that resolves the
-  # appliance hostname, and a Corefile that forwards every other query to
-  # upstream resolvers (chart values.upstreamResolvers, default 1.1.1.1,
-  # 8.8.8.8). zonctl is expected to populate localZone.ipv4 from the detected
-  # target LAN IP at install time; there is no release-skill config override
-  # for this yet, so point LAN clients at the target host's real LAN IP on
-  # UDP/TCP 53 (see docs/target-host-operations.md and docs/verification.md).
+  # lan-dns / storage-lan-dns only: CoreDNS (hostNetwork :53) answers a local
+  # zone appliance.local. The A-record hostname is the first label of
+  # public_host (or "appliance" when public_host is empty/IP). Example:
+  # public_host registry1.appliance.internal → registry1.appliance.local.
+  # zonctl auto-disables systemd-resolved's stub listener before install so
+  # :53 is free, and restores it on uninstall. Point LAN clients at the
+  # target LAN IP on UDP/TCP 53 (see docs/target-host-operations.md).
   uninstall_first: true
 
 verification:
@@ -222,12 +221,11 @@ verification:
     # readiness_command: sudo kubectl -n registry wait --for=condition=Available deployment/artifact-registry --timeout=120s && sudo kubectl -n registry get pvc appliance-registry-data
   # Defaults enabled for lan-dns/storage-lan-dns and disabled for
   # core/storage/builder. The default readiness command waits for the
-  # appliance-dns Deployment, then dig(1)s the target host's own LAN IP on
-  # UDP/53 for the local zone's A record (appliance.appliance.local by
-  # default) to prove CoreDNS is actually answering, not just Ready.
+  # appliance-dns Deployment, then queries 127.0.0.1:53 for the local-zone A
+  # record derived from install.public_host (dig, or python3 UDP fallback).
   dns:
     # enabled: true
-    # readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/appliance-dns --timeout=120s && dig +short @192.168.1.101 -p 53 appliance.appliance.local A
+    # readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/appliance-dns --timeout=120s && dig +short @127.0.0.1 -p 53 registry1.appliance.local A
 
 client_verification:
   # Example: https://192.168.1.101
