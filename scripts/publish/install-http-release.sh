@@ -301,9 +301,11 @@ fi
 if [[ -n "${PUBLIC_HOST}" ]]; then
   install_args+=(--public-host "${PUBLIC_HOST}")
 fi
-for tls_san in "${TLS_SANS[@]}"; do
-  install_args+=(--tls-san "${tls_san}")
-done
+if ((${#TLS_SANS[@]} > 0)); then
+  for tls_san in "${TLS_SANS[@]}"; do
+    install_args+=(--tls-san "${tls_san}")
+  done
+fi
 if [[ "${DRY_RUN}" == "1" ]]; then
   install_args+=(--dry-run)
 fi
@@ -325,9 +327,11 @@ fi
 if [[ -n "${PUBLIC_HOST}" ]]; then
   upgrade_args+=(--public-host "${PUBLIC_HOST}")
 fi
-for tls_san in "${TLS_SANS[@]}"; do
-  upgrade_args+=(--tls-san "${tls_san}")
-done
+if ((${#TLS_SANS[@]} > 0)); then
+  for tls_san in "${TLS_SANS[@]}"; do
+    upgrade_args+=(--tls-san "${tls_san}")
+  done
+fi
 if [[ "${DRY_RUN}" == "1" ]]; then
   upgrade_args+=(--dry-run)
 fi

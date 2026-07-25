@@ -256,11 +256,13 @@ if [[ -n '"$(shell_quote "${PUBLIC_HOST}")"' ]]; then
   upgrade_args+=(--public-host '"$(shell_quote "${PUBLIC_HOST}")"')
 fi
 '
-for tls_san in "${TLS_SANS[@]}"; do
-  remote_script+='
+if ((${#TLS_SANS[@]} > 0)); then
+  for tls_san in "${TLS_SANS[@]}"; do
+    remote_script+='
 install_args+=(--tls-san '"$(shell_quote "${tls_san}")"')
 upgrade_args+=(--tls-san '"$(shell_quote "${tls_san}")"')'
-done
+  done
+fi
 remote_script+='
 if [[ "${preserve_failed_state}" == "true" ]]; then
   install_args+=(--preserve-failed-state)
