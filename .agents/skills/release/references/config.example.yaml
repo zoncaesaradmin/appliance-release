@@ -176,7 +176,9 @@ install:
   # public_host (or "appliance" when public_host is empty/IP). Example:
   # public_host registry1.appliance.internal → registry1.appliance.local.
   # zonctl auto-disables systemd-resolved's stub listener before install so
-  # :53 is free, and restores it on uninstall. Point LAN clients at the
+  # :53 is free, seeds /etc/hosts for the node hostname (stub/MagicDNS names
+  # would otherwise fail internal-dns-resolvable after the switch to uplink
+  # resolvers), and restores both on uninstall. Point LAN clients at the
   # target LAN IP on UDP/TCP 53 (see docs/target-host-operations.md).
   uninstall_first: true
 

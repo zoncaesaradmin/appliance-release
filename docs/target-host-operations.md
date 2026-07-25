@@ -79,11 +79,14 @@ Notes:
   `appliance.local`; the A-record left-hand label is the first label of
   `install.public_host` (or `appliance` when that host is empty or an IP), so
   with `public_host: registry1.appliance.internal` the answer name is
-  `registry1.appliance.local`. Before preflight, `zonctl` disables Ubuntu's
+  `registry1.appliance.local`.   Before preflight, `zonctl` disables Ubuntu's
   `systemd-resolved` stub listener (`DNSStubListener=no` drop-in under
-  `/etc/systemd/resolved.conf.d/`) so CoreDNS can bind `:53`, and restores that
-  configuration on uninstall/rollback. The `dns` namespace is an explicit
-  privileged Pod Security Admission exception for hostNetwork only.
+  `/etc/systemd/resolved.conf.d/`) so CoreDNS can bind `:53`, seeds a managed
+  `/etc/hosts` entry for the node hostname → LAN IPv4 (so short names that
+  previously resolved only via the stub/MagicDNS still pass
+  `internal-dns-resolvable`), and restores both on uninstall/rollback. The
+  `dns` namespace is an explicit privileged Pod Security Admission exception
+  for hostNetwork only.
 
 What this does:
 
