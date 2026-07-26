@@ -16,7 +16,7 @@ appliance's base-capability publish API.
 | Resolver listen | DNS appliance LAN IP, UDP/TCP **53** |
 | Record shape | single left-hand label → A record, e.g. `registry1` → `registry1.appliance.internal` |
 | DNS records API (dns capability) | `GET/PUT/DELETE /api/v1/dns/records…` |
-| Peer publish API (base capability) | `POST /api/v1/lan-dns/publish` on **any** appliance |
+| Peer publish API (base capability) | `POST /api/v1/dns/publish` on **any** appliance |
 
 Example topology used below:
 
@@ -49,13 +49,13 @@ until you add them via API/UI.
 ### Point LAN clients at the DNS appliance
 
 On each client (or via DHCP/router), set the DNS server to the DNS appliance
-LAN IP, for example `192.168.1.101`.
+LAN IP, for example `192.168.1.105`.
 
 Optional Ubuntu smoke check on a client:
 
 ```bash
 resolvectl dns
-dig @192.168.1.101 appliance.internal SOA +short
+dig @192.168.1.105 appliance.internal SOA +short
 ```
 
 ---
@@ -63,7 +63,7 @@ dig @192.168.1.101 appliance.internal SOA +short
 ## 2. Authenticate on the DNS appliance
 
 ```bash
-DNS_APPLIANCE=https://192.168.1.101
+DNS_APPLIANCE=https://192.168.1.105
 USERNAME=admin
 PASSWORD='your-admin-password'
 
@@ -104,7 +104,17 @@ Permissions:
 Admin writes use TTL default **300** when omitted. Peer registration uses TTL
 default **60** and a **15-minute** lease that must be renewed.
 
-UI alternative on the DNS appliance: open `/dns` after login.
+### Browser UI on the DNS appliance
+
+After first-admin setup, sign in to the DNS appliance. Profiles with the
+`dns` capability show a **DNS** nav link and a dashboard callout.
+
+On `/dns`:
+
+- the table lists every stored A record (admin, peer, and optional bootstrap)
+- Administrators (`dns.records.write`) can add/update a name→IPv4 mapping
+  in the form under the list, edit a row, or delete it
+- Viewers (`dns.records.read` only) see the list read-only
 
 ---
 
@@ -169,7 +179,7 @@ Expect HTTP `204`.
 ### Prove resolution
 
 ```bash
-dig @192.168.1.101 registry1.appliance.internal A +short
+dig @192.168.1.105 registry1.appliance.internal A +short
 # expect: 192.168.1.102
 ```
 
@@ -180,10 +190,10 @@ dig @192.168.1.101 registry1.appliance.internal A +short
 Any appliance profile exposes:
 
 ```http
-POST /api/v1/lan-dns/publish
+POST /api/v1/dns/publish
 ```
 
-Permission on the **peer** appliance: `lan_dns.publish`
+Permission on the **peer** appliance: `dns.publish`
 (Administrator and Automation have it).
 
 That peer control plane then calls the remote DNS appliance:
@@ -200,12 +210,12 @@ using the DNS API token you supply in the body.
    `dns.records.register` or `dns.records.write` (section 2).
    That token is `DNS_API_TOKEN` below.
 2. On the **peer appliance**, log in and create a local token with
-   `lan_dns.publish` (Administrator / Automation), or use a session
+   `dns.publish` (Administrator / Automation), or use a session
    access token for a quick test.
 
 ```bash
 PEER_APPLIANCE=https://192.168.1.102
-DNS_APPLIANCE=https://192.168.1.101
+DNS_APPLIANCE=https://192.168.1.105
 DNS_API_TOKEN='…token from DNS appliance…'
 
 PEER_ACCESS_TOKEN="$(
@@ -231,7 +241,7 @@ curl -ksS \
     \"ipv4\": \"192.168.1.102\",
     \"ttl\": 60
   }" \
-  "${PEER_APPLIANCE}/api/v1/lan-dns/publish" | jq
+  "${PEER_APPLIANCE}/api/v1/dns/publish" | jq
 ```
 
 Expected:
@@ -246,14 +256,14 @@ Expected:
 Then resolve through the DNS appliance:
 
 ```bash
-dig @192.168.1.101 registry1.appliance.internal A +short
+dig @192.168.1.105 registry1.appliance.internal A +short
 ```
 
 ### Body fields
 
 | Field | Required | Notes |
 |---|---|---|
-| `dnsApplianceURL` | yes | Base URL of the DNS appliance, e.g. `https://192.168.1.101` |
+| `dnsApplianceURL` | yes | Base URL of the DNS appliance, e.g. `https://192.168.1.105` |
 | `apiToken` | yes | Bearer token **on the DNS appliance** with `dns.records.register` or `dns.records.write` |
 | `name` | yes | Single DNS label (`registry1`), not an FQDN |
 | `ipv4` | yes | IPv4 address to publish |
@@ -265,7 +275,7 @@ dig @192.168.1.101 registry1.appliance.internal A +short
 | Situation | Use |
 |---|---|
 | Operator / script managing the DNS box directly | Section 3: `PUT /api/v1/dns/records/{name}` on the DNS appliance |
-| Another appliance registering itself | Section 4: `POST /api/v1/lan-dns/publish` on the peer appliance |
+| Another appliance registering itself | Section 4: `POST /api/v1/dns/publish` on the peer appliance |
 | Browser CRUD on the DNS box | UI `/dns` |
 
 Do **not** pass DNS publish flags to `zonctl install` / `upgrade`. Those
@@ -279,8 +289,8 @@ flags are not supported; DNS is API-only.
 2. Bootstrap admin; create `DNS_API_TOKEN`.
 3. Point LAN resolvers at the DNS appliance IP `:53`.
 4. Add names with `PUT /api/v1/dns/records/{name}` **or** peer
-   `POST /api/v1/lan-dns/publish`.
+   `POST /api/v1/dns/publish`.
 5. `dig @<dns-ip> <name>.appliance.internal A +short`.
 
 OpenAPI reference: `appliance-code` `docs/openapi/control-plane-v1.yaml`
-(`/api/v1/dns/records` and `/api/v1/lan-dns/publish`).
+(`/api/v1/dns/records` and `/api/v1/dns/publish`).

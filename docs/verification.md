@@ -31,7 +31,7 @@ see [target-host-operations.md](target-host-operations.md).
 
 Host A records are proven by creating them through
 `PUT /api/v1/dns/records/{name}` (or the `/dns` UI), or
-`POST /api/v1/lan-dns/publish` from another appliance, then dig'ing that FQDN.
+`POST /api/v1/dns/publish` from another appliance, then dig'ing that FQDN.
 Operator curl cookbook: [lan-dns-usage.md](lan-dns-usage.md).
 
 ## Verifying a Bundle Before Installing

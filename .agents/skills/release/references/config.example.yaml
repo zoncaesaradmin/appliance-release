@@ -177,7 +177,7 @@ install:
   # appliance.internal (not .local — mDNS-only on Ubuntu). Install does not
   # seed or publish A records. Add names on the DNS appliance via API/UI
   # (PUT /api/v1/dns/records/{name}), or from any appliance via
-  # POST /api/v1/lan-dns/publish (base capability) targeting the DNS appliance.
+  # POST /api/v1/dns/publish (base capability) targeting the DNS appliance.
   # zonctl auto-disables systemd-resolved's stub listener before install so
   # :53 is free, seeds /etc/hosts for the node hostname, and restores the stub
   # on uninstall. Point LAN clients at the DNS appliance LAN IP on UDP/TCP 53

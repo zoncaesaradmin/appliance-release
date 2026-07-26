@@ -81,7 +81,7 @@ Notes:
   (`public_host` remains for TLS/canonical origin when set). Add names on the
   DNS appliance via API/UI: `PUT /api/v1/dns/records/{name}` (permissions
   `dns.records.write` / `dns.records.register`), or from any appliance via
-  `POST /api/v1/lan-dns/publish` (base capability) which calls the remote DNS
+  `POST /api/v1/dns/publish` (base capability) which calls the remote DNS
   appliance's records API. Step-by-step curl examples:
   [lan-dns-usage.md](lan-dns-usage.md). Before preflight,
   `zonctl` disables Ubuntu's `systemd-resolved` stub listener
