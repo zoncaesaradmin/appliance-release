@@ -76,18 +76,23 @@ Notes:
 - `lan-dns` and `storage-lan-dns` install the appliance-owned CoreDNS release
   (`appliance-dns` in namespace `dns`) with hostNetwork on UDP/TCP 53. Point
   LAN clients at the appliance's LAN IP as their resolver. The local zone is
-  `appliance.local`; the A-record left-hand label is the first label of
-  `install.public_host` (or `appliance` when that host is empty or an IP), so
-  with `public_host: registry1.appliance.internal` the answer name is
-  `registry1.appliance.local`.   Before preflight, `zonctl` disables Ubuntu's
-  `systemd-resolved` stub listener (`DNSStubListener=no` drop-in under
-  `/etc/systemd/resolved.conf.d/`) so CoreDNS can bind `:53`, seeds a managed
-  `/etc/hosts` entry for the node hostname → LAN IPv4 (so short names that
-  previously resolved only via the stub/MagicDNS still pass
-  `internal-dns-resolvable`), and restores the stub on uninstall/rollback while
-  leaving the `/etc/hosts` entry in place for the next preflight. Standalone
-  `zonctl preflight` also seeds that hosts entry. The `dns` namespace is an
-  explicit privileged Pod Security Admission exception for hostNetwork only.
+  `appliance.internal` (not `.local` — systemd-resolved reserves that for
+  mDNS).   Install does **not** seed or publish product A records from `public_host`
+  (`public_host` remains for TLS/canonical origin when set). Add names on the
+  DNS appliance via API/UI: `PUT /api/v1/dns/records/{name}` (permissions
+  `dns.records.write` / `dns.records.register`), or from any appliance via
+  `POST /api/v1/lan-dns/publish` (base capability) which calls the remote DNS
+  appliance's records API. Step-by-step curl examples:
+  [lan-dns-usage.md](lan-dns-usage.md). Before preflight,
+  `zonctl` disables Ubuntu's `systemd-resolved` stub listener
+  (`DNSStubListener=no` drop-in under `/etc/systemd/resolved.conf.d/`) so
+  CoreDNS can bind `:53`, seeds a managed `/etc/hosts` entry for the node
+  hostname → LAN IPv4 (so short names that previously resolved only via the
+  stub/MagicDNS still pass `internal-dns-resolvable`), and restores the stub
+  on uninstall/rollback while leaving the `/etc/hosts` entry in place for the
+  next preflight. Standalone `zonctl preflight` also seeds that hosts entry.
+  The `dns` namespace is an explicit privileged Pod Security Admission
+  exception for hostNetwork only.
 
 What this does:
 

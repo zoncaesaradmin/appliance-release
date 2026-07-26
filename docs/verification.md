@@ -23,12 +23,16 @@ provided only through process-local `APPLIANCE_REGISTRY_*` variables.
 ## LAN DNS evidence
 
 `lan-dns` and `storage-lan-dns` enable the `dns` capability. Target verification
-waits for Deployment `appliance-dns` in namespace `dns`, then queries
-`127.0.0.1:53` for the local-zone A record whose left-hand label matches
-`install.public_host` (or `appliance` when that host is empty/IP). CoreDNS uses
-hostNetwork. Non-dns profiles assert the `appliance-dns` Helm release is absent.
-Point LAN clients at the appliance's LAN IP on UDP/TCP 53 as their resolver; see
-[target-host-operations.md](target-host-operations.md).
+waits for Deployment `appliance-dns` in namespace `dns`, then checks that
+CoreDNS answers SOA for `appliance.internal` on `127.0.0.1:53`. Install does
+not seed product A records. Non-dns profiles assert the `appliance-dns` Helm
+release is absent. Point LAN clients at the appliance's LAN IP on UDP/TCP 53;
+see [target-host-operations.md](target-host-operations.md).
+
+Host A records are proven by creating them through
+`PUT /api/v1/dns/records/{name}` (or the `/dns` UI), or
+`POST /api/v1/lan-dns/publish` from another appliance, then dig'ing that FQDN.
+Operator curl cookbook: [lan-dns-usage.md](lan-dns-usage.md).
 
 ## Verifying a Bundle Before Installing
 

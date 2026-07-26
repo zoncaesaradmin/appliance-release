@@ -171,15 +171,15 @@ install:
   # comma-separated list. Useful when you want the appliance certificate to be
   # accepted on both the DNS name and the appliance IP.
   # additional_tls_sans_csv: 192.168.1.101
-  # lan-dns / storage-lan-dns only: CoreDNS (hostNetwork :53) answers a local
-  # zone appliance.local. The A-record hostname is the first label of
-  # public_host (or "appliance" when public_host is empty/IP). Example:
-  # public_host registry1.appliance.internal → registry1.appliance.local.
+  # lan-dns / storage-lan-dns only: CoreDNS (hostNetwork :53) serves zone
+  # appliance.internal (not .local — mDNS-only on Ubuntu). Install does not
+  # seed or publish A records. Add names on the DNS appliance via API/UI
+  # (PUT /api/v1/dns/records/{name}), or from any appliance via
+  # POST /api/v1/lan-dns/publish (base capability) targeting the DNS appliance.
   # zonctl auto-disables systemd-resolved's stub listener before install so
-  # :53 is free, seeds /etc/hosts for the node hostname (stub/MagicDNS names
-  # would otherwise fail internal-dns-resolvable after the switch to uplink
-  # resolvers), and restores both on uninstall. Point LAN clients at the
-  # target LAN IP on UDP/TCP 53 (see docs/target-host-operations.md).
+  # :53 is free, seeds /etc/hosts for the node hostname, and restores the stub
+  # on uninstall. Point LAN clients at the DNS appliance LAN IP on UDP/TCP 53
+  # (see docs/target-host-operations.md).
   uninstall_first: true
 
 verification:
@@ -227,7 +227,7 @@ verification:
   # record derived from install.public_host (dig, or python3 UDP fallback).
   dns:
     # enabled: true
-    # readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/appliance-dns --timeout=120s && dig +short @127.0.0.1 -p 53 registry1.appliance.local A
+    # readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/appliance-dns --timeout=120s && dig +short @127.0.0.1 -p 53 SOA appliance.internal
 
 client_verification:
   # Example: https://192.168.1.101

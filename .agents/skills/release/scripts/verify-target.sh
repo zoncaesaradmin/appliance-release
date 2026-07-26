@@ -214,20 +214,12 @@ if [[ -z "${DNS_ENABLED}" ]]; then
   esac
 fi
 if bool_true "${DNS_ENABLED}"; then
-  # Match zonctl PrepareDNSValuesFile: localZone.hostname is the first label of
-  # install.public_host (or "appliance" when public_host is empty/IP).
-  DNS_PUBLIC_HOST="$(config_get_optional "${CONFIG_PATH}" "install.public_host" || true)"
-  DNS_ZONE_HOSTNAME="appliance"
-  if [[ -n "${DNS_PUBLIC_HOST}" && ! "${DNS_PUBLIC_HOST}" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
-    DNS_ZONE_HOSTNAME="${DNS_PUBLIC_HOST%%.*}"
-  fi
-  DNS_LOCAL_FQDN="${DNS_ZONE_HOSTNAME}.appliance.local"
-  # hostNetwork CoreDNS answers on the node itself. Prefer dig(1); fall back to
-  # a stdlib python UDP A-query so Ubuntu Server without dnsutils still passes.
-  # The python probe is base64-inlined because checks run over SSH on the target.
+  # lan-dns does not seed product A records from public_host. Readiness is
+  # Deployment Available plus a successful SOA answer for appliance.internal
+  # (zone infrastructure only). Host A records are proven separately after
+  # API/UI (or peer publish) creates them.
   if [[ -z "${DNS_READINESS_CMD}" ]]; then
-    DNS_PROBE_B64="$(base64 <"${SCRIPT_DIR}/probe-lan-dns-a.py" | tr -d '\n')"
-    DNS_READINESS_CMD="sudo kubectl -n dns wait --for=condition=Available deployment/appliance-dns --timeout=120s && if command -v dig >/dev/null 2>&1; then dig +short @127.0.0.1 -p 53 $(printf '%q' "${DNS_LOCAL_FQDN}") A; else echo $(printf '%q' "${DNS_PROBE_B64}") | base64 -d | python3 - $(printf '%q' "${DNS_LOCAL_FQDN}"); fi | grep -E '^[0-9.]+$'"
+    DNS_READINESS_CMD="sudo kubectl -n dns wait --for=condition=Available deployment/appliance-dns --timeout=120s && if command -v dig >/dev/null 2>&1; then dig +short @127.0.0.1 -p 53 SOA appliance.internal | grep -E '.'; else sudo kubectl -n dns exec deploy/appliance-dns -- wget -qO- http://127.0.0.1:8181/ready; fi"
   fi
 else
   DNS_ABSENCE_CMD="${DNS_ABSENCE_CMD:-! sudo helm status appliance-dns --namespace dns >/dev/null 2>&1}"

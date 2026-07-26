@@ -49,6 +49,7 @@ bash ./scripts/ci/bootstrap-build-host.sh
 ### Target Device
 
 - [Target host operations](docs/target-host-operations.md)
+- [LAN DNS appliance usage](docs/lan-dns-usage.md)
 
 ### Reference
 
