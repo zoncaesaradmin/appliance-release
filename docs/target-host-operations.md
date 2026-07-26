@@ -76,10 +76,11 @@ Notes:
 - DNS-bearing profiles (`landns`, `storage-landns`, `builder-landns`, `builder-storage-landns`) install the appliance-owned CoreDNS release
   (`appliance-dns` in namespace `dns`) with hostNetwork on UDP/TCP 53. Point
   LAN clients at the appliance's LAN IP as their resolver. The local zone is
-  `appliance.internal` (not `.local` — systemd-resolved reserves that for
-  mDNS).   Install does **not** seed or publish product A records from `public_host`
-  (`public_host` remains for TLS/canonical origin when set). Add names on the
-  DNS appliance via API/UI: `PUT /api/v1/dns/records/{name}` (permissions
+  `appliance.internal` by default, or `install.dns_zone` when set (not
+  `.local` — systemd-resolved reserves that for mDNS). Install derives the
+  appliance FQDN as `<appliance_name>.<dns_zone>` for TLS and canonical origin;
+  it does **not** seed or publish product A records. Add names on the DNS
+  appliance via API/UI: `PUT /api/v1/dns/records/{name}` (permissions
   `dns.records.write` / `dns.records.register`), or from any appliance via
   `POST /api/v1/dns/publish` (base capability) which calls the remote DNS
   appliance's records API. Step-by-step curl examples:

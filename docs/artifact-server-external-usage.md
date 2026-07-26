@@ -179,23 +179,15 @@ curl -ksS \
 - Use the appliance API access token only for `/api/v1/...` API calls.
 - Do not use the appliance API access token directly for `podman login` or
   `oras login`.
-- For OCI client compatibility, the appliance must advertise a client-reachable
-  public host or IP in the `/v2/` bearer challenge realm.
-- A practical external setup should choose one canonical public identity for
-  registry auth, and that identity should be resolvable/reachable by every
-  client machine.
-- Install-time recommendation:
-  set `install.public_host` in the release config to the one client-reachable
-  identity you want the appliance to advertise in `canonicalOrigin` and the
-  registry bearer realm.
-- If you want clients to start with either hostname or IP, add the other form
-  as an extra TLS SAN with `--tls-san` or `install.additional_tls_sans_csv`.
-- If you do not have real DNS for the hostname, prefer using the appliance IP
-  as `public_host`. That avoids clients being redirected to a hostname they
-  cannot resolve during registry authentication.
-- After you inspect `GET /v2/`, set `REGISTRY_HOST` to the same canonical host
-  family you want OCI tools to use consistently for login, push, and pull.
+- For OCI client compatibility, the appliance advertises its derived FQDN
+  (`<install.appliance_name>.<install.dns_zone>`) in the `/v2/` bearer
+  challenge realm and `canonicalOrigin`.
+- Clients and landns must resolve that FQDN to the appliance (add the A record
+  on the landns appliance; install does not publish it).
+- If you also want direct IP access, add the IP as an extra TLS SAN with
+  `--tls-san` or `install.additional_tls_sans_csv`.
+- After you inspect `GET /v2/`, set `REGISTRY_HOST` to the same derived FQDN
+  for login, push, and pull.
 - Even when the certificate is valid for both DNS and IP, OCI auth still
-  follows one canonical advertised realm host. In practice, each client flow
-  should consistently succeed against the advertised host, while direct manual
-  tests like `curl https://<ip>/v2/` can still validate the alternate SAN.
+  follows the advertised realm host (the FQDN). Direct checks like
+  `curl https://<ip>/v2/` can still validate the alternate SAN.

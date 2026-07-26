@@ -19,9 +19,10 @@ Options:
   --release-version VERSION  Release version to install. Defaults to release.version.
   --appliance-profile NAME   Override install.appliance_profile.
   --build-catalog PATH       Local build catalog JSON/YAML passed to zonctl.
-  --public-host HOST         Canonical client-reachable public host zonctl
-                             should advertise in appliance URLs and the
-                             registry token realm.
+  --appliance-name NAME      Product LAN instance label (single DNS label).
+                             FQDN becomes <name>.<dns-zone> for TLS,
+                             canonicalOrigin, and registry realm.
+  --dns-zone ZONE            LAN DNS zone (default appliance.internal).
   --tls-san SAN              Additional TLS SAN to include on the appliance
                              certificate. Repeatable.
   --preserve-failed-state    Pass zonctl's debug preserve-failed-state mode
@@ -35,7 +36,8 @@ CONFIG_PATH=""
 RELEASE_VERSION=""
 APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
-PUBLIC_HOST=""
+APPLIANCE_NAME=""
+DNS_ZONE=""
 TLS_SANS=()
 PRESERVE_FAILED_STATE="false"
 UNINSTALL_FIRST=""
@@ -59,8 +61,12 @@ while [[ $# -gt 0 ]]; do
       BUILD_CATALOG_PATH="${2:-}"
       shift 2
       ;;
-    --public-host)
-      PUBLIC_HOST="${2:-}"
+    --appliance-name)
+      APPLIANCE_NAME="${2:-}"
+      shift 2
+      ;;
+    --dns-zone)
+      DNS_ZONE="${2:-}"
       shift 2
       ;;
     --tls-san)
@@ -117,8 +123,12 @@ fi
 if [[ -z "${BUILD_CATALOG_PATH}" ]]; then
   BUILD_CATALOG_PATH="$(config_get_optional "${CONFIG_PATH}" "install.build_catalog_path" || true)"
 fi
-if [[ -z "${PUBLIC_HOST}" ]]; then
-  PUBLIC_HOST="$(config_get_optional "${CONFIG_PATH}" "install.public_host" || true)"
+if [[ -z "${APPLIANCE_NAME}" ]]; then
+  APPLIANCE_NAME="$(config_get_optional "${CONFIG_PATH}" "install.appliance_name" || true)"
+fi
+[[ -n "${APPLIANCE_NAME}" ]] || fail "install.appliance_name (or --appliance-name) is required; FQDN becomes <name>.<dns_zone>"
+if [[ -z "${DNS_ZONE}" ]]; then
+  DNS_ZONE="$(config_get_optional "${CONFIG_PATH}" "install.dns_zone" || true)"
 fi
 ADDITIONAL_TLS_SANS_CSV="$(config_get_optional "${CONFIG_PATH}" "install.additional_tls_sans_csv" || true)"
 if [[ -n "${ADDITIONAL_TLS_SANS_CSV}" ]]; then
@@ -251,9 +261,13 @@ if [[ -n "${build_catalog_b64}" ]]; then
   install_args+=(--build-catalog "${build_catalog_path}")
   upgrade_args+=(--build-catalog "${build_catalog_path}")
 fi
-if [[ -n '"$(shell_quote "${PUBLIC_HOST}")"' ]]; then
-  install_args+=(--public-host '"$(shell_quote "${PUBLIC_HOST}")"')
-  upgrade_args+=(--public-host '"$(shell_quote "${PUBLIC_HOST}")"')
+if [[ -n '"$(shell_quote "${APPLIANCE_NAME}")"' ]]; then
+  install_args+=(--appliance-name '"$(shell_quote "${APPLIANCE_NAME}")"')
+  upgrade_args+=(--appliance-name '"$(shell_quote "${APPLIANCE_NAME}")"')
+fi
+if [[ -n '"$(shell_quote "${DNS_ZONE}")"' ]]; then
+  install_args+=(--dns-zone '"$(shell_quote "${DNS_ZONE}")"')
+  upgrade_args+=(--dns-zone '"$(shell_quote "${DNS_ZONE}")"')
 fi
 '
 if ((${#TLS_SANS[@]} > 0)); then
@@ -367,7 +381,7 @@ run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"
 install_exit_code=$?
 set -e
 
-python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${PUBLIC_HOST}" "${ADDITIONAL_TLS_SANS_CSV}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${PRESERVE_FAILED_STATE}" "${install_log}" "${install_exit_code}" <<'PY'
+python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BASE_URL}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${APPLIANCE_NAME}" "${DNS_ZONE}" "${ADDITIONAL_TLS_SANS_CSV}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${PRESERVE_FAILED_STATE}" "${install_log}" "${install_exit_code}" <<'PY'
 import json
 import sys
 
@@ -383,14 +397,15 @@ import sys
     out_dir,
     appliance_profile,
     build_catalog_path,
-    public_host,
+    appliance_name,
+    dns_zone,
     additional_tls_sans_csv,
     output_format,
     uninstall_first,
     preserve_failed_state,
     install_log,
     install_exit_code,
-) = sys.argv[1:19]
+) = sys.argv[1:20]
 
 payload = {
     "configPath": config_path,
@@ -405,7 +420,8 @@ payload = {
     "bundleDir": f"{out_dir}/appliance-{release_version}-bundle" if release_version else None,
     "applianceProfile": appliance_profile or None,
     "buildCatalogPath": build_catalog_path or None,
-    "publicHost": public_host or None,
+    "applianceName": appliance_name or None,
+    "dnsZone": dns_zone or None,
     "additionalTLSSANsCSV": additional_tls_sans_csv or None,
     "outputFormat": output_format,
     "uninstallFirst": uninstall_first == "true",

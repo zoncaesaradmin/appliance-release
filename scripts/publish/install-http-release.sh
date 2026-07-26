@@ -38,9 +38,10 @@ Optional:
   --build-catalog PATH         Target-local build catalog YAML/JSON passed to
                                zonctl install/upgrade as control-plane config
   --node-name NAME             Optional zonctl --node-name override
-  --public-host HOST           Canonical client-reachable public host zonctl
-                               should advertise in appliance URLs and the
-                               registry token realm
+  --appliance-name NAME        Product LAN instance label (single DNS label).
+                               FQDN becomes <name>.<dns-zone> for TLS,
+                               canonicalOrigin, and registry realm
+  --dns-zone ZONE              LAN DNS zone (default appliance.internal)
   --tls-san SAN                Additional TLS SAN to include on the appliance
                                certificate. Repeatable
   --dry-run                    Pass --dry-run to zonctl install/upgrade
@@ -71,7 +72,8 @@ STATE_DIR="/var/lib/zon/state"
 APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
 NODE_NAME=""
-PUBLIC_HOST=""
+APPLIANCE_NAME=""
+DNS_ZONE=""
 TLS_SANS=()
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
@@ -114,8 +116,12 @@ while [[ $# -gt 0 ]]; do
       NODE_NAME="${2:-}"
       shift 2
       ;;
-    --public-host)
-      PUBLIC_HOST="${2:-}"
+    --appliance-name)
+      APPLIANCE_NAME="${2:-}"
+      shift 2
+      ;;
+    --dns-zone)
+      DNS_ZONE="${2:-}"
       shift 2
       ;;
     --tls-san)
@@ -298,8 +304,11 @@ fi
 if [[ -n "${NODE_NAME}" ]]; then
   install_args+=(--node-name "${NODE_NAME}")
 fi
-if [[ -n "${PUBLIC_HOST}" ]]; then
-  install_args+=(--public-host "${PUBLIC_HOST}")
+if [[ -n "${APPLIANCE_NAME}" ]]; then
+  install_args+=(--appliance-name "${APPLIANCE_NAME}")
+fi
+if [[ -n "${DNS_ZONE}" ]]; then
+  install_args+=(--dns-zone "${DNS_ZONE}")
 fi
 if ((${#TLS_SANS[@]} > 0)); then
   for tls_san in "${TLS_SANS[@]}"; do
@@ -324,8 +333,11 @@ fi
 if [[ -n "${NODE_NAME}" ]]; then
   upgrade_args+=(--node-name "${NODE_NAME}")
 fi
-if [[ -n "${PUBLIC_HOST}" ]]; then
-  upgrade_args+=(--public-host "${PUBLIC_HOST}")
+if [[ -n "${APPLIANCE_NAME}" ]]; then
+  upgrade_args+=(--appliance-name "${APPLIANCE_NAME}")
+fi
+if [[ -n "${DNS_ZONE}" ]]; then
+  upgrade_args+=(--dns-zone "${DNS_ZONE}")
 fi
 if ((${#TLS_SANS[@]} > 0)); then
   for tls_san in "${TLS_SANS[@]}"; do

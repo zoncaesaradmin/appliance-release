@@ -156,26 +156,25 @@ install:
   # control_plane_deployment: control-plane
   # Product-facing appliance profile passed into the control plane.
   # Valid v1 values: core, builder, storage, landns, storage-landns, builder-landns, builder-storage-landns
-  appliance_profile: landns
+  appliance_profile: storage-landns
   # Local build catalog JSON/YAML. Copied to the target install temp dir and
   # passed to zonctl as product config. Required for a useful builder tryout.
   # Do not put private keys, tokens, or passwords in this file.
   # Builder workflow repo URLs must use HTTPS.
   # Start from references/build-catalog.example.yaml (no builderImageDigest keys).
   build_catalog_path: /Users/zoncaesar/build-catalog.yaml
-  # Canonical client-reachable public host the appliance should advertise in
-  # canonicalOrigin and the OCI registry token realm. Set this to the real DNS
-  # name clients can resolve, or to the appliance IP when DNS is unavailable.
-  public_host: registry1.appliance.internal
-  # Extra TLS SANs, in addition to the node-name and public_host, as a
-  # comma-separated list. Useful when you want the appliance certificate to be
-  # accepted on both the DNS name and the appliance IP.
+  # Product LAN instance label (single DNS label). FQDN becomes
+  # <appliance_name>.<dns_zone> for TLS, canonicalOrigin, and registry realm.
+  appliance_name: registry1
+  # LAN DNS zone for appliance identity and landns CoreDNS. Default when
+  # omitted: appliance.internal (must not use .local — mDNS-only on Ubuntu).
+  dns_zone: appliance.internal
+  # Extra TLS SANs in addition to the derived FQDN and node-name, as a
+  # comma-separated list (for example a raw IP for direct access).
   # additional_tls_sans_csv: 192.168.1.101
-  # DNS-bearing profiles only: CoreDNS (hostNetwork :53) serves zone
-  # appliance.internal (not .local — mDNS-only on Ubuntu). Install does not
-  # seed or publish A records. Add names on the DNS appliance via API/UI
-  # (PUT /api/v1/dns/records/{name}), or from any appliance via
-  # POST /api/v1/dns/publish (base capability) targeting the DNS appliance.
+  # DNS-bearing profiles: CoreDNS serves dns_zone. Install does not seed or
+  # publish A records. Add the appliance FQDN on the landns appliance via
+  # API/UI, or from any appliance via POST /api/v1/dns/publish.
   # zonctl auto-disables systemd-resolved's stub listener before install so
   # :53 is free, seeds /etc/hosts for the node hostname, and restores the stub
   # on uninstall. Point LAN clients at the DNS appliance LAN IP on UDP/TCP 53
@@ -224,7 +223,7 @@ verification:
   # Defaults enabled for landns/storage-landns/builder-*-landns and disabled for
   # core/storage/builder. The default readiness command waits for the
   # appliance-dns Deployment, then queries 127.0.0.1:53 for the local-zone A
-  # record derived from install.public_host (dig, or python3 UDP fallback).
+  # zone SOA for install.dns_zone (default appliance.internal).
   dns:
     # enabled: true
     # readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/appliance-dns --timeout=120s && dig +short @127.0.0.1 -p 53 SOA appliance.internal

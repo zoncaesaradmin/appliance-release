@@ -22,9 +22,11 @@ Notes:
 - A `run-release-flow.sh --appliance-profile` override is forwarded to install,
   target verification, and client verification so all phases use the same
   effective profile.
-- Set `install.public_host` in the config when you want the appliance to
-  advertise a stable logical DNS name instead of the machine hostname.
-- For advanced extra SANs beyond the chosen public host, use
+- Set `install.appliance_name` (required) and optional `install.dns_zone`
+  (default `appliance.internal`). The installer derives the FQDN as
+  `<appliance_name>.<dns_zone>` for TLS, `canonicalOrigin`, and the registry
+  realm. There is no separate `public_host` override.
+- For advanced extra SANs beyond the derived FQDN, use
   `install.additional_tls_sans_csv` in the config.
 - For the `builder` profile, set `install.build_catalog_path` or pass
   `--build-catalog PATH` when the bundle does not already include a
@@ -127,8 +129,9 @@ Use this when the release is already published and you want only the install ste
   --release-version 0.1.0 \
   --appliance-profile builder \
   --build-catalog /Users/zoncaesar/ws/appliance-release/build-catalog.yaml \
-  --public-host 192.168.1.101 \
-  --tls-san zonsyssrv1 \
+  --appliance-name registry1 \
+  --dns-zone appliance.internal \
+  --tls-san 192.168.1.101 \
   --preserve-failed-state \
   --uninstall-first
 ```
@@ -148,8 +151,8 @@ This script:
 - runs `zonctl preflight`
 - runs `zonctl install` on a fresh host
 - automatically switches to `zonctl upgrade` when the target already has an owned appliance install
-- can advertise one explicit client-reachable public host for the appliance
-  and registry realm with `--public-host`
+- passes `--appliance-name` / `--dns-zone` so zonctl derives the FQDN used for
+  TLS, canonical origin, and the registry realm
 - can include both DNS and IP certificate identities with repeatable
   `--tls-san` flags or `install.additional_tls_sans_csv`
 - uses the first-admin password from env only for a fresh install bootstrap
