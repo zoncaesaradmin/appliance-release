@@ -11,11 +11,9 @@ usage: install-on-target.sh [options]
 
 Install a published appliance release on the configured target host.
 
-For artifact_registry.mode=http the target downloads the package over HTTP.
-For mode=oci the skill copies the linux/amd64 ORAS CLI from the build host
-export (packaged by build-full-bundle) onto the target, then the target pulls
-the package. The Mac only orchestrates SSH/scp; it never downloads ORAS or the
-bundle. The target never apt-installs ORAS.
+For artifact_registry.mode=http or fileserver the target downloads the package
+over HTTP(S) from artifact_registry.base_url (fileserver uses the appliance
+Traefik /files path). The Mac only orchestrates SSH.
 
 Options:
   --config PATH              YAML or JSON config file. Optional if
@@ -116,15 +114,6 @@ PATH_PREFIX="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.release_p
 if [[ -z "${PATH_PREFIX}" ]]; then
   PATH_PREFIX="appliance"
 fi
-OCI_REGISTRY="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_registry" || true)"
-OCI_REPOSITORY="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_repository" || true)"
-OCI_USERNAME="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_username" || true)"
-OCI_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_token_env" || true)"
-OCI_TOKEN_FILE="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_token_file" || true)"
-OCI_INSECURE="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_insecure" || true)"
-if [[ -z "${OCI_TOKEN_ENV}" ]]; then
-  OCI_TOKEN_ENV="APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN"
-fi
 STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || true)"
 if [[ -z "${STATE_DIR}" ]]; then
   STATE_DIR="/var/lib/zon/state"
@@ -173,8 +162,6 @@ fi
 OUTPUT_FORMAT="text"
 
 TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
-BUILD_HOST="$(config_get_optional "${CONFIG_PATH}" "build_host.alias" || true)"
-REMOTE_EXPORT_DIR="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_export_dir" || true)"
 ensure_dir "${RUN_DIR}"
 ensure_dir "${RUN_DIR}/logs"
 ensure_dir "${RUN_DIR}/metadata"
@@ -182,64 +169,34 @@ ensure_dir "${RUN_DIR}/artifacts"
 
 [[ -n "${RELEASE_VERSION}" ]] || fail "--release-version is required for automated install"
 
-if [[ "${ARTIFACT_REGISTRY_MODE}" == "http" ]]; then
-  [[ -n "${BASE_URL}" ]] || fail "artifact_registry.mode=http requires artifact_registry.base_url"
-  helper_url="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-http-release.sh"
-  remote_release_dir="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}"
-  bundle_url="${remote_release_dir}/appliance-${RELEASE_VERSION}-bundle.tar.gz"
-  checksums_url="${remote_release_dir}/sha256sum.txt"
+# http and fileserver both fetch over HTTP(S). fileserver uses the appliance
+# Traefik /files path; set base_url to https://<distributor-fqdn>/files.
+case "${ARTIFACT_REGISTRY_MODE}" in
+  http|fileserver)
+    [[ -n "${BASE_URL}" ]] || fail "artifact_registry.mode=${ARTIFACT_REGISTRY_MODE} requires artifact_registry.base_url"
+    helper_url="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-http-release.sh"
+    remote_release_dir="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}"
+    bundle_url="${remote_release_dir}/appliance-${RELEASE_VERSION}-bundle.tar.gz"
+    checksums_url="${remote_release_dir}/sha256sum.txt"
 
-  preflight_public_url() {
-    local url="$1"
-    local label="$2"
-    local output=""
-    if ! output="$(curl -fsSIL "${url}" 2>&1)"; then
-      fail "published ${label} is not reachable at ${url}. Check that the HTTP server is running and serving the release root/path prefix. curl output: ${output}"
-    fi
-  }
+    preflight_public_url() {
+      local url="$1"
+      local label="$2"
+      local output=""
+      if ! output="$(curl -fsSIL "${url}" 2>&1)"; then
+        fail "published ${label} is not reachable at ${url}. Check that the HTTP server is running and serving the release root/path prefix. curl output: ${output}"
+      fi
+    }
 
-  preflight_public_url "${helper_url}" "install helper"
-  preflight_public_url "${bundle_url}" "bundle archive"
-  preflight_public_url "${checksums_url}" "checksum file"
-  INSTALL_SOURCE_LABEL="${remote_release_dir}"
-elif [[ "${ARTIFACT_REGISTRY_MODE}" == "oci" ]]; then
-  [[ -n "${OCI_REGISTRY}" ]] || fail "artifact_registry.mode=oci requires artifact_registry.oci_registry"
-  [[ -n "${OCI_REPOSITORY}" ]] || fail "artifact_registry.mode=oci requires artifact_registry.oci_repository"
-  [[ -n "${OCI_USERNAME}" ]] || fail "artifact_registry.mode=oci requires artifact_registry.oci_username"
-  helper_url="${OCI_REGISTRY}/${OCI_REPOSITORY}:${RELEASE_VERSION}"
-  INSTALL_SOURCE_LABEL="${helper_url}"
-  # Copy ORAS from the build-host export (packaged at build time) onto the
-  # target. Mac only orchestrates; it does not download ORAS.
-  [[ -n "${BUILD_HOST}" ]] || fail "artifact_registry.mode=oci requires build_host.alias so ORAS can be copied from the build-host export"
-  [[ -n "${REMOTE_EXPORT_DIR}" ]] || fail "artifact_registry.mode=oci requires release_workspace.remote_export_dir (build-full-bundle export containing tools/oras)"
-  oci_bootstrap_log="${RUN_DIR}/logs/oci-target-oras-bootstrap.log"
-  OCI_ORAS_BIN="$(bootstrap_oras_from_build_host_to_target "${BUILD_HOST}" "${REMOTE_EXPORT_DIR}" "${TARGET_HOST}" "${oci_bootstrap_log}")"
-  oci_preflight_log="${RUN_DIR}/logs/oci-target-preflight.log"
-  oci_preflight_cmd='set -euo pipefail
-oras_bin='"$(shell_quote "${OCI_ORAS_BIN}")"'
-if [[ ! -x "${oras_bin}" ]]; then
-  echo "install-on-target: bootstrapped ORAS binary missing on target: ${oras_bin}" >&2
-  exit 1
-fi
-token=""
-token_file='"$(shell_quote "${OCI_TOKEN_FILE}")"'
-token_env='"$(shell_quote "${OCI_TOKEN_ENV}")"'
-if [[ -n "${token_file}" && -r "${token_file}" ]]; then
-  token="$(tr -d '"'"'\r\n'"'"' < "${token_file}")"
-fi
-if [[ -z "${token}" ]]; then
-  token="$(printenv "${token_env}" || true)"
-fi
-if [[ -z "${token}" ]]; then
-  echo "install-on-target: set ${token_env} on the target host, or set artifact_registry.oci_token_file to a readable token file on the target" >&2
-  exit 1
-fi
-echo "oci target preflight ok (oras=${oras_bin})"
-'
-  run_ssh_logged "${TARGET_HOST}" "${oci_preflight_log}" "${oci_preflight_cmd}"
-else
-  fail "unsupported artifact_registry.mode: ${ARTIFACT_REGISTRY_MODE}"
-fi
+    preflight_public_url "${helper_url}" "install helper"
+    preflight_public_url "${bundle_url}" "bundle archive"
+    preflight_public_url "${checksums_url}" "checksum file"
+    INSTALL_SOURCE_LABEL="${remote_release_dir}"
+    ;;
+  *)
+    fail "unsupported artifact_registry.mode: ${ARTIFACT_REGISTRY_MODE}"
+    ;;
+esac
 if [[ "${APPLIANCE_PROFILE}" == "builder" || "${APPLIANCE_PROFILE}" == "builder-landns" || "${APPLIANCE_PROFILE}" == "builder-storage-landns" ]] && [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   catalog_validation_log="${RUN_DIR}/logs/build-catalog-validation.json"
   if ! python3 "${SCRIPT_DIR}/validate-build-catalog.py" \
@@ -265,7 +222,6 @@ PY
 )"
 fi
 
-if [[ "${ARTIFACT_REGISTRY_MODE}" == "http" ]]; then
 remote_script='set -euo pipefail
 remote_dir='"$(shell_quote "${remote_release_dir}")"'
 product_version='"$(shell_quote "${RELEASE_VERSION}")"'
@@ -306,85 +262,6 @@ tar -C "${out_dir}" -xzf "${out_dir}/${bundle_archive}"
 chmod +x "${zonctl}"
 echo "[target 3/5] Bundle extracted to ${bundle_dir}."
 '
-else
-# OCI: target pulls with oras (Mac is not in the data path).
-oci_insecure_flag="false"
-if bool_true "${OCI_INSECURE:-false}"; then
-  oci_insecure_flag="true"
-fi
-remote_script='set -euo pipefail
-product_version='"$(shell_quote "${RELEASE_VERSION}")"'
-out_dir='"$(shell_quote "${OUT_DIR}")"'
-state_dir='"$(shell_quote "${STATE_DIR}")"'
-build_catalog_b64='"$(shell_quote "${build_catalog_b64}")"'
-preserve_failed_state='"$(shell_quote "${PRESERVE_FAILED_STATE}")"'
-oci_registry='"$(shell_quote "${OCI_REGISTRY}")"'
-oci_repository='"$(shell_quote "${OCI_REPOSITORY}")"'
-oci_username='"$(shell_quote "${OCI_USERNAME}")"'
-oci_token_env='"$(shell_quote "${OCI_TOKEN_ENV}")"'
-oci_token_file='"$(shell_quote "${OCI_TOKEN_FILE}")"'
-oci_insecure='"$(shell_quote "${oci_insecure_flag}")"'
-oras_bin='"$(shell_quote "${OCI_ORAS_BIN}")"'
-public_key_file="release-signing.pub"
-checksum_file="sha256sum.txt"
-bundle_dir="${out_dir}/appliance-${product_version}-bundle"
-public_key="${out_dir}/${public_key_file}"
-zonctl="${bundle_dir}/zonctl"
-printf "%s\n" '"$(shell_quote "${target_sudo_password}")"' | sudo -S -p "" -v >/dev/null
-mkdir -p "${out_dir}"
-if [[ ! -x "${oras_bin}" ]]; then
-  echo "install-on-target: bootstrapped ORAS binary missing on target: ${oras_bin}" >&2
-  exit 1
-fi
-token=""
-if [[ -n "${oci_token_file}" && -r "${oci_token_file}" ]]; then
-  token="$(tr -d '\r\n' < "${oci_token_file}")"
-fi
-if [[ -z "${token}" ]]; then
-  token="$(printenv "${oci_token_env}" || true)"
-fi
-if [[ -z "${token}" ]]; then
-  echo "install-on-target: missing distribution registry token on target (env ${oci_token_env} or file ${oci_token_file:-<unset>})" >&2
-  exit 1
-fi
-oras_flags=()
-if [[ "${oci_insecure}" == "true" ]]; then
-  oras_flags+=(--insecure)
-fi
-ref="${oci_registry}/${oci_repository}:${product_version}"
-echo "[target 1/5] Pulling release package ${ref} with bootstrapped oras..."
-printf "%s\n" "${token}" | "${oras_bin}" login "${oras_flags[@]}" --username "${oci_username}" --password-stdin "${oci_registry}"
-(
-  cd "${out_dir}"
-  "${oras_bin}" pull "${oras_flags[@]}" "${ref}"
-)
-echo "[target 1/5] Release files pulled."
-bundle_archive="$(cd "${out_dir}" && ls appliance-*-bundle.tar.gz | head -n 1)"
-if [[ -z "${bundle_archive}" ]]; then
-  echo "install-on-target: pulled OCI artifact is missing appliance-*-bundle.tar.gz" >&2
-  exit 1
-fi
-echo "[target 2/5] Verifying release checksums..."
-if command -v sha256sum >/dev/null 2>&1; then
-  (cd "${out_dir}" && sha256sum -c "${checksum_file}" >/dev/null)
-else
-  if ! command -v shasum >/dev/null 2>&1; then
-    echo "install-on-target: need sha256sum or shasum to verify checksums" >&2
-    exit 1
-  fi
-  tmp_checksums="${out_dir}/.sha256sum.tmp"
-  awk '"'"'{print $1 "  " $2}'"'"' "${out_dir}/${checksum_file}" > "${tmp_checksums}"
-  (cd "${out_dir}" && shasum -a 256 -c "$(basename "${tmp_checksums}")" >/dev/null)
-  rm -f "${tmp_checksums}"
-fi
-echo "[target 2/5] Release checksums verified."
-echo "[target 3/5] Extracting bundle..."
-rm -rf "${bundle_dir}"
-tar -C "${out_dir}" -xzf "${out_dir}/${bundle_archive}"
-chmod +x "${zonctl}"
-echo "[target 3/5] Bundle extracted to ${bundle_dir}."
-'
-fi
 remote_script+='
 install_args=(
   --bundle-dir "${bundle_dir}"
@@ -524,7 +401,7 @@ run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"
 install_exit_code=$?
 set -e
 
-python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${ARTIFACT_REGISTRY_MODE}" "${BASE_URL:-}" "${PATH_PREFIX}" "${OCI_REGISTRY:-}" "${OCI_REPOSITORY:-}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${APPLIANCE_NAME}" "${DNS_ZONE}" "${ADDITIONAL_TLS_SANS_CSV}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${PRESERVE_FAILED_STATE}" "${install_log}" "${install_exit_code}" <<'PY'
+python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${ARTIFACT_REGISTRY_MODE}" "${BASE_URL:-}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${APPLIANCE_NAME}" "${DNS_ZONE}" "${ADDITIONAL_TLS_SANS_CSV}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${PRESERVE_FAILED_STATE}" "${install_log}" "${install_exit_code}" <<'PY'
 import json
 import sys
 
@@ -537,8 +414,6 @@ import sys
     distribution_mode,
     base_url,
     path_prefix,
-    oci_registry,
-    oci_repository,
     state_dir,
     out_dir,
     appliance_profile,
@@ -551,9 +426,12 @@ import sys
     preserve_failed_state,
     install_log,
     install_exit_code,
-) = sys.argv[1:23]
+) = sys.argv[1:21]
 
-install_method = "direct-http-zonctl-auto" if distribution_mode == "http" else "direct-oci-zonctl-auto"
+install_method = {
+    "http": "direct-http-zonctl-auto",
+    "fileserver": "direct-fileserver-zonctl-auto",
+}.get(distribution_mode, f"direct-{distribution_mode}-zonctl-auto")
 
 payload = {
     "configPath": config_path,
@@ -564,8 +442,6 @@ payload = {
     "releaseVersion": release_version or None,
     "baseUrl": base_url or None,
     "pathPrefix": path_prefix or None,
-    "ociRegistry": oci_registry or None,
-    "ociRepository": oci_repository or None,
     "stateDir": state_dir or None,
     "outDir": out_dir,
     "bundleDir": f"{out_dir}/appliance-{release_version}-bundle" if release_version else None,

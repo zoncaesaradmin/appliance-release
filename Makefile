@@ -44,8 +44,9 @@ verify-help:
 		bash "$$script" --help >/dev/null; \
 	done
 	@bash scripts/publish/install-http-release.sh --help | grep -q -- '--build-catalog'
-	@bash scripts/publish/install-oci-release.sh --help | grep -q -- '--oci-registry'
 	@bash scripts/publish/publish-release.sh --help | grep -q -- '--mode'
+	@bash scripts/publish/publish-release.sh --help | grep -q -- 'fileserver'
+	@bash scripts/publish/artifact-registry-lib.sh --help | grep -q -- 'fileserver'
 
 .PHONY: verify-json
 verify-json:
@@ -431,7 +432,7 @@ publish-release:
 		echo "publish-release: required env vars are EXPORT_DIR=/abs/path/to/export PRODUCT_VERSION=..." >&2; \
 		exit 2; \
 	fi
-	@mode="$${PUBLISH_MODE:-http-static}"; \
+	@mode="$${PUBLISH_MODE:-http}"; \
 	case "$$mode" in \
 		http|http-static) \
 			if [ -z "$${PUBLISH_SERVER:-}" ] || [ -z "$${PUBLISH_REMOTE_ROOT:-}" ]; then \
@@ -441,7 +442,7 @@ publish-release:
 			bash ./scripts/publish/publish-release.sh \
 				--export-dir "$${EXPORT_DIR}" \
 				--product-version "$${PRODUCT_VERSION}" \
-				--mode http-static \
+				--mode http \
 				--server "$${PUBLISH_SERVER}" \
 				--remote-root "$${PUBLISH_REMOTE_ROOT}" \
 				$${PUBLISH_PATH_PREFIX:+--path-prefix "$${PUBLISH_PATH_PREFIX}"} \
@@ -449,24 +450,15 @@ publish-release:
 				$${PUBLISH_PUBLIC_BASE_URL:+--public-base-url "$${PUBLISH_PUBLIC_BASE_URL}"} \
 				$${PUBLISH_LATEST_ALIAS:+--latest-alias} \
 			;; \
-		oci) \
-			if [ -z "$${PUBLISH_OCI_REGISTRY:-}" ] || [ -z "$${PUBLISH_OCI_REPOSITORY:-}" ] || [ -z "$${PUBLISH_OCI_USERNAME:-}" ]; then \
-				echo "publish-release: oci mode requires PUBLISH_OCI_REGISTRY, PUBLISH_OCI_REPOSITORY, and PUBLISH_OCI_USERNAME" >&2; \
-				exit 2; \
-			fi; \
+		fileserver) \
 			bash ./scripts/publish/publish-release.sh \
 				--export-dir "$${EXPORT_DIR}" \
 				--product-version "$${PRODUCT_VERSION}" \
-				--mode oci \
-				--oci-registry "$${PUBLISH_OCI_REGISTRY}" \
-				--oci-repository "$${PUBLISH_OCI_REPOSITORY}" \
-				--oci-username "$${PUBLISH_OCI_USERNAME}" \
-				$${PUBLISH_OCI_TOKEN_ENV:+--oci-token-env "$${PUBLISH_OCI_TOKEN_ENV}"} \
-				$${PUBLISH_OCI_TOKEN_FILE:+--oci-token-file "$${PUBLISH_OCI_TOKEN_FILE}"} \
-				$${PUBLISH_LATEST_ALIAS:+--latest-alias} \
+				--mode fileserver \
+				$${PUBLISH_PATH_PREFIX:+--path-prefix "$${PUBLISH_PATH_PREFIX}"} \
 			;; \
 		*) \
-			echo "publish-release: PUBLISH_MODE must be http-static or oci (got $$mode)" >&2; \
+			echo "publish-release: PUBLISH_MODE must be http or fileserver (got $$mode)" >&2; \
 			exit 2; \
 			;; \
 	esac

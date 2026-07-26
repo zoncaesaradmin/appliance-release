@@ -5,7 +5,7 @@ description: Orchestrate the Zon appliance developer-to-target workflow across l
 
 # Appliance Release
 
-Use this skill when we need to drive the repeatable Zon appliance release path from a macOS development machine through a build server, a release distribution backend (HTTP static server or an already-running appliance Artifact Server via ORAS), and onto a target host.
+Use this skill when we need to drive the repeatable Zon appliance release path from a macOS development machine through a build server, a release distribution backend (external HTTP static server or appliance-hosted `/files` fileserver), and onto a target host.
 
 ## What This Skill Owns
 
@@ -56,12 +56,9 @@ For day-to-day use, set:
 - `APPLIANCE_TARGET_SUDO_PASSWORD=...`
 - `APPLIANCE_FIRST_ADMIN_PASSWORD=...`
 
-OCI distribution (`artifact_registry.mode=oci`) does **not** require
-`APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN` or `oras` on the Mac. The build host
-packages a pinned linux/amd64 ORAS CLI into the bundle/export at build time,
-uses it to publish, and the skill copies that export binary onto the target
-before pull. Put the distribution token on build host + target only (env or
-`oci_token_file`).
+Distribution modes (`artifact_registry.mode`): `http` (default external publish
+box) or `fileserver` (appliance Traefik `/files`). Both install with target
+`curl` against `artifact_registry.base_url`.
 
 Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `--config`.
 
@@ -70,9 +67,9 @@ Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `
 - `scripts/run-release-flow.sh`
   One-shot wrapper for the common flow from the `appliance-release` repo: build/publish, install, target verify, then macOS-side API verify.
 - `scripts/build-and-publish.sh`
-  Run the deterministic build-host flow: optional `git pull`, build-host bootstrap, bundle build, publish, and artifact metadata capture. Publish uses `artifact_registry.mode` (`http` or `oci`).
+  Run the deterministic build-host flow: optional `git pull`, build-host bootstrap, bundle build, publish, and artifact metadata capture. Publish uses `artifact_registry.mode` (`http` or `fileserver`).
 - `scripts/install-on-target.sh`
-  Optionally uninstall the previous appliance, then install the published release on the target host (HTTP `curl`, or ORAS pull on the target using the build-host-packaged CLI; Mac only SSHs).
+  Optionally uninstall the previous appliance, then install the published release on the target host via HTTP `curl` against `base_url` (Mac only SSHs).
 - `scripts/verify-target.sh`
   Run post-install verification, service-health checks, smoke checks, and failure-log capture.
 - `scripts/verify-client-access.sh`

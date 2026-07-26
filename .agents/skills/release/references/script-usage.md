@@ -26,19 +26,13 @@ Notes:
   (default `appliance.internal`). The installer derives the FQDN as
   `<appliance_name>.<dns_zone>` for TLS, `canonicalOrigin`, and the registry
   realm. There is no separate `public_host` override.
-- Set `artifact_registry.mode` to `http` (default) or `oci`:
-  - `http` — publish/install via the static HTTP server (`base_url`,
+- Set `artifact_registry.mode` to `http` (default) or `fileserver`:
+  - `http` — publish/install via an external static HTTP server (`base_url`,
     `publish_server_alias`, `publish_remote_root`)
-  - `oci` — publish/install the same signed bundle via ORAS to a separate,
-    already-running appliance Artifact Server (`oci_registry`,
-    `oci_repository`, `oci_username`, token via `oci_token_env` or
-    `oci_token_file` on the **build host** and **target**)
-- For OCI mode the Mac does not need `oras` or
-  `APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN`. `build-full-bundle` on the build
-  host packages linux/amd64 ORAS into the bundle and `EXPORT_DIR/tools/oras`.
-  Publish uses that binary; install copies it from the build host export onto
-  the target, then pulls. Set the distribution token (env or `oci_token_file`)
-  on build host + target only, with pull+push on the repository prefix.
+  - `fileserver` — install via curl against appliance-hosted
+    `https://<distributor-fqdn>/files` (`base_url`); publish is a Phase-2
+    stub (copy into `/data/zon/files/<prefix>/<version>/` on the
+    distribution appliance)
 - For advanced extra SANs beyond the derived FQDN, use
   `install.additional_tls_sans_csv` in the config.
 - For the `builder` profile, set `install.build_catalog_path` or pass
@@ -158,9 +152,8 @@ If you want to keep the current install and test without uninstalling first:
 
 This script:
 
-- downloads the published package on the target (HTTP `curl`, or OCI
-  `oras pull` when `artifact_registry.mode=oci`, after copying ORAS from the
-  build-host export; Mac only orchestrates SSH/scp)
+- downloads the published package on the target with HTTP `curl` against
+  `artifact_registry.base_url` (Mac only orchestrates SSH)
 - verifies checksums
 - extracts the bundle on the target host
 - runs `zonctl preflight`

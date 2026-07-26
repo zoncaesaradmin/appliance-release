@@ -33,8 +33,6 @@ go.work.sum
 .run/
 bin/
 
-# Build-host ORAS cache used by scripts/publish/oras-bootstrap.sh
-.cache/oras/
 
 # Editor/IDE
 # .idea/

@@ -1002,6 +1002,23 @@ if [[ ${#PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES[@]} -ne ${#PACKAGED_EXTRA_OCI_IMAGE_R
   exit 1
 fi
 
+# Always package the fileserver image (nginx) for artifact-profile
+# Traefik /files. Not optional — install requires the digest pin when zot
+# is present.
+FILESERVER_IMAGE_PULL_REF="${FILESERVER_IMAGE_PULL_REF:-docker.io/library/nginx:1.27.4-alpine}"
+FILESERVER_IMAGE_ARCHIVE_SOURCE="${FILESERVER_IMAGE_ARCHIVE_SOURCE:-}"
+mkdir -p "${CODE_REPO_DIR}/.run/extra-oci-images"
+FILESERVER_ARCHIVE="${CODE_REPO_DIR}/.run/extra-oci-images/fileserver.tar"
+if [[ -n "${FILESERVER_IMAGE_ARCHIVE_SOURCE}" ]]; then
+  require_file "${FILESERVER_IMAGE_ARCHIVE_SOURCE}" "fileserver image archive"
+  cp "${FILESERVER_IMAGE_ARCHIVE_SOURCE}" "${FILESERVER_ARCHIVE}"
+  FILESERVER_IMAGE_REF="$(finalize_bundled_oci_archive "${FILESERVER_ARCHIVE}" "registry.local/fileserver")"
+else
+  FILESERVER_IMAGE_REF="$(export_bundled_extra_oci_image_archive "${FILESERVER_IMAGE_PULL_REF}" "registry.local/fileserver" "${FILESERVER_ARCHIVE}")"
+fi
+PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES+=("/workspace/.run/extra-oci-images/fileserver.tar")
+PACKAGED_EXTRA_OCI_IMAGE_REFS+=("${FILESERVER_IMAGE_REF}")
+
 EXTRA_OCI_ARG_LINES=""
 for idx in "${!PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES[@]}"; do
   EXTRA_OCI_ARG_LINES+="  EXTRA_OCI_ARGS+=(--extra-oci-image $(shell_quote "${PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES[idx]}") --extra-oci-image-reference $(shell_quote "${PACKAGED_EXTRA_OCI_IMAGE_REFS[idx]}"))"$'\n'
@@ -1109,23 +1126,6 @@ echo "  ${CONFIG_OUT}"
 
 make -C "${RELEASE_REPO_DIR}" product-bundle CONFIG="${CONFIG_OUT}"
 
-# Package a pinned linux/amd64 ORAS CLI into the bundle and export tree on the
-# build host (Ubuntu amd64 targets for now). Used for OCI publish on this host
-# and to bootstrap OCI pull on the target without Mac-side tooling.
-ORAS_BOOTSTRAP="${RELEASE_REPO_DIR}/scripts/publish/oras-bootstrap.sh"
-ORAS_CACHE_DIR="${WORK_ROOT}/cache/oras"
-echo "packaging ORAS CLI (linux/amd64) into bundle and export..."
-ORAS_CACHE_DIR="${ORAS_CACHE_DIR}" bash "${ORAS_BOOTSTRAP}" --install-to "${BUNDLE_DIR}/tools" >/dev/null
-ORAS_CACHE_DIR="${ORAS_CACHE_DIR}" bash "${ORAS_BOOTSTRAP}" --install-to "${EXPORT_DIR}/tools" >/dev/null
-[[ -x "${BUNDLE_DIR}/tools/oras" ]] || {
-  echo "build-full-bundle: failed to package ORAS into ${BUNDLE_DIR}/tools/oras" >&2
-  exit 1
-}
-[[ -x "${EXPORT_DIR}/tools/oras" ]] || {
-  echo "build-full-bundle: failed to export ORAS to ${EXPORT_DIR}/tools/oras" >&2
-  exit 1
-}
-
 tar -C "$(dirname "${BUNDLE_DIR}")" -czf "${BUNDLE_ARCHIVE}" "$(basename "${BUNDLE_DIR}")"
 cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
 
@@ -1136,9 +1136,8 @@ echo
 echo "final bundle:"
 echo "  ${BUNDLE_DIR}"
 echo
-echo "bundled ORAS CLI (linux/amd64):"
-echo "  ${BUNDLE_DIR}/tools/oras"
-echo "  ${EXPORT_DIR}/tools/oras"
+echo "bundled fileserver image:"
+echo "  ${FILESERVER_IMAGE_REF}"
 echo
 echo "generated bundle config:"
 echo "  ${WORKSPACE}/generated/product-bundle.env"
@@ -1146,7 +1145,6 @@ echo
 echo "exported customer delivery files:"
 echo "  ${BUNDLE_ARCHIVE}"
 echo "  ${PUBLIC_KEY_EXPORT}"
-echo "  ${EXPORT_DIR}/tools/oras"
 echo
 echo "next publish step on the build machine:"
 echo "  export PRODUCT_VERSION=${PRODUCT_VERSION}"

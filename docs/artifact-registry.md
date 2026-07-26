@@ -14,40 +14,32 @@ If your appliance TLS certificate is not trusted yet, keep the insecure flags
 shown below for quick testing. After you trust the certificate, remove `-k`,
 `--tls-verify=false`, and `--insecure`.
 
-## Release distribution via this registry
+## Release distribution (HTTP vs appliance fileserver)
 
-An already-running Artifact Server can also be the **release distribution**
-backend for signed appliance bundles (instead of a plain HTTP file server).
+Signed appliance **bundles** are distributed as static files over HTTP(S), not
+as OCI/ORAS artifacts. The Artifact Server (`/v2`) remains for container images.
 
 In `appliance-release.config.yaml` (see also
 `.agents/skills/release/references/config.example.yaml`):
 
 ```yaml
 artifact_registry:
-  mode: oci
-  oci_registry: artifact-dns-1.appliance.internal
-  oci_repository: appliance/releases
-  oci_insecure: true
-  oci_username: admin
-  oci_token_env: APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN
-  # optional absolute path on build host + target (not on the Mac):
-  # oci_token_file: /home/zonsys/.config/appliance/distribution-registry.token
+  # Default: external publish box
+  mode: http
+  base_url: http://192.168.1.105:28081
+  publish_server_alias: zonsys@192.168.1.105
+  publish_remote_root: /home/zonsys/releases
+
+  # Or appliance-hosted Traefik /files (after files are on hostPath):
+  # mode: fileserver
+  # base_url: https://artifact-dns-1.appliance.internal/files
 ```
 
-Then:
-
-1. Create an API token on the distribution appliance (section 2 below).
-2. Grant that subject `pull,push` on `appliance/releases` (or your prefix).
-3. Put the distribution token on the **build host** (push) and **target**
-   (pull). The Mac does not need the token or ORAS. At build time the build
-   host packages linux/amd64 ORAS into the bundle and `EXPORT_DIR/tools/oras`;
-   publish uses that binary, and install copies it from the build host onto
-   the target before pull (no apt/GitHub on the target).
-4. Run the normal skill build/publish/install flow; the build host pushes
-   `{oci_registry}/{oci_repository}:{version}` and the target pulls it.
-
-HTTP mode (`artifact_registry.mode: http`) remains the default for labs
-without a distribution appliance.
+For `fileserver`, the storage/artifact appliance serves
+`/data/zon/files` at `https://<fqdn>/files/...` (Deployment
+`appliance-registry-fileserver` in the `registry` namespace). Publish into that hostPath is
+Phase 2; until then copy the export tree manually, then install with the same
+target `curl` path as `http` mode.
 
 ## 1. Log In And List Repositories
 
