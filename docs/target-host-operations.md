@@ -67,13 +67,13 @@ curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-releas
 
 Notes:
 
-- valid v1 profiles are `core`, `builder`, `storage`, `lan-dns`, and `storage-lan-dns`
+- valid v1 profiles are `core`, `builder`, `storage`, `landns`, `storage-landns`, `builder-landns`, and `builder-storage-landns`
 - profile selection does not change the published bundle files or create a different SKU
 - omitting `--appliance-profile` keeps the default `core` profile
 - build catalog files are install-time product config, not release artifacts
 - the target appliance must be able to reach the configured Git host from the
   build workflow namespace, because cloning happens inside a workflow pod
-- `lan-dns` and `storage-lan-dns` install the appliance-owned CoreDNS release
+- DNS-bearing profiles (`landns`, `storage-landns`, `builder-landns`, `builder-storage-landns`) install the appliance-owned CoreDNS release
   (`appliance-dns` in namespace `dns`) with hostNetwork on UDP/TCP 53. Point
   LAN clients at the appliance's LAN IP as their resolver. The local zone is
   `appliance.internal` (not `.local` — systemd-resolved reserves that for
@@ -83,7 +83,7 @@ Notes:
   `dns.records.write` / `dns.records.register`), or from any appliance via
   `POST /api/v1/dns/publish` (base capability) which calls the remote DNS
   appliance's records API. Step-by-step curl examples:
-  [lan-dns-usage.md](lan-dns-usage.md). Before preflight,
+  [landns-usage.md](landns-usage.md). Before preflight,
   `zonctl` disables Ubuntu's `systemd-resolved` stub listener
   (`DNSStubListener=no` drop-in under `/etc/systemd/resolved.conf.d/`) so
   CoreDNS can bind `:53`, seeds a managed `/etc/hosts` entry for the node

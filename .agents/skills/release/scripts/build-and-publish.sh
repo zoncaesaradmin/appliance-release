@@ -215,7 +215,7 @@ append_env_assignment() {
 
 profile_supports_workflows() {
   case "$1" in
-    core|builder) return 0 ;;
+    core|builder|builder-landns|builder-storage-landns) return 0 ;;
     *) return 1 ;;
   esac
 }

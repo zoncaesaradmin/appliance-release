@@ -179,7 +179,8 @@ default, unless you explicitly disable `verification.argo.enabled`:
 - core Argo Workflow CRDs
 - the Argo controller deployment and pods
 
-If `install.appliance_profile` is `builder`, it also checks that
+If `install.appliance_profile` is a build-capable profile (`builder`,
+`builder-landns`, `builder-storage-landns`), it also checks that
 `/api/v1/work-profiles` is not a 404 from the target. Override
 `verification.builder.enabled` or `verification.builder.api_command` only when
 you need custom reachability behavior.

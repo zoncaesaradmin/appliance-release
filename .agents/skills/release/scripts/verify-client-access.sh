@@ -142,15 +142,14 @@ if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   ensure_file "${BUILD_CATALOG_PATH}"
 fi
 if [[ -z "${BUILDER_ENABLED}" ]]; then
-  if [[ "${APPLIANCE_PROFILE}" == "builder" ]]; then
-    BUILDER_ENABLED="true"
-  else
-    BUILDER_ENABLED="false"
-  fi
+  case "${APPLIANCE_PROFILE}" in
+    builder|builder-landns|builder-storage-landns) BUILDER_ENABLED="true" ;;
+    *) BUILDER_ENABLED="false" ;;
+  esac
 fi
 if [[ -z "${ARTIFACT_ENABLED}" ]]; then
   case "${APPLIANCE_PROFILE}" in
-    storage|builder|storage-lan-dns) ARTIFACT_ENABLED="true" ;;
+    storage|builder|storage-landns|builder-landns|builder-storage-landns) ARTIFACT_ENABLED="true" ;;
     *) ARTIFACT_ENABLED="false" ;;
   esac
 fi

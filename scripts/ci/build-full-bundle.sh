@@ -72,7 +72,8 @@ Optional overrides:
   DNS_IMAGE_PULL_REF=registry.k8s.io/coredns/coredns:v1.14.4
   DNS_IMAGE_ARCHIVE_SOURCE=/ci/inputs/coredns.oci.tar
   # CoreDNS is also a first-class release artifact (like zot), packaged for the
-  # lan-dns / storage-lan-dns appliance profiles. Same online/offline export
+  # DNS-bearing appliance profiles (landns, storage-landns, builder-*-landns).
+  # Same online/offline export
   # rules as Zot; derives registry.local/coredns@sha256:<platform-digest>.
 EOF
 }

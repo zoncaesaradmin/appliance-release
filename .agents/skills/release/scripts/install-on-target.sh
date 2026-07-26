@@ -134,7 +134,7 @@ fi
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   ensure_file "${BUILD_CATALOG_PATH}"
 fi
-if [[ "${APPLIANCE_PROFILE}" == "builder" && -z "${BUILD_CATALOG_PATH}" ]]; then
+if [[ "${APPLIANCE_PROFILE}" == "builder" || "${APPLIANCE_PROFILE}" == "builder-landns" || "${APPLIANCE_PROFILE}" == "builder-storage-landns" ]] && [[ -z "${BUILD_CATALOG_PATH}" ]]; then
   fail "builder appliance profile requires install.build_catalog_path or --build-catalog; start from .agents/skills/release/references/build-catalog.example.yaml"
 fi
 if [[ -z "${UNINSTALL_FIRST}" ]]; then
@@ -170,7 +170,7 @@ preflight_public_url() {
 preflight_public_url "${helper_url}" "install helper"
 preflight_public_url "${bundle_url}" "bundle archive"
 preflight_public_url "${checksums_url}" "checksum file"
-if [[ "${APPLIANCE_PROFILE}" == "builder" && -n "${BUILD_CATALOG_PATH}" ]]; then
+if [[ "${APPLIANCE_PROFILE}" == "builder" || "${APPLIANCE_PROFILE}" == "builder-landns" || "${APPLIANCE_PROFILE}" == "builder-storage-landns" ]] && [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   catalog_validation_log="${RUN_DIR}/logs/build-catalog-validation.json"
   if ! python3 "${SCRIPT_DIR}/validate-build-catalog.py" \
     --config "${CONFIG_PATH}" \

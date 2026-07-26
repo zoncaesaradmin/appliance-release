@@ -11,7 +11,7 @@ appliance's base-capability publish API.
 
 | Item | Value |
 |---|---|
-| Profiles that run the DNS server | `lan-dns`, `storage-lan-dns` |
+| Profiles that run the DNS server | `landns`, `storage-landns`, `builder-landns`, `builder-storage-landns` |
 | Zone | `appliance.internal` (not `.local` — Ubuntu treats that as mDNS) |
 | Resolver listen | DNS appliance LAN IP, UDP/TCP **53** |
 | Record shape | single left-hand label → A record, e.g. `registry1` → `registry1.appliance.internal` |
@@ -21,7 +21,7 @@ appliance's base-capability publish API.
 Example topology used below:
 
 ```text
-DNS appliance:   https://192.168.1.105   (profile lan-dns)
+DNS appliance:   https://192.168.1.105   (profile landns)
 Peer appliance:  https://192.168.1.102   (profile core / builder / …)
 ```
 
@@ -32,7 +32,7 @@ certificate is not trusted yet.
 
 ## 1. Set up the DNS appliance
 
-1. Install a bundle with profile `lan-dns` or `storage-lan-dns`
+1. Install a bundle with a DNS-bearing profile (`landns`, `storage-landns`, `builder-landns`, or `builder-storage-landns`)
    (see [target-host-operations.md](target-host-operations.md)).
 2. Complete first-admin bootstrap on that host.
 3. Confirm CoreDNS is up:
@@ -84,7 +84,7 @@ TOKEN_JSON="$(
     -X POST \
     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d '{"name":"lan-dns-admin","lifetimeSeconds":7776000}' \
+    -d '{"name":"landns-admin","lifetimeSeconds":7776000}' \
     "${DNS_APPLIANCE}/api/v1/tokens"
 )"
 
@@ -294,7 +294,7 @@ flags are not supported; DNS is API-only.
 
 ## 5. Quick checklist
 
-1. Install DNS profile (`lan-dns` or `storage-lan-dns`).
+1. Install a DNS-bearing profile (`landns`, `storage-landns`, `builder-landns`, or `builder-storage-landns`).
 2. Bootstrap admin; create `DNS_API_TOKEN`.
 3. Point LAN resolvers at the DNS appliance IP `:53`.
 4. Add names with `PUT /api/v1/dns/records/{name}` **or** peer

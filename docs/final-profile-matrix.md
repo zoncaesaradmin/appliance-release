@@ -4,13 +4,12 @@ Use this guide only for the stricter final-release evidence flow across the
 `core`, `storage`, and `builder` appliance profiles. It is intentionally kept
 out of the normal day-to-day script usage path.
 
-The installer and control plane also recognize `lan-dns` and
-`storage-lan-dns`. Those profiles reuse the same release-flow machinery with
-DNS-capability evidence (`appliance-dns` Ready + local-zone dig on DNS
-profiles; absence of the DNS release on core/storage/builder). They are not
-yet required rows in the stricter three-profile final matrix below; collect
-their evidence via ordinary `verify-target` / profile-matrix runs when
-exercising those profiles.
+The installer and control plane also recognize `landns`,
+`storage-landns`, `builder-landns`, and `builder-storage-landns`. Those
+profiles reuse the same release-flow machinery with the corresponding
+capability evidence. They are not yet required rows in the stricter
+three-profile final matrix below; collect their evidence via ordinary
+`verify-target` / profile-matrix runs when exercising those profiles.
 
 ## 1. Final Input Checklist
 

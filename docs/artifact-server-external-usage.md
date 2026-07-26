@@ -14,7 +14,7 @@ that address. If your appliance is reachable at a different hostname or IP,
 replace it consistently in the commands below.
 
 These examples assume the appliance is installed with the `storage`,
-`builder`, or `storage-lan-dns` profile and that the artifact capability is
+`builder`, `storage-landns`, `builder-landns`, or `builder-storage-landns` profile and that the artifact capability is
 enabled.
 
 For OCI tools, use the appliance's canonical advertised registry host. In a
@@ -174,7 +174,7 @@ curl -ksS \
 ## Notes
 
 - `core` profile should not expose this registry path at all.
-- `storage`, `builder`, and `storage-lan-dns` profiles should expose it.
+- `storage`, `builder`, `storage-landns`, `builder-landns`, and `builder-storage-landns` profiles should expose it.
 - Use the appliance username plus API token for registry clients.
 - Use the appliance API access token only for `/api/v1/...` API calls.
 - Do not use the appliance API access token directly for `podman login` or

@@ -112,7 +112,7 @@ build_flow:
   # workspace_provisioner_image_ref: registry.local/workspace-provisioner
   # Zot is a required first-class image/chart contract in every complete bundle.
   # It is activated at install time only for artifact-bearing profiles:
-  # storage, builder, and storage-lan-dns.
+  # storage, builder, storage-landns, builder-landns, and builder-storage-landns.
   # Online builds pull this exact version on the build host, copy linux/amd64,
   # and derive registry.local/zot@sha256:<index.json platform digest>. The
   # archive is relabeled registry.local/zot:bundled for reliable ctr import.
@@ -123,7 +123,7 @@ build_flow:
     # image_archive_source: /home/zonsys/ci/inputs/zot.oci.tar
   # CoreDNS is also a required first-class image/chart contract in every
   # complete bundle (same treatment as Zot above). It is activated at install
-  # time only for DNS-bearing profiles: lan-dns and storage-lan-dns.
+  # time only for DNS-bearing profiles: landns, storage-landns, builder-landns, builder-storage-landns.
   # Online builds pull this exact version on the build host, copy linux/amd64,
   # and derive registry.local/coredns@sha256:<index.json platform digest>. The
   # archive is relabeled registry.local/coredns:bundled for reliable ctr import.
@@ -155,8 +155,8 @@ install:
   # rollout_namespace: appliance-system
   # control_plane_deployment: control-plane
   # Product-facing appliance profile passed into the control plane.
-  # Valid v1 values: core, builder, storage, lan-dns, storage-lan-dns
-  appliance_profile: lan-dns
+  # Valid v1 values: core, builder, storage, landns, storage-landns, builder-landns, builder-storage-landns
+  appliance_profile: landns
   # Local build catalog JSON/YAML. Copied to the target install temp dir and
   # passed to zonctl as product config. Required for a useful builder tryout.
   # Do not put private keys, tokens, or passwords in this file.
@@ -171,7 +171,7 @@ install:
   # comma-separated list. Useful when you want the appliance certificate to be
   # accepted on both the DNS name and the appliance IP.
   # additional_tls_sans_csv: 192.168.1.101
-  # lan-dns / storage-lan-dns only: CoreDNS (hostNetwork :53) serves zone
+  # DNS-bearing profiles only: CoreDNS (hostNetwork :53) serves zone
   # appliance.internal (not .local — mDNS-only on Ubuntu). Install does not
   # seed or publish A records. Add names on the DNS appliance via API/UI
   # (PUT /api/v1/dns/records/{name}), or from any appliance via
@@ -195,8 +195,8 @@ verification:
   smoke_test_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
   failure_log_command: sudo zonctl support-bundle --output json
   # Argo verification now follows the installed profile capability by default:
-  # core/builder profiles verify workflows, while storage, lan-dns, and
-  # storage-lan-dns skip those checks even if this block is left enabled from
+  # core/builder/builder-*-landns profiles verify workflows, while storage,
+  # landns, and storage-landns skip those checks even if this block is left enabled from
   # an older config. Keep this true only when you want Argo checks for a
   # workflow-capable profile.
   argo:
@@ -215,13 +215,13 @@ verification:
     # custom builder-specific readiness rule.
   allow_ingress_warning: true
   allow_verify_schema_bug: true
-  # Defaults enabled for storage/builder/storage-lan-dns and disabled for
-  # core/lan-dns. The default readiness command waits for the zot Deployment
+  # Defaults enabled for storage/builder/storage-landns/builder-*-landns and disabled for
+  # core/landns. The default readiness command waits for the zot Deployment
   # and confirms its PVC.
   artifact:
     # enabled: true
     # readiness_command: sudo kubectl -n registry wait --for=condition=Available deployment/artifact-registry --timeout=120s && sudo kubectl -n registry get pvc appliance-registry-data
-  # Defaults enabled for lan-dns/storage-lan-dns and disabled for
+  # Defaults enabled for landns/storage-landns/builder-*-landns and disabled for
   # core/storage/builder. The default readiness command waits for the
   # appliance-dns Deployment, then queries 127.0.0.1:53 for the local-zone A
   # record derived from install.public_host (dig, or python3 UDP fallback).
@@ -270,8 +270,8 @@ client_verification:
       # poll_delay_seconds: 5
       # expect_success: true
       # delete_workspace_on_success: false
-  # Defaults enabled for storage/builder/storage-lan-dns and disabled for
-  # core/lan-dns. Built-in checks cover capability routing, /v2 bearer
+  # Defaults enabled for storage/builder/storage-landns/builder-*-landns and disabled for
+  # core/landns. Built-in checks cover capability routing, /v2 bearer
   # challenge, API-token issuance,
   # filtered catalog access, anonymous/denied/malformed-token rejection, and
   # token revocation. Optional smoke commands receive only process-local

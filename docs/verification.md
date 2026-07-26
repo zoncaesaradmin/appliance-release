@@ -7,7 +7,7 @@ this guide's recommendation.
 
 ## Storage and builder artifact evidence
 
-Storage and storage-lan-dns are positive artifact-service profiles, not merely
+Storage and storage-landns are positive artifact-service profiles, not merely
 negative builder profiles. Target verification waits for the zot Deployment
 and dedicated PVC. Client verification checks the profile-gated catalog route,
 `/v2/` bearer challenge, API-token-backed registry token issuance, filtered
@@ -15,14 +15,14 @@ catalog access, and anonymous, denied-scope, malformed-token, and
 token-revocation behavior.
 
 Builder requires the same artifact evidence in addition to builder workflow
-evidence; core and lan-dns require artifact routes to remain absent. Optional
+evidence; core and landns require artifact routes to remain absent. Optional
 OCI, ORAS/referrer, and offline smoke commands under
 `client_verification.artifact` must pass when configured. Credentials are
 provided only through process-local `APPLIANCE_REGISTRY_*` variables.
 
 ## LAN DNS evidence
 
-`lan-dns` and `storage-lan-dns` enable the `dns` capability. Target verification
+`landns`, `storage-landns`, `builder-landns`, and `builder-storage-landns` enable the `dns` capability. Target verification
 waits for Deployment `appliance-dns` in namespace `dns`, then checks that
 CoreDNS answers SOA for `appliance.internal` on `127.0.0.1:53`. Install does
 not seed product A records. Non-dns profiles assert the `appliance-dns` Helm
@@ -32,7 +32,7 @@ see [target-host-operations.md](target-host-operations.md).
 Host A records are proven by creating them through
 `PUT /api/v1/dns/records/{name}` (or the `/dns` UI), or
 `POST /api/v1/dns/publish` from another appliance, then dig'ing that FQDN.
-Operator curl cookbook: [lan-dns-usage.md](lan-dns-usage.md).
+Operator curl cookbook: [landns-usage.md](landns-usage.md).
 
 ## Verifying a Bundle Before Installing
 

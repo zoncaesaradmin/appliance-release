@@ -193,7 +193,7 @@ factory-reset cases, see [target-host-operations.md](target-host-operations.md).
 The published `install-http-release.sh` helper also accepts product
 configuration inputs:
 
-- `--appliance-profile <core|builder|storage|lan-dns|storage-lan-dns>`
+- `--appliance-profile <core|builder|storage|landns|storage-landns|builder-landns|builder-storage-landns>`
 - `--build-catalog /target/local/build-catalog.yaml`
 
 Those choices are passed into the control plane at install or upgrade time
@@ -205,9 +205,9 @@ material, SSH config, tokens, and
 passwords out of the manifest, and make sure the target appliance can reach the
 configured Git host from the build workflow namespace. Supported
 product-facing profile names at the install/config layer are `core`,
-`builder`, `storage`, `lan-dns`, and `storage-lan-dns`.
+`builder`, `storage`, `landns`, `storage-landns`, `builder-landns`, and `builder-storage-landns`.
 
-At this phase, `lan-dns` and `storage-lan-dns` are profile/capability wiring
+At this phase, `landns`, `storage-landns`, `builder-landns`, and `builder-storage-landns` are profile/capability wiring
 choices only. They do not yet add a separate DNS workload to the published
 bundle.
 

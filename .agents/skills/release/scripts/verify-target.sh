@@ -179,7 +179,7 @@ FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-sudo zonctl support-bundle --output json}"
 
 profile_supports_workflows() {
   case "$1" in
-    core|builder) return 0 ;;
+    core|builder|builder-landns|builder-storage-landns) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -193,15 +193,14 @@ if [[ -z "${ARGO_ENABLED}" ]]; then
   fi
 fi
 if [[ -z "${BUILDER_ENABLED}" ]]; then
-  if [[ "${APPLIANCE_PROFILE}" == "builder" ]]; then
-    BUILDER_ENABLED="true"
-  else
-    BUILDER_ENABLED="false"
-  fi
+  case "${APPLIANCE_PROFILE}" in
+    builder|builder-landns|builder-storage-landns) BUILDER_ENABLED="true" ;;
+    *) BUILDER_ENABLED="false" ;;
+  esac
 fi
 if [[ -z "${ARTIFACT_ENABLED}" ]]; then
   case "${APPLIANCE_PROFILE}" in
-    storage|builder|storage-lan-dns) ARTIFACT_ENABLED="true" ;;
+    storage|builder|storage-landns|builder-landns|builder-storage-landns) ARTIFACT_ENABLED="true" ;;
     *) ARTIFACT_ENABLED="false" ;;
   esac
 fi
@@ -210,12 +209,12 @@ if bool_true "${ARTIFACT_ENABLED}"; then
 fi
 if [[ -z "${DNS_ENABLED}" ]]; then
   case "${APPLIANCE_PROFILE}" in
-    lan-dns|storage-lan-dns) DNS_ENABLED="true" ;;
+    landns|storage-landns|builder-landns|builder-storage-landns) DNS_ENABLED="true" ;;
     *) DNS_ENABLED="false" ;;
   esac
 fi
 if bool_true "${DNS_ENABLED}"; then
-  # lan-dns does not seed product A records from public_host. Readiness is
+  # landns does not seed product A records from public_host. Readiness is
   # Deployment Available plus a successful SOA answer for appliance.internal
   # (zone infrastructure only). Host A records are proven separately after
   # API/UI (or peer publish) creates them.
