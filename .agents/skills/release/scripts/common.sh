@@ -209,6 +209,37 @@ default_local_sibling_repo_dir() {
   printf '%s/%s\n' "$(cd "${release_repo_root}/.." && pwd)" "${repo_name}"
 }
 
+# Returns 0 when a dirty path could change what the remote live build/install
+# clones from git (bundle scripts, configs, product code, Makefiles, etc.).
+# Docs, Cursor rules, run artifacts, and the locally executed skill scripts
+# return 1: those either do not ship into the remote build, or (for
+# .agents/skills/*/scripts) already run from this working tree by design.
+live_release_path_affects_remote_build() {
+  local path="${1#./}"
+  path="${path//\"/}"
+  case "${path}" in
+    .agents/skills/*/scripts/*|.agents/skills/*/references/*|.agents/skills/*/SKILL.md)
+      return 1
+      ;;
+    docs/*|.cursor/*|.run/*)
+      return 1
+      ;;
+    scripts/*|configs/*|cmd/*|internal/*|pkg/*|schemas/*|deploy/*|services/*|tests/*|test/*)
+      return 0
+      ;;
+    Makefile|makefile|go.mod|go.sum|package.json|package-lock.json|pnpm-lock.yaml|yarn.lock)
+      return 0
+      ;;
+    *.go|*.sh|*.py|*.mk)
+      return 0
+      ;;
+    Dockerfile|Dockerfile.*|*.dockerfile)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 assert_local_repo_clean_for_remote_ref() {
   local repo_path="$1"
   local label="$2"
@@ -224,13 +255,40 @@ assert_local_repo_clean_for_remote_ref() {
   fi
 
   local head branch short_head status_lines remote_tracking ahead_count
+  local allow_dirty build_affecting_dirty=() local_only_dirty=()
   head="$(git -C "${repo_path}" rev-parse HEAD 2>/dev/null || true)"
   short_head="${head:0:12}"
   branch="$(git -C "${repo_path}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   status_lines="$(git -C "${repo_path}" status --short 2>/dev/null || true)"
+  allow_dirty="$(printf '%s' "${APPLIANCE_RELEASE_ALLOW_DIRTY:-}" | tr '[:upper:]' '[:lower:]')"
 
   if [[ -n "${status_lines}" ]]; then
-    fail "live release preflight: ${label} at ${repo_path} has uncommitted changes (branch ${branch:-detached}, HEAD ${short_head:-unknown}); the remote build clones ${remote_ref} and will ignore local edits. Commit/push or stash these changes, or run make verify-local-milestone for non-live cross-repo validation."
+    if [[ "${allow_dirty}" == "1" || "${allow_dirty}" == "true" || "${allow_dirty}" == "yes" ]]; then
+      log "live release preflight: ${label} has uncommitted changes; continuing because APPLIANCE_RELEASE_ALLOW_DIRTY=${APPLIANCE_RELEASE_ALLOW_DIRTY} (remote build still clones ${remote_ref} and ignores local edits)"
+    else
+      local line path
+      while IFS= read -r line; do
+        [[ -z "${line}" ]] && continue
+        path="${line:3}"
+        if [[ "${path}" == *" -> "* ]]; then
+          path="${path##* -> }"
+        fi
+        path="${path#\"}"
+        path="${path%\"}"
+        if live_release_path_affects_remote_build "${path}"; then
+          build_affecting_dirty+=("${path}")
+        else
+          local_only_dirty+=("${path}")
+        fi
+      done <<< "${status_lines}"
+
+      if ((${#build_affecting_dirty[@]} > 0)); then
+        fail "live release preflight: ${label} at ${repo_path} has uncommitted build-affecting changes (branch ${branch:-detached}, HEAD ${short_head:-unknown}); the remote build clones ${remote_ref} and will ignore local edits. Dirty paths: ${build_affecting_dirty[*]}. Commit/push or stash these, set APPLIANCE_RELEASE_ALLOW_DIRTY=1 to override, or run make verify-local-milestone for non-live cross-repo validation."
+      fi
+      if ((${#local_only_dirty[@]} > 0)); then
+        log "live release preflight: ${label} has local-only uncommitted changes that do not affect the remote ${remote_ref} build (e.g. docs/.cursor/.run); continuing. Paths: ${local_only_dirty[*]}"
+      fi
+    fi
   fi
 
   remote_tracking="origin/${remote_ref}"

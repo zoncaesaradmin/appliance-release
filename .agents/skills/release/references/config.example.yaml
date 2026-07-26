@@ -5,13 +5,11 @@
 build_host:
   # Example:
   # alias: zonsys@192.168.1.102
-  # alias: build-host-alias-from-ssh-config
   alias: zonsys@192.168.1.102
 
 target_host:
   # Example:
   # alias: target-user@192.168.1.101
-  # alias: target-host-alias-from-ssh-config
   alias: zonsys@192.168.1.103
   # Do not set state_dir for normal use. Install/status/verify already use
   # zonctl's product default (/var/lib/zon/state). An explicit override is only

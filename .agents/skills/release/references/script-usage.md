@@ -266,7 +266,27 @@ Your usual real config lives in the repo, for example:
 Do not use a global skill symlink here. The single place to look is the
 repo-local skill path: `.agents/skills/release/scripts`.
 
-## 7. Local Milestone Verification
+## 7. Live Release Local Repo Preflight
+
+`build-and-publish.sh` / `run-release-flow.sh` refuse to start a **live** remote
+build when a sibling checkout has uncommitted changes that could affect what
+the remote git clone builds (repo `scripts/`, product code, Makefiles, schemas,
+charts, etc.). The remote build clones `origin/<ref>` and hard-resets, so those
+local edits are never used — the guard exists so a dirty tree is not mistaken
+for “what got tested.”
+
+Local-only dirt (for example under `docs/`, `.cursor/`, `.run/`, and the
+locally executed `.agents/skills/release/` skill files) only logs a warning and
+does not block. To force-continue with build-affecting dirty files (knowing the
+remote will still ignore them):
+
+```bash
+APPLIANCE_RELEASE_ALLOW_DIRTY=1 .agents/skills/release/scripts/run-release-flow.sh
+```
+
+Unpushed commits ahead of `origin/<ref>` still fail closed; push those first.
+
+## 8. Local Milestone Verification
 
 Before using the real build server or target host, run the non-live cross-repo
 milestone gate from the release repo:
@@ -294,7 +314,7 @@ make verify-local-milestone \
   APPLIANCE_CTL_DIR=/abs/path/to/appliance-ctl
 ```
 
-## 8. Advanced Final Profile Matrix
+## 9. Advanced Final Profile Matrix
 
 The main release workflow is still:
 
@@ -308,7 +328,7 @@ readiness flow for final builder evidence, use the dedicated advanced guide:
 /Users/zoncaesar/ws/appliance-release/docs/final-profile-matrix.md
 ```
 
-## 9. Simplest Day-To-Day Usage
+## 10. Simplest Day-To-Day Usage
 
 Most days, this is enough:
 
