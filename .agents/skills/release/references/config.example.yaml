@@ -240,7 +240,7 @@ verification:
   # and confirms its PVC.
   artifact:
     # enabled: true
-    # readiness_command: sudo kubectl -n registry wait --for=condition=Available deployment/artifact-registry --timeout=120s && sudo kubectl -n registry get pvc appliance-registry-data
+    # readiness_command: sudo kubectl -n artifacts wait --for=condition=Available deployment/artifact-registry --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data
   # Defaults enabled for landns/storage-landns/builder-*-landns and disabled for
   # core/storage/builder. The default readiness command waits for the
   # appliance-dns Deployment, then queries 127.0.0.1:53 for the local-zone A

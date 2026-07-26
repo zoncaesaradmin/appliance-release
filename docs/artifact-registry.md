@@ -37,9 +37,10 @@ artifact_registry:
 
 For `fileserver`, the storage/artifact appliance serves
 `/data/zon/files` at `https://<fqdn>/files/...` (Deployment
-`appliance-registry-fileserver` in the `registry` namespace). Publish into that hostPath is
+`fileserver` in the `artifacts` namespace). Publish into that hostPath is
 Phase 2; until then copy the export tree manually, then install with the same
-target `curl` path as `http` mode.
+target `curl` path as `http` mode. Operator steps for push/pull are in
+[fileserver.md](fileserver.md).
 
 ## 1. Log In And List Repositories
 
