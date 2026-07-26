@@ -7,13 +7,40 @@ These examples assume the appliance is installed with the `storage`,
 `builder`, `storage-landns`, `builder-landns`, or
 `builder-storage-landns` profile and that the artifact capability is enabled.
 
-For OCI tools, use the appliance's canonical advertised registry host. In a
-healthy setup this should match the host or IP you intentionally configured as
-the appliance public host at install time.
+For OCI tools, use the appliance's canonical advertised registry host (the
+derived FQDN `<appliance_name>.<dns_zone>`, or a TLS SAN you configured).
 
 If your appliance TLS certificate is not trusted yet, keep the insecure flags
 shown below for quick testing. After you trust the certificate, remove `-k`,
 `--tls-verify=false`, and `--insecure`.
+
+## Release distribution via this registry
+
+An already-running Artifact Server can also be the **release distribution**
+backend for signed appliance bundles (instead of a plain HTTP file server).
+
+In `appliance-release.config.yaml`:
+
+```yaml
+artifact_registry:
+  mode: oci
+  oci_registry: artifact-dns-1.appliance.internal
+  oci_repository: appliance/releases
+  oci_insecure: true
+  oci_username: admin
+  oci_token_env: APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN
+```
+
+Then:
+
+1. Create an API token on the distribution appliance (section 2 below).
+2. Grant that subject `pull,push` on `appliance/releases` (or your prefix).
+3. Export the token and ensure `oras` is on the build host and Mac.
+4. Run the normal skill build/publish/install flow; publish pushes
+   `{oci_registry}/{oci_repository}:{version}` and install pulls it.
+
+HTTP mode (`artifact_registry.mode: http`) remains supported for labs without
+a distribution appliance.
 
 ## 1. Log In And List Repositories
 

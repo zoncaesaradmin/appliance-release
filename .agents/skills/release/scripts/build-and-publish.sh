@@ -190,7 +190,28 @@ BUILD_EXTRA_OCI_IMAGE_REFS="$(config_get_optional "${CONFIG_PATH}" "build_flow.e
 BUILD_EXTRA_OCI_IMAGE_PULL_REFS="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_pull_refs" || true)"
 APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
+ARTIFACT_REGISTRY_MODE="$(resolve_artifact_registry_mode "${CONFIG_PATH}")"
 PUBLISH_PUBLIC_BASE_URL="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.base_url" || true)"
+PUBLISH_PATH_PREFIX="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.release_path_prefix" || true)"
+PUBLISH_OCI_REGISTRY="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_registry" || true)"
+PUBLISH_OCI_REPOSITORY="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_repository" || true)"
+PUBLISH_OCI_USERNAME="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_username" || true)"
+PUBLISH_OCI_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_token_env" || true)"
+PUBLISH_OCI_INSECURE="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_insecure" || true)"
+PUBLISH_LATEST_ALIAS="$(config_get_optional "${CONFIG_PATH}" "release.publish_latest_alias" || true)"
+if [[ "${ARTIFACT_REGISTRY_MODE}" == "http" ]]; then
+  [[ -n "${PUBLISH_PUBLIC_BASE_URL}" ]] || fail "artifact_registry.mode=http requires artifact_registry.base_url"
+elif [[ "${ARTIFACT_REGISTRY_MODE}" == "oci" ]]; then
+  [[ -n "${PUBLISH_OCI_REGISTRY}" ]] || fail "artifact_registry.mode=oci requires artifact_registry.oci_registry"
+  [[ -n "${PUBLISH_OCI_REPOSITORY}" ]] || fail "artifact_registry.mode=oci requires artifact_registry.oci_repository"
+  [[ -n "${PUBLISH_OCI_USERNAME}" ]] || fail "artifact_registry.mode=oci requires artifact_registry.oci_username"
+  if [[ -z "${PUBLISH_OCI_TOKEN_ENV}" ]]; then
+    PUBLISH_OCI_TOKEN_ENV="APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN"
+  fi
+  if [[ -z "${!PUBLISH_OCI_TOKEN_ENV:-}" ]]; then
+    fail "artifact_registry.mode=oci requires token in env ${PUBLISH_OCI_TOKEN_ENV}"
+  fi
+fi
 if [[ -z "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
   BOOTSTRAP_REGISTRY_TOKEN_ENV="REGISTRY_TOKEN"
 fi
@@ -260,7 +281,22 @@ BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE
 PUBLISH_ENV_PREFIX=""
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PRODUCT_VERSION" "${RELEASE_VERSION}")"
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "EXPORT_DIR" "${REMOTE_EXPORT_DIR}")"
+PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_MODE" "${ARTIFACT_REGISTRY_MODE}")"
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_PUBLIC_BASE_URL" "${PUBLISH_PUBLIC_BASE_URL}")"
+PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_PATH_PREFIX" "${PUBLISH_PATH_PREFIX}")"
+if [[ "${ARTIFACT_REGISTRY_MODE}" == "oci" ]]; then
+  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_OCI_REGISTRY" "${PUBLISH_OCI_REGISTRY}")"
+  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_OCI_REPOSITORY" "${PUBLISH_OCI_REPOSITORY}")"
+  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_OCI_USERNAME" "${PUBLISH_OCI_USERNAME}")"
+  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_OCI_TOKEN_ENV" "${PUBLISH_OCI_TOKEN_ENV}")"
+  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_OCI_INSECURE" "${PUBLISH_OCI_INSECURE:-false}")"
+  # Forward the token value itself under the configured env name so the
+  # remote publish process can read it without interactive prompts.
+  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "${PUBLISH_OCI_TOKEN_ENV}" "${!PUBLISH_OCI_TOKEN_ENV}")"
+fi
+if bool_true "${PUBLISH_LATEST_ALIAS:-false}"; then
+  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_LATEST_ALIAS" "1")"
+fi
 
 release_repo_sync_remote_cmd=""
 release_repo_sync_remote_cmd="$(render_ensure_remote_release_repo_cmd "${REMOTE_CWD}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" "${GIT_PULL_CMD}")"

@@ -39,9 +39,22 @@ release_workspace:
   remote_bundle_dir: /tmp/appliance-product-ci/workspace/out/appliance-0.1.0-bundle
 
 artifact_registry:
-  # RELEASE DISTRIBUTION ONLY: public HTTP/HTTPS base URL serving signed
-  # installer/bundle files. This is not the in-appliance zot OCI registry;
-  # appliance clients use client_verification.base_url plus /v2/.
+  # RELEASE DISTRIBUTION backend for the signed installer/bundle package.
+  # This is not the target appliance's runtime registry identity — it is how
+  # build/publish delivers the air-gap bundle to installers.
+  #
+  # mode:
+  #   http  — plain HTTP/HTTPS static files (default; today's behavior)
+  #   oci   — push/pull the same package via ORAS to an already-running
+  #           appliance Artifact Server (separate distribution appliance)
+  mode: http
+
+  # Shared logical release name: HTTP path segment under base_url, and the
+  # default leaf used when documenting OCI repository layout.
+  release_path_prefix: appliance
+
+  # --- mode: http ---
+  # Public HTTP/HTTPS base URL serving signed installer/bundle files.
   # Example: http://192.168.1.105:28081
   base_url: http://192.168.1.105:28081
   # SSH target used by the build machine's publish command when needed.
@@ -50,7 +63,21 @@ artifact_registry:
   # publish_server_alias: publish-host-alias-from-ssh-config
   publish_server_alias: zonsys@192.168.1.105
   publish_remote_root: /home/zonsys/releases
-  release_path_prefix: appliance
+
+  # --- mode: oci ---
+  # Host clients use for /v2 and the registry token realm (FQDN of the
+  # separate, already-running distribution appliance). Copy these keys into
+  # your personal ~/appliance-release.config.yaml when switching modes.
+  # oci_registry: artifact-dns-1.appliance.internal
+  # Repository that holds release packages as ORAS artifacts. Tags are
+  # release.version (and optional :latest).
+  # oci_repository: appliance/releases
+  # oci_insecure: true
+  # oci_username: admin
+  # API token env var (never put the token in this file). Token needs
+  # pull+push on oci_repository (or its path prefix) on the distribution appliance.
+  # oci_token_env: APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN
+
 
 release:
   version: 0.1.0
@@ -76,9 +103,15 @@ build_flow:
   # PRODUCT_VERSION and EXPORT_DIR are injected automatically by the skill from
   # release.version and release_workspace.remote_export_dir.
   build_command: K3S_BINARY_SOURCE=/home/zonsys/ci/inputs/k3s K3S_AIRGAP_IMAGES_SOURCE=/home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst bash /home/zonsys/ws/appliance-release/scripts/ci/build-full-bundle.sh
-  # PRODUCT_VERSION, EXPORT_DIR, and PUBLISH_PUBLIC_BASE_URL are injected
-  # automatically by the skill, so keep the command itself minimal.
+  # PRODUCT_VERSION, EXPORT_DIR, and PUBLISH_* are injected automatically by
+  # the skill from release.version / release_workspace / artifact_registry.
+  # For artifact_registry.mode=http keep PUBLISH_SERVER and PUBLISH_REMOTE_ROOT
+  # here (or rely on Makefile defaults from your shell). For mode=oci the skill
+  # injects PUBLISH_MODE=oci and PUBLISH_OCI_* from config.
   publish_command: make publish-release PUBLISH_SERVER=zonsys@192.168.1.105 PUBLISH_REMOTE_ROOT=/home/zonsys/releases
+  # Example OCI distribution publish (separate already-running Artifact Server):
+  # publish_command: make publish-release
+  # and set artifact_registry.mode: oci plus oci_* keys above.
   # Argo Workflows is a mandatory component of the complete v1 appliance
   # (ADR 0011) and build-full-bundle.sh enables it by default with zero
   # configuration: its version and controller/executor image references

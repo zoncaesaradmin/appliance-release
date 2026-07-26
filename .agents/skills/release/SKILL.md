@@ -5,7 +5,7 @@ description: Orchestrate the Zon appliance developer-to-target workflow across l
 
 # Appliance Release
 
-Use this skill when we need to drive the repeatable Zon appliance release path from a macOS development machine through a build server, an HTTP publish server, and onto a target host.
+Use this skill when we need to drive the repeatable Zon appliance release path from a macOS development machine through a build server, a release distribution backend (HTTP static server or an already-running appliance Artifact Server via ORAS), and onto a target host.
 
 ## What This Skill Owns
 
@@ -55,6 +55,7 @@ For day-to-day use, set:
 - `APPLIANCE_BUILD_SUDO_PASSWORD=...`
 - `APPLIANCE_TARGET_SUDO_PASSWORD=...`
 - `APPLIANCE_FIRST_ADMIN_PASSWORD=...`
+- `APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN=...` (when `artifact_registry.mode=oci`)
 
 Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `--config`.
 
@@ -63,9 +64,9 @@ Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `
 - `scripts/run-release-flow.sh`
   One-shot wrapper for the common flow from the `appliance-release` repo: build/publish, install, target verify, then macOS-side API verify.
 - `scripts/build-and-publish.sh`
-  Run the deterministic build-host flow: optional `git pull`, build-host bootstrap, bundle build, publish, and artifact metadata capture.
+  Run the deterministic build-host flow: optional `git pull`, build-host bootstrap, bundle build, publish, and artifact metadata capture. Publish uses `artifact_registry.mode` (`http` or `oci`).
 - `scripts/install-on-target.sh`
-  Optionally uninstall the previous appliance, then install the published release on the target host via the HTTP installer helper.
+  Optionally uninstall the previous appliance, then install the published release on the target host (HTTP download on target, or orchestrator ORAS pull + scp for OCI mode).
 - `scripts/verify-target.sh`
   Run post-install verification, service-health checks, smoke checks, and failure-log capture.
 - `scripts/verify-client-access.sh`

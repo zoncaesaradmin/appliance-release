@@ -336,6 +336,31 @@ reject_placeholder_client_base_url() {
   return 0
 }
 
+# Normalize artifact_registry.mode to http|oci. Empty defaults to http.
+# Full ORAS helpers live in scripts/publish/oci-release-lib.sh.
+_OCI_RELEASE_LIB="$(cd "${SCRIPT_DIR}/../../../.." && pwd)/scripts/publish/oci-release-lib.sh"
+if [[ -f "${_OCI_RELEASE_LIB}" ]]; then
+  # shellcheck source=/dev/null
+  source "${_OCI_RELEASE_LIB}"
+fi
+unset _OCI_RELEASE_LIB
+
+resolve_artifact_registry_mode() {
+  local config_path="$1"
+  local mode
+  mode="$(config_get_optional "${config_path}" "artifact_registry.mode" || true)"
+  if declare -F normalize_artifact_registry_mode >/dev/null 2>&1; then
+    normalize_artifact_registry_mode "${mode}"
+  else
+    mode="$(printf '%s' "${mode}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    case "${mode}" in
+      ""|http|http-static) printf 'http\n' ;;
+      oci) printf 'oci\n' ;;
+      *) fail "artifact_registry.mode must be http or oci (got ${mode})" ;;
+    esac
+  fi
+}
+
 render_ensure_remote_release_repo_cmd() {
   local remote_cwd="$1"
   local repo_source="$2"

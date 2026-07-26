@@ -44,6 +44,8 @@ verify-help:
 		bash "$$script" --help >/dev/null; \
 	done
 	@bash scripts/publish/install-http-release.sh --help | grep -q -- '--build-catalog'
+	@bash scripts/publish/install-oci-release.sh --help | grep -q -- '--oci-registry'
+	@bash scripts/publish/publish-release.sh --help | grep -q -- '--mode'
 
 .PHONY: verify-json
 verify-json:
@@ -89,6 +91,7 @@ verify-release-artifacts:
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_live_release_repo_preflight.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_write_local_milestone_report.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_write_final_readiness_report.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_artifact_registry_mode.py"
 
 .PHONY: verify-final-targets
 verify-final-targets:
@@ -424,20 +427,49 @@ verify-bundle:
 
 .PHONY: publish-release
 publish-release:
-	@if [ -z "$${EXPORT_DIR:-}" ] || [ -z "$${PRODUCT_VERSION:-}" ] || [ -z "$${PUBLISH_SERVER:-}" ] || [ -z "$${PUBLISH_REMOTE_ROOT:-}" ]; then \
-		echo "publish-release: required env vars are EXPORT_DIR=/abs/path/to/export PRODUCT_VERSION=... PUBLISH_SERVER=user@host PUBLISH_REMOTE_ROOT=/remote/root" >&2; \
-		echo "publish-release: PRODUCT_VERSION may already be exported in your shell; it does not need to be passed inline if already set" >&2; \
+	@if [ -z "$${EXPORT_DIR:-}" ] || [ -z "$${PRODUCT_VERSION:-}" ]; then \
+		echo "publish-release: required env vars are EXPORT_DIR=/abs/path/to/export PRODUCT_VERSION=..." >&2; \
 		exit 2; \
 	fi
-	bash ./scripts/publish/publish-release.sh \
-		--export-dir "$${EXPORT_DIR}" \
-		--product-version "$${PRODUCT_VERSION}" \
-		--server "$${PUBLISH_SERVER}" \
-		--remote-root "$${PUBLISH_REMOTE_ROOT}" \
-		$${PUBLISH_PATH_PREFIX:+--path-prefix "$${PUBLISH_PATH_PREFIX}"} \
-		$${PUBLISH_SSH_PORT:+--ssh-port "$${PUBLISH_SSH_PORT}"} \
-		$${PUBLISH_PUBLIC_BASE_URL:+--public-base-url "$${PUBLISH_PUBLIC_BASE_URL}"} \
-		$${PUBLISH_LATEST_ALIAS:+--latest-alias}
+	@mode="$${PUBLISH_MODE:-http-static}"; \
+	case "$$mode" in \
+		http|http-static) \
+			if [ -z "$${PUBLISH_SERVER:-}" ] || [ -z "$${PUBLISH_REMOTE_ROOT:-}" ]; then \
+				echo "publish-release: http mode requires PUBLISH_SERVER and PUBLISH_REMOTE_ROOT" >&2; \
+				exit 2; \
+			fi; \
+			bash ./scripts/publish/publish-release.sh \
+				--export-dir "$${EXPORT_DIR}" \
+				--product-version "$${PRODUCT_VERSION}" \
+				--mode http-static \
+				--server "$${PUBLISH_SERVER}" \
+				--remote-root "$${PUBLISH_REMOTE_ROOT}" \
+				$${PUBLISH_PATH_PREFIX:+--path-prefix "$${PUBLISH_PATH_PREFIX}"} \
+				$${PUBLISH_SSH_PORT:+--ssh-port "$${PUBLISH_SSH_PORT}"} \
+				$${PUBLISH_PUBLIC_BASE_URL:+--public-base-url "$${PUBLISH_PUBLIC_BASE_URL}"} \
+				$${PUBLISH_LATEST_ALIAS:+--latest-alias} \
+			;; \
+		oci) \
+			if [ -z "$${PUBLISH_OCI_REGISTRY:-}" ] || [ -z "$${PUBLISH_OCI_REPOSITORY:-}" ] || [ -z "$${PUBLISH_OCI_USERNAME:-}" ]; then \
+				echo "publish-release: oci mode requires PUBLISH_OCI_REGISTRY, PUBLISH_OCI_REPOSITORY, and PUBLISH_OCI_USERNAME" >&2; \
+				exit 2; \
+			fi; \
+			bash ./scripts/publish/publish-release.sh \
+				--export-dir "$${EXPORT_DIR}" \
+				--product-version "$${PRODUCT_VERSION}" \
+				--mode oci \
+				--oci-registry "$${PUBLISH_OCI_REGISTRY}" \
+				--oci-repository "$${PUBLISH_OCI_REPOSITORY}" \
+				--oci-username "$${PUBLISH_OCI_USERNAME}" \
+				$${PUBLISH_OCI_TOKEN_ENV:+--oci-token-env "$${PUBLISH_OCI_TOKEN_ENV}"} \
+				$${PUBLISH_LATEST_ALIAS:+--latest-alias} \
+			;; \
+		*) \
+			echo "publish-release: PUBLISH_MODE must be http-static or oci (got $$mode)" >&2; \
+			exit 2; \
+			;; \
+	esac
+
 
 .PHONY: clean
 clean:
