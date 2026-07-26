@@ -317,7 +317,7 @@ and then `make clean`.
 | R3-02 | Implement coordinated backup and clean-node restore | R2-01 | Automated offline RPO/RTO drill with integrity evidence |
 | R4-01 | Implement N-1 upgrade, failed-upgrade recovery, and restore-based rollback | R3-02 | Every supported source-to-target matrix passes |
 | R4-02 | Implement uninstall-preserving-data and separately guarded factory reset | R3-02 | Data-preservation and destructive-confirmation tests |
-| R5-01 | Publish public docs, support matrix, release notes, notices, and offline verification guide | R2-01, R3-01 | Documentation and artifact consistency checks |
+| R5-01 | Publish public docs, support matrix, release notes, and offline verification guide | R2-01, R3-01 | Documentation and artifact consistency checks |
 | R5-02 | Run final egress-denied air-gap release qualification and publish immutable artifacts | R4-01, R4-02, R5-01 | Signed release evidence with all gates passing |
 
 ## Release Acceptance

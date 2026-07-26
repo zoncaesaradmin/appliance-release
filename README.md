@@ -33,33 +33,14 @@ bash ./scripts/ci/bootstrap-build-host.sh
 
 ## Documentation By Machine / Use Case
 
-### Developer Machine
-
-- [Developer getting started](docs/getting-started.md)
-- [Manual bundle assembly (advanced)](docs/real-setup.md)
-
-### Build Machine / CI
-
-- [Build machine CI workflow](docs/automation.md)
-
-### Publish Server
-
-- [HTTP publish workflow](docs/distribution-http.md)
-
-### Target Device
-
-- [Target host operations](docs/target-host-operations.md)
-- [LAN DNS appliance usage](docs/landns-usage.md)
-
-### Reference
-
-- [Install reference](docs/install.md)
-- [Upgrade reference](docs/upgrade.md)
-- [Backup and restore reference](docs/backup-restore.md)
-- [Troubleshooting reference](docs/troubleshooting.md)
-- [Target host support matrix](docs/support-matrix.md)
-- [Offline verification reference](docs/verification.md)
-- [Security model](docs/security.md)
-- [Release plan](docs/release-plan.md)
+- [Docs index](docs/README.md)
+- [Developer guide](docs/developer-guide.md)
+- [Manual bundle assembly](docs/manual-bundle-assembly.md)
+- [Operator guide](docs/operator-guide.md)
+- [Artifact registry](docs/artifact-registry.md)
+- [LAN DNS](docs/lan-dns.md)
+- [Security model](docs/security-model.md)
+- [Architecture and boundaries](docs/architecture-and-boundaries.md)
+- [Historical release plan](docs/archive/release-plan.md)
 - [Third-party notices](NOTICES.md)
 - [Changelog](CHANGELOG.md)

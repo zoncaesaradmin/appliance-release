@@ -165,7 +165,7 @@ install:
   build_catalog_path: /Users/zoncaesar/build-catalog.yaml
   # Product LAN instance label (single DNS label). FQDN becomes
   # <appliance_name>.<dns_zone> for TLS, canonicalOrigin, and registry realm.
-  appliance_name: registry1
+  appliance_name: artifact-dns-1
   # LAN DNS zone for appliance identity and landns CoreDNS. Default when
   # omitted: appliance.internal (must not use .local — mDNS-only on Ubuntu).
   dns_zone: appliance.internal
@@ -178,7 +178,7 @@ install:
   # zonctl auto-disables systemd-resolved's stub listener before install so
   # :53 is free, seeds /etc/hosts for the node hostname, and restores the stub
   # on uninstall. Point LAN clients at the DNS appliance LAN IP on UDP/TCP 53
-  # (see docs/target-host-operations.md).
+  # (see docs/operator-guide.md and docs/lan-dns.md).
   uninstall_first: true
 
 verification:

@@ -329,7 +329,7 @@ If you need the stricter final profile-matrix planning, checklist, audit, and
 readiness flow for final builder evidence, use the dedicated advanced guide:
 
 ```text
-/Users/zoncaesar/ws/appliance-release/docs/final-profile-matrix.md
+/Users/zoncaesar/ws/appliance-release/docs/internal/final-profile-matrix.md
 ```
 
 ## 10. Simplest Day-To-Day Usage
