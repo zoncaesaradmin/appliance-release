@@ -55,7 +55,13 @@ For day-to-day use, set:
 - `APPLIANCE_BUILD_SUDO_PASSWORD=...`
 - `APPLIANCE_TARGET_SUDO_PASSWORD=...`
 - `APPLIANCE_FIRST_ADMIN_PASSWORD=...`
-- `APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN=...` (when `artifact_registry.mode=oci`)
+
+OCI distribution (`artifact_registry.mode=oci`) does **not** require
+`APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN` or `oras` on the Mac. The build host
+packages a pinned linux/amd64 ORAS CLI into the bundle/export at build time,
+uses it to publish, and the skill copies that export binary onto the target
+before pull. Put the distribution token on build host + target only (env or
+`oci_token_file`).
 
 Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `--config`.
 
@@ -66,7 +72,7 @@ Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `
 - `scripts/build-and-publish.sh`
   Run the deterministic build-host flow: optional `git pull`, build-host bootstrap, bundle build, publish, and artifact metadata capture. Publish uses `artifact_registry.mode` (`http` or `oci`).
 - `scripts/install-on-target.sh`
-  Optionally uninstall the previous appliance, then install the published release on the target host (HTTP download on target, or orchestrator ORAS pull + scp for OCI mode).
+  Optionally uninstall the previous appliance, then install the published release on the target host (HTTP `curl`, or ORAS pull on the target using the build-host-packaged CLI; Mac only SSHs).
 - `scripts/verify-target.sh`
   Run post-install verification, service-health checks, smoke checks, and failure-log capture.
 - `scripts/verify-client-access.sh`

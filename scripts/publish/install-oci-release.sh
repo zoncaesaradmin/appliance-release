@@ -71,6 +71,8 @@ Optional:
                                Default: /tmp/appliance-<version>
   --oci-token-env VAR          Env var holding the API token. Default:
                                APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN
+  --oci-token-file PATH        Optional absolute path to a token file on this
+                               host (used when the env var is unset).
   --oci-insecure               Pass --insecure to oras
   --state-dir DIR              zonctl state directory. Default: /var/lib/zon/state
   --appliance-profile NAME     Product-facing appliance profile. Default: core
@@ -101,6 +103,7 @@ OCI_REGISTRY=""
 OCI_REPOSITORY=""
 OCI_USERNAME=""
 OCI_TOKEN_ENV="APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN"
+OCI_TOKEN_FILE=""
 OCI_INSECURE="false"
 PRODUCT_VERSION=""
 OUT_DIR=""
@@ -131,6 +134,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --oci-token-env)
       OCI_TOKEN_ENV="${2:-}"
+      shift 2
+      ;;
+    --oci-token-file)
+      OCI_TOKEN_FILE="${2:-}"
       shift 2
       ;;
     --oci-insecure)
@@ -302,8 +309,11 @@ STATE_DIR="$(trim_trailing_slashes "${STATE_DIR}")"
 mkdir -p "${OUT_DIR}"
 
 OCI_TOKEN="${!OCI_TOKEN_ENV:-}"
+if [[ -z "${OCI_TOKEN}" && -n "${OCI_TOKEN_FILE}" && -r "${OCI_TOKEN_FILE}" ]]; then
+  OCI_TOKEN="$(tr -d '\r\n' < "${OCI_TOKEN_FILE}")"
+fi
 if [[ -z "${OCI_TOKEN}" ]]; then
-  echo "install-oci-release: missing token in env ${OCI_TOKEN_ENV}" >&2
+  echo "install-oci-release: missing token in env ${OCI_TOKEN_ENV} (or --oci-token-file)" >&2
   exit 2
 fi
 

@@ -41,6 +41,8 @@ oci mode options:
   --oci-username USER        Registry login username (API token owner).
   --oci-token-env VAR        Env var holding the API token. Default:
                              APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN
+  --oci-token-file PATH      Optional absolute path to a token file on this
+                             host (used when the env var is unset).
   --oci-insecure             Pass --insecure to oras (lab / untrusted CA).
 
 Examples:
@@ -76,6 +78,7 @@ OCI_REGISTRY=""
 OCI_REPOSITORY=""
 OCI_USERNAME=""
 OCI_TOKEN_ENV="APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN"
+OCI_TOKEN_FILE=""
 OCI_INSECURE="false"
 
 while [[ $# -gt 0 ]]; do
@@ -130,6 +133,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --oci-token-env)
       OCI_TOKEN_ENV="${2:-}"
+      shift 2
+      ;;
+    --oci-token-file)
+      OCI_TOKEN_FILE="${2:-}"
       shift 2
       ;;
     --oci-insecure)
@@ -308,6 +315,7 @@ case "${MODE}" in
     OCI_REPOSITORY="${OCI_REPOSITORY:-${PUBLISH_OCI_REPOSITORY:-}}"
     OCI_USERNAME="${OCI_USERNAME:-${PUBLISH_OCI_USERNAME:-}}"
     OCI_TOKEN_ENV="${OCI_TOKEN_ENV:-${PUBLISH_OCI_TOKEN_ENV:-APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN}}"
+    OCI_TOKEN_FILE="${OCI_TOKEN_FILE:-${PUBLISH_OCI_TOKEN_FILE:-}}"
     if [[ -n "${PUBLISH_OCI_INSECURE:-}" ]] && bool_true "${PUBLISH_OCI_INSECURE}"; then
       OCI_INSECURE="true"
     fi
@@ -315,12 +323,25 @@ case "${MODE}" in
     require_var OCI_REGISTRY
     require_var OCI_REPOSITORY
     require_var OCI_USERNAME
+
+    # Prefer the linux/amd64 ORAS CLI packaged into EXPORT_DIR by build-full-bundle.
+    if [[ -z "${ORAS_BIN:-}" && -x "${EXPORT_DIR}/tools/oras" ]]; then
+      ORAS_BIN="${EXPORT_DIR}/tools/oras"
+    fi
+    export ORAS_BIN="${ORAS_BIN:-}"
     require_oras
+    if [[ -n "${ORAS_BIN}" ]]; then
+      echo "publish-release: using packaged ORAS CLI ${ORAS_BIN}"
+    fi
 
     OCI_TOKEN="${!OCI_TOKEN_ENV:-}"
+    if [[ -z "${OCI_TOKEN}" && -n "${OCI_TOKEN_FILE}" && -r "${OCI_TOKEN_FILE}" ]]; then
+      OCI_TOKEN="$(tr -d '\r\n' < "${OCI_TOKEN_FILE}")"
+      export "${OCI_TOKEN_ENV}=${OCI_TOKEN}"
+    fi
     if [[ -z "${OCI_TOKEN}" ]]; then
-      echo "publish-release: missing token in env ${OCI_TOKEN_ENV}" >&2
-      echo "publish-release: create an appliance API token with pull+push on ${OCI_REPOSITORY} and export ${OCI_TOKEN_ENV}" >&2
+      echo "publish-release: missing token in env ${OCI_TOKEN_ENV} (or --oci-token-file / PUBLISH_OCI_TOKEN_FILE)" >&2
+      echo "publish-release: create an appliance API token with pull+push on ${OCI_REPOSITORY} and set it on this host" >&2
       exit 2
     fi
 

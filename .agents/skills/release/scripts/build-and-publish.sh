@@ -197,6 +197,7 @@ PUBLISH_OCI_REGISTRY="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.
 PUBLISH_OCI_REPOSITORY="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_repository" || true)"
 PUBLISH_OCI_USERNAME="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_username" || true)"
 PUBLISH_OCI_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_token_env" || true)"
+PUBLISH_OCI_TOKEN_FILE="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_token_file" || true)"
 PUBLISH_OCI_INSECURE="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_insecure" || true)"
 PUBLISH_LATEST_ALIAS="$(config_get_optional "${CONFIG_PATH}" "release.publish_latest_alias" || true)"
 if [[ "${ARTIFACT_REGISTRY_MODE}" == "http" ]]; then
@@ -208,9 +209,8 @@ elif [[ "${ARTIFACT_REGISTRY_MODE}" == "oci" ]]; then
   if [[ -z "${PUBLISH_OCI_TOKEN_ENV}" ]]; then
     PUBLISH_OCI_TOKEN_ENV="APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN"
   fi
-  if [[ -z "${!PUBLISH_OCI_TOKEN_ENV:-}" ]]; then
-    fail "artifact_registry.mode=oci requires token in env ${PUBLISH_OCI_TOKEN_ENV}"
-  fi
+  # Token must already exist on the build host (env or token file). The Mac
+  # orchestrator does not supply or require APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN.
 fi
 if [[ -z "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
   BOOTSTRAP_REGISTRY_TOKEN_ENV="REGISTRY_TOKEN"
@@ -289,10 +289,8 @@ if [[ "${ARTIFACT_REGISTRY_MODE}" == "oci" ]]; then
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_OCI_REPOSITORY" "${PUBLISH_OCI_REPOSITORY}")"
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_OCI_USERNAME" "${PUBLISH_OCI_USERNAME}")"
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_OCI_TOKEN_ENV" "${PUBLISH_OCI_TOKEN_ENV}")"
+  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_OCI_TOKEN_FILE" "${PUBLISH_OCI_TOKEN_FILE}")"
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_OCI_INSECURE" "${PUBLISH_OCI_INSECURE:-false}")"
-  # Forward the token value itself under the configured env name so the
-  # remote publish process can read it without interactive prompts.
-  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "${PUBLISH_OCI_TOKEN_ENV}" "${!PUBLISH_OCI_TOKEN_ENV}")"
 fi
 if bool_true "${PUBLISH_LATEST_ALIAS:-false}"; then
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_LATEST_ALIAS" "1")"
@@ -305,6 +303,8 @@ if [[ -n "${BOOTSTRAP_CMD}" ]]; then
   bootstrap_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BOOTSTRAP_CMD}"
 fi
 build_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BUILD_ENV_PREFIX}${BUILD_CMD}"
+# Default HTTP publish command. For OCI, ORAS is bootstrapped onto the build
+# host immediately before publish (token stays host-local; not forwarded from Mac).
 publish_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PUBLISH_ENV_PREFIX}${PUBLISH_CMD}"
 
 git_pull_log="${RUN_DIR}/logs/git-pull.log"
@@ -352,6 +352,30 @@ fi
 
 log "running remote build on ${BUILD_HOST}"
 run_ssh_logged "${BUILD_HOST}" "${build_log}" "${build_remote_cmd}"
+
+if [[ "${ARTIFACT_REGISTRY_MODE}" == "oci" ]]; then
+  # ORAS was packaged into EXPORT_DIR/tools by build-full-bundle on this host.
+  publish_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail
+oras_bin=$(shell_quote "${REMOTE_EXPORT_DIR%/}/tools/oras")
+if [[ ! -x \"\${oras_bin}\" ]]; then
+  echo \"build-and-publish: packaged ORAS missing at \${oras_bin}; build-full-bundle must export tools/oras\" >&2
+  exit 1
+fi
+export ORAS_BIN=\"\${oras_bin}\"
+export PATH=\"\$(dirname \"\${oras_bin}\"):\${PATH}\"
+token=''
+token_file=$(shell_quote "${PUBLISH_OCI_TOKEN_FILE}")
+token_env=$(shell_quote "${PUBLISH_OCI_TOKEN_ENV}")
+if [[ -n \"\${token_file}\" && -r \"\${token_file}\" ]]; then
+  token=\"\$(tr -d '\\r\\n' < \"\${token_file}\")\"
+  export \"\${token_env}=\${token}\"
+fi
+if [[ -z \"\$(printenv \"\${token_env}\" || true)\" ]]; then
+  echo \"build-and-publish: missing \${token_env} on the build host (set the env var or artifact_registry.oci_token_file)\" >&2
+  exit 1
+fi
+${PUBLISH_ENV_PREFIX}${PUBLISH_CMD}"
+fi
 
 log "running remote publish on ${BUILD_HOST}"
 run_ssh_logged "${BUILD_HOST}" "${publish_log}" "${publish_remote_cmd}"

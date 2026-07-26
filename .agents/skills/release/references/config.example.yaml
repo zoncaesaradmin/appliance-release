@@ -10,7 +10,7 @@ build_host:
 target_host:
   # Example:
   # alias: target-user@192.168.1.101
-  alias: zonsys@192.168.1.103
+  alias: zonsys@192.168.1.101
   # Do not set state_dir for normal use. Install/status/verify already use
   # zonctl's product default (/var/lib/zon/state). An explicit override is only
   # for rare lab cases and must match zonctl --state-dir exactly.
@@ -44,9 +44,15 @@ artifact_registry:
   # build/publish delivers the air-gap bundle to installers.
   #
   # mode:
-  #   http  — plain HTTP/HTTPS static files (default; today's behavior)
+  #   http  — plain HTTP/HTTPS static files (default)
   #   oci   — push/pull the same package via ORAS to an already-running
   #           appliance Artifact Server (separate distribution appliance)
+  #
+  # Data path (both modes): Mac only SSHs. Bits move on the build host
+  # (publish/push) and on the target (download/pull). For mode=oci,
+  # build-full-bundle packages linux/amd64 ORAS into the bundle/export on the
+  # build host; install copies EXPORT_DIR/tools/oras to the target. The Mac
+  # never downloads oras and never needs APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN.
   mode: http
 
   # Shared logical release name: HTTP path segment under base_url, and the
@@ -65,18 +71,23 @@ artifact_registry:
   publish_remote_root: /home/zonsys/releases
 
   # --- mode: oci ---
+  # Switch with: mode: oci  (and keep http keys if you may switch back).
   # Host clients use for /v2 and the registry token realm (FQDN of the
-  # separate, already-running distribution appliance). Copy these keys into
-  # your personal ~/appliance-release.config.yaml when switching modes.
+  # separate, already-running distribution appliance).
   # oci_registry: artifact-dns-1.appliance.internal
   # Repository that holds release packages as ORAS artifacts. Tags are
   # release.version (and optional :latest).
   # oci_repository: appliance/releases
   # oci_insecure: true
   # oci_username: admin
-  # API token env var (never put the token in this file). Token needs
-  # pull+push on oci_repository (or its path prefix) on the distribution appliance.
+  # Token is NEVER stored in this file and NEVER required on the Mac.
+  # ORAS is packaged on the build host at build time (not installed from Mac).
+  # Put only the token on build host + target:
+  #   export APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN='...'
+  # or a readable file at the absolute path below on those hosts.
+  # Token needs pull+push on oci_repository (or its path prefix).
   # oci_token_env: APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN
+  # oci_token_file: /home/zonsys/.config/appliance/distribution-registry.token
 
 
 release:
@@ -107,7 +118,8 @@ build_flow:
   # the skill from release.version / release_workspace / artifact_registry.
   # For artifact_registry.mode=http keep PUBLISH_SERVER and PUBLISH_REMOTE_ROOT
   # here (or rely on Makefile defaults from your shell). For mode=oci the skill
-  # injects PUBLISH_MODE=oci and PUBLISH_OCI_* from config.
+  # injects PUBLISH_MODE=oci and PUBLISH_OCI_* from config; the distribution
+  # token must already exist on the build host (env or oci_token_file).
   publish_command: make publish-release PUBLISH_SERVER=zonsys@192.168.1.105 PUBLISH_REMOTE_ROOT=/home/zonsys/releases
   # Example OCI distribution publish (separate already-running Artifact Server):
   # publish_command: make publish-release
@@ -267,7 +279,7 @@ client_verification:
   # for the current target (NOT the placeholder). Example for .103:
   #   base_url: https://192.168.1.103
   # Omit this key entirely to keep target-side smoke on https://127.0.0.1.
-  base_url: https://192.168.1.103
+  base_url: https://192.168.1.101
   username: admin
   # Builder checks default to enabled when install.appliance_profile is builder.
   # They log in, GET /api/v1/work-profiles, initialize MCP, and assert

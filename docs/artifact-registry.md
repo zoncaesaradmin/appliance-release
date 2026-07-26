@@ -19,7 +19,8 @@ shown below for quick testing. After you trust the certificate, remove `-k`,
 An already-running Artifact Server can also be the **release distribution**
 backend for signed appliance bundles (instead of a plain HTTP file server).
 
-In `appliance-release.config.yaml`:
+In `appliance-release.config.yaml` (see also
+`.agents/skills/release/references/config.example.yaml`):
 
 ```yaml
 artifact_registry:
@@ -29,18 +30,24 @@ artifact_registry:
   oci_insecure: true
   oci_username: admin
   oci_token_env: APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN
+  # optional absolute path on build host + target (not on the Mac):
+  # oci_token_file: /home/zonsys/.config/appliance/distribution-registry.token
 ```
 
 Then:
 
 1. Create an API token on the distribution appliance (section 2 below).
 2. Grant that subject `pull,push` on `appliance/releases` (or your prefix).
-3. Export the token and ensure `oras` is on the build host and Mac.
-4. Run the normal skill build/publish/install flow; publish pushes
-   `{oci_registry}/{oci_repository}:{version}` and install pulls it.
+3. Put the distribution token on the **build host** (push) and **target**
+   (pull). The Mac does not need the token or ORAS. At build time the build
+   host packages linux/amd64 ORAS into the bundle and `EXPORT_DIR/tools/oras`;
+   publish uses that binary, and install copies it from the build host onto
+   the target before pull (no apt/GitHub on the target).
+4. Run the normal skill build/publish/install flow; the build host pushes
+   `{oci_registry}/{oci_repository}:{version}` and the target pulls it.
 
-HTTP mode (`artifact_registry.mode: http`) remains supported for labs without
-a distribution appliance.
+HTTP mode (`artifact_registry.mode: http`) remains the default for labs
+without a distribution appliance.
 
 ## 1. Log In And List Repositories
 

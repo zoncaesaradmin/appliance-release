@@ -173,6 +173,68 @@ run_ssh_captured() {
   return "${cmd_status}"
 }
 
+# Copy the linux/amd64 ORAS CLI produced by build-full-bundle on the build host
+# (${export_dir}/tools/oras) onto the target. The Mac only orchestrates scp; it
+# never downloads ORAS. Target never apt-installs ORAS or fetches it from the
+# public internet.
+bootstrap_oras_from_build_host_to_target() {
+  local build_host="$1"
+  local export_dir="$2"
+  local target_host="$3"
+  local log_file="${4:-}"
+  local remote_src remote_dir remote_dest cmd_status=0
+  require_cmd scp
+  [[ -n "${build_host}" ]] || fail "build host is required to bootstrap ORAS onto the target"
+  [[ -n "${export_dir}" ]] || fail "release_workspace.remote_export_dir is required to bootstrap ORAS onto the target"
+  remote_src="${export_dir%/}/tools/oras"
+  remote_dir="${ORAS_REMOTE_TOOLS_DIR:-/tmp/appliance-release-tools}"
+  remote_dest="${remote_dir}/oras"
+
+  log "copying build-host ORAS ${build_host}:${remote_src} -> ${target_host}:${remote_dest}"
+  if [[ -n "${log_file}" ]]; then
+    ensure_dir "$(dirname "${log_file}")"
+    : >"${log_file}"
+  fi
+
+  set +e
+  if [[ -n "${log_file}" ]]; then
+    ssh -q -T "${build_host}" "env -u BASH_ENV PS1='' bash -lc $(shell_quote "test -x $(shell_quote "${remote_src}")")" >>"${log_file}" 2>&1
+  else
+    ssh -q -T "${build_host}" "env -u BASH_ENV PS1='' bash -lc $(shell_quote "test -x $(shell_quote "${remote_src}")")"
+  fi
+  cmd_status="$?"
+  set -e
+  if [[ "${cmd_status}" -ne 0 ]]; then
+    fail "ORAS CLI missing on build host at ${remote_src}; run build-full-bundle on the build host first"
+  fi
+
+  set +e
+  if [[ -n "${log_file}" ]]; then
+    ssh -q -T "${target_host}" "env -u BASH_ENV PS1='' bash -lc $(shell_quote "mkdir -p $(shell_quote "${remote_dir}")")" >>"${log_file}" 2>&1
+    cmd_status="$?"
+    [[ "${cmd_status}" -eq 0 ]] || {
+      set -e
+      fail "failed to create ${remote_dir} on ${target_host}; see ${log_file}"
+    }
+    scp -q "${build_host}:${remote_src}" "${target_host}:${remote_dest}" >>"${log_file}" 2>&1
+    cmd_status="$?"
+    [[ "${cmd_status}" -eq 0 ]] || {
+      set -e
+      fail "failed to scp ORAS from build host to target; see ${log_file}"
+    }
+    ssh -q -T "${target_host}" "env -u BASH_ENV PS1='' bash -lc $(shell_quote "chmod +x $(shell_quote "${remote_dest}") && $(shell_quote "${remote_dest}") version >/dev/null")" >>"${log_file}" 2>&1
+    cmd_status="$?"
+  else
+    ssh -q -T "${target_host}" "env -u BASH_ENV PS1='' bash -lc $(shell_quote "mkdir -p $(shell_quote "${remote_dir}")")"
+    scp -q "${build_host}:${remote_src}" "${target_host}:${remote_dest}"
+    ssh -q -T "${target_host}" "env -u BASH_ENV PS1='' bash -lc $(shell_quote "chmod +x $(shell_quote "${remote_dest}") && $(shell_quote "${remote_dest}") version >/dev/null")"
+    cmd_status="$?"
+  fi
+  set -e
+  [[ "${cmd_status}" -eq 0 ]] || fail "ORAS bootstrap onto ${target_host} failed${log_file:+; see ${log_file}}"
+  printf '%s\n' "${remote_dest}"
+}
+
 skill_release_repo_root() {
   local script_dir="$1"
   (cd "${script_dir}/../../../.." && pwd)

@@ -462,6 +462,7 @@ publish-release:
 				--oci-repository "$${PUBLISH_OCI_REPOSITORY}" \
 				--oci-username "$${PUBLISH_OCI_USERNAME}" \
 				$${PUBLISH_OCI_TOKEN_ENV:+--oci-token-env "$${PUBLISH_OCI_TOKEN_ENV}"} \
+				$${PUBLISH_OCI_TOKEN_FILE:+--oci-token-file "$${PUBLISH_OCI_TOKEN_FILE}"} \
 				$${PUBLISH_LATEST_ALIAS:+--latest-alias} \
 			;; \
 		*) \

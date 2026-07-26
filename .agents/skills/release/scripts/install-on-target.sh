@@ -12,8 +12,10 @@ usage: install-on-target.sh [options]
 Install a published appliance release on the configured target host.
 
 For artifact_registry.mode=http the target downloads the package over HTTP.
-For mode=oci this script pulls the package via ORAS on the orchestrator,
-copies it to the target, then runs zonctl install/upgrade.
+For mode=oci the skill copies the linux/amd64 ORAS CLI from the build host
+export (packaged by build-full-bundle) onto the target, then the target pulls
+the package. The Mac only orchestrates SSH/scp; it never downloads ORAS or the
+bundle. The target never apt-installs ORAS.
 
 Options:
   --config PATH              YAML or JSON config file. Optional if
@@ -118,6 +120,7 @@ OCI_REGISTRY="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_regi
 OCI_REPOSITORY="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_repository" || true)"
 OCI_USERNAME="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_username" || true)"
 OCI_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_token_env" || true)"
+OCI_TOKEN_FILE="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_token_file" || true)"
 OCI_INSECURE="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.oci_insecure" || true)"
 if [[ -z "${OCI_TOKEN_ENV}" ]]; then
   OCI_TOKEN_ENV="APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN"
@@ -170,6 +173,8 @@ fi
 OUTPUT_FORMAT="text"
 
 TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
+BUILD_HOST="$(config_get_optional "${CONFIG_PATH}" "build_host.alias" || true)"
+REMOTE_EXPORT_DIR="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_export_dir" || true)"
 ensure_dir "${RUN_DIR}"
 ensure_dir "${RUN_DIR}/logs"
 ensure_dir "${RUN_DIR}/metadata"
@@ -201,33 +206,37 @@ elif [[ "${ARTIFACT_REGISTRY_MODE}" == "oci" ]]; then
   [[ -n "${OCI_REGISTRY}" ]] || fail "artifact_registry.mode=oci requires artifact_registry.oci_registry"
   [[ -n "${OCI_REPOSITORY}" ]] || fail "artifact_registry.mode=oci requires artifact_registry.oci_repository"
   [[ -n "${OCI_USERNAME}" ]] || fail "artifact_registry.mode=oci requires artifact_registry.oci_username"
-  require_oras
-  OCI_TOKEN="$(resolve_secret "${OCI_TOKEN_ENV}" "Distribution registry API token (${OCI_TOKEN_ENV})")"
-  LOCAL_PULL_DIR="${RUN_DIR}/artifacts/oci-release-${RELEASE_VERSION}"
-  rm -rf "${LOCAL_PULL_DIR}"
-  mkdir -p "${LOCAL_PULL_DIR}"
-  log "pulling OCI release ${OCI_REGISTRY}/${OCI_REPOSITORY}:${RELEASE_VERSION}"
-  oras_login_registry "${OCI_REGISTRY}" "${OCI_USERNAME}" "${OCI_TOKEN}" "${OCI_INSECURE:-false}"
-  if ! oras_manifest_exists "${OCI_REGISTRY}" "${OCI_REPOSITORY}" "${RELEASE_VERSION}" "${OCI_INSECURE:-false}"; then
-    fail "OCI release artifact not found at ${OCI_REGISTRY}/${OCI_REPOSITORY}:${RELEASE_VERSION}"
-  fi
-  oras_pull_release_package "${OCI_REGISTRY}" "${OCI_REPOSITORY}" "${RELEASE_VERSION}" "${LOCAL_PULL_DIR}" "${OCI_INSECURE:-false}"
-  if [[ ! -f "${LOCAL_PULL_DIR}/sha256sum.txt" ]]; then
-    fail "pulled OCI artifact is missing sha256sum.txt"
-  fi
-  if command -v sha256sum >/dev/null 2>&1; then
-    (cd "${LOCAL_PULL_DIR}" && sha256sum -c sha256sum.txt >/dev/null)
-  else
-    require_cmd shasum
-    tmp_checksums="${LOCAL_PULL_DIR}/.sha256sum.tmp"
-    awk '{print $1 "  " $2}' "${LOCAL_PULL_DIR}/sha256sum.txt" > "${tmp_checksums}"
-    (cd "${LOCAL_PULL_DIR}" && shasum -a 256 -c "$(basename "${tmp_checksums}")" >/dev/null)
-    rm -f "${tmp_checksums}"
-  fi
-  LOCAL_BUNDLE="$(cd "${LOCAL_PULL_DIR}" && ls appliance-*-bundle.tar.gz | head -n 1)"
-  [[ -n "${LOCAL_BUNDLE}" ]] || fail "pulled OCI artifact is missing appliance-*-bundle.tar.gz"
   helper_url="${OCI_REGISTRY}/${OCI_REPOSITORY}:${RELEASE_VERSION}"
   INSTALL_SOURCE_LABEL="${helper_url}"
+  # Copy ORAS from the build-host export (packaged at build time) onto the
+  # target. Mac only orchestrates; it does not download ORAS.
+  [[ -n "${BUILD_HOST}" ]] || fail "artifact_registry.mode=oci requires build_host.alias so ORAS can be copied from the build-host export"
+  [[ -n "${REMOTE_EXPORT_DIR}" ]] || fail "artifact_registry.mode=oci requires release_workspace.remote_export_dir (build-full-bundle export containing tools/oras)"
+  oci_bootstrap_log="${RUN_DIR}/logs/oci-target-oras-bootstrap.log"
+  OCI_ORAS_BIN="$(bootstrap_oras_from_build_host_to_target "${BUILD_HOST}" "${REMOTE_EXPORT_DIR}" "${TARGET_HOST}" "${oci_bootstrap_log}")"
+  oci_preflight_log="${RUN_DIR}/logs/oci-target-preflight.log"
+  oci_preflight_cmd='set -euo pipefail
+oras_bin='"$(shell_quote "${OCI_ORAS_BIN}")"'
+if [[ ! -x "${oras_bin}" ]]; then
+  echo "install-on-target: bootstrapped ORAS binary missing on target: ${oras_bin}" >&2
+  exit 1
+fi
+token=""
+token_file='"$(shell_quote "${OCI_TOKEN_FILE}")"'
+token_env='"$(shell_quote "${OCI_TOKEN_ENV}")"'
+if [[ -n "${token_file}" && -r "${token_file}" ]]; then
+  token="$(tr -d '"'"'\r\n'"'"' < "${token_file}")"
+fi
+if [[ -z "${token}" ]]; then
+  token="$(printenv "${token_env}" || true)"
+fi
+if [[ -z "${token}" ]]; then
+  echo "install-on-target: set ${token_env} on the target host, or set artifact_registry.oci_token_file to a readable token file on the target" >&2
+  exit 1
+fi
+echo "oci target preflight ok (oras=${oras_bin})"
+'
+  run_ssh_logged "${TARGET_HOST}" "${oci_preflight_log}" "${oci_preflight_cmd}"
 else
   fail "unsupported artifact_registry.mode: ${ARTIFACT_REGISTRY_MODE}"
 fi
@@ -254,16 +263,6 @@ from pathlib import Path
 sys.stdout.write(base64.b64encode(Path(sys.argv[1]).read_bytes()).decode("ascii"))
 PY
 )"
-fi
-
-if [[ "${ARTIFACT_REGISTRY_MODE}" == "oci" ]]; then
-  log "copying pulled release files to ${TARGET_HOST}:${OUT_DIR}"
-  run_ssh_logged "${TARGET_HOST}" "${RUN_DIR}/logs/oci-stage-mkdir.log" "mkdir -p $(shell_quote "${OUT_DIR}")"
-  scp \
-    "${LOCAL_PULL_DIR}/${LOCAL_BUNDLE}" \
-    "${LOCAL_PULL_DIR}/release-signing.pub" \
-    "${LOCAL_PULL_DIR}/sha256sum.txt" \
-    "${TARGET_HOST}:${OUT_DIR}/"
 fi
 
 if [[ "${ARTIFACT_REGISTRY_MODE}" == "http" ]]; then
@@ -306,15 +305,26 @@ rm -rf "${bundle_dir}"
 tar -C "${out_dir}" -xzf "${out_dir}/${bundle_archive}"
 chmod +x "${zonctl}"
 echo "[target 3/5] Bundle extracted to ${bundle_dir}."
-' 
+'
 else
+# OCI: target pulls with oras (Mac is not in the data path).
+oci_insecure_flag="false"
+if bool_true "${OCI_INSECURE:-false}"; then
+  oci_insecure_flag="true"
+fi
 remote_script='set -euo pipefail
 product_version='"$(shell_quote "${RELEASE_VERSION}")"'
 out_dir='"$(shell_quote "${OUT_DIR}")"'
 state_dir='"$(shell_quote "${STATE_DIR}")"'
 build_catalog_b64='"$(shell_quote "${build_catalog_b64}")"'
 preserve_failed_state='"$(shell_quote "${PRESERVE_FAILED_STATE}")"'
-bundle_archive='"$(shell_quote "${LOCAL_BUNDLE}")"'
+oci_registry='"$(shell_quote "${OCI_REGISTRY}")"'
+oci_repository='"$(shell_quote "${OCI_REPOSITORY}")"'
+oci_username='"$(shell_quote "${OCI_USERNAME}")"'
+oci_token_env='"$(shell_quote "${OCI_TOKEN_ENV}")"'
+oci_token_file='"$(shell_quote "${OCI_TOKEN_FILE}")"'
+oci_insecure='"$(shell_quote "${oci_insecure_flag}")"'
+oras_bin='"$(shell_quote "${OCI_ORAS_BIN}")"'
 public_key_file="release-signing.pub"
 checksum_file="sha256sum.txt"
 bundle_dir="${out_dir}/appliance-${product_version}-bundle"
@@ -322,8 +332,38 @@ public_key="${out_dir}/${public_key_file}"
 zonctl="${bundle_dir}/zonctl"
 printf "%s\n" '"$(shell_quote "${target_sudo_password}")"' | sudo -S -p "" -v >/dev/null
 mkdir -p "${out_dir}"
-echo "[target 1/5] Using pre-staged release files from orchestrator OCI pull..."
-echo "[target 1/5] Release files present."
+if [[ ! -x "${oras_bin}" ]]; then
+  echo "install-on-target: bootstrapped ORAS binary missing on target: ${oras_bin}" >&2
+  exit 1
+fi
+token=""
+if [[ -n "${oci_token_file}" && -r "${oci_token_file}" ]]; then
+  token="$(tr -d '\r\n' < "${oci_token_file}")"
+fi
+if [[ -z "${token}" ]]; then
+  token="$(printenv "${oci_token_env}" || true)"
+fi
+if [[ -z "${token}" ]]; then
+  echo "install-on-target: missing distribution registry token on target (env ${oci_token_env} or file ${oci_token_file:-<unset>})" >&2
+  exit 1
+fi
+oras_flags=()
+if [[ "${oci_insecure}" == "true" ]]; then
+  oras_flags+=(--insecure)
+fi
+ref="${oci_registry}/${oci_repository}:${product_version}"
+echo "[target 1/5] Pulling release package ${ref} with bootstrapped oras..."
+printf "%s\n" "${token}" | "${oras_bin}" login "${oras_flags[@]}" --username "${oci_username}" --password-stdin "${oci_registry}"
+(
+  cd "${out_dir}"
+  "${oras_bin}" pull "${oras_flags[@]}" "${ref}"
+)
+echo "[target 1/5] Release files pulled."
+bundle_archive="$(cd "${out_dir}" && ls appliance-*-bundle.tar.gz | head -n 1)"
+if [[ -z "${bundle_archive}" ]]; then
+  echo "install-on-target: pulled OCI artifact is missing appliance-*-bundle.tar.gz" >&2
+  exit 1
+fi
 echo "[target 2/5] Verifying release checksums..."
 if command -v sha256sum >/dev/null 2>&1; then
   (cd "${out_dir}" && sha256sum -c "${checksum_file}" >/dev/null)

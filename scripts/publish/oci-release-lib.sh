@@ -28,8 +28,18 @@ if ! declare -F require_cmd >/dev/null 2>&1; then
   }
 fi
 
-require_oras() {
+resolve_oras_cli() {
+  if [[ -n "${ORAS_BIN:-}" ]]; then
+    [[ -x "${ORAS_BIN}" ]] || fail "ORAS_BIN is not executable: ${ORAS_BIN}"
+    printf '%s\n' "${ORAS_BIN}"
+    return 0
+  fi
   require_cmd oras
+  printf 'oras\n'
+}
+
+require_oras() {
+  resolve_oras_cli >/dev/null
 }
 
 normalize_artifact_registry_mode() {
@@ -50,10 +60,12 @@ oras_login_registry() {
   local token="$3"
   local insecure="${4:-false}"
   local -a flags=()
+  local oras_cli
+  oras_cli="$(resolve_oras_cli)"
   if bool_true "${insecure}"; then
     flags+=(--insecure)
   fi
-  printf '%s\n' "${token}" | oras login "${flags[@]}" --username "${username}" --password-stdin "${registry}"
+  printf '%s\n' "${token}" | "${oras_cli}" login "${flags[@]}" --username "${username}" --password-stdin "${registry}"
 }
 
 oras_push_release_package() {
@@ -65,7 +77,8 @@ oras_push_release_package() {
   local latest_alias="${6:-0}"
   local ref="${registry}/${repository}:${version}"
   local -a flags=(--artifact-type "application/vnd.zon.appliance.release.v1+json")
-  local bundle_name=""
+  local bundle_name="" oras_cli
+  oras_cli="$(resolve_oras_cli)"
   if bool_true "${insecure}"; then
     flags+=(--insecure)
   fi
@@ -73,7 +86,7 @@ oras_push_release_package() {
   [[ -n "${bundle_name}" ]] || fail "missing appliance-*-bundle.tar.gz in ${stage_dir}"
   (
     cd "${stage_dir}"
-    oras push "${flags[@]}" "${ref}" \
+    "${oras_cli}" push "${flags[@]}" "${ref}" \
       "${bundle_name}" \
       "release-signing.pub" \
       "sha256sum.txt" \
@@ -83,7 +96,7 @@ oras_push_release_package() {
     local latest_ref="${registry}/${repository}:latest"
     (
       cd "${stage_dir}"
-      oras push "${flags[@]}" "${latest_ref}" \
+      "${oras_cli}" push "${flags[@]}" "${latest_ref}" \
         "${bundle_name}" \
         "release-signing.pub" \
         "sha256sum.txt" \
@@ -100,13 +113,15 @@ oras_pull_release_package() {
   local insecure="${5:-false}"
   local ref="${registry}/${repository}:${version}"
   local -a flags=()
+  local oras_cli
+  oras_cli="$(resolve_oras_cli)"
   if bool_true "${insecure}"; then
     flags+=(--insecure)
   fi
   mkdir -p "${out_dir}"
   (
     cd "${out_dir}"
-    oras pull "${flags[@]}" "${ref}"
+    "${oras_cli}" pull "${flags[@]}" "${ref}"
   )
 }
 
@@ -117,8 +132,10 @@ oras_manifest_exists() {
   local insecure="${4:-false}"
   local ref="${registry}/${repository}:${version}"
   local -a flags=()
+  local oras_cli
+  oras_cli="$(resolve_oras_cli)"
   if bool_true "${insecure}"; then
     flags+=(--insecure)
   fi
-  oras manifest fetch "${flags[@]}" "${ref}" >/dev/null
+  "${oras_cli}" manifest fetch "${flags[@]}" "${ref}" >/dev/null
 }

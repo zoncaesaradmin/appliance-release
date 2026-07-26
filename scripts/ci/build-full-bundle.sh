@@ -1109,6 +1109,23 @@ echo "  ${CONFIG_OUT}"
 
 make -C "${RELEASE_REPO_DIR}" product-bundle CONFIG="${CONFIG_OUT}"
 
+# Package a pinned linux/amd64 ORAS CLI into the bundle and export tree on the
+# build host (Ubuntu amd64 targets for now). Used for OCI publish on this host
+# and to bootstrap OCI pull on the target without Mac-side tooling.
+ORAS_BOOTSTRAP="${RELEASE_REPO_DIR}/scripts/publish/oras-bootstrap.sh"
+ORAS_CACHE_DIR="${WORK_ROOT}/cache/oras"
+echo "packaging ORAS CLI (linux/amd64) into bundle and export..."
+ORAS_CACHE_DIR="${ORAS_CACHE_DIR}" bash "${ORAS_BOOTSTRAP}" --install-to "${BUNDLE_DIR}/tools" >/dev/null
+ORAS_CACHE_DIR="${ORAS_CACHE_DIR}" bash "${ORAS_BOOTSTRAP}" --install-to "${EXPORT_DIR}/tools" >/dev/null
+[[ -x "${BUNDLE_DIR}/tools/oras" ]] || {
+  echo "build-full-bundle: failed to package ORAS into ${BUNDLE_DIR}/tools/oras" >&2
+  exit 1
+}
+[[ -x "${EXPORT_DIR}/tools/oras" ]] || {
+  echo "build-full-bundle: failed to export ORAS to ${EXPORT_DIR}/tools/oras" >&2
+  exit 1
+}
+
 tar -C "$(dirname "${BUNDLE_DIR}")" -czf "${BUNDLE_ARCHIVE}" "$(basename "${BUNDLE_DIR}")"
 cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
 
@@ -1119,12 +1136,17 @@ echo
 echo "final bundle:"
 echo "  ${BUNDLE_DIR}"
 echo
+echo "bundled ORAS CLI (linux/amd64):"
+echo "  ${BUNDLE_DIR}/tools/oras"
+echo "  ${EXPORT_DIR}/tools/oras"
+echo
 echo "generated bundle config:"
 echo "  ${WORKSPACE}/generated/product-bundle.env"
 echo
 echo "exported customer delivery files:"
 echo "  ${BUNDLE_ARCHIVE}"
 echo "  ${PUBLIC_KEY_EXPORT}"
+echo "  ${EXPORT_DIR}/tools/oras"
 echo
 echo "next publish step on the build machine:"
 echo "  export PRODUCT_VERSION=${PRODUCT_VERSION}"

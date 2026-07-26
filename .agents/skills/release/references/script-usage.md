@@ -31,11 +31,14 @@ Notes:
     `publish_server_alias`, `publish_remote_root`)
   - `oci` — publish/install the same signed bundle via ORAS to a separate,
     already-running appliance Artifact Server (`oci_registry`,
-    `oci_repository`, `oci_username`, token in `oci_token_env`)
-- For OCI mode, export the distribution token (default env
-  `APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN`), install `oras` on the build host
-  and on the Mac that runs install-on-target, and grant that token pull+push
-  on the configured repository prefix.
+    `oci_repository`, `oci_username`, token via `oci_token_env` or
+    `oci_token_file` on the **build host** and **target**)
+- For OCI mode the Mac does not need `oras` or
+  `APPLIANCE_DISTRIBUTION_REGISTRY_TOKEN`. `build-full-bundle` on the build
+  host packages linux/amd64 ORAS into the bundle and `EXPORT_DIR/tools/oras`.
+  Publish uses that binary; install copies it from the build host export onto
+  the target, then pulls. Set the distribution token (env or `oci_token_file`)
+  on build host + target only, with pull+push on the repository prefix.
 - For advanced extra SANs beyond the derived FQDN, use
   `install.additional_tls_sans_csv` in the config.
 - For the `builder` profile, set `install.build_catalog_path` or pass
@@ -155,8 +158,9 @@ If you want to keep the current install and test without uninstalling first:
 
 This script:
 
-- downloads the published package (HTTP on the target, or orchestrator ORAS
-  pull + scp when `artifact_registry.mode=oci`)
+- downloads the published package on the target (HTTP `curl`, or OCI
+  `oras pull` when `artifact_registry.mode=oci`, after copying ORAS from the
+  build-host export; Mac only orchestrates SSH/scp)
 - verifies checksums
 - extracts the bundle on the target host
 - runs `zonctl preflight`
