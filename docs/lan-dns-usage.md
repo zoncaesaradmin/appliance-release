@@ -21,8 +21,8 @@ appliance's base-capability publish API.
 Example topology used below:
 
 ```text
-DNS appliance:   https://192.168.1.101   (profile lan-dns)
-Peer appliance:  https://192.168.1.102   (profile storage / core / builder / …)
+DNS appliance:   https://192.168.1.105   (profile lan-dns)
+Peer appliance:  https://192.168.1.102   (profile core / builder / …)
 ```
 
 Replace those addresses with yours. Keep `-k` only while the appliance TLS

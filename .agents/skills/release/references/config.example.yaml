@@ -12,8 +12,10 @@ target_host:
   # Example:
   # alias: target-user@192.168.1.101
   # alias: target-host-alias-from-ssh-config
-  alias: zonsys@192.168.1.101
-  state_dir: /var/lib/zon
+  alias: zonsys@192.168.1.105
+  # Do not set state_dir for normal use. Install/status/verify already use
+  # zonctl's product default (/var/lib/zon/state). An explicit override is only
+  # for rare lab cases and must match zonctl --state-dir exactly.
 
 release_workspace:
   # Remote appliance-release checkout on the build machine. If this path does not
@@ -186,7 +188,7 @@ verification:
   status_command: sudo zonctl status --output json
   verify_command: sudo zonctl verify --output json
   service_health_command: sudo kubectl get pods -A
-  app_version_command: sudo cat /var/lib/zon/installed-state.json
+  app_version_command: sudo cat /var/lib/zon/state/installed-state.json
   # Only enable a smoke test here if the target host can actually reach the
   # appliance HTTPS endpoint you want to prove. If you copy the localhost
   # example below unchanged, verify-target.sh will automatically rewrite it to
