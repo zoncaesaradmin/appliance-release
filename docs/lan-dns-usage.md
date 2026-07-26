@@ -104,6 +104,15 @@ Permissions:
 Admin writes use TTL default **300** when omitted. Peer registration uses TTL
 default **60** and a **15-minute** lease that must be renewed.
 
+TTL is the **client cache** lifetime for an answer, not how long the DNS
+appliance takes to publish a change. After an admin add/update/delete, the
+appliance bumps the zone SOA serial and CoreDNS reloads the zone file about
+every **1 second**, so LAN clients that query the DNS appliance directly
+should see the new answer within roughly **1–2 seconds** (plus any prior
+NXDOMAIN cached for ~1s). Clients must use the DNS appliance as their
+resolver; a public resolver such as `8.8.8.8` will never learn
+`*.appliance.internal`.
+
 ### Browser UI on the DNS appliance
 
 After first-admin setup, sign in to the DNS appliance. Profiles with the
