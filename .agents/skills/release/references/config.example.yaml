@@ -12,7 +12,7 @@ target_host:
   # Example:
   # alias: target-user@192.168.1.101
   # alias: target-host-alias-from-ssh-config
-  alias: zonsys@192.168.1.105
+  alias: zonsys@192.168.1.103
   # Do not set state_dir for normal use. Install/status/verify already use
   # zonctl's product default (/var/lib/zon/state). An explicit override is only
   # for rare lab cases and must match zonctl --state-dir exactly.
@@ -44,13 +44,13 @@ artifact_registry:
   # RELEASE DISTRIBUTION ONLY: public HTTP/HTTPS base URL serving signed
   # installer/bundle files. This is not the in-appliance zot OCI registry;
   # appliance clients use client_verification.base_url plus /v2/.
-  # Example: http://192.168.1.103:28081
-  base_url: http://artifact-host-or-ip:28081
+  # Example: http://192.168.1.105:28081
+  base_url: http://192.168.1.105:28081
   # SSH target used by the build machine's publish command when needed.
   # Example:
-  # publish_server_alias: publish-user@192.168.1.103
+  # publish_server_alias: publish-user@192.168.1.105
   # publish_server_alias: publish-host-alias-from-ssh-config
-  publish_server_alias: zonsys@192.168.1.103
+  publish_server_alias: zonsys@192.168.1.105
   publish_remote_root: /home/zonsys/releases
   release_path_prefix: appliance
 
@@ -80,7 +80,7 @@ build_flow:
   build_command: K3S_BINARY_SOURCE=/home/zonsys/ci/inputs/k3s K3S_AIRGAP_IMAGES_SOURCE=/home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst bash /home/zonsys/ws/appliance-release/scripts/ci/build-full-bundle.sh
   # PRODUCT_VERSION, EXPORT_DIR, and PUBLISH_PUBLIC_BASE_URL are injected
   # automatically by the skill, so keep the command itself minimal.
-  publish_command: make publish-release PUBLISH_SERVER=zonsys@192.168.1.103 PUBLISH_REMOTE_ROOT=/home/zonsys/releases
+  publish_command: make publish-release PUBLISH_SERVER=zonsys@192.168.1.105 PUBLISH_REMOTE_ROOT=/home/zonsys/releases
   # Argo Workflows is a mandatory component of the complete v1 appliance
   # (ADR 0011) and build-full-bundle.sh enables it by default with zero
   # configuration: its version and controller/executor image references
@@ -158,7 +158,7 @@ install:
   # control_plane_deployment: control-plane
   # Product-facing appliance profile passed into the control plane.
   # Valid v1 values: core, builder, storage, lan-dns, storage-lan-dns
-  appliance_profile: storage
+  appliance_profile: lan-dns
   # Local build catalog JSON/YAML. Copied to the target install temp dir and
   # passed to zonctl as product config. Required for a useful builder tryout.
   # Do not put private keys, tokens, or passwords in this file.
@@ -168,7 +168,7 @@ install:
   # Canonical client-reachable public host the appliance should advertise in
   # canonicalOrigin and the OCI registry token realm. Set this to the real DNS
   # name clients can resolve, or to the appliance IP when DNS is unavailable.
-  # public_host: appliance.example.internal
+  public_host: registry1.appliance.internal
   # Extra TLS SANs, in addition to the node-name and public_host, as a
   # comma-separated list. Useful when you want the appliance certificate to be
   # accepted on both the DNS name and the appliance IP.
@@ -232,7 +232,7 @@ verification:
     # readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/appliance-dns --timeout=120s && dig +short @127.0.0.1 -p 53 SOA appliance.internal
 
 client_verification:
-  # Example: https://192.168.1.101
+  # Example: https://192.168.1.105
   base_url: https://target-ip-or-dns
   username: admin
   # Builder checks default to enabled when install.appliance_profile is builder.
