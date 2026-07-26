@@ -318,6 +318,24 @@ preflight_live_release_inputs() {
   assert_local_repo_clean_for_remote_ref "${ctl_repo_dir}" "appliance-ctl" "${ctl_ref}"
 }
 
+# Fail closed when client_verification.base_url is still the example placeholder
+# (or similarly unusable). A set-but-wrong URL rewrites working target-local
+# https://127.0.0.1 smoke checks into curl failures against a fake hostname.
+reject_placeholder_client_base_url() {
+  local base_url="$1"
+  local source_label="${2:-client_verification.base_url}"
+  base_url="$(printf '%s' "${base_url}" | tr '[:upper:]' '[:lower:]')"
+  case "${base_url}" in
+    ""|https://127.0.0.1|http://127.0.0.1|https://localhost|http://localhost)
+      return 0
+      ;;
+    *target-ip-or-dns*|*example.invalid*|*example.com*|*replace-me*|*changeme*)
+      fail "${source_label} is still an example placeholder (${1}); set it to the real appliance URL (for example https://192.168.1.103), or omit it so target-side smoke checks keep using https://127.0.0.1"
+      ;;
+  esac
+  return 0
+}
+
 render_ensure_remote_release_repo_cmd() {
   local remote_cwd="$1"
   local repo_source="$2"

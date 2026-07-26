@@ -230,8 +230,12 @@ verification:
     # readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/appliance-dns --timeout=120s && dig +short @127.0.0.1 -p 53 SOA appliance.internal
 
 client_verification:
-  # Example: https://192.168.1.105
-  base_url: https://target-ip-or-dns
+  # Required for macOS-side verify-client-access.sh. Also rewrites target-side
+  # smoke/UI checks away from https://127.0.0.1. Must be a real appliance URL
+  # for the current target (NOT the placeholder). Example for .103:
+  #   base_url: https://192.168.1.103
+  # Omit this key entirely to keep target-side smoke on https://127.0.0.1.
+  base_url: https://192.168.1.103
   username: admin
   # Builder checks default to enabled when install.appliance_profile is builder.
   # They log in, GET /api/v1/work-profiles, initialize MCP, and assert

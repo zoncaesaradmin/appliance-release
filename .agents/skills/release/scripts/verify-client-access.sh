@@ -66,7 +66,9 @@ if [[ -z "${RUN_DIR}" ]]; then
 fi
 BASE_URL="$(config_get_optional "${CONFIG_PATH}" "client_verification.base_url" || true)"
 USERNAME="$(config_get_optional "${CONFIG_PATH}" "client_verification.username" || true)"
+reject_placeholder_client_base_url "${BASE_URL}" "client_verification.base_url"
 BASE_URL="${BASE_URL:-https://192.168.1.101}"
+reject_placeholder_client_base_url "${BASE_URL}" "client_verification.base_url"
 USERNAME="${USERNAME:-admin}"
 PASSWORD="$(resolve_secret "APPLIANCE_FIRST_ADMIN_PASSWORD" "Appliance first-admin password")"
 

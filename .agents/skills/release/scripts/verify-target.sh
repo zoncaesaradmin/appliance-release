@@ -167,6 +167,7 @@ ARGO_CONTROLLER_CMD="${ARGO_CONTROLLER_CMD:-$(config_get_optional "${CONFIG_PATH
 ALLOW_INGRESS_WARNING="$(config_get_optional "${CONFIG_PATH}" "verification.allow_ingress_warning" || true)"
 ALLOW_VERIFY_SCHEMA_BUG="$(config_get_optional "${CONFIG_PATH}" "verification.allow_verify_schema_bug" || true)"
 CLIENT_BASE_URL="$(config_get_optional "${CONFIG_PATH}" "client_verification.base_url" || true)"
+reject_placeholder_client_base_url "${CLIENT_BASE_URL}" "client_verification.base_url"
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 fi

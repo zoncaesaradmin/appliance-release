@@ -86,6 +86,7 @@ verify-release-artifacts:
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_summarize_release_run.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_plan_profile_matrix.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_verify_client_access.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_live_release_repo_preflight.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_write_local_milestone_report.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_write_final_readiness_report.py"
 
