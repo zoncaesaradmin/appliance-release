@@ -360,10 +360,13 @@ import tarfile
 
 archive = sys.argv[1]
 with tarfile.open(archive) as tar:
-    try:
-        idx = json.load(tar.extractfile("index.json"))
-    except KeyError as exc:
-        raise SystemExit(f"oci archive {archive} is missing index.json") from exc
+    member = next(
+        (entry for entry in tar.getmembers() if entry.isfile() and entry.name.lstrip("./") == "index.json"),
+        None,
+    )
+    if member is None:
+        raise SystemExit(f"oci archive {archive} is missing index.json")
+    idx = json.load(tar.extractfile(member))
 manifests = idx.get("manifests") or []
 if not manifests:
     raise SystemExit(f"oci archive {archive} has no manifests in index.json")
@@ -394,17 +397,20 @@ archive, annotation_ref = sys.argv[1], sys.argv[2]
 with tarfile.open(archive) as tar:
     members = tar.getmembers()
     files = {}
+    index_member_name = None
     for member in members:
         if member.isfile():
             extracted = tar.extractfile(member)
             if extracted is None:
                 raise SystemExit(f"failed to read {member.name} from {archive}")
             files[member.name] = extracted.read()
+            if member.name.lstrip("./") == "index.json":
+                index_member_name = member.name
 
-if "index.json" not in files:
+if index_member_name is None:
     raise SystemExit(f"oci archive {archive} is missing index.json")
 
-index = json.loads(files["index.json"])
+index = json.loads(files[index_member_name])
 manifests = index.get("manifests") or []
 if not manifests:
     raise SystemExit(f"oci archive {archive} has no manifests in index.json")
@@ -413,7 +419,7 @@ annotations = dict(manifests[0].get("annotations") or {})
 annotations["org.opencontainers.image.ref.name"] = annotation_ref
 manifests[0]["annotations"] = annotations
 index["manifests"] = manifests
-files["index.json"] = json.dumps(index, separators=(",", ":"), sort_keys=False).encode("utf-8")
+files[index_member_name] = json.dumps(index, separators=(",", ":"), sort_keys=False).encode("utf-8")
 
 tmp_path = archive + ".relabel.tmp"
 with tarfile.open(tmp_path, "w") as out:
@@ -449,10 +455,13 @@ if "@" not in expected_ref:
     raise SystemExit(f"bundle reference {expected_ref!r} is not digest-pinned")
 expected_digest = expected_ref.split("@", 1)[1]
 with tarfile.open(archive) as tar:
-    try:
-        idx = json.load(tar.extractfile("index.json"))
-    except KeyError as exc:
-        raise SystemExit(f"oci archive {archive} is missing index.json") from exc
+    member = next(
+        (entry for entry in tar.getmembers() if entry.isfile() and entry.name.lstrip("./") == "index.json"),
+        None,
+    )
+    if member is None:
+        raise SystemExit(f"oci archive {archive} is missing index.json")
+    idx = json.load(tar.extractfile(member))
 manifests = idx.get("manifests") or []
 if not manifests:
     raise SystemExit(f"oci archive {archive} has no manifests in index.json")

@@ -119,18 +119,38 @@ def image_ref_repository(image_ref: str) -> str:
     return image_ref
 
 
-def require_oci_archive_reference_matches_content(path: Path, image_ref: str, label: str) -> None:
-    """When path is an OCI layout archive, require annotation digest == content digest == image_ref."""
+def load_oci_archive_index(path: Path) -> Optional[dict]:
+    """Load index.json from an OCI-layout tar. Accepts ./index.json members.
+
+    Returns None for stub/non-OCI archives used in unit fixtures.
+    """
     try:
         with tarfile.open(path) as tar:
-            try:
-                idx_file = tar.extractfile("index.json")
-            except KeyError:
-                return
+            member = next(
+                (
+                    entry
+                    for entry in tar.getmembers()
+                    if entry.isfile() and entry.name.lstrip("./") == "index.json"
+                ),
+                None,
+            )
+            if member is None:
+                return None
+            idx_file = tar.extractfile(member)
             if idx_file is None:
-                return
+                return None
             index = json.load(idx_file)
     except (tarfile.TarError, OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(index, dict):
+        raise ValueError(f"OCI archive {path} index.json must be an object")
+    return index
+
+
+def require_oci_archive_reference_matches_content(path: Path, image_ref: str, label: str) -> None:
+    """When path is an OCI layout archive, require annotation digest == content digest == image_ref."""
+    index = load_oci_archive_index(path)
+    if index is None:
         # Stub/non-OCI archives used in unit fixtures are allowed through.
         return
 
@@ -381,8 +401,9 @@ def validate_zot(
             f"release-input artifacts.zotImage.path must identify zot, got {image['path']!r}"
         )
     require_oci_archive_reference_matches_content(image_path, image_ref, "zotImage")
-    with tarfile.open(image_path) as tar:
-        index = json.load(tar.extractfile("index.json"))
+    index = load_oci_archive_index(image_path)
+    if index is None:
+        raise ValueError(f"zotImage OCI archive {image_path} is missing index.json")
     annotation = (
         (index.get("manifests") or [{}])[0].get("annotations") or {}
     ).get("org.opencontainers.image.ref.name")
@@ -450,8 +471,9 @@ def validate_dns(
             f"release-input artifacts.dnsImage.path must identify coredns, got {image['path']!r}"
         )
     require_oci_archive_reference_matches_content(image_path, image_ref, "dnsImage")
-    with tarfile.open(image_path) as tar:
-        index = json.load(tar.extractfile("index.json"))
+    index = load_oci_archive_index(image_path)
+    if index is None:
+        raise ValueError(f"dnsImage OCI archive {image_path} is missing index.json")
     annotation = (
         (index.get("manifests") or [{}])[0].get("annotations") or {}
     ).get("org.opencontainers.image.ref.name")

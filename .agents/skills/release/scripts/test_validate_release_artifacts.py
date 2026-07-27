@@ -323,7 +323,13 @@ def test_rejects_workspace_provisioner_path_ref_mismatch() -> None:
             raise AssertionError(result.stderr)
 
 
-def write_mismatched_oci_archive(path: Path, annotated_ref: str, content_digest: str) -> None:
+def write_mismatched_oci_archive(
+    path: Path,
+    annotated_ref: str,
+    content_digest: str,
+    *,
+    member_prefix: str = "",
+) -> None:
     import io
     import tarfile
 
@@ -342,9 +348,30 @@ def write_mismatched_oci_archive(path: Path, annotated_ref: str, content_digest:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(path, "w") as tar:
         payload = json.dumps(index).encode("utf-8")
-        info = tarfile.TarInfo(name="index.json")
+        info = tarfile.TarInfo(name=f"{member_prefix}index.json")
         info.size = len(payload)
         tar.addfile(info, io.BytesIO(payload))
+
+
+def test_accepts_dot_slash_prefixed_dns_oci_archive() -> None:
+    """GNU tar packing with '.' can emit ./index.json; validators must accept it."""
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        archive_path = tmp / "release-input" / "images" / "coredns-image.tar"
+        write_mismatched_oci_archive(
+            archive_path,
+            "registry.local/coredns:bundled",
+            "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            member_prefix="./",
+        )
+        release_input_path = tmp / "release-input" / "release-input.json"
+        release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
+        release_input["artifacts"]["dnsImage"]["sizeBytes"] = archive_path.stat().st_size
+        release_input_path.write_text(json.dumps(release_input), encoding="utf-8")
+        result = run_validator(tmp)
+        if result.returncode != 0:
+            raise AssertionError(result.stderr or result.stdout)
 
 
 def test_rejects_oci_archive_annotation_digest_mismatch() -> None:
@@ -447,6 +474,7 @@ def main() -> None:
     test_allows_expected_extra_oci_image_ref_with_stale_advisory_digest()
     test_rejects_workspace_provisioner_path_ref_mismatch()
     test_rejects_oci_archive_annotation_digest_mismatch()
+    test_accepts_dot_slash_prefixed_dns_oci_archive()
     test_rejects_zot_annotation_and_version_mismatch()
     test_rejects_dns_annotation_and_version_mismatch()
     test_rejects_missing_ui_bundle_entry()
