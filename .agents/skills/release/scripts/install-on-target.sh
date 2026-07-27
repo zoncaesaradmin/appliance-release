@@ -111,13 +111,9 @@ if [[ -z "${RELEASE_VERSION}" ]]; then
 fi
 BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
 BASE_URL="$(bundle_store_get_optional "${CONFIG_PATH}" "base_url" || true)"
-BUNDLE_STORE_ACCESS_TOKEN_ENV="$(bundle_store_get_optional "${CONFIG_PATH}" "access_token_env" || true)"
 PATH_PREFIX="$(bundle_store_get_optional "${CONFIG_PATH}" "release_path_prefix" || true)"
 if [[ -z "${PATH_PREFIX}" ]]; then
   PATH_PREFIX="appliance"
-fi
-if [[ -z "${BUNDLE_STORE_ACCESS_TOKEN_ENV}" ]]; then
-  BUNDLE_STORE_ACCESS_TOKEN_ENV="APPLIANCE_ARTIFACT_TOKEN"
 fi
 STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || true)"
 if [[ -z "${STATE_DIR}" ]]; then
@@ -183,7 +179,7 @@ case "${BUNDLE_STORE_MODE}" in
     bundle_store_bearer_token=""
     if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
       require_appliance_files_base_url "${BASE_URL}"
-      bundle_store_bearer_token="$(resolve_appliance_files_bearer_token "${CONFIG_PATH}" "${BASE_URL}" "${BUNDLE_STORE_ACCESS_TOKEN_ENV}")"
+      bundle_store_bearer_token="$(resolve_appliance_files_bearer_token "${CONFIG_PATH}" "${BASE_URL}")"
       bundle_store_fill_curl_tls_args "${CONFIG_PATH}"
     fi
     helper_url="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-http-release.sh"

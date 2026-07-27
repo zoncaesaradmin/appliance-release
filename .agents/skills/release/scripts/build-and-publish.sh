@@ -196,7 +196,6 @@ VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.e
 BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
 PUBLISH_PUBLIC_BASE_URL="$(bundle_store_get_optional "${CONFIG_PATH}" "base_url" || true)"
 PUBLISH_PATH_PREFIX="$(bundle_store_get_optional "${CONFIG_PATH}" "release_path_prefix" || true)"
-BUNDLE_STORE_ACCESS_TOKEN_ENV="$(bundle_store_get_optional "${CONFIG_PATH}" "access_token_env" || true)"
 PUBLISH_LATEST_ALIAS="$(config_get_optional "${CONFIG_PATH}" "release.publish_latest_alias" || true)"
 case "${BUNDLE_STORE_MODE}" in
   static_http|appliance_files)
@@ -208,9 +207,6 @@ if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
 fi
 if [[ -z "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
   BOOTSTRAP_REGISTRY_TOKEN_ENV="REGISTRY_TOKEN"
-fi
-if [[ -z "${BUNDLE_STORE_ACCESS_TOKEN_ENV}" ]]; then
-  BUNDLE_STORE_ACCESS_TOKEN_ENV="APPLIANCE_ARTIFACT_TOKEN"
 fi
 ensure_dir "${RUN_DIR}"
 ensure_dir "${RUN_DIR}/logs"
@@ -285,7 +281,7 @@ if bool_true "${PUBLISH_LATEST_ALIAS:-false}"; then
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_LATEST_ALIAS" "1")"
 fi
 if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
-  bundle_store_bearer_token="$(resolve_appliance_files_bearer_token "${CONFIG_PATH}" "${PUBLISH_PUBLIC_BASE_URL}" "${BUNDLE_STORE_ACCESS_TOKEN_ENV}")"
+  bundle_store_bearer_token="$(resolve_appliance_files_bearer_token "${CONFIG_PATH}" "${PUBLISH_PUBLIC_BASE_URL}")"
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_BEARER_TOKEN" "${bundle_store_bearer_token}")"
   bundle_store_fill_curl_tls_args "${CONFIG_PATH}"
   tls_idx=0
@@ -519,11 +515,6 @@ if [[ "${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}" == *@sha256:* ]]; then
   fi
   EXPECTED_EXTRA_OCI_IMAGE_REFS+="${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}"
 fi
-# build-full-bundle always packages fileserver; match by repository name.
-if [[ -n "${EXPECTED_EXTRA_OCI_IMAGE_REFS}" ]]; then
-  EXPECTED_EXTRA_OCI_IMAGE_REFS+=","
-fi
-EXPECTED_EXTRA_OCI_IMAGE_REFS+="registry.local/fileserver@sha256:0000000000000000000000000000000000000000000000000000000000000000"
 if [[ -n "${EXPECTED_EXTRA_OCI_IMAGE_REFS}" ]]; then
   VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--expected-extra-oci-image-refs "${EXPECTED_EXTRA_OCI_IMAGE_REFS}")
 fi

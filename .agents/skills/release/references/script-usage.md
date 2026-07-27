@@ -31,10 +31,9 @@ Notes:
     `publish_server_alias`, `publish_remote_root`)
   - `appliance_files` — publish/install via the appliance-managed authenticated
     file API. `base_url` must be `https://<distributor-fqdn>/api/v1/files`
-    (not Traefik `/files`). The skill mints a scoped API token when
-    `APPLIANCE_ARTIFACT_TOKEN` is unset, using `bundle_store.store_username`
-    (default `admin`) and `APPLIANCE_STORE_PASSWORD` (falls back to
-    `APPLIANCE_FIRST_ADMIN_PASSWORD`). TLS defaults to insecure verify for
+    (Traefik `/files` was removed). Set `bundle_store.access_token` to a
+    long-lived API token from the distributor Dashboard → API tokens (prefer
+    “Artifact files only” scopes). TLS defaults to insecure verify for
     self-signed lab certs; set `bundle_store.cacert_path` or
     `bundle_store.tls_insecure: false` when the CA is trusted. Requires an
     already-installed artifact-capable distributor appliance (day-2 path).

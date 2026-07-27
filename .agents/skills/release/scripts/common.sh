@@ -396,7 +396,7 @@ require_appliance_files_base_url() {
       return 0
       ;;
     *)
-      fail "bundle_store.mode=appliance_files requires bundle_store.base_url ending in /api/v1/files (authenticated API). Do not use Traefik /files — that path is unauthenticated static nginx."
+      fail "bundle_store.mode=appliance_files requires bundle_store.base_url ending in /api/v1/files (authenticated API). Traefik /files was removed; do not use unauthenticated static nginx paths."
       ;;
   esac
 }
@@ -425,96 +425,19 @@ bundle_store_fill_curl_tls_args() {
   fi
 }
 
-# Resolve a bearer token for appliance_files publish/install.
-# Order:
-#   1. Existing value of access_token_env (default APPLIANCE_ARTIFACT_TOKEN)
-#   2. Mint via login + POST /api/v1/tokens using store_username + password_env
-# Password env defaults to APPLIANCE_STORE_PASSWORD, then falls back to
-# APPLIANCE_FIRST_ADMIN_PASSWORD for single-admin lab topologies.
+# Resolve the bearer token for appliance_files publish/install from
+# bundle_store.access_token (long-lived API token created on the distributor
+# Dashboard). No environment-variable or auto-mint fallback.
 resolve_appliance_files_bearer_token() {
   local config_path="$1"
   local base_url="$2"
-  local access_token_env="$3"
   local token=""
-  local username=""
-  local password_env=""
-  local api_origin=""
-  local api_origin_override=""
-  local lifetime=""
-  local mint_cmd=()
-  local auth_script="${SCRIPT_DIR}/appliance-files-auth.py"
-  local tls_idx=0
 
-  if [[ -n "${access_token_env}" ]]; then
-    token="${!access_token_env:-}"
-  fi
-  if [[ -n "${token}" ]]; then
-    printf '%s' "${token}"
-    return 0
-  fi
-
-  require_cmd python3
-  ensure_file "${auth_script}"
   require_appliance_files_base_url "${base_url}"
-
-  username="$(bundle_store_get_optional "${config_path}" "store_username" || true)"
-  if [[ -z "${username}" ]]; then
-    username="admin"
-  fi
-  password_env="$(bundle_store_get_optional "${config_path}" "store_password_env" || true)"
-  if [[ -z "${password_env}" ]]; then
-    password_env="APPLIANCE_STORE_PASSWORD"
-  fi
-  if [[ -z "${!password_env:-}" && -n "${APPLIANCE_FIRST_ADMIN_PASSWORD:-}" ]]; then
-    log "appliance_files: ${password_env} unset; using APPLIANCE_FIRST_ADMIN_PASSWORD for distributor login"
-    password_env="APPLIANCE_FIRST_ADMIN_PASSWORD"
-  fi
-  if [[ -z "${!password_env:-}" ]]; then
-    local prompted_password=""
-    prompted_password="$(resolve_secret "${password_env}" "Distributor appliance password (${username}@store)")"
-    printf -v "${password_env}" '%s' "${prompted_password}"
-    export "${password_env?}"
-  fi
-
-  api_origin_override="$(bundle_store_get_optional "${config_path}" "api_origin" || true)"
-  api_origin="$(derive_appliance_files_api_origin "${base_url}" "${api_origin_override}")"
-  lifetime="$(bundle_store_get_optional "${config_path}" "api_token_lifetime_seconds" || true)"
-  if [[ -z "${lifetime}" ]]; then
-    lifetime="86400"
-  fi
-
-  bundle_store_fill_curl_tls_args "${config_path}"
-  mint_cmd=(
-    python3 "${auth_script}"
-    --api-origin "${api_origin}"
-    --username "${username}"
-    --password-env "${password_env}"
-    --lifetime-seconds "${lifetime}"
-    --scopes "artifacts.read,artifacts.write"
-    --token-name "appliance-release-files"
-  )
-  tls_idx=0
-  while [[ ${tls_idx} -lt ${#BUNDLE_STORE_CURL_TLS_ARGS[@]} ]]; do
-    if [[ "${BUNDLE_STORE_CURL_TLS_ARGS[$tls_idx]}" == "--cacert" ]]; then
-      mint_cmd+=(--cacert "${BUNDLE_STORE_CURL_TLS_ARGS[$((tls_idx + 1))]}")
-      break
-    fi
-    if [[ "${BUNDLE_STORE_CURL_TLS_ARGS[$tls_idx]}" == "-k" ]]; then
-      mint_cmd+=(--insecure)
-      break
-    fi
-    tls_idx=$((tls_idx + 1))
-  done
-
-  log "appliance_files: minting distributor API token via ${api_origin} (export ${access_token_env:-APPLIANCE_ARTIFACT_TOKEN} to skip)"
-  token="$("${mint_cmd[@]}")" || fail "appliance_files: failed to mint distributor API token; ensure an artifact-capable appliance is already installed at ${api_origin} and credentials are valid"
+  token="$(bundle_store_get_optional "${config_path}" "access_token" || true)"
+  token="$(printf '%s' "${token}" | tr -d '[:space:]')"
   if [[ -z "${token}" ]]; then
-    fail "appliance_files: minted token was empty"
-  fi
-  # Export so sibling steps in the same shell (and child make publish) reuse it.
-  if [[ -n "${access_token_env}" ]]; then
-    printf -v "${access_token_env}" '%s' "${token}"
-    export "${access_token_env?}"
+    fail "bundle_store.mode=appliance_files requires bundle_store.access_token (long-lived API token from the distributor Dashboard → API tokens)"
   fi
   printf '%s' "${token}"
 }

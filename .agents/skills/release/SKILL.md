@@ -55,20 +55,15 @@ For day-to-day use, set:
 - `APPLIANCE_BUILD_SUDO_PASSWORD=...`
 - `APPLIANCE_TARGET_SUDO_PASSWORD=...`
 - `APPLIANCE_FIRST_ADMIN_PASSWORD=...`
-- For `bundle_store.mode=appliance_files` against a separate distributor,
-  prefer `APPLIANCE_STORE_PASSWORD=...` (falls back to the first-admin
-  password when unset). Optionally pre-export `APPLIANCE_ARTIFACT_TOKEN=...`
-  to skip auto-mint.
 
 Distribution modes (`bundle_store.mode`): `static_http` (default external
 publish box) or `appliance_files` (appliance-managed authenticated file API).
 Both install with target `curl` against `bundle_store.base_url`. For
-`appliance_files`, the skill mints a scoped distributor API token when
-`APPLIANCE_ARTIFACT_TOKEN` is unset (login via `store_username` +
-`APPLIANCE_STORE_PASSWORD` / `APPLIANCE_FIRST_ADMIN_PASSWORD`), applies TLS
-`-k` by default for self-signed lab certs (or `cacert_path`), and requires
-`base_url` to end in `/api/v1/files`. Historical aliases: `http`/`http-static`
-→ `static_http`, `fileserver` → `appliance_files`.
+`appliance_files`, set `bundle_store.access_token` to a long-lived API token
+from the distributor Dashboard → API tokens, apply TLS `-k` by default for
+self-signed lab certs (or `cacert_path`), and require `base_url` to end in
+`/api/v1/files` (Traefik `/files` was removed). Historical aliases:
+`http`/`http-static` → `static_http`, `fileserver` → `appliance_files`.
 
 Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `--config`.
 

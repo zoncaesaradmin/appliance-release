@@ -14,7 +14,6 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
 COMMON = Path(__file__).resolve().parent / "common.sh"
 AUTH_SCRIPT = Path(__file__).resolve().parent / "appliance-files-auth.py"
 
@@ -143,6 +142,8 @@ printf '%s\\n' "${{BUNDLE_STORE_CURL_TLS_ARGS[1]}}"
             self.assertEqual(lines[1], ca.as_posix())
 
     def test_mint_token_via_login(self) -> None:
+        # Standalone mint helper remains available for operators; the release
+        # skill itself reads bundle_store.access_token only.
         server = HTTPServer(("127.0.0.1", 0), _AuthHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -170,7 +171,31 @@ printf '%s\\n' "${{BUNDLE_STORE_CURL_TLS_ARGS[1]}}"
             server.shutdown()
             server.server_close()
 
-    def test_resolve_bearer_uses_existing_env_token(self) -> None:
+    def test_resolve_bearer_uses_config_access_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "cfg.yaml"
+            cfg.write_text(
+                "\n".join(
+                    [
+                        "bundle_store:",
+                        "  mode: appliance_files",
+                        "  base_url: https://host.example/api/v1/files",
+                        "  access_token: apt_config.token",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            script = f"""
+set -euo pipefail
+source {COMMON.as_posix()!r}
+resolve_appliance_files_bearer_token {cfg.as_posix()!r} 'https://host.example/api/v1/files'
+"""
+            proc = run_bash(script)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "apt_config.token")
+
+    def test_resolve_bearer_requires_access_token(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / "cfg.yaml"
             cfg.write_text(
@@ -180,47 +205,11 @@ printf '%s\\n' "${{BUNDLE_STORE_CURL_TLS_ARGS[1]}}"
             script = f"""
 set -euo pipefail
 source {COMMON.as_posix()!r}
-resolve_appliance_files_bearer_token {cfg.as_posix()!r} 'https://host.example/api/v1/files' APPLIANCE_ARTIFACT_TOKEN
+resolve_appliance_files_bearer_token {cfg.as_posix()!r} 'https://host.example/api/v1/files'
 """
-            proc = run_bash(script, env={"APPLIANCE_ARTIFACT_TOKEN": "pre-minted-token"})
-            self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertEqual(proc.stdout.strip(), "pre-minted-token")
-
-    def test_resolve_bearer_mints_when_env_missing(self) -> None:
-        server = HTTPServer(("127.0.0.1", 0), _AuthHandler)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        try:
-            host, port = server.server_address
-            origin = f"http://{host}:{port}"
-            with tempfile.TemporaryDirectory() as tmp:
-                cfg = Path(tmp) / "cfg.yaml"
-                cfg.write_text(
-                    "\n".join(
-                        [
-                            "bundle_store:",
-                            "  mode: appliance_files",
-                            f"  base_url: {origin}/api/v1/files",
-                            f"  api_origin: {origin}",
-                            "  store_username: admin",
-                            "  store_password_env: APPLIANCE_STORE_PASSWORD",
-                            "  tls_insecure: true",
-                        ]
-                    )
-                    + "\n",
-                    encoding="utf-8",
-                )
-                script = f"""
-set -euo pipefail
-source {COMMON.as_posix()!r}
-resolve_appliance_files_bearer_token {cfg.as_posix()!r} '{origin}/api/v1/files' APPLIANCE_ARTIFACT_TOKEN
-"""
-                proc = run_bash(script, env={"APPLIANCE_STORE_PASSWORD": "secret"})
-                self.assertEqual(proc.returncode, 0, proc.stderr)
-                self.assertEqual(proc.stdout.strip(), "apt_test_token_value")
-        finally:
-            server.shutdown()
-            server.server_close()
+            proc = run_bash(script)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("access_token", proc.stderr)
 
 
 if __name__ == "__main__":

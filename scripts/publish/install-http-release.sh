@@ -53,9 +53,11 @@ the published script's content, not inferred from its filename):
   curl -fsSL http://downloads.example.internal/releases/appliance/0.1.0/install-http-release.sh \
     | bash -s -- --base-url http://downloads.example.internal/releases
 
-If the distribution endpoint requires appliance authentication, export one of:
-  APPLIANCE_ARTIFACT_TOKEN=<appliance API token>
+If the distribution endpoint requires appliance authentication, export:
+  ARTIFACT_BEARER_TOKEN=<appliance API token>
   APPLIANCE_RELEASE_BEARER_TOKEN=<appliance API token>   # legacy alias
+
+The release skill sets this from bundle_store.access_token when installing.
 
 For HTTPS with a self-signed distributor cert, export:
   APPLIANCE_RELEASE_TLS_INSECURE=1
@@ -85,9 +87,9 @@ DNS_ZONE=""
 TLS_SANS=()
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
-# Prefer APPLIANCE_ARTIFACT_TOKEN (skill/config default); keep
-# APPLIANCE_RELEASE_BEARER_TOKEN as a documented legacy alias.
-ARTIFACT_BEARER_TOKEN="${APPLIANCE_ARTIFACT_TOKEN:-${APPLIANCE_RELEASE_BEARER_TOKEN:-}}"
+# Prefer ARTIFACT_BEARER_TOKEN (skill injects from bundle_store.access_token);
+# keep APPLIANCE_RELEASE_BEARER_TOKEN as a documented legacy alias.
+ARTIFACT_BEARER_TOKEN="${ARTIFACT_BEARER_TOKEN:-${APPLIANCE_RELEASE_BEARER_TOKEN:-}}"
 TLS_INSECURE="${APPLIANCE_RELEASE_TLS_INSECURE:-}"
 TLS_CACERT="${APPLIANCE_RELEASE_CACERT:-}"
 

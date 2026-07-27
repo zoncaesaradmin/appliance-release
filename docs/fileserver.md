@@ -31,8 +31,19 @@ model as other appliance APIs.
 
 ## Get A Bearer Token
 
-Manual login (also what the release skill does automatically when
-`APPLIANCE_ARTIFACT_TOKEN` is unset):
+Preferred: open the distributor appliance UI → **Dashboard → API tokens**, create a
+long-lived token (scopes “Artifact files only” for release publish, or all
+permissions), copy the `apt_…` secret once, and put it in your local release
+config:
+
+```yaml
+bundle_store:
+  mode: appliance_files
+  base_url: https://artifact-dns-1.appliance.internal/api/v1/files
+  access_token: apt_….…
+```
+
+You can also mint a token with curl (then paste into `access_token`):
 
 ```bash
 APPLIANCE=https://artifact-dns-1.appliance.internal
@@ -46,28 +57,18 @@ ACCESS_TOKEN="$(
     "${APPLIANCE}/api/v1/auth/login" \
   | jq -r '.accessToken'
 )"
-```
 
-For long-lived publish/install, mint a scoped API token (preferred over the
-short-lived session access JWT):
-
-```bash
 API_TOKEN="$(
   curl -ksS \
     -X POST \
     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d '{"name":"appliance-release-files","lifetimeSeconds":86400,"scopes":["artifacts.read","artifacts.write"]}' \
+    -d '{"name":"appliance-release-files","lifetimeSeconds":31536000,"scopes":["artifacts.read","artifacts.write"]}' \
     "${APPLIANCE}/api/v1/tokens" \
   | jq -r '.token'
 )"
-export APPLIANCE_ARTIFACT_TOKEN="${API_TOKEN}"
+echo "${API_TOKEN}"
 ```
-
-With `bundle_store.mode: appliance_files`, the release skill performs this
-mint for you when `APPLIANCE_ARTIFACT_TOKEN` is unset, using
-`bundle_store.store_username` + `APPLIANCE_STORE_PASSWORD` (or
-`APPLIANCE_FIRST_ADMIN_PASSWORD`).
 
 ## Upload A File
 
@@ -133,10 +134,11 @@ curl -ksS \
 ## Notes
 
 - The appliance creates parent directories under `/data/zon/files` as needed.
-- Host path ownership is `10005:20000` with mode `2775` (setgid, group-writable,
-  host-user readable/traversable) so the control plane (`10001`, supplementary
-  group `20000`) can upload, the fileserver (`10005`) can serve, and host users
-  can inspect the tree like service logs. Uploaded files are mode `0644`.
+- Host path ownership is `10001:20000` with mode `2775` (setgid, group-writable,
+  host-user readable/traversable) so the control plane can upload via the
+  authenticated files API and host users can inspect the tree like service
+  logs. Uploaded files are mode `0644`. There is no Traefik `/files` nginx
+  surface; use `/api/v1/files` only.
 - Directory listing is not provided; clients must know the full path.
 - Use the release scripts in `appliance-release` if you want the automated
   build-host publish and target-install flow.
