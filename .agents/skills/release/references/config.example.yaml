@@ -147,9 +147,10 @@ build_flow:
   # CoreDNS is also a required first-class image/chart contract in every
   # complete bundle (same treatment as Zot above). It is activated at install
   # time only for DNS-bearing profiles: landns, storage-landns, builder-landns, builder-storage-landns.
-  # Online builds pull this exact version on the build host, copy linux/amd64,
-  # and derive registry.local/coredns@sha256:<index.json platform digest>. The
-  # archive is relabeled registry.local/coredns:bundled for reliable ctr import.
+  # Online builds wrap upstream CoreDNS inside the appliance-code dev-run
+  # environment (buildah+skopeo), producing registry.local/coredns:bundled plus
+  # registry.local/coredns@sha256:<index.json platform digest>. Do not expect
+  # bare skopeo on the build host PATH; set image_archive_source for offline.
   dns:
     version: 1.14.4
     image_pull_ref: registry.k8s.io/coredns/coredns:v1.14.4

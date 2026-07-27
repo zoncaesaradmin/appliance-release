@@ -72,9 +72,9 @@ Optional overrides:
   DNS_IMAGE_PULL_REF=registry.k8s.io/coredns/coredns:v1.14.4
   DNS_IMAGE_ARCHIVE_SOURCE=/ci/inputs/coredns.oci.tar
   # CoreDNS is a first-class release artifact. Online builds wrap upstream
-  # with an entrypoint that mirrors stdout/stderr into /data/zon/logs/dns;
-  # offline builds may supply that wrapper archive. Both paths derive
-  # registry.local/coredns@sha256:<platform-digest> from index.json.
+  # inside appliance-code's package-coredns-image-archive (dev-run has
+  # buildah+skopeo); offline builds may supply that wrapper archive. Both
+  # paths derive registry.local/coredns@sha256:<platform-digest> from index.json.
 EOF
 }
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -952,20 +952,14 @@ else
   ZOT_IMAGE_REF="$(export_bundled_extra_oci_image_archive "${ZOT_IMAGE_PULL_REF}" "registry.local/zot" "${CODE_REPO_DIR}/.run/zot-image.tar")"
 fi
 
+# Online CoreDNS wrap needs buildah+skopeo (same as Argo controller). Run it
+# inside CODE_DEV_SCRIPT via appliance-code's package target, not on the bare
+# build host where skopeo may only exist as a podman-pulled helper for copy.
 DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/coredns-image.tar"
+DNS_IMAGE_REF=""
 if [[ -n "${DNS_IMAGE_ARCHIVE_SOURCE}" ]]; then
   cp "${DNS_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/coredns-image.tar"
   DNS_IMAGE_REF="$(finalize_bundled_oci_archive "${CODE_REPO_DIR}/.run/coredns-image.tar" "registry.local/coredns")"
-else
-  # Build the appliance-owned CoreDNS wrapper (tees stdout/stderr into
-  # /data/zon/logs/dns). Do not re-label bare upstream: that leaves the
-  # host log directory empty because CoreDNS only writes to stdout.
-  bash "${CODE_REPO_DIR}/scripts/package/export-coredns-image-archive.sh" \
-    --out-file "${CODE_REPO_DIR}/.run/coredns-image.tar" \
-    --reference-out-file "${CODE_REPO_DIR}/.run/coredns-image.reference" \
-    --source-image "${DNS_IMAGE_PULL_REF}" \
-    --dns-version "${DNS_VERSION}"
-  DNS_IMAGE_REF="$(tr -d '\r\n' <"${CODE_REPO_DIR}/.run/coredns-image.reference")"
 fi
 
 if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" ]]; then
@@ -1052,6 +1046,19 @@ bool_true() {
 make package-control-plane-image-archive OUT_FILE="\${CONTROL_PLANE_IMAGE_OUT}"
 make package-ui-image-archive OUT_FILE="\${UI_IMAGE_OUT}"
 
+DNS_IMAGE_ARCHIVE_FOR_DEV=$(shell_quote "${DNS_IMAGE_ARCHIVE_FOR_DEV}")
+DNS_IMAGE_REF=$(shell_quote "${DNS_IMAGE_REF}")
+if [[ -z "\${DNS_IMAGE_REF}" ]]; then
+  # Appliance-owned CoreDNS wrapper: tees stdout/stderr into /data/zon/logs/dns.
+  # Do not re-label bare upstream — that leaves the host log directory empty.
+  make package-coredns-image-archive \
+    OUT_FILE="/workspace/.run/coredns-image.tar" \
+    DNS_VERSION=$(shell_quote "${DNS_VERSION}") \
+    DNS_SOURCE_IMAGE=$(shell_quote "${DNS_IMAGE_PULL_REF}")
+  DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/coredns-image.tar"
+  DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/coredns-image.reference)"
+fi
+
 if bool_true $(shell_quote "${ARGO_ENABLED}"); then
   ARGO_ARGS+=(--argo-version $(shell_quote "${ARGO_VERSION}"))
 
@@ -1090,8 +1097,8 @@ bash ./scripts/package/archive-release-input.sh \
   --zot-image $(shell_quote "${ZOT_IMAGE_ARCHIVE_FOR_DEV}") \
   --zot-image-reference $(shell_quote "${ZOT_IMAGE_REF}") \
   --dns-version $(shell_quote "${DNS_VERSION}") \
-  --dns-image $(shell_quote "${DNS_IMAGE_ARCHIVE_FOR_DEV}") \
-  --dns-image-reference $(shell_quote "${DNS_IMAGE_REF}") \
+  --dns-image "\${DNS_IMAGE_ARCHIVE_FOR_DEV}" \
+  --dns-image-reference "\${DNS_IMAGE_REF}" \
   "\${ARGO_ARGS[@]}" \
   "\${EXTRA_OCI_ARGS[@]}"
 EOF
