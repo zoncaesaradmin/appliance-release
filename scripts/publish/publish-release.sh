@@ -151,18 +151,34 @@ extract_host_from_target() {
 curl_upload_file() {
   local src="$1"
   local url="$2"
-  local -a curl_args=(-fsS -X POST)
+  local -a curl_args=(-sS -X POST)
+  local http_code body
   if [[ "${PUBLISH_TLS_INSECURE:-}" == "1" ]]; then
     curl_args+=(-k)
   fi
   if [[ -n "${PUBLISH_CACERT:-}" ]]; then
     curl_args+=(--cacert "${PUBLISH_CACERT}")
   fi
-  curl "${curl_args[@]}" \
-    -H "Authorization: Bearer ${PUBLISH_BEARER_TOKEN}" \
-    -H "Content-Type: application/octet-stream" \
-    --data-binary "@${src}" \
-    "${url}"
+  body="$(mktemp)"
+  http_code="$(
+    curl "${curl_args[@]}" \
+      -o "${body}" -w "%{http_code}" \
+      -H "Authorization: Bearer ${PUBLISH_BEARER_TOKEN}" \
+      -H "Content-Type: application/octet-stream" \
+      --data-binary "@${src}" \
+      "${url}"
+  )"
+  if [[ "${http_code}" != 200 && "${http_code}" != 201 ]]; then
+    echo "publish-release: upload failed http=${http_code} src=${src} url=${url}" >&2
+    if [[ -s "${body}" ]]; then
+      head -c 512 "${body}" >&2 || true
+      echo >&2
+    fi
+    rm -f "${body}"
+    return 22
+  fi
+  cat "${body}"
+  rm -f "${body}"
 }
 
 MODE="$(normalize_bundle_store_mode "${MODE}")"
