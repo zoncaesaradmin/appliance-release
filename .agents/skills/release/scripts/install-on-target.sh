@@ -197,25 +197,16 @@ case "${BUNDLE_STORE_MODE}" in
       local url="$1"
       local label="$2"
       local step_log="${preflight_log}.${label// /_}"
-      local remote_curl_init="curl_args=(-fsSIL)"
-      local tls_arg auth_header="" remote_cmd output="" url_host=""
+      local remote_curl_init=""
+      local auth_header="" remote_cmd output="" url_host=""
       url_host="$(python3 -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).hostname or "")' "${url}")"
       [[ -n "${url_host}" ]] || fail "could not parse host from published ${label} url ${url}"
-      if [[ ${#BUNDLE_STORE_CURL_TLS_ARGS[@]} -gt 0 ]]; then
-        for tls_arg in "${BUNDLE_STORE_CURL_TLS_ARGS[@]}"; do
-          if [[ "${tls_arg}" == "--cacert" ]]; then
-            # Mac-local CA path is not available on the target; match install curl.
-            remote_curl_init="curl_args=(-fsSIL -k)"
-            break
-          fi
-          remote_curl_init+=" $(shell_quote "${tls_arg}")"
-        done
-      fi
+      remote_curl_init="$(bundle_store_remote_curl_array_init curl_args -fsSIL)"
       if [[ -n "${bundle_store_bearer_token}" ]]; then
         auth_header="Authorization: Bearer ${bundle_store_bearer_token}"
       fi
-      remote_cmd="${remote_curl_init}
-set -euo pipefail
+      remote_cmd="set -euo pipefail
+${remote_curl_init}
 url=$(shell_quote "${url}")
 host=$(shell_quote "${url_host}")
 resolved=\$(getent ahostsv4 \"\${host}\" 2>/dev/null | awk '{print \$1; exit}' || true)
@@ -239,7 +230,7 @@ curl \"\${curl_args[@]}\" \"\${url}\" >/dev/null"
           echo "=== ${label} ${url} ==="
           printf '%s\n' "${output}"
         } >>"${preflight_log}"
-        fail "published ${label} is not reachable from target ${TARGET_HOST} at ${url}. The Mac does not need to resolve LAN DNS; the target must. Check distributor uptime, LAN DNS, and that install.appliance_name is not the distributor FQDN. curl output: ${output}"
+        fail "published ${label} is not reachable from target ${TARGET_HOST} at ${url}. The Mac does not need to resolve LAN DNS; the target must. Check distributor uptime, LAN DNS, TLS (-k/cacert), and that install.appliance_name is not the distributor FQDN. curl output: ${output}"
       fi
       {
         echo "=== ${label} ${url} ==="
@@ -284,20 +275,10 @@ fi
 
 # Serialize TLS curl flags for the remote target script. Prefer -k over
 # shipping a Mac-local cacert path that may not exist on the target.
-remote_curl_tls_init="curl_tls_args=()"
-if [[ ${#BUNDLE_STORE_CURL_TLS_ARGS[@]} -gt 0 ]]; then
-  tls_joined="${BUNDLE_STORE_CURL_TLS_ARGS[*]}"
-  if [[ "${tls_joined}" == *"--cacert"* ]]; then
-    log "appliance_files: bundle_store.cacert_path is Mac-local; target download uses -k unless the target already trusts the distributor CA"
-    remote_curl_tls_init="curl_tls_args=(-k)"
-  else
-    remote_curl_tls_init="curl_tls_args=("
-    for tls_arg in "${BUNDLE_STORE_CURL_TLS_ARGS[@]}"; do
-      remote_curl_tls_init+=" $(shell_quote "${tls_arg}")"
-    done
-    remote_curl_tls_init+=")"
-  fi
+if [[ "${BUNDLE_STORE_CURL_TLS_ARGS[*]:-}" == *"--cacert"* ]]; then
+  log "appliance_files: bundle_store.cacert_path is Mac-local; target download uses -k unless the target already trusts the distributor CA"
 fi
+remote_curl_tls_init="$(bundle_store_remote_curl_array_init curl_tls_args)"
 
 remote_script='set -euo pipefail
 remote_dir='"$(shell_quote "${remote_release_dir}")"'

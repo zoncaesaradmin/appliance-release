@@ -425,6 +425,31 @@ bundle_store_fill_curl_tls_args() {
   fi
 }
 
+# Build a remote bash assignment like: curl_args=(-fsSIL -k)
+# Mac-local --cacert paths are rewritten to -k (same as install-on-target).
+bundle_store_remote_curl_array_init() {
+  local array_name="$1"
+  shift
+  local init="${array_name}=("
+  local arg=""
+  local tls_joined=""
+  for arg in "$@"; do
+    init+=" $(shell_quote "${arg}")"
+  done
+  if [[ ${#BUNDLE_STORE_CURL_TLS_ARGS[@]} -gt 0 ]]; then
+    tls_joined="${BUNDLE_STORE_CURL_TLS_ARGS[*]}"
+    if [[ "${tls_joined}" == *"--cacert"* ]]; then
+      init+=" -k"
+    else
+      for arg in "${BUNDLE_STORE_CURL_TLS_ARGS[@]}"; do
+        init+=" $(shell_quote "${arg}")"
+      done
+    fi
+  fi
+  init+=")"
+  printf '%s' "${init}"
+}
+
 # Resolve the bearer token for appliance_files publish/install from
 # bundle_store.access_token (long-lived API token created on the distributor
 # Dashboard). No environment-variable or auto-mint fallback.

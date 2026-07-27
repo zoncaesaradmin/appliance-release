@@ -212,5 +212,43 @@ resolve_appliance_files_bearer_token {cfg.as_posix()!r} 'https://host.example/ap
             self.assertIn("access_token", proc.stderr)
 
 
+class TestRemoteCurlArrayInit(unittest.TestCase):
+    def test_keeps_minus_k_inside_array_parens(self) -> None:
+        # Regression: appending -k outside curl_args=(...) made bash run -k as a
+        # command ("-k: command not found") and left curl without insecure TLS.
+        script = f"""
+set -euo pipefail
+source {COMMON.as_posix()!r}
+BUNDLE_STORE_CURL_TLS_ARGS=(-k)
+init="$(bundle_store_remote_curl_array_init curl_args -fsSIL)"
+printf '%s\\n' "$init"
+# Must be a single array assignment; evaluating it must not treat -k as a command.
+eval "$init"
+printf 'len=%s\\n' "${{#curl_args[@]}}"
+printf 'joined=%s\\n' "${{curl_args[*]}}"
+"""
+        proc = run_bash(script)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("curl_args=(", proc.stdout)
+        self.assertRegex(proc.stdout, r"curl_args=\(.*-k.*\)")
+        self.assertIn("joined=-fsSIL -k", proc.stdout)
+        # Guard the exact failure mode from the bug: no trailing ' -k' after ')'.
+        init_line = next(line for line in proc.stdout.splitlines() if line.startswith("curl_args="))
+        self.assertTrue(init_line.endswith(")"), init_line)
+        self.assertNotRegex(init_line, r"\)\s+-k")
+
+    def test_rewrites_mac_cacert_to_insecure(self) -> None:
+        script = f"""
+set -euo pipefail
+source {COMMON.as_posix()!r}
+BUNDLE_STORE_CURL_TLS_ARGS=(--cacert /tmp/mac-only-ca.pem)
+init="$(bundle_store_remote_curl_array_init curl_tls_args)"
+printf '%s\\n' "$init"
+"""
+        proc = run_bash(script)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "curl_tls_args=( -k)")
+
+
 if __name__ == "__main__":
     unittest.main()
