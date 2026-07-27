@@ -52,6 +52,9 @@ Example (piped, no local file needed — the version below is embedded in
 the published script's content, not inferred from its filename):
   curl -fsSL http://downloads.example.internal/releases/appliance/0.1.0/install-http-release.sh \
     | bash -s -- --base-url http://downloads.example.internal/releases
+
+If the distribution endpoint requires appliance authentication, export:
+  APPLIANCE_RELEASE_BEARER_TOKEN=<appliance API token>
 EOF
 }
 
@@ -77,6 +80,7 @@ DNS_ZONE=""
 TLS_SANS=()
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
+ARTIFACT_BEARER_TOKEN="${APPLIANCE_RELEASE_BEARER_TOKEN:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -224,6 +228,16 @@ print_captured_failure() {
   fi
 }
 
+curl_download() {
+  local out_file="$1"
+  local url="$2"
+  local -a curl_args=(-fLo "${out_file}")
+  if [[ -n "${ARTIFACT_BEARER_TOKEN}" ]]; then
+    curl_args+=(-H "Authorization: Bearer ${ARTIFACT_BEARER_TOKEN}")
+  fi
+  curl "${curl_args[@]}" "${url}"
+}
+
 require_var BASE_URL
 
 if [[ -z "${PRODUCT_VERSION}" ]]; then
@@ -256,9 +270,9 @@ PUBLIC_KEY="${OUT_DIR}/release-signing.pub"
 ZONCTL="${BUNDLE_DIR}/zonctl"
 
 echo "[1/5] Downloading release files..."
-curl -fLo "${OUT_DIR}/${BUNDLE_ARCHIVE}" "${REMOTE_DIR}/${BUNDLE_ARCHIVE}"
-curl -fLo "${OUT_DIR}/${PUBLIC_KEY_FILE}" "${REMOTE_DIR}/${PUBLIC_KEY_FILE}"
-curl -fLo "${OUT_DIR}/${CHECKSUM_FILE}" "${REMOTE_DIR}/${CHECKSUM_FILE}"
+curl_download "${OUT_DIR}/${BUNDLE_ARCHIVE}" "${REMOTE_DIR}/${BUNDLE_ARCHIVE}"
+curl_download "${OUT_DIR}/${PUBLIC_KEY_FILE}" "${REMOTE_DIR}/${PUBLIC_KEY_FILE}"
+curl_download "${OUT_DIR}/${CHECKSUM_FILE}" "${REMOTE_DIR}/${CHECKSUM_FILE}"
 echo "[1/5] Release files downloaded."
 
 echo "[2/5] Verifying release checksums..."

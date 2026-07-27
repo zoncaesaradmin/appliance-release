@@ -46,7 +46,7 @@ verify-help:
 	@bash scripts/publish/install-http-release.sh --help | grep -q -- '--build-catalog'
 	@bash scripts/publish/publish-release.sh --help | grep -q -- '--mode'
 	@bash scripts/publish/publish-release.sh --help | grep -q -- 'fileserver'
-	@bash scripts/publish/artifact-registry-lib.sh --help | grep -q -- 'fileserver'
+	@bash scripts/publish/bundle-store-lib.sh --help | grep -q -- 'fileserver'
 
 .PHONY: verify-json
 verify-json:
@@ -92,7 +92,7 @@ verify-release-artifacts:
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_live_release_repo_preflight.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_write_local_milestone_report.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_write_final_readiness_report.py"
-	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_artifact_registry_mode.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_bundle_store_mode.py"
 
 .PHONY: verify-final-targets
 verify-final-targets:
@@ -456,6 +456,8 @@ publish-release:
 				--product-version "$${PRODUCT_VERSION}" \
 				--mode fileserver \
 				$${PUBLISH_PATH_PREFIX:+--path-prefix "$${PUBLISH_PATH_PREFIX}"} \
+				$${PUBLISH_PUBLIC_BASE_URL:+--public-base-url "$${PUBLISH_PUBLIC_BASE_URL}"} \
+				$${PUBLISH_LATEST_ALIAS:+--latest-alias} \
 			;; \
 		*) \
 			echo "publish-release: PUBLISH_MODE must be http or fileserver (got $$mode)" >&2; \

@@ -19,28 +19,33 @@ shown below for quick testing. After you trust the certificate, remove `-k`,
 Signed appliance **bundles** are distributed as static files over HTTP(S), not
 as OCI/ORAS artifacts. The Artifact Server (`/v2`) remains for container images.
 
+Recommended direction:
+
+- keep OCI images and ORAS artifacts on the authenticated registry at `/v2`
+- keep signed bundle distribution on external static HTTP or the authenticated
+  appliance file API, depending on your release topology
+
 In `appliance-release.config.yaml` (see also
 `.agents/skills/release/references/config.example.yaml`):
 
 ```yaml
-artifact_registry:
+bundle_store:
   # Default: external publish box
   mode: http
   base_url: http://192.168.1.105:28081
   publish_server_alias: zonsys@192.168.1.105
   publish_remote_root: /home/zonsys/releases
 
-  # Or appliance-hosted Traefik /files (after files are on hostPath):
+  # Appliance-managed authenticated file API:
   # mode: fileserver
-  # base_url: https://artifact-dns-1.appliance.internal/files
+  # base_url: https://artifact-dns-1.appliance.internal/api/v1/files
 ```
 
-For `fileserver`, the storage/artifact appliance serves
-`/data/zon/files` at `https://<fqdn>/files/...` (Deployment
-`fileserver` in the `artifacts` namespace). Publish into that hostPath is
-Phase 2; until then copy the export tree manually, then install with the same
-target `curl` path as `http` mode. Operator steps for push/pull are in
-[fileserver.md](fileserver.md).
+For `fileserver`, the storage/artifact appliance stores bundle files under
+`/data/zon/files` but exposes them through the authenticated appliance API at
+`/api/v1/files/...`. Publish uses `POST`, pull uses `GET`, and both require an
+appliance bearer token with artifact file permissions. Operator steps and curl
+examples are in [fileserver.md](fileserver.md).
 
 ## 1. Log In And List Repositories
 

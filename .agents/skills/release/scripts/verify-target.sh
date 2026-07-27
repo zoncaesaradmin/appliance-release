@@ -206,7 +206,7 @@ if [[ -z "${ARTIFACT_ENABLED}" ]]; then
   esac
 fi
 if bool_true "${ARTIFACT_ENABLED}"; then
-  ARTIFACT_READINESS_CMD="${ARTIFACT_READINESS_CMD:-sudo kubectl -n artifacts wait --for=condition=Available deployment/artifact-registry --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data}"
+  ARTIFACT_READINESS_CMD="${ARTIFACT_READINESS_CMD:-sudo kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data}"
 fi
 if [[ -z "${DNS_ENABLED}" ]]; then
   case "${APPLIANCE_PROFILE}" in
@@ -344,8 +344,8 @@ fi
 if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_CONTROLLER_CMD}" == "sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods" ]]; then
   ARGO_CONTROLLER_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n workflows get deploy,pods"
 fi
-if [[ -n "${BUNDLE_BIN_DIR}" && "${ARTIFACT_READINESS_CMD}" == "sudo kubectl -n artifacts wait --for=condition=Available deployment/artifact-registry --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data" ]]; then
-  ARTIFACT_READINESS_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n artifacts wait --for=condition=Available deployment/artifact-registry --timeout=120s && env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n artifacts get pvc appliance-registry-data"
+if [[ -n "${BUNDLE_BIN_DIR}" && "${ARTIFACT_READINESS_CMD}" == "sudo kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data" ]]; then
+  ARTIFACT_READINESS_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n artifacts get pvc appliance-registry-data"
 fi
 
 status_code="0"

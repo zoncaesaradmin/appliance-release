@@ -38,27 +38,32 @@ release_workspace:
   # build log, so this is mainly used if log parsing fails.
   remote_bundle_dir: /tmp/appliance-product-ci/workspace/out/appliance-0.1.0-bundle
 
-artifact_registry:
+bundle_store:
   # RELEASE DISTRIBUTION backend for the signed installer/bundle package.
   # This is not the target appliance's runtime registry identity — it is how
   # build/publish delivers the air-gap bundle to installers.
   #
   # mode:
   #   http       — external plain HTTP/HTTPS static publish box (default)
-  #   fileserver — appliance-hosted Traefik path /files on a storage/
-  #                artifact appliance (hostPath /data/zon/files)
+  #   fileserver — appliance-managed authenticated file API on a
+  #                storage/artifact appliance; use the same appliance API
+  #                bearer-token model for publish and pull
   #
   # Both modes install with target-side curl against base_url. Mac only SSHs.
-  # Publish: http uses SCP to publish_server_alias; fileserver publish is a
-  # Phase-2 stub (manually copy into /data/zon/files/<prefix>/<version>/).
+  # Publish: http uses SCP to publish_server_alias; fileserver uses POST
+  # against the appliance file API.
   mode: http
 
   # Shared logical release name: HTTP path segment under base_url.
   release_path_prefix: appliance
 
+  # Local environment variable holding the appliance API bearer token used for
+  # fileserver-mode publish and pull.
+  access_token_env: APPLIANCE_ARTIFACT_TOKEN
+
   # Public HTTP/HTTPS base URL serving signed installer/bundle files.
   # http example: http://192.168.1.105:28081
-  # fileserver example: https://artifact-dns-1.appliance.internal/files
+  # fileserver example: https://artifact-dns-1.appliance.internal/api/v1/files
   base_url: http://192.168.1.105:28081
   # SSH target used by the build machine's publish command (mode=http).
   # Example:
@@ -93,13 +98,10 @@ build_flow:
   # release.version and release_workspace.remote_export_dir.
   build_command: K3S_BINARY_SOURCE=/home/zonsys/ci/inputs/k3s K3S_AIRGAP_IMAGES_SOURCE=/home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst bash /home/zonsys/ws/appliance-release/scripts/ci/build-full-bundle.sh
   # PRODUCT_VERSION, EXPORT_DIR, and PUBLISH_* are injected automatically by
-  # the skill from release.version / release_workspace / artifact_registry.
-  # For artifact_registry.mode=http keep PUBLISH_SERVER and PUBLISH_REMOTE_ROOT
+  # the skill from release.version / release_workspace / bundle_store.
+  # For bundle_store.mode=http keep PUBLISH_SERVER and PUBLISH_REMOTE_ROOT
   # here (or rely on Makefile defaults from your shell).
   publish_command: make publish-release PUBLISH_SERVER=zonsys@192.168.1.105 PUBLISH_REMOTE_ROOT=/home/zonsys/releases
-  # fileserver mode: skill skips automated publish until Phase 2; set
-  # artifact_registry.mode: fileserver and base_url to
-  # https://<distributor-fqdn>/files after copying into hostPath.
   # Argo Workflows is a mandatory component of the complete v1 appliance
   # (ADR 0011) and build-full-bundle.sh enables it by default with zero
   # configuration: its version and controller/executor image references
@@ -240,7 +242,7 @@ verification:
   # and confirms its PVC.
   artifact:
     # enabled: true
-    # readiness_command: sudo kubectl -n artifacts wait --for=condition=Available deployment/artifact-registry --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data
+    # readiness_command: sudo kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data
   # Defaults enabled for landns/storage-landns/builder-*-landns and disabled for
   # core/storage/builder. The default readiness command waits for the
   # appliance-dns Deployment, then queries 127.0.0.1:53 for the local-zone A

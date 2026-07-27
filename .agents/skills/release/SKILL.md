@@ -5,7 +5,7 @@ description: Orchestrate the Zon appliance developer-to-target workflow across l
 
 # Appliance Release
 
-Use this skill when we need to drive the repeatable Zon appliance release path from a macOS development machine through a build server, a release distribution backend (external HTTP static server or appliance-hosted `/files` fileserver), and onto a target host.
+Use this skill when we need to drive the repeatable Zon appliance release path from a macOS development machine through a build server, a release distribution backend (preferably an external HTTP static server, or the appliance-managed authenticated file API), and onto a target host.
 
 ## What This Skill Owns
 
@@ -56,9 +56,10 @@ For day-to-day use, set:
 - `APPLIANCE_TARGET_SUDO_PASSWORD=...`
 - `APPLIANCE_FIRST_ADMIN_PASSWORD=...`
 
-Distribution modes (`artifact_registry.mode`): `http` (default external publish
-box) or `fileserver` (appliance Traefik `/files`). Both install with target
-`curl` against `artifact_registry.base_url`.
+Distribution modes (`bundle_store.mode`): `http` (default external publish
+box) or `fileserver` (appliance-managed authenticated file API). Both install
+with target `curl` against `bundle_store.base_url`. For `fileserver`,
+publish and pull use the appliance API bearer-token model.
 
 Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `--config`.
 
@@ -67,7 +68,7 @@ Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `
 - `scripts/run-release-flow.sh`
   One-shot wrapper for the common flow from the `appliance-release` repo: build/publish, install, target verify, then macOS-side API verify.
 - `scripts/build-and-publish.sh`
-  Run the deterministic build-host flow: optional `git pull`, build-host bootstrap, bundle build, publish, and artifact metadata capture. Publish uses `artifact_registry.mode` (`http` or `fileserver`).
+  Run the deterministic build-host flow: optional `git pull`, build-host bootstrap, bundle build, publish, and artifact metadata capture. Publish uses `bundle_store.mode` (`http` or appliance-managed `fileserver`).
 - `scripts/install-on-target.sh`
   Optionally uninstall the previous appliance, then install the published release on the target host via HTTP `curl` against `base_url` (Mac only SSHs).
 - `scripts/verify-target.sh`

@@ -336,26 +336,32 @@ reject_placeholder_client_base_url() {
   return 0
 }
 
-# Normalize artifact_registry.mode to http|fileserver. Empty defaults to http.
-_ARTIFACT_REGISTRY_LIB="$(cd "${SCRIPT_DIR}/../../../.." && pwd)/scripts/publish/artifact-registry-lib.sh"
-if [[ -f "${_ARTIFACT_REGISTRY_LIB}" ]]; then
+# Normalize bundle_store.mode to http|fileserver. Empty defaults to http.
+_BUNDLE_STORE_LIB="$(cd "${SCRIPT_DIR}/../../../.." && pwd)/scripts/publish/bundle-store-lib.sh"
+if [[ -f "${_BUNDLE_STORE_LIB}" ]]; then
   # shellcheck source=/dev/null
-  source "${_ARTIFACT_REGISTRY_LIB}"
+  source "${_BUNDLE_STORE_LIB}"
 fi
-unset _ARTIFACT_REGISTRY_LIB
+unset _BUNDLE_STORE_LIB
 
-resolve_artifact_registry_mode() {
+bundle_store_get_optional() {
+  local config_path="$1"
+  local suffix="$2"
+  config_get_optional "${config_path}" "bundle_store.${suffix}"
+}
+
+resolve_bundle_store_mode() {
   local config_path="$1"
   local mode
-  mode="$(config_get_optional "${config_path}" "artifact_registry.mode" || true)"
-  if declare -F normalize_artifact_registry_mode >/dev/null 2>&1; then
-    normalize_artifact_registry_mode "${mode}" || fail "artifact_registry.mode must be http or fileserver"
+  mode="$(bundle_store_get_optional "${config_path}" "mode" || true)"
+  if declare -F normalize_bundle_store_mode >/dev/null 2>&1; then
+    normalize_bundle_store_mode "${mode}" || fail "bundle_store.mode must be http or fileserver"
   else
     mode="$(printf '%s' "${mode}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
     case "${mode}" in
       ""|http|http-static) printf 'http\n' ;;
       fileserver) printf 'fileserver\n' ;;
-      *) fail "artifact_registry.mode must be http or fileserver (got ${mode})" ;;
+      *) fail "bundle_store.mode must be http or fileserver (got ${mode})" ;;
     esac
   fi
 }

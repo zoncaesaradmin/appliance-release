@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
-source "${SCRIPT_DIR}/artifact-registry-lib.sh"
+source "${SCRIPT_DIR}/bundle-store-lib.sh"
 
 usage() {
   cat <<'EOF'
@@ -14,10 +14,10 @@ Publish the already-built customer delivery files from scripts/ci/build-full-bun
 Modes:
   http          Copy exported files to a remote server over SSH/SCP for a
                 plain HTTP/HTTPS static file server (default; alias: http-static).
-  fileserver    Document-only stub for appliance-hosted /files. Copy the
-                export tree onto the distribution appliance hostPath
-                /data/zon/files/<path-prefix>/<version>/ (Phase 2 will
-                automate SSH/rsync publish).
+  fileserver    Publish through the appliance-managed authenticated file API.
+                Set PUBLISH_BEARER_TOKEN and point --public-base-url at the
+                appliance file API base, for example:
+                https://artifact-dns-1.appliance.internal/api/v1/files
 
 Options:
   --export-dir DIR           Directory containing:
@@ -35,6 +35,8 @@ http mode options:
   --ssh-port PORT            SSH port. Default: 22
   --public-base-url URL      Optional public base URL override. If omitted,
                              the script derives http://<host> from --server.
+  fileserver mode requires:
+    PUBLISH_BEARER_TOKEN     Appliance API bearer token with artifacts.write.
 
 Examples:
   bash ./scripts/publish/publish-release.sh \
@@ -141,7 +143,17 @@ extract_host_from_target() {
   printf '%s\n' "${target}"
 }
 
-MODE="$(normalize_artifact_registry_mode "${MODE}")"
+curl_upload_file() {
+  local src="$1"
+  local url="$2"
+  curl -fsS -X POST \
+    -H "Authorization: Bearer ${PUBLISH_BEARER_TOKEN}" \
+    -H "Content-Type: application/octet-stream" \
+    --data-binary "@${src}" \
+    "${url}"
+}
+
+MODE="$(normalize_bundle_store_mode "${MODE}")"
 
 require_var EXPORT_DIR
 require_var PRODUCT_VERSION
@@ -256,16 +268,43 @@ case "${MODE}" in
     ;;
   fileserver)
     PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"
-    echo "publish-release: mode=fileserver does not auto-publish yet (Phase 2)." >&2
-    echo "Copy the export package onto the distribution appliance hostPath:" >&2
-    echo "  /data/zon/files/${PATH_PREFIX}/${PRODUCT_VERSION}/" >&2
-    echo "Required files:" >&2
-    echo "  $(basename "${BUNDLE_ARCHIVE}")" >&2
-    echo "  $(basename "${PUBLIC_KEY_FILE}")" >&2
-    echo "  $(basename "${CHECKSUM_FILE}")" >&2
-    echo "  ${INSTALL_HELPER_HTTP_PUBLISHED} (stamp PRODUCT_VERSION_EMBEDDED=${PRODUCT_VERSION})" >&2
-    echo "Then install targets with artifact_registry.base_url=https://<distributor-fqdn>/files" >&2
-    exit 2
+    require_var PUBLIC_BASE_URL
+    require_var PUBLISH_BEARER_TOKEN
+
+    PUBLIC_BASE_URL="$(trim_trailing_slashes "${PUBLIC_BASE_URL}")"
+    PUBLISH_STAGE_DIR="$(mktemp -d "${EXPORT_DIR}/.publish-stage.XXXXXX")"
+    trap 'rm -rf "${PUBLISH_STAGE_DIR}"' EXIT
+
+    stamp_version "${INSTALL_HELPER_HTTP}" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
+    if ! grep -q "PRODUCT_VERSION_EMBEDDED=\"${PRODUCT_VERSION}\"" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"; then
+      echo "publish-release: failed to stamp PRODUCT_VERSION_EMBEDDED into ${INSTALL_HELPER_HTTP_PUBLISHED}" >&2
+      exit 1
+    fi
+
+    REMOTE_VERSION_DIR="${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}"
+    curl_upload_file "${BUNDLE_ARCHIVE}" "${REMOTE_VERSION_DIR}/$(basename "${BUNDLE_ARCHIVE}")" >/dev/null
+    curl_upload_file "${PUBLIC_KEY_FILE}" "${REMOTE_VERSION_DIR}/$(basename "${PUBLIC_KEY_FILE}")" >/dev/null
+    curl_upload_file "${CHECKSUM_FILE}" "${REMOTE_VERSION_DIR}/$(basename "${CHECKSUM_FILE}")" >/dev/null
+    curl_upload_file "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}" "${REMOTE_VERSION_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}" >/dev/null
+
+    if [[ "${LATEST_ALIAS}" == "1" ]]; then
+      REMOTE_LATEST_DIR="${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest"
+      curl_upload_file "${BUNDLE_ARCHIVE}" "${REMOTE_LATEST_DIR}/$(basename "${BUNDLE_ARCHIVE}")" >/dev/null
+      curl_upload_file "${PUBLIC_KEY_FILE}" "${REMOTE_LATEST_DIR}/$(basename "${PUBLIC_KEY_FILE}")" >/dev/null
+      curl_upload_file "${CHECKSUM_FILE}" "${REMOTE_LATEST_DIR}/$(basename "${CHECKSUM_FILE}")" >/dev/null
+      curl_upload_file "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}" "${REMOTE_LATEST_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}" >/dev/null
+    fi
+
+    echo "published release files via appliance file API:"
+    echo "  ${REMOTE_VERSION_DIR}/$(basename "${BUNDLE_ARCHIVE}")"
+    echo "  ${REMOTE_VERSION_DIR}/$(basename "${PUBLIC_KEY_FILE}")"
+    echo "  ${REMOTE_VERSION_DIR}/$(basename "${CHECKSUM_FILE}")"
+    echo
+    echo "published helper script:"
+    echo "  ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
+    echo
+    echo "authenticated install helper example:"
+    echo "  curl -fsSL -H 'Authorization: Bearer <token>' ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED} | bash -s -- --base-url ${PUBLIC_BASE_URL}"
     ;;
   *)
     echo "publish-release: unsupported mode: ${MODE}" >&2

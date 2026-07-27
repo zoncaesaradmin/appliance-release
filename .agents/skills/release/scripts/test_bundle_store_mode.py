@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for artifact_registry mode normalization (http|fileserver)."""
+"""Unit tests for bundle_store mode normalization (http|fileserver)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-MODE_LIB = REPO_ROOT / "scripts" / "publish" / "artifact-registry-lib.sh"
+MODE_LIB = REPO_ROOT / "scripts" / "publish" / "bundle-store-lib.sh"
 COMMON = Path(__file__).resolve().parent / "common.sh"
 
 
@@ -23,15 +23,15 @@ def run_bash(script: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-class ArtifactRegistryModeTests(unittest.TestCase):
+class BundleStoreModeTests(unittest.TestCase):
     def test_normalize_modes(self) -> None:
         script = f"""
 set -euo pipefail
 source {MODE_LIB.as_posix()!r}
-normalize_artifact_registry_mode ''
-normalize_artifact_registry_mode http
-normalize_artifact_registry_mode HTTP-static
-normalize_artifact_registry_mode fileserver
+normalize_bundle_store_mode ''
+normalize_bundle_store_mode http
+normalize_bundle_store_mode HTTP-static
+normalize_bundle_store_mode fileserver
 """
         proc = run_bash(script)
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -45,36 +45,36 @@ normalize_artifact_registry_mode fileserver
             script = f"""
 set -euo pipefail
 source {MODE_LIB.as_posix()!r}
-normalize_artifact_registry_mode {mode}
+normalize_bundle_store_mode {mode}
 """
             proc = run_bash(script)
             self.assertNotEqual(proc.returncode, 0, mode)
             self.assertIn("must be http or fileserver", proc.stderr)
 
-    def test_resolve_mode_from_config_default_http(self) -> None:
+    def test_resolve_mode_from_bundle_store_config_default_http(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / "cfg.yaml"
-            cfg.write_text("artifact_registry:\n  base_url: http://example\n", encoding="utf-8")
+            cfg.write_text("bundle_store:\n  base_url: http://example\n", encoding="utf-8")
             script = f"""
 set -euo pipefail
 source {COMMON.as_posix()!r}
-resolve_artifact_registry_mode {cfg.as_posix()!r}
+resolve_bundle_store_mode {cfg.as_posix()!r}
 """
             proc = run_bash(script)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual(proc.stdout.strip(), "http")
 
-    def test_resolve_mode_from_config_fileserver(self) -> None:
+    def test_resolve_mode_from_bundle_store_config_fileserver(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / "cfg.yaml"
             cfg.write_text(
-                "artifact_registry:\n  mode: fileserver\n  base_url: https://reg.example/files\n",
+                "bundle_store:\n  mode: fileserver\n  base_url: https://reg.example/files\n",
                 encoding="utf-8",
             )
             script = f"""
 set -euo pipefail
 source {COMMON.as_posix()!r}
-resolve_artifact_registry_mode {cfg.as_posix()!r}
+resolve_bundle_store_mode {cfg.as_posix()!r}
 """
             proc = run_bash(script)
             self.assertEqual(proc.returncode, 0, proc.stderr)

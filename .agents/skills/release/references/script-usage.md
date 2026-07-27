@@ -26,13 +26,13 @@ Notes:
   (default `appliance.internal`). The installer derives the FQDN as
   `<appliance_name>.<dns_zone>` for TLS, `canonicalOrigin`, and the registry
   realm. There is no separate `public_host` override.
-- Set `artifact_registry.mode` to `http` (default) or `fileserver`:
+- Set `bundle_store.mode` to `http` (default) or `fileserver`:
   - `http` — publish/install via an external static HTTP server (`base_url`,
     `publish_server_alias`, `publish_remote_root`)
-  - `fileserver` — install via curl against appliance-hosted
-    `https://<distributor-fqdn>/files` (`base_url`); publish is a Phase-2
-    stub (copy into `/data/zon/files/<prefix>/<version>/` on the
-    distribution appliance)
+  - `fileserver` — publish/install via the appliance-managed authenticated
+    file API at `https://<distributor-fqdn>/api/v1/files` (`base_url`); set
+    `bundle_store.access_token_env` to the local bearer-token variable
+    used for both publish and pull
 - For advanced extra SANs beyond the derived FQDN, use
   `install.additional_tls_sans_csv` in the config.
 - For the `builder` profile, set `install.build_catalog_path` or pass
@@ -153,7 +153,7 @@ If you want to keep the current install and test without uninstalling first:
 This script:
 
 - downloads the published package on the target with HTTP `curl` against
-  `artifact_registry.base_url` (Mac only orchestrates SSH)
+  `bundle_store.base_url` (Mac only orchestrates SSH)
 - verifies checksums
 - extracts the bundle on the target host
 - runs `zonctl preflight`

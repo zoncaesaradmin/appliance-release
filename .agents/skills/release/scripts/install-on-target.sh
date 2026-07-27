@@ -11,9 +11,10 @@ usage: install-on-target.sh [options]
 
 Install a published appliance release on the configured target host.
 
-For artifact_registry.mode=http or fileserver the target downloads the package
-over HTTP(S) from artifact_registry.base_url (fileserver uses the appliance
-Traefik /files path). The Mac only orchestrates SSH.
+For bundle_store.mode=http or fileserver the target downloads the package
+over HTTP(S) from bundle_store.base_url. In fileserver mode this is the
+appliance-managed authenticated file API path, typically
+https://<artifact-fqdn>/api/v1/files. The Mac only orchestrates SSH.
 
 Options:
   --config PATH              YAML or JSON config file. Optional if
@@ -108,11 +109,15 @@ fi
 if [[ -z "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
 fi
-ARTIFACT_REGISTRY_MODE="$(resolve_artifact_registry_mode "${CONFIG_PATH}")"
-BASE_URL="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.base_url" || true)"
-PATH_PREFIX="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.release_path_prefix" || true)"
+BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
+BASE_URL="$(bundle_store_get_optional "${CONFIG_PATH}" "base_url" || true)"
+BUNDLE_STORE_ACCESS_TOKEN_ENV="$(bundle_store_get_optional "${CONFIG_PATH}" "access_token_env" || true)"
+PATH_PREFIX="$(bundle_store_get_optional "${CONFIG_PATH}" "release_path_prefix" || true)"
 if [[ -z "${PATH_PREFIX}" ]]; then
   PATH_PREFIX="appliance"
+fi
+if [[ -z "${BUNDLE_STORE_ACCESS_TOKEN_ENV}" ]]; then
+  BUNDLE_STORE_ACCESS_TOKEN_ENV="APPLIANCE_ARTIFACT_TOKEN"
 fi
 STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || true)"
 if [[ -z "${STATE_DIR}" ]]; then
@@ -169,11 +174,15 @@ ensure_dir "${RUN_DIR}/artifacts"
 
 [[ -n "${RELEASE_VERSION}" ]] || fail "--release-version is required for automated install"
 
-# http and fileserver both fetch over HTTP(S). fileserver uses the appliance
-# Traefik /files path; set base_url to https://<distributor-fqdn>/files.
-case "${ARTIFACT_REGISTRY_MODE}" in
+# http and fileserver both fetch over HTTP(S). fileserver uses the
+# appliance-managed authenticated file API path.
+case "${BUNDLE_STORE_MODE}" in
   http|fileserver)
-    [[ -n "${BASE_URL}" ]] || fail "artifact_registry.mode=${ARTIFACT_REGISTRY_MODE} requires artifact_registry.base_url"
+    [[ -n "${BASE_URL}" ]] || fail "bundle_store.mode=${BUNDLE_STORE_MODE} requires bundle_store.base_url"
+    bundle_store_bearer_token=""
+    if [[ "${BUNDLE_STORE_MODE}" == "fileserver" ]]; then
+      bundle_store_bearer_token="$(resolve_secret "${BUNDLE_STORE_ACCESS_TOKEN_ENV}" "Appliance artifact API bearer token")"
+    fi
     helper_url="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-http-release.sh"
     remote_release_dir="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}"
     bundle_url="${remote_release_dir}/appliance-${RELEASE_VERSION}-bundle.tar.gz"
@@ -183,7 +192,11 @@ case "${ARTIFACT_REGISTRY_MODE}" in
       local url="$1"
       local label="$2"
       local output=""
-      if ! output="$(curl -fsSIL "${url}" 2>&1)"; then
+      local -a curl_args=(-fsSIL)
+      if [[ -n "${bundle_store_bearer_token}" ]]; then
+        curl_args+=(-H "Authorization: Bearer ${bundle_store_bearer_token}")
+      fi
+      if ! output="$(curl "${curl_args[@]}" "${url}" 2>&1)"; then
         fail "published ${label} is not reachable at ${url}. Check that the HTTP server is running and serving the release root/path prefix. curl output: ${output}"
       fi
     }
@@ -194,7 +207,7 @@ case "${ARTIFACT_REGISTRY_MODE}" in
     INSTALL_SOURCE_LABEL="${remote_release_dir}"
     ;;
   *)
-    fail "unsupported artifact_registry.mode: ${ARTIFACT_REGISTRY_MODE}"
+    fail "unsupported bundle_store.mode: ${BUNDLE_STORE_MODE}"
     ;;
 esac
 if [[ "${APPLIANCE_PROFILE}" == "builder" || "${APPLIANCE_PROFILE}" == "builder-landns" || "${APPLIANCE_PROFILE}" == "builder-storage-landns" ]] && [[ -n "${BUILD_CATALOG_PATH}" ]]; then
@@ -229,18 +242,23 @@ out_dir='"$(shell_quote "${OUT_DIR}")"'
 state_dir='"$(shell_quote "${STATE_DIR}")"'
 build_catalog_b64='"$(shell_quote "${build_catalog_b64}")"'
 preserve_failed_state='"$(shell_quote "${PRESERVE_FAILED_STATE}")"'
+artifact_bearer_token='"$(shell_quote "${bundle_store_bearer_token:-}")"'
 bundle_archive="appliance-${product_version}-bundle.tar.gz"
 public_key_file="release-signing.pub"
 checksum_file="sha256sum.txt"
 bundle_dir="${out_dir}/appliance-${product_version}-bundle"
 public_key="${out_dir}/${public_key_file}"
 zonctl="${bundle_dir}/zonctl"
+curl_auth_args=()
+if [[ -n "${artifact_bearer_token}" ]]; then
+  curl_auth_args=(-H "Authorization: Bearer ${artifact_bearer_token}")
+fi
 printf "%s\n" '"$(shell_quote "${target_sudo_password}")"' | sudo -S -p "" -v >/dev/null
 mkdir -p "${out_dir}"
 echo "[target 1/5] Downloading release files..."
-curl -fLo "${out_dir}/${bundle_archive}" "${remote_dir}/${bundle_archive}"
-curl -fLo "${public_key}" "${remote_dir}/${public_key_file}"
-curl -fLo "${out_dir}/${checksum_file}" "${remote_dir}/${checksum_file}"
+curl "${curl_auth_args[@]}" -fLo "${out_dir}/${bundle_archive}" "${remote_dir}/${bundle_archive}"
+curl "${curl_auth_args[@]}" -fLo "${public_key}" "${remote_dir}/${public_key_file}"
+curl "${curl_auth_args[@]}" -fLo "${out_dir}/${checksum_file}" "${remote_dir}/${checksum_file}"
 echo "[target 1/5] Release files downloaded."
 echo "[target 2/5] Verifying release checksums..."
 if command -v sha256sum >/dev/null 2>&1; then
@@ -395,13 +413,13 @@ fi
 echo "zonctl is now available at /usr/local/bin/zonctl on the target host."'
 
 install_log="${RUN_DIR}/logs/install.log"
-log "installing release on ${TARGET_HOST} using ${INSTALL_SOURCE_LABEL} (mode=${ARTIFACT_REGISTRY_MODE})"
+log "installing release on ${TARGET_HOST} using ${INSTALL_SOURCE_LABEL} (mode=${BUNDLE_STORE_MODE})"
 set +e
 run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"
 install_exit_code=$?
 set -e
 
-python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${ARTIFACT_REGISTRY_MODE}" "${BASE_URL:-}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${APPLIANCE_NAME}" "${DNS_ZONE}" "${ADDITIONAL_TLS_SANS_CSV}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${PRESERVE_FAILED_STATE}" "${install_log}" "${install_exit_code}" <<'PY'
+python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BUNDLE_STORE_MODE}" "${BASE_URL:-}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${APPLIANCE_NAME}" "${DNS_ZONE}" "${ADDITIONAL_TLS_SANS_CSV}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${PRESERVE_FAILED_STATE}" "${install_log}" "${install_exit_code}" <<'PY'
 import json
 import sys
 

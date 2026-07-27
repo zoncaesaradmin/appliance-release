@@ -190,17 +190,21 @@ BUILD_EXTRA_OCI_IMAGE_REFS="$(config_get_optional "${CONFIG_PATH}" "build_flow.e
 BUILD_EXTRA_OCI_IMAGE_PULL_REFS="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_pull_refs" || true)"
 APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
-ARTIFACT_REGISTRY_MODE="$(resolve_artifact_registry_mode "${CONFIG_PATH}")"
-PUBLISH_PUBLIC_BASE_URL="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.base_url" || true)"
-PUBLISH_PATH_PREFIX="$(config_get_optional "${CONFIG_PATH}" "artifact_registry.release_path_prefix" || true)"
+BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
+PUBLISH_PUBLIC_BASE_URL="$(bundle_store_get_optional "${CONFIG_PATH}" "base_url" || true)"
+PUBLISH_PATH_PREFIX="$(bundle_store_get_optional "${CONFIG_PATH}" "release_path_prefix" || true)"
+BUNDLE_STORE_ACCESS_TOKEN_ENV="$(bundle_store_get_optional "${CONFIG_PATH}" "access_token_env" || true)"
 PUBLISH_LATEST_ALIAS="$(config_get_optional "${CONFIG_PATH}" "release.publish_latest_alias" || true)"
-case "${ARTIFACT_REGISTRY_MODE}" in
+case "${BUNDLE_STORE_MODE}" in
   http|fileserver)
-    [[ -n "${PUBLISH_PUBLIC_BASE_URL}" ]] || fail "artifact_registry.mode=${ARTIFACT_REGISTRY_MODE} requires artifact_registry.base_url"
+    [[ -n "${PUBLISH_PUBLIC_BASE_URL}" ]] || fail "bundle_store.mode=${BUNDLE_STORE_MODE} requires bundle_store.base_url"
     ;;
 esac
 if [[ -z "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
   BOOTSTRAP_REGISTRY_TOKEN_ENV="REGISTRY_TOKEN"
+fi
+if [[ -z "${BUNDLE_STORE_ACCESS_TOKEN_ENV}" ]]; then
+  BUNDLE_STORE_ACCESS_TOKEN_ENV="APPLIANCE_ARTIFACT_TOKEN"
 fi
 ensure_dir "${RUN_DIR}"
 ensure_dir "${RUN_DIR}/logs"
@@ -268,11 +272,15 @@ BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE
 PUBLISH_ENV_PREFIX=""
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PRODUCT_VERSION" "${RELEASE_VERSION}")"
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "EXPORT_DIR" "${REMOTE_EXPORT_DIR}")"
-PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_MODE" "${ARTIFACT_REGISTRY_MODE}")"
+PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_MODE" "${BUNDLE_STORE_MODE}")"
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_PUBLIC_BASE_URL" "${PUBLISH_PUBLIC_BASE_URL}")"
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_PATH_PREFIX" "${PUBLISH_PATH_PREFIX}")"
 if bool_true "${PUBLISH_LATEST_ALIAS:-false}"; then
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_LATEST_ALIAS" "1")"
+fi
+if [[ "${BUNDLE_STORE_MODE}" == "fileserver" ]]; then
+  bundle_store_bearer_token="$(resolve_secret "${BUNDLE_STORE_ACCESS_TOKEN_ENV}" "Appliance artifact API bearer token")"
+  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_BEARER_TOKEN" "${bundle_store_bearer_token}")"
 fi
 
 release_repo_sync_remote_cmd=""
@@ -330,21 +338,8 @@ fi
 log "running remote build on ${BUILD_HOST}"
 run_ssh_logged "${BUILD_HOST}" "${build_log}" "${build_remote_cmd}"
 
-if [[ "${ARTIFACT_REGISTRY_MODE}" == "fileserver" ]]; then
-  path_prefix="${PUBLISH_PATH_PREFIX:-appliance}"
-  log "artifact_registry.mode=fileserver: skipping remote publish (Phase-2 stub)"
-  {
-    echo "fileserver publish is not automated yet."
-    echo "Copy ${REMOTE_EXPORT_DIR}/appliance-${RELEASE_VERSION}-bundle.tar.gz (and pubkey/checksums/helper)"
-    echo "onto the distribution appliance hostPath:"
-    echo "  /data/zon/files/${path_prefix}/${RELEASE_VERSION}/"
-    echo "Install targets with artifact_registry.base_url=${PUBLISH_PUBLIC_BASE_URL}"
-  } >"${publish_log}"
-  log "documented fileserver hostPath copy target in ${publish_log}"
-else
-  log "running remote publish on ${BUILD_HOST}"
-  run_ssh_logged "${BUILD_HOST}" "${publish_log}" "${publish_remote_cmd}"
-fi
+log "running remote publish on ${BUILD_HOST}"
+run_ssh_logged "${BUILD_HOST}" "${publish_log}" "${publish_remote_cmd}"
 
 eval "$(
   python3 - "${build_log}" <<'PY'
