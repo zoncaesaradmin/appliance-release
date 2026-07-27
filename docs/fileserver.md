@@ -109,6 +109,9 @@ curl -ksS \
 ## Notes
 
 - The appliance creates parent directories under `/data/zon/files` as needed.
+- Host path ownership is `10005:20000` with mode `2770` (setgid, group-writable)
+  so the control plane (`10001`, supplementary group `20000`) can upload and the
+  fileserver (`10005`) can serve. Uploaded files are mode `0640`.
 - Directory listing is not provided; clients must know the full path.
 - Use the release scripts in `appliance-release` if you want the automated
   build-host publish and target-install flow.
