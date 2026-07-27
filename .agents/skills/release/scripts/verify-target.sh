@@ -226,7 +226,7 @@ if bool_true "${DNS_ENABLED}"; then
     DNS_ZONE="appliance.internal"
   fi
   if [[ -z "${DNS_READINESS_CMD}" ]]; then
-    DNS_READINESS_CMD="sudo kubectl -n dns wait --for=condition=Available deployment/appliance-dns --timeout=120s && if command -v dig >/dev/null 2>&1; then dig +short @127.0.0.1 -p 53 SOA ${DNS_ZONE} | grep -E '.'; else sudo kubectl -n dns exec deploy/appliance-dns -- wget -qO- http://127.0.0.1:8181/ready; fi"
+    DNS_READINESS_CMD="sudo kubectl -n dns wait --for=condition=Available deployment/dns-server --timeout=120s && if command -v dig >/dev/null 2>&1; then dig +short @127.0.0.1 -p 53 SOA ${DNS_ZONE} | grep -E '.'; else sudo kubectl -n dns exec deploy/dns-server -- wget -qO- http://127.0.0.1:8181/ready; fi"
   fi
 else
   DNS_ABSENCE_CMD="${DNS_ABSENCE_CMD:-! sudo helm status appliance-dns --namespace dns >/dev/null 2>&1}"

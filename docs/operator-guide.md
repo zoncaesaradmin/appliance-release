@@ -268,8 +268,8 @@ Common service log directories:
 Kubernetes-native access remains important:
 
 ```bash
-sudo kubectl -n appliance-system logs deploy/control-plane
-sudo kubectl -n appliance-system logs deploy/control-plane-ui
+sudo kubectl -n control logs deploy/api-server
+sudo kubectl -n control logs deploy/ui-server
 sudo kubectl -n workflows logs deploy/argo-workflows
 sudo kubectl -n appliance-builds logs <pod-name>
 sudo journalctl -u k3s -f

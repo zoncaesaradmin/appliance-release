@@ -19,7 +19,7 @@ Options:
                              appliance-release.config.yaml exists.
   --run-dir DIR              Local run directory.
   --admin-username NAME      Override install.bootstrap_admin_username.
-  --namespace NAME           Kubernetes namespace. Default: appliance-system
+  --namespace NAME           Kubernetes namespace. Default: control
   --deployment NAME          Control-plane deployment name.
                              Default: control-plane
 EOF
@@ -87,13 +87,13 @@ if [[ -z "${NAMESPACE}" ]]; then
   NAMESPACE="$(config_get_optional "${CONFIG_PATH}" "install.kubernetes_namespace" || true)"
 fi
 if [[ -z "${NAMESPACE}" ]]; then
-  NAMESPACE="appliance-system"
+  NAMESPACE="control"
 fi
 if [[ -z "${DEPLOYMENT}" ]]; then
   DEPLOYMENT="$(config_get_optional "${CONFIG_PATH}" "install.control_plane_deployment" || true)"
 fi
 if [[ -z "${DEPLOYMENT}" ]]; then
-  DEPLOYMENT="control-plane"
+  DEPLOYMENT="api-server"
 fi
 
 TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
