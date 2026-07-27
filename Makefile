@@ -45,8 +45,8 @@ verify-help:
 	done
 	@bash scripts/publish/install-http-release.sh --help | grep -q -- '--build-catalog'
 	@bash scripts/publish/publish-release.sh --help | grep -q -- '--mode'
-	@bash scripts/publish/publish-release.sh --help | grep -q -- 'fileserver'
-	@bash scripts/publish/bundle-store-lib.sh --help | grep -q -- 'fileserver'
+	@bash scripts/publish/publish-release.sh --help | grep -q -- 'appliance_files'
+	@bash scripts/publish/bundle-store-lib.sh --help | grep -q -- 'appliance_files'
 
 .PHONY: verify-json
 verify-json:
@@ -432,17 +432,17 @@ publish-release:
 		echo "publish-release: required env vars are EXPORT_DIR=/abs/path/to/export PRODUCT_VERSION=..." >&2; \
 		exit 2; \
 	fi
-	@mode="$${PUBLISH_MODE:-http}"; \
+	@mode="$${PUBLISH_MODE:-static_http}"; \
 	case "$$mode" in \
-		http|http-static) \
+		static_http|http|http-static) \
 			if [ -z "$${PUBLISH_SERVER:-}" ] || [ -z "$${PUBLISH_REMOTE_ROOT:-}" ]; then \
-				echo "publish-release: http mode requires PUBLISH_SERVER and PUBLISH_REMOTE_ROOT" >&2; \
+				echo "publish-release: static_http mode requires PUBLISH_SERVER and PUBLISH_REMOTE_ROOT" >&2; \
 				exit 2; \
 			fi; \
 			bash ./scripts/publish/publish-release.sh \
 				--export-dir "$${EXPORT_DIR}" \
 				--product-version "$${PRODUCT_VERSION}" \
-				--mode http \
+				--mode static_http \
 				--server "$${PUBLISH_SERVER}" \
 				--remote-root "$${PUBLISH_REMOTE_ROOT}" \
 				$${PUBLISH_PATH_PREFIX:+--path-prefix "$${PUBLISH_PATH_PREFIX}"} \
@@ -450,17 +450,17 @@ publish-release:
 				$${PUBLISH_PUBLIC_BASE_URL:+--public-base-url "$${PUBLISH_PUBLIC_BASE_URL}"} \
 				$${PUBLISH_LATEST_ALIAS:+--latest-alias} \
 			;; \
-		fileserver) \
+		appliance_files|fileserver) \
 			bash ./scripts/publish/publish-release.sh \
 				--export-dir "$${EXPORT_DIR}" \
 				--product-version "$${PRODUCT_VERSION}" \
-				--mode fileserver \
+				--mode appliance_files \
 				$${PUBLISH_PATH_PREFIX:+--path-prefix "$${PUBLISH_PATH_PREFIX}"} \
 				$${PUBLISH_PUBLIC_BASE_URL:+--public-base-url "$${PUBLISH_PUBLIC_BASE_URL}"} \
 				$${PUBLISH_LATEST_ALIAS:+--latest-alias} \
 			;; \
 		*) \
-			echo "publish-release: PUBLISH_MODE must be http or fileserver (got $$mode)" >&2; \
+			echo "publish-release: PUBLISH_MODE must be static_http or appliance_files (got $$mode)" >&2; \
 			exit 2; \
 			;; \
 	esac

@@ -56,10 +56,12 @@ For day-to-day use, set:
 - `APPLIANCE_TARGET_SUDO_PASSWORD=...`
 - `APPLIANCE_FIRST_ADMIN_PASSWORD=...`
 
-Distribution modes (`bundle_store.mode`): `http` (default external publish
-box) or `fileserver` (appliance-managed authenticated file API). Both install
-with target `curl` against `bundle_store.base_url`. For `fileserver`,
-publish and pull use the appliance API bearer-token model.
+Distribution modes (`bundle_store.mode`): `static_http` (default external
+publish box) or `appliance_files` (appliance-managed authenticated file API).
+Both install with target `curl` against `bundle_store.base_url`. For
+`appliance_files`, publish and pull use the appliance API bearer-token model.
+Historical aliases: `http`/`http-static` → `static_http`, `fileserver` →
+`appliance_files`.
 
 Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `--config`.
 
@@ -68,7 +70,7 @@ Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `
 - `scripts/run-release-flow.sh`
   One-shot wrapper for the common flow from the `appliance-release` repo: build/publish, install, target verify, then macOS-side API verify.
 - `scripts/build-and-publish.sh`
-  Run the deterministic build-host flow: optional `git pull`, build-host bootstrap, bundle build, publish, and artifact metadata capture. Publish uses `bundle_store.mode` (`http` or appliance-managed `fileserver`).
+  Run the deterministic build-host flow: optional `git pull`, build-host bootstrap, bundle build, publish, and artifact metadata capture. Publish uses `bundle_store.mode` (`static_http` or `appliance_files`).
 - `scripts/install-on-target.sh`
   Optionally uninstall the previous appliance, then install the published release on the target host via HTTP `curl` against `base_url` (Mac only SSHs).
 - `scripts/verify-target.sh`

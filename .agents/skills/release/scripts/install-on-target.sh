@@ -11,8 +11,8 @@ usage: install-on-target.sh [options]
 
 Install a published appliance release on the configured target host.
 
-For bundle_store.mode=http or fileserver the target downloads the package
-over HTTP(S) from bundle_store.base_url. In fileserver mode this is the
+For bundle_store.mode=static_http or appliance_files the target downloads the package
+over HTTP(S) from bundle_store.base_url. In appliance_files mode this is the
 appliance-managed authenticated file API path, typically
 https://<artifact-fqdn>/api/v1/files. The Mac only orchestrates SSH.
 
@@ -174,13 +174,13 @@ ensure_dir "${RUN_DIR}/artifacts"
 
 [[ -n "${RELEASE_VERSION}" ]] || fail "--release-version is required for automated install"
 
-# http and fileserver both fetch over HTTP(S). fileserver uses the
-# appliance-managed authenticated file API path.
+# static_http and appliance_files both fetch over HTTP(S). appliance_files uses
+# the appliance-managed authenticated file API path.
 case "${BUNDLE_STORE_MODE}" in
-  http|fileserver)
+  static_http|appliance_files)
     [[ -n "${BASE_URL}" ]] || fail "bundle_store.mode=${BUNDLE_STORE_MODE} requires bundle_store.base_url"
     bundle_store_bearer_token=""
-    if [[ "${BUNDLE_STORE_MODE}" == "fileserver" ]]; then
+    if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
       bundle_store_bearer_token="$(resolve_secret "${BUNDLE_STORE_ACCESS_TOKEN_ENV}" "Appliance artifact API bearer token")"
     fi
     helper_url="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-http-release.sh"
@@ -447,8 +447,8 @@ import sys
 ) = sys.argv[1:21]
 
 install_method = {
-    "http": "direct-http-zonctl-auto",
-    "fileserver": "direct-fileserver-zonctl-auto",
+    "static_http": "direct-static_http-zonctl-auto",
+    "appliance_files": "direct-appliance_files-zonctl-auto",
 }.get(distribution_mode, f"direct-{distribution_mode}-zonctl-auto")
 
 payload = {

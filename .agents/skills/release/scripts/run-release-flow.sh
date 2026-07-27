@@ -178,7 +178,7 @@ payload = {
     "configPath": config_path,
     "targetHost": None,
     "helperUrl": None,
-    "installMethod": "direct-http-zonctl-auto",
+    "installMethod": "direct-static_http-zonctl-auto",
     "releaseVersion": release_version or None,
     "baseUrl": None,
     "pathPrefix": None,

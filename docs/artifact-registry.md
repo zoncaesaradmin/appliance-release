@@ -31,17 +31,17 @@ In `appliance-release.config.yaml` (see also
 ```yaml
 bundle_store:
   # Default: external publish box
-  mode: http
+  mode: static_http
   base_url: http://192.168.1.105:28081
   publish_server_alias: zonsys@192.168.1.105
   publish_remote_root: /home/zonsys/releases
 
   # Appliance-managed authenticated file API:
-  # mode: fileserver
+  # mode: appliance_files
   # base_url: https://artifact-dns-1.appliance.internal/api/v1/files
 ```
 
-For `fileserver`, the storage/artifact appliance stores bundle files under
+For `appliance_files`, the storage/artifact appliance stores bundle files under
 `/data/zon/files` but exposes them through the authenticated appliance API at
 `/api/v1/files/...`. Publish uses `POST`, pull uses `GET`, and both require an
 appliance bearer token with artifact file permissions. Operator steps and curl

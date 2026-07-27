@@ -26,13 +26,15 @@ Notes:
   (default `appliance.internal`). The installer derives the FQDN as
   `<appliance_name>.<dns_zone>` for TLS, `canonicalOrigin`, and the registry
   realm. There is no separate `public_host` override.
-- Set `bundle_store.mode` to `http` (default) or `fileserver`:
-  - `http` — publish/install via an external static HTTP server (`base_url`,
+- Set `bundle_store.mode` to `static_http` (default) or `appliance_files`:
+  - `static_http` — publish/install via an external static HTTP server (`base_url`,
     `publish_server_alias`, `publish_remote_root`)
-  - `fileserver` — publish/install via the appliance-managed authenticated
+  - `appliance_files` — publish/install via the appliance-managed authenticated
     file API at `https://<distributor-fqdn>/api/v1/files` (`base_url`); set
     `bundle_store.access_token_env` to the local bearer-token variable
     used for both publish and pull
+  Historical aliases: `http`/`http-static` → `static_http`, `fileserver` →
+  `appliance_files`.
 - For advanced extra SANs beyond the derived FQDN, use
   `install.additional_tls_sans_csv` in the config.
 - For the `builder` profile, set `install.build_catalog_path` or pass

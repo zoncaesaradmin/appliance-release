@@ -336,7 +336,7 @@ reject_placeholder_client_base_url() {
   return 0
 }
 
-# Normalize bundle_store.mode to http|fileserver. Empty defaults to http.
+# Normalize bundle_store.mode to static_http|appliance_files. Empty defaults to static_http.
 _BUNDLE_STORE_LIB="$(cd "${SCRIPT_DIR}/../../../.." && pwd)/scripts/publish/bundle-store-lib.sh"
 if [[ -f "${_BUNDLE_STORE_LIB}" ]]; then
   # shellcheck source=/dev/null
@@ -355,13 +355,13 @@ resolve_bundle_store_mode() {
   local mode
   mode="$(bundle_store_get_optional "${config_path}" "mode" || true)"
   if declare -F normalize_bundle_store_mode >/dev/null 2>&1; then
-    normalize_bundle_store_mode "${mode}" || fail "bundle_store.mode must be http or fileserver"
+    normalize_bundle_store_mode "${mode}" || fail "bundle_store.mode must be static_http or appliance_files"
   else
     mode="$(printf '%s' "${mode}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
     case "${mode}" in
-      ""|http|http-static) printf 'http\n' ;;
-      fileserver) printf 'fileserver\n' ;;
-      *) fail "bundle_store.mode must be http or fileserver (got ${mode})" ;;
+      ""|static_http|http|http-static) printf 'static_http\n' ;;
+      appliance_files|fileserver) printf 'appliance_files\n' ;;
+      *) fail "bundle_store.mode must be static_http or appliance_files (got ${mode})" ;;
     esac
   fi
 }

@@ -196,7 +196,7 @@ PUBLISH_PATH_PREFIX="$(bundle_store_get_optional "${CONFIG_PATH}" "release_path_
 BUNDLE_STORE_ACCESS_TOKEN_ENV="$(bundle_store_get_optional "${CONFIG_PATH}" "access_token_env" || true)"
 PUBLISH_LATEST_ALIAS="$(config_get_optional "${CONFIG_PATH}" "release.publish_latest_alias" || true)"
 case "${BUNDLE_STORE_MODE}" in
-  http|fileserver)
+  static_http|appliance_files)
     [[ -n "${PUBLISH_PUBLIC_BASE_URL}" ]] || fail "bundle_store.mode=${BUNDLE_STORE_MODE} requires bundle_store.base_url"
     ;;
 esac
@@ -278,7 +278,7 @@ PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_PAT
 if bool_true "${PUBLISH_LATEST_ALIAS:-false}"; then
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_LATEST_ALIAS" "1")"
 fi
-if [[ "${BUNDLE_STORE_MODE}" == "fileserver" ]]; then
+if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
   bundle_store_bearer_token="$(resolve_secret "${BUNDLE_STORE_ACCESS_TOKEN_ENV}" "Appliance artifact API bearer token")"
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_BEARER_TOKEN" "${bundle_store_bearer_token}")"
 fi

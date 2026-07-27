@@ -12,12 +12,14 @@ usage: publish-release.sh --export-dir DIR --product-version VERSION [options]
 Publish the already-built customer delivery files from scripts/ci/build-full-bundle.sh.
 
 Modes:
-  http          Copy exported files to a remote server over SSH/SCP for a
-                plain HTTP/HTTPS static file server (default; alias: http-static).
-  fileserver    Publish through the appliance-managed authenticated file API.
-                Set PUBLISH_BEARER_TOKEN and point --public-base-url at the
-                appliance file API base, for example:
-                https://artifact-dns-1.appliance.internal/api/v1/files
+  static_http       Copy exported files to a remote server over SSH/SCP for a
+                    plain HTTP/HTTPS static file server (default).
+                    Historical aliases: http, http-static.
+  appliance_files   Publish through the appliance-managed authenticated file API.
+                    Set PUBLISH_BEARER_TOKEN and point --public-base-url at the
+                    appliance file API base, for example:
+                    https://artifact-dns-1.appliance.internal/api/v1/files
+                    Historical alias: fileserver.
 
 Options:
   --export-dir DIR           Directory containing:
@@ -25,17 +27,18 @@ Options:
                                release-signing.pub
                              Required.
   --product-version VERSION  Product version to publish. Required.
-  --mode MODE                http|http-static|fileserver. Default: http.
-  --latest-alias             Also publish/update <path-prefix>/latest/ (http).
+  --mode MODE                static_http|appliance_files (aliases: http,
+                             http-static, fileserver). Default: static_http.
+  --latest-alias             Also publish/update <path-prefix>/latest/ (static_http).
 
-http mode options:
-  --server USER@HOST         Remote SSH target. Required for http.
+static_http mode options:
+  --server USER@HOST         Remote SSH target. Required for static_http.
   --remote-root DIR          Remote root directory to publish under. Required.
   --path-prefix PATH         Prefix under remote root. Default: appliance
   --ssh-port PORT            SSH port. Default: 22
   --public-base-url URL      Optional public base URL override. If omitted,
                              the script derives http://<host> from --server.
-  fileserver mode requires:
+  appliance_files mode requires:
     PUBLISH_BEARER_TOKEN     Appliance API bearer token with artifacts.write.
 
 Examples:
@@ -48,7 +51,7 @@ Examples:
 EOF
 }
 
-MODE="http"
+MODE="static_http"
 EXPORT_DIR=""
 PRODUCT_VERSION=""
 SERVER_TARGET=""
@@ -188,7 +191,7 @@ stamp_version() {
 }
 
 case "${MODE}" in
-  http)
+  static_http)
     require_var SERVER_TARGET
     require_var REMOTE_ROOT
 
@@ -266,7 +269,7 @@ case "${MODE}" in
       echo "  bash /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} --base-url ${PUBLIC_BASE_URL} --use-latest"
     fi
     ;;
-  fileserver)
+  appliance_files)
     PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"
     require_var PUBLIC_BASE_URL
     require_var PUBLISH_BEARER_TOKEN

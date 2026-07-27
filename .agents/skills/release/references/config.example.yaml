@@ -44,28 +44,30 @@ bundle_store:
   # build/publish delivers the air-gap bundle to installers.
   #
   # mode:
-  #   http       — external plain HTTP/HTTPS static publish box (default)
-  #   fileserver — appliance-managed authenticated file API on a
-  #                storage/artifact appliance; use the same appliance API
-  #                bearer-token model for publish and pull
+  #   static_http     — external plain HTTP/HTTPS static publish box (default)
+  #   appliance_files — appliance-managed authenticated file API on a
+  #                     storage/artifact appliance; use the same appliance API
+  #                     bearer-token model for publish and pull
+  # Historical aliases still accepted: http/http-static -> static_http,
+  # fileserver -> appliance_files.
   #
   # Both modes install with target-side curl against base_url. Mac only SSHs.
-  # Publish: http uses SCP to publish_server_alias; fileserver uses POST
-  # against the appliance file API.
-  mode: http
+  # Publish: static_http uses SCP to publish_server_alias; appliance_files uses
+  # POST against the appliance file API.
+  mode: static_http
 
   # Shared logical release name: HTTP path segment under base_url.
   release_path_prefix: appliance
 
   # Local environment variable holding the appliance API bearer token used for
-  # fileserver-mode publish and pull.
+  # appliance_files-mode publish and pull.
   access_token_env: APPLIANCE_ARTIFACT_TOKEN
 
   # Public HTTP/HTTPS base URL serving signed installer/bundle files.
-  # http example: http://192.168.1.105:28081
-  # fileserver example: https://artifact-dns-1.appliance.internal/api/v1/files
+  # static_http example: http://192.168.1.105:28081
+  # appliance_files example: https://artifact-dns-1.appliance.internal/api/v1/files
   base_url: http://192.168.1.105:28081
-  # SSH target used by the build machine's publish command (mode=http).
+  # SSH target used by the build machine's publish command (mode=static_http).
   # Example:
   # publish_server_alias: publish-user@192.168.1.105
   # publish_server_alias: publish-host-alias-from-ssh-config
@@ -99,7 +101,7 @@ build_flow:
   build_command: K3S_BINARY_SOURCE=/home/zonsys/ci/inputs/k3s K3S_AIRGAP_IMAGES_SOURCE=/home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst bash /home/zonsys/ws/appliance-release/scripts/ci/build-full-bundle.sh
   # PRODUCT_VERSION, EXPORT_DIR, and PUBLISH_* are injected automatically by
   # the skill from release.version / release_workspace / bundle_store.
-  # For bundle_store.mode=http keep PUBLISH_SERVER and PUBLISH_REMOTE_ROOT
+  # For bundle_store.mode=static_http keep PUBLISH_SERVER and PUBLISH_REMOTE_ROOT
   # here (or rely on Makefile defaults from your shell).
   publish_command: make publish-release PUBLISH_SERVER=zonsys@192.168.1.105 PUBLISH_REMOTE_ROOT=/home/zonsys/releases
   # Argo Workflows is a mandatory component of the complete v1 appliance
