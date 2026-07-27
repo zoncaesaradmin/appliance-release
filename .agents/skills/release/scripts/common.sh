@@ -149,10 +149,12 @@ run_ssh_logged() {
   local host="$1"
   local log_file="$2"
   local remote_command="$3"
+  local quoted_remote_command=""
 
   ensure_dir "$(dirname "${log_file}")"
+  quoted_remote_command="$(shell_quote "${remote_command}")"
   set +e
-  ssh -tt "${host}" "env -u BASH_ENV PS1='' bash -lc $(shell_quote "${remote_command}")" 2>&1 \
+  ssh -tt "${host}" "env -u BASH_ENV PS1='' bash -lc ${quoted_remote_command}" 2>&1 \
     | python3 -c 'import sys; [sys.stdout.write(line) for line in sys.stdin if not line.startswith("Connection to ") or " closed." not in line]' \
     | tee "${log_file}"
   local cmd_status="${PIPESTATUS[0]}"
@@ -164,10 +166,12 @@ run_ssh_captured() {
   local host="$1"
   local log_file="$2"
   local remote_command="$3"
+  local quoted_remote_command=""
 
   ensure_dir "$(dirname "${log_file}")"
+  quoted_remote_command="$(shell_quote "${remote_command}")"
   set +e
-  ssh -q -T "${host}" "env -u BASH_ENV PS1='' bash -lc $(shell_quote "${remote_command}")" >"${log_file}" 2>&1
+  ssh -q -T "${host}" "env -u BASH_ENV PS1='' bash -lc ${quoted_remote_command}" >"${log_file}" 2>&1
   local cmd_status="$?"
   set -e
   return "${cmd_status}"
@@ -364,6 +368,155 @@ resolve_bundle_store_mode() {
       *) fail "bundle_store.mode must be static_http or appliance_files (got ${mode})" ;;
     esac
   fi
+}
+
+# Derive the appliance API origin from bundle_store.base_url
+# (https://host/api/v1/files → https://host).
+derive_appliance_files_api_origin() {
+  local base_url="$1"
+  local override="${2:-}"
+  if [[ -n "${override}" ]]; then
+    printf '%s\n' "${override%/}"
+    return 0
+  fi
+  python3 - "${base_url}" <<'PY'
+import sys
+value = sys.argv[1].strip().rstrip("/")
+marker = "/api/v1/files"
+if marker in value:
+    value = value[: value.index(marker)]
+print(value.rstrip("/"))
+PY
+}
+
+require_appliance_files_base_url() {
+  local base_url="$1"
+  case "${base_url}" in
+    */api/v1/files|*/api/v1/files/)
+      return 0
+      ;;
+    *)
+      fail "bundle_store.mode=appliance_files requires bundle_store.base_url ending in /api/v1/files (authenticated API). Do not use Traefik /files — that path is unauthenticated static nginx."
+      ;;
+  esac
+}
+
+# Fill BUNDLE_STORE_CURL_TLS_ARGS for appliance_files HTTPS curls.
+# Prefer cacert_path when set; otherwise tls_insecure (default true) adds -k.
+# Uses a global array because macOS ships bash 3.2 (no namerefs).
+BUNDLE_STORE_CURL_TLS_ARGS=()
+bundle_store_fill_curl_tls_args() {
+  local config_path="$1"
+  local cacert=""
+  local insecure=""
+  BUNDLE_STORE_CURL_TLS_ARGS=()
+  cacert="$(bundle_store_get_optional "${config_path}" "cacert_path" || true)"
+  insecure="$(bundle_store_get_optional "${config_path}" "tls_insecure" || true)"
+  if [[ -n "${cacert}" ]]; then
+    ensure_file "${cacert}"
+    BUNDLE_STORE_CURL_TLS_ARGS+=(--cacert "${cacert}")
+    return 0
+  fi
+  # Default insecure=true for lab self-signed appliance certs (matches
+  # verify-client-access.sh). Set bundle_store.tls_insecure: false once the
+  # distributor CA is trusted on the Mac/build/target hosts.
+  if [[ -z "${insecure}" ]] || bool_true "${insecure}"; then
+    BUNDLE_STORE_CURL_TLS_ARGS+=(-k)
+  fi
+}
+
+# Resolve a bearer token for appliance_files publish/install.
+# Order:
+#   1. Existing value of access_token_env (default APPLIANCE_ARTIFACT_TOKEN)
+#   2. Mint via login + POST /api/v1/tokens using store_username + password_env
+# Password env defaults to APPLIANCE_STORE_PASSWORD, then falls back to
+# APPLIANCE_FIRST_ADMIN_PASSWORD for single-admin lab topologies.
+resolve_appliance_files_bearer_token() {
+  local config_path="$1"
+  local base_url="$2"
+  local access_token_env="$3"
+  local token=""
+  local username=""
+  local password_env=""
+  local api_origin=""
+  local api_origin_override=""
+  local lifetime=""
+  local mint_cmd=()
+  local auth_script="${SCRIPT_DIR}/appliance-files-auth.py"
+  local tls_idx=0
+
+  if [[ -n "${access_token_env}" ]]; then
+    token="${!access_token_env:-}"
+  fi
+  if [[ -n "${token}" ]]; then
+    printf '%s' "${token}"
+    return 0
+  fi
+
+  require_cmd python3
+  ensure_file "${auth_script}"
+  require_appliance_files_base_url "${base_url}"
+
+  username="$(bundle_store_get_optional "${config_path}" "store_username" || true)"
+  if [[ -z "${username}" ]]; then
+    username="admin"
+  fi
+  password_env="$(bundle_store_get_optional "${config_path}" "store_password_env" || true)"
+  if [[ -z "${password_env}" ]]; then
+    password_env="APPLIANCE_STORE_PASSWORD"
+  fi
+  if [[ -z "${!password_env:-}" && -n "${APPLIANCE_FIRST_ADMIN_PASSWORD:-}" ]]; then
+    log "appliance_files: ${password_env} unset; using APPLIANCE_FIRST_ADMIN_PASSWORD for distributor login"
+    password_env="APPLIANCE_FIRST_ADMIN_PASSWORD"
+  fi
+  if [[ -z "${!password_env:-}" ]]; then
+    local prompted_password=""
+    prompted_password="$(resolve_secret "${password_env}" "Distributor appliance password (${username}@store)")"
+    printf -v "${password_env}" '%s' "${prompted_password}"
+    export "${password_env?}"
+  fi
+
+  api_origin_override="$(bundle_store_get_optional "${config_path}" "api_origin" || true)"
+  api_origin="$(derive_appliance_files_api_origin "${base_url}" "${api_origin_override}")"
+  lifetime="$(bundle_store_get_optional "${config_path}" "api_token_lifetime_seconds" || true)"
+  if [[ -z "${lifetime}" ]]; then
+    lifetime="86400"
+  fi
+
+  bundle_store_fill_curl_tls_args "${config_path}"
+  mint_cmd=(
+    python3 "${auth_script}"
+    --api-origin "${api_origin}"
+    --username "${username}"
+    --password-env "${password_env}"
+    --lifetime-seconds "${lifetime}"
+    --scopes "artifacts.read,artifacts.write"
+    --token-name "appliance-release-files"
+  )
+  tls_idx=0
+  while [[ ${tls_idx} -lt ${#BUNDLE_STORE_CURL_TLS_ARGS[@]} ]]; do
+    if [[ "${BUNDLE_STORE_CURL_TLS_ARGS[$tls_idx]}" == "--cacert" ]]; then
+      mint_cmd+=(--cacert "${BUNDLE_STORE_CURL_TLS_ARGS[$((tls_idx + 1))]}")
+      break
+    fi
+    if [[ "${BUNDLE_STORE_CURL_TLS_ARGS[$tls_idx]}" == "-k" ]]; then
+      mint_cmd+=(--insecure)
+      break
+    fi
+    tls_idx=$((tls_idx + 1))
+  done
+
+  log "appliance_files: minting distributor API token via ${api_origin} (export ${access_token_env:-APPLIANCE_ARTIFACT_TOKEN} to skip)"
+  token="$("${mint_cmd[@]}")" || fail "appliance_files: failed to mint distributor API token; ensure an artifact-capable appliance is already installed at ${api_origin} and credentials are valid"
+  if [[ -z "${token}" ]]; then
+    fail "appliance_files: minted token was empty"
+  fi
+  # Export so sibling steps in the same shell (and child make publish) reuse it.
+  if [[ -n "${access_token_env}" ]]; then
+    printf -v "${access_token_env}" '%s' "${token}"
+    export "${access_token_env?}"
+  fi
+  printf '%s' "${token}"
 }
 
 render_ensure_remote_release_repo_cmd() {

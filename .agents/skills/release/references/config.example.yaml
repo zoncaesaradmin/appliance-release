@@ -46,26 +46,39 @@ bundle_store:
   # mode:
   #   static_http     — external plain HTTP/HTTPS static publish box (default)
   #   appliance_files — appliance-managed authenticated file API on a
-  #                     storage/artifact appliance; use the same appliance API
-  #                     bearer-token model for publish and pull
+  #                     storage/artifact appliance (day-2 distributor). Requires
+  #                     that distributor to already be installed with an
+  #                     artifact-capable profile; cannot bootstrap the first
+  #                     store host by itself.
   # Historical aliases still accepted: http/http-static -> static_http,
   # fileserver -> appliance_files.
   #
   # Both modes install with target-side curl against base_url. Mac only SSHs.
   # Publish: static_http uses SCP to publish_server_alias; appliance_files uses
-  # POST against the appliance file API.
+  # POST against the appliance file API (Bearer token).
   mode: static_http
 
   # Shared logical release name: HTTP path segment under base_url.
   release_path_prefix: appliance
 
-  # Local environment variable holding the appliance API bearer token used for
-  # appliance_files-mode publish and pull.
+  # Optional pre-minted bearer token env var for appliance_files. When unset,
+  # the skill logs into the distributor and mints a scoped API token
+  # (artifacts.read + artifacts.write) automatically.
   access_token_env: APPLIANCE_ARTIFACT_TOKEN
+
+  # appliance_files auth (used only when access_token_env is empty):
+  # store_username: admin
+  # store_password_env: APPLIANCE_STORE_PASSWORD
+  # Falls back to APPLIANCE_FIRST_ADMIN_PASSWORD when store_password_env is unset.
+  # api_origin: https://artifact-dns-1.appliance.internal   # optional; derived from base_url
+  # api_token_lifetime_seconds: 86400
+  # tls_insecure: true   # default when cacert_path omitted (self-signed lab certs)
+  # cacert_path: /abs/path/to/distributor-ca.pem
 
   # Public HTTP/HTTPS base URL serving signed installer/bundle files.
   # static_http example: http://192.168.1.105:28081
-  # appliance_files example: https://artifact-dns-1.appliance.internal/api/v1/files
+  # appliance_files example (must end with /api/v1/files — not Traefik /files):
+  #   https://artifact-dns-1.appliance.internal/api/v1/files
   base_url: http://192.168.1.105:28081
   # SSH target used by the build machine's publish command (mode=static_http).
   # Example:
@@ -103,6 +116,10 @@ build_flow:
   # the skill from release.version / release_workspace / bundle_store.
   # For bundle_store.mode=static_http keep PUBLISH_SERVER and PUBLISH_REMOTE_ROOT
   # here (or rely on Makefile defaults from your shell).
+  # For bundle_store.mode=appliance_files the skill injects PUBLISH_MODE,
+  # PUBLISH_PUBLIC_BASE_URL, PUBLISH_BEARER_TOKEN, and TLS flags — a plain
+  # `make publish-release` is enough:
+  #   publish_command: make publish-release
   publish_command: make publish-release PUBLISH_SERVER=zonsys@192.168.1.105 PUBLISH_REMOTE_ROOT=/home/zonsys/releases
   # Argo Workflows is a mandatory component of the complete v1 appliance
   # (ADR 0011) and build-full-bundle.sh enables it by default with zero

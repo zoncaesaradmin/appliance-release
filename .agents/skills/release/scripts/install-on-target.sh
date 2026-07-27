@@ -176,12 +176,15 @@ ensure_dir "${RUN_DIR}/artifacts"
 
 # static_http and appliance_files both fetch over HTTP(S). appliance_files uses
 # the appliance-managed authenticated file API path.
+BUNDLE_STORE_CURL_TLS_ARGS=()
 case "${BUNDLE_STORE_MODE}" in
   static_http|appliance_files)
     [[ -n "${BASE_URL}" ]] || fail "bundle_store.mode=${BUNDLE_STORE_MODE} requires bundle_store.base_url"
     bundle_store_bearer_token=""
     if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
-      bundle_store_bearer_token="$(resolve_secret "${BUNDLE_STORE_ACCESS_TOKEN_ENV}" "Appliance artifact API bearer token")"
+      require_appliance_files_base_url "${BASE_URL}"
+      bundle_store_bearer_token="$(resolve_appliance_files_bearer_token "${CONFIG_PATH}" "${BASE_URL}" "${BUNDLE_STORE_ACCESS_TOKEN_ENV}")"
+      bundle_store_fill_curl_tls_args "${CONFIG_PATH}"
     fi
     helper_url="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-http-release.sh"
     remote_release_dir="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}"
@@ -193,6 +196,9 @@ case "${BUNDLE_STORE_MODE}" in
       local label="$2"
       local output=""
       local -a curl_args=(-fsSIL)
+      if [[ ${#BUNDLE_STORE_CURL_TLS_ARGS[@]} -gt 0 ]]; then
+        curl_args+=("${BUNDLE_STORE_CURL_TLS_ARGS[@]}")
+      fi
       if [[ -n "${bundle_store_bearer_token}" ]]; then
         curl_args+=(-H "Authorization: Bearer ${bundle_store_bearer_token}")
       fi
@@ -235,6 +241,23 @@ PY
 )"
 fi
 
+# Serialize TLS curl flags for the remote target script. Prefer -k over
+# shipping a Mac-local cacert path that may not exist on the target.
+remote_curl_tls_init="curl_tls_args=()"
+if [[ ${#BUNDLE_STORE_CURL_TLS_ARGS[@]} -gt 0 ]]; then
+  tls_joined="${BUNDLE_STORE_CURL_TLS_ARGS[*]}"
+  if [[ "${tls_joined}" == *"--cacert"* ]]; then
+    log "appliance_files: bundle_store.cacert_path is Mac-local; target download uses -k unless the target already trusts the distributor CA"
+    remote_curl_tls_init="curl_tls_args=(-k)"
+  else
+    remote_curl_tls_init="curl_tls_args=("
+    for tls_arg in "${BUNDLE_STORE_CURL_TLS_ARGS[@]}"; do
+      remote_curl_tls_init+=" $(shell_quote "${tls_arg}")"
+    done
+    remote_curl_tls_init+=")"
+  fi
+fi
+
 remote_script='set -euo pipefail
 remote_dir='"$(shell_quote "${remote_release_dir}")"'
 product_version='"$(shell_quote "${RELEASE_VERSION}")"'
@@ -249,6 +272,7 @@ checksum_file="sha256sum.txt"
 bundle_dir="${out_dir}/appliance-${product_version}-bundle"
 public_key="${out_dir}/${public_key_file}"
 zonctl="${bundle_dir}/zonctl"
+'"${remote_curl_tls_init}"'
 curl_auth_args=()
 if [[ -n "${artifact_bearer_token}" ]]; then
   curl_auth_args=(-H "Authorization: Bearer ${artifact_bearer_token}")
@@ -256,9 +280,9 @@ fi
 printf "%s\n" '"$(shell_quote "${target_sudo_password}")"' | sudo -S -p "" -v >/dev/null
 mkdir -p "${out_dir}"
 echo "[target 1/5] Downloading release files..."
-curl "${curl_auth_args[@]}" -fLo "${out_dir}/${bundle_archive}" "${remote_dir}/${bundle_archive}"
-curl "${curl_auth_args[@]}" -fLo "${public_key}" "${remote_dir}/${public_key_file}"
-curl "${curl_auth_args[@]}" -fLo "${out_dir}/${checksum_file}" "${remote_dir}/${checksum_file}"
+curl "${curl_tls_args[@]}" "${curl_auth_args[@]}" -fLo "${out_dir}/${bundle_archive}" "${remote_dir}/${bundle_archive}"
+curl "${curl_tls_args[@]}" "${curl_auth_args[@]}" -fLo "${public_key}" "${remote_dir}/${public_key_file}"
+curl "${curl_tls_args[@]}" "${curl_auth_args[@]}" -fLo "${out_dir}/${checksum_file}" "${remote_dir}/${checksum_file}"
 echo "[target 1/5] Release files downloaded."
 echo "[target 2/5] Verifying release checksums..."
 if command -v sha256sum >/dev/null 2>&1; then

@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Secrets (tokens/passwords) may contain '!'; disable history expansion even if
+# this script is ever run from an interactive shell.
+set +H
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
@@ -200,6 +203,9 @@ case "${BUNDLE_STORE_MODE}" in
     [[ -n "${PUBLISH_PUBLIC_BASE_URL}" ]] || fail "bundle_store.mode=${BUNDLE_STORE_MODE} requires bundle_store.base_url"
     ;;
 esac
+if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
+  require_appliance_files_base_url "${PUBLISH_PUBLIC_BASE_URL}"
+fi
 if [[ -z "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
   BOOTSTRAP_REGISTRY_TOKEN_ENV="REGISTRY_TOKEN"
 fi
@@ -279,15 +285,41 @@ if bool_true "${PUBLISH_LATEST_ALIAS:-false}"; then
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_LATEST_ALIAS" "1")"
 fi
 if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
-  bundle_store_bearer_token="$(resolve_secret "${BUNDLE_STORE_ACCESS_TOKEN_ENV}" "Appliance artifact API bearer token")"
+  bundle_store_bearer_token="$(resolve_appliance_files_bearer_token "${CONFIG_PATH}" "${PUBLISH_PUBLIC_BASE_URL}" "${BUNDLE_STORE_ACCESS_TOKEN_ENV}")"
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_BEARER_TOKEN" "${bundle_store_bearer_token}")"
+  bundle_store_fill_curl_tls_args "${CONFIG_PATH}"
+  tls_idx=0
+  while [[ ${tls_idx} -lt ${#BUNDLE_STORE_CURL_TLS_ARGS[@]} ]]; do
+    if [[ "${BUNDLE_STORE_CURL_TLS_ARGS[$tls_idx]}" == "--cacert" ]]; then
+      PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_CACERT" "${BUNDLE_STORE_CURL_TLS_ARGS[$((tls_idx + 1))]}")"
+      break
+    fi
+    if [[ "${BUNDLE_STORE_CURL_TLS_ARGS[$tls_idx]}" == "-k" ]]; then
+      PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_TLS_INSECURE" "1")"
+      break
+    fi
+    tls_idx=$((tls_idx + 1))
+  done
 fi
 
 release_repo_sync_remote_cmd=""
 release_repo_sync_remote_cmd="$(render_ensure_remote_release_repo_cmd "${REMOTE_CWD}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" "${GIT_PULL_CMD}")"
+
+# Resolve bootstrap registry secrets before composing remote commands so the
+# env-prefix style matches build/publish (NAME=quoted-value cmd) and never uses
+# the fragile `export NAME=$(shell_quote ...) ;` concatenation that can leave
+# residual tokens like `RAP_REGISTRY_TOKEN}) ;` as a local command.
+if [[ -n "${BOOTSTRAP_CMD}" && -z "${BOOTSTRAP_REGISTRY_TOKEN}" && -n "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
+  BOOTSTRAP_REGISTRY_TOKEN="$(resolve_secret "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" "Build host registry token")"
+fi
+BOOTSTRAP_ENV_PREFIX=""
+BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "CODE_REPO_REF" "${CODE_REPO_REF}")"
+BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}")"
+BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}")"
+
 bootstrap_remote_cmd=""
 if [[ -n "${BOOTSTRAP_CMD}" ]]; then
-  bootstrap_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BOOTSTRAP_CMD}"
+  bootstrap_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BOOTSTRAP_ENV_PREFIX}${BOOTSTRAP_CMD}"
 fi
 build_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BUILD_ENV_PREFIX}${BUILD_CMD}"
 publish_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PUBLISH_ENV_PREFIX}${PUBLISH_CMD}"
@@ -307,32 +339,26 @@ if bool_true "${BOOTSTRAP_NEEDS_SUDO:-false}" || bool_true "${BUILD_NEEDS_SUDO:-
   build_sudo_password="$(resolve_secret "APPLIANCE_BUILD_SUDO_PASSWORD" "Build host sudo password")"
 fi
 
+wrap_remote_cmd_with_sudo() {
+  local remote_cmd="$1"
+  local sudo_password="$2"
+  # Keep password quoting in a variable first so a failed shell_quote cannot
+  # leave a partial `$(...)` residue on the local parser's command line.
+  local quoted_password=""
+  quoted_password="$(shell_quote "${sudo_password}")"
+  printf '%s' "printf '%s\n' ${quoted_password} | sudo -S -p '' -v >/dev/null && ${remote_cmd}"
+}
+
 if [[ -n "${bootstrap_remote_cmd}" ]]; then
-  bootstrap_env_prefix=""
-  if [[ -n "${CODE_REPO_REF}" ]]; then
-    bootstrap_env_prefix="${bootstrap_env_prefix}export CODE_REPO_REF=$(shell_quote "${CODE_REPO_REF}") ; "
-  fi
-  if [[ -n "${BOOTSTRAP_REGISTRY_USER}" ]]; then
-    bootstrap_env_prefix="${bootstrap_env_prefix}export REGISTRY_USER=$(shell_quote "${BOOTSTRAP_REGISTRY_USER}") ; "
-  fi
-  if [[ -z "${BOOTSTRAP_REGISTRY_TOKEN}" && -n "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
-    BOOTSTRAP_REGISTRY_TOKEN="$(resolve_secret "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" "Build host registry token")"
-  fi
-  if [[ -n "${BOOTSTRAP_REGISTRY_TOKEN}" ]]; then
-    bootstrap_env_prefix="${bootstrap_env_prefix}export REGISTRY_TOKEN=$(shell_quote "${BOOTSTRAP_REGISTRY_TOKEN}") ; "
-  fi
-  if [[ -n "${bootstrap_env_prefix}" ]]; then
-    bootstrap_remote_cmd="${bootstrap_env_prefix}${bootstrap_remote_cmd}"
-  fi
   if bool_true "${BOOTSTRAP_NEEDS_SUDO:-false}"; then
-    bootstrap_remote_cmd="printf '%s\n' $(shell_quote "${build_sudo_password}") | sudo -S -p '' -v >/dev/null && ${bootstrap_remote_cmd}"
+    bootstrap_remote_cmd="$(wrap_remote_cmd_with_sudo "${bootstrap_remote_cmd}" "${build_sudo_password}")"
   fi
   log "running remote bootstrap on ${BUILD_HOST}"
   run_ssh_logged "${BUILD_HOST}" "${bootstrap_log}" "${bootstrap_remote_cmd}"
 fi
 
 if bool_true "${BUILD_NEEDS_SUDO:-false}"; then
-  build_remote_cmd="printf '%s\n' $(shell_quote "${build_sudo_password}") | sudo -S -p '' -v >/dev/null && ${build_remote_cmd}"
+  build_remote_cmd="$(wrap_remote_cmd_with_sudo "${build_remote_cmd}" "${build_sudo_password}")"
 fi
 
 log "running remote build on ${BUILD_HOST}"

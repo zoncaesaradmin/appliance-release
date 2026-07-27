@@ -44,8 +44,12 @@ bundle_store:
 For `appliance_files`, the storage/artifact appliance stores bundle files under
 `/data/zon/files` but exposes them through the authenticated appliance API at
 `/api/v1/files/...`. Publish uses `POST`, pull uses `GET`, and both require an
-appliance bearer token with artifact file permissions. Operator steps and curl
-examples are in [fileserver.md](fileserver.md).
+appliance bearer token with artifact file permissions. The release skill mints
+that token automatically when `APPLIANCE_ARTIFACT_TOKEN` is unset. Operator
+curl examples are in [fileserver.md](fileserver.md).
+
+`base_url` must end with `/api/v1/files`. Do not point the skill at Traefik
+`/files` — that nginx path is unauthenticated static file serving.
 
 ## 1. Log In And List Repositories
 

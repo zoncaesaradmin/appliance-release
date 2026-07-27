@@ -31,6 +31,9 @@ model as other appliance APIs.
 
 ## Get A Bearer Token
 
+Manual login (also what the release skill does automatically when
+`APPLIANCE_ARTIFACT_TOKEN` is unset):
+
 ```bash
 APPLIANCE=https://artifact-dns-1.appliance.internal
 USERNAME=admin
@@ -44,6 +47,27 @@ ACCESS_TOKEN="$(
   | jq -r '.accessToken'
 )"
 ```
+
+For long-lived publish/install, mint a scoped API token (preferred over the
+short-lived session access JWT):
+
+```bash
+API_TOKEN="$(
+  curl -ksS \
+    -X POST \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d '{"name":"appliance-release-files","lifetimeSeconds":86400,"scopes":["artifacts.read","artifacts.write"]}' \
+    "${APPLIANCE}/api/v1/tokens" \
+  | jq -r '.token'
+)"
+export APPLIANCE_ARTIFACT_TOKEN="${API_TOKEN}"
+```
+
+With `bundle_store.mode: appliance_files`, the release skill performs this
+mint for you when `APPLIANCE_ARTIFACT_TOKEN` is unset, using
+`bundle_store.store_username` + `APPLIANCE_STORE_PASSWORD` (or
+`APPLIANCE_FIRST_ADMIN_PASSWORD`).
 
 ## Upload A File
 

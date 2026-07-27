@@ -93,6 +93,8 @@ verify-release-artifacts:
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_write_local_milestone_report.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_write_final_readiness_report.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_bundle_store_mode.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_appliance_files_auth.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_shell_quote_env.py"
 
 .PHONY: verify-final-targets
 verify-final-targets:

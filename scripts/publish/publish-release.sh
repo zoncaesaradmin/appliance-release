@@ -40,6 +40,8 @@ static_http mode options:
                              the script derives http://<host> from --server.
   appliance_files mode requires:
     PUBLISH_BEARER_TOKEN     Appliance API bearer token with artifacts.write.
+    PUBLISH_TLS_INSECURE=1   Optional; skip TLS verify for self-signed certs.
+    PUBLISH_CACERT=PATH      Optional; PEM CA bundle (overrides insecure).
 
 Examples:
   bash ./scripts/publish/publish-release.sh \
@@ -149,7 +151,14 @@ extract_host_from_target() {
 curl_upload_file() {
   local src="$1"
   local url="$2"
-  curl -fsS -X POST \
+  local -a curl_args=(-fsS -X POST)
+  if [[ "${PUBLISH_TLS_INSECURE:-}" == "1" ]]; then
+    curl_args+=(-k)
+  fi
+  if [[ -n "${PUBLISH_CACERT:-}" ]]; then
+    curl_args+=(--cacert "${PUBLISH_CACERT}")
+  fi
+  curl "${curl_args[@]}" \
     -H "Authorization: Bearer ${PUBLISH_BEARER_TOKEN}" \
     -H "Content-Type: application/octet-stream" \
     --data-binary "@${src}" \

@@ -53,8 +53,13 @@ the published script's content, not inferred from its filename):
   curl -fsSL http://downloads.example.internal/releases/appliance/0.1.0/install-http-release.sh \
     | bash -s -- --base-url http://downloads.example.internal/releases
 
-If the distribution endpoint requires appliance authentication, export:
-  APPLIANCE_RELEASE_BEARER_TOKEN=<appliance API token>
+If the distribution endpoint requires appliance authentication, export one of:
+  APPLIANCE_ARTIFACT_TOKEN=<appliance API token>
+  APPLIANCE_RELEASE_BEARER_TOKEN=<appliance API token>   # legacy alias
+
+For HTTPS with a self-signed distributor cert, export:
+  APPLIANCE_RELEASE_TLS_INSECURE=1
+or set APPLIANCE_RELEASE_CACERT=/path/to/ca.pem
 EOF
 }
 
@@ -80,7 +85,11 @@ DNS_ZONE=""
 TLS_SANS=()
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
-ARTIFACT_BEARER_TOKEN="${APPLIANCE_RELEASE_BEARER_TOKEN:-}"
+# Prefer APPLIANCE_ARTIFACT_TOKEN (skill/config default); keep
+# APPLIANCE_RELEASE_BEARER_TOKEN as a documented legacy alias.
+ARTIFACT_BEARER_TOKEN="${APPLIANCE_ARTIFACT_TOKEN:-${APPLIANCE_RELEASE_BEARER_TOKEN:-}}"
+TLS_INSECURE="${APPLIANCE_RELEASE_TLS_INSECURE:-}"
+TLS_CACERT="${APPLIANCE_RELEASE_CACERT:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -232,6 +241,11 @@ curl_download() {
   local out_file="$1"
   local url="$2"
   local -a curl_args=(-fLo "${out_file}")
+  if [[ -n "${TLS_CACERT}" ]]; then
+    curl_args+=(--cacert "${TLS_CACERT}")
+  elif [[ "${TLS_INSECURE}" == "1" ]] || [[ "${TLS_INSECURE}" == "true" ]]; then
+    curl_args+=(-k)
+  fi
   if [[ -n "${ARTIFACT_BEARER_TOKEN}" ]]; then
     curl_args+=(-H "Authorization: Bearer ${ARTIFACT_BEARER_TOKEN}")
   fi

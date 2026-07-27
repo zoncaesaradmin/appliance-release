@@ -30,9 +30,14 @@ Notes:
   - `static_http` — publish/install via an external static HTTP server (`base_url`,
     `publish_server_alias`, `publish_remote_root`)
   - `appliance_files` — publish/install via the appliance-managed authenticated
-    file API at `https://<distributor-fqdn>/api/v1/files` (`base_url`); set
-    `bundle_store.access_token_env` to the local bearer-token variable
-    used for both publish and pull
+    file API. `base_url` must be `https://<distributor-fqdn>/api/v1/files`
+    (not Traefik `/files`). The skill mints a scoped API token when
+    `APPLIANCE_ARTIFACT_TOKEN` is unset, using `bundle_store.store_username`
+    (default `admin`) and `APPLIANCE_STORE_PASSWORD` (falls back to
+    `APPLIANCE_FIRST_ADMIN_PASSWORD`). TLS defaults to insecure verify for
+    self-signed lab certs; set `bundle_store.cacert_path` or
+    `bundle_store.tls_insecure: false` when the CA is trusted. Requires an
+    already-installed artifact-capable distributor appliance (day-2 path).
   Historical aliases: `http`/`http-static` → `static_http`, `fileserver` →
   `appliance_files`.
 - For advanced extra SANs beyond the derived FQDN, use
