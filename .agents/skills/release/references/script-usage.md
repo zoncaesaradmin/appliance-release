@@ -158,8 +158,12 @@ If you want to keep the current install and test without uninstalling first:
 
 This script:
 
+- preflights published helper/bundle/checksum URLs from the **target** (LAN DNS),
+  not the Mac
 - downloads the published package on the target with HTTP `curl` against
   `bundle_store.base_url` (Mac only orchestrates SSH)
+- fails closed if `bundle_store.base_url`'s host resolves to the target itself
+  (usually `/etc/hosts` from a prior install that reused the distributor name)
 - verifies checksums
 - extracts the bundle on the target host
 - runs `zonctl preflight`

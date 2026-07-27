@@ -14,7 +14,8 @@ Install a published appliance release on the configured target host.
 For bundle_store.mode=static_http or appliance_files the target downloads the package
 over HTTP(S) from bundle_store.base_url. In appliance_files mode this is the
 appliance-managed authenticated file API path, typically
-https://<artifact-fqdn>/api/v1/files. The Mac only orchestrates SSH.
+https://<artifact-fqdn>/api/v1/files. The Mac only orchestrates SSH; published
+artifact reachability is checked from the target (LAN DNS), not the Mac.
 
 Options:
   --config PATH              YAML or JSON config file. Optional if
@@ -187,25 +188,69 @@ case "${BUNDLE_STORE_MODE}" in
     bundle_url="${remote_release_dir}/appliance-${RELEASE_VERSION}-bundle.tar.gz"
     checksums_url="${remote_release_dir}/sha256sum.txt"
 
-    preflight_public_url() {
+    # Preflight on the target (not the Mac). appliance_files base_url often uses
+    # LAN DNS (*.appliance.internal) that the orchestrating Mac cannot resolve,
+    # and /etc/hosts on the target must not map that distributor FQDN to itself.
+    preflight_log="${RUN_DIR}/logs/bundle-store-preflight.log"
+    : >"${preflight_log}"
+    preflight_public_url_on_target() {
       local url="$1"
       local label="$2"
-      local output=""
-      local -a curl_args=(-fsSIL)
+      local step_log="${preflight_log}.${label// /_}"
+      local remote_curl_init="curl_args=(-fsSIL)"
+      local tls_arg auth_header="" remote_cmd output="" url_host=""
+      url_host="$(python3 -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).hostname or "")' "${url}")"
+      [[ -n "${url_host}" ]] || fail "could not parse host from published ${label} url ${url}"
       if [[ ${#BUNDLE_STORE_CURL_TLS_ARGS[@]} -gt 0 ]]; then
-        curl_args+=("${BUNDLE_STORE_CURL_TLS_ARGS[@]}")
+        for tls_arg in "${BUNDLE_STORE_CURL_TLS_ARGS[@]}"; do
+          if [[ "${tls_arg}" == "--cacert" ]]; then
+            # Mac-local CA path is not available on the target; match install curl.
+            remote_curl_init="curl_args=(-fsSIL -k)"
+            break
+          fi
+          remote_curl_init+=" $(shell_quote "${tls_arg}")"
+        done
       fi
       if [[ -n "${bundle_store_bearer_token}" ]]; then
-        curl_args+=(-H "Authorization: Bearer ${bundle_store_bearer_token}")
+        auth_header="Authorization: Bearer ${bundle_store_bearer_token}"
       fi
-      if ! output="$(curl "${curl_args[@]}" "${url}" 2>&1)"; then
-        fail "published ${label} is not reachable at ${url}. Check that the HTTP server is running and serving the release root/path prefix. curl output: ${output}"
+      remote_cmd="${remote_curl_init}
+set -euo pipefail
+url=$(shell_quote "${url}")
+host=$(shell_quote "${url_host}")
+resolved=\$(getent ahostsv4 \"\${host}\" 2>/dev/null | awk '{print \$1; exit}' || true)
+my_ips=\$(hostname -I 2>/dev/null || true)
+for ip in \${my_ips}; do
+  if [[ -n \"\${resolved}\" && \"\${resolved}\" == \"\${ip}\" ]]; then
+    echo \"bundle_store host \${host} resolves to this target (\${resolved}) via local name resolution (often /etc/hosts from a prior zonctl install). install.appliance_name must be distinct from the distributor FQDN in bundle_store.base_url; remove the '# BEGIN zon-appliance-dns' … '# END zon-appliance-dns' block from /etc/hosts on this host, set a unique appliance_name, then retry.\" >&2
+    exit 1
+  fi
+done"
+      if [[ -n "${auth_header}" ]]; then
+        remote_cmd+="
+curl \"\${curl_args[@]}\" -H $(shell_quote "${auth_header}") \"\${url}\" >/dev/null"
+      else
+        remote_cmd+="
+curl \"\${curl_args[@]}\" \"\${url}\" >/dev/null"
       fi
+      if ! run_ssh_captured "${TARGET_HOST}" "${step_log}" "${remote_cmd}"; then
+        output="$(cat "${step_log}" 2>/dev/null || true)"
+        {
+          echo "=== ${label} ${url} ==="
+          printf '%s\n' "${output}"
+        } >>"${preflight_log}"
+        fail "published ${label} is not reachable from target ${TARGET_HOST} at ${url}. The Mac does not need to resolve LAN DNS; the target must. Check distributor uptime, LAN DNS, and that install.appliance_name is not the distributor FQDN. curl output: ${output}"
+      fi
+      {
+        echo "=== ${label} ${url} ==="
+        echo "ok"
+      } >>"${preflight_log}"
     }
 
-    preflight_public_url "${helper_url}" "install helper"
-    preflight_public_url "${bundle_url}" "bundle archive"
-    preflight_public_url "${checksums_url}" "checksum file"
+    log "preflight: checking published artifacts from target ${TARGET_HOST}"
+    preflight_public_url_on_target "${helper_url}" "install helper"
+    preflight_public_url_on_target "${bundle_url}" "bundle archive"
+    preflight_public_url_on_target "${checksums_url}" "checksum file"
     INSTALL_SOURCE_LABEL="${remote_release_dir}"
     ;;
   *)

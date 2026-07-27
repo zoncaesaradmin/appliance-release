@@ -68,6 +68,9 @@ bundle_store:
   # Create a long-lived API token on the distributor Dashboard → API tokens
   # (prefer scopes "Artifact files only", lifetime up to 365 days). Paste the
   # apt_… secret into access_token below. Keep this config file local (not in git).
+  # The distributor FQDN in base_url must NOT equal install.appliance_name on the
+  # target: zonctl seeds /etc/hosts for the target FQDN, which would shadow LAN
+  # DNS and break downloads from the distributor. Use a distinct target name.
   # mode: appliance_files
   # release_path_prefix: appliance
   # base_url: https://artifact-dns-1.appliance.internal/api/v1/files
@@ -198,7 +201,9 @@ install:
   build_catalog_path: /Users/zoncaesar/build-catalog.yaml
   # Product LAN instance label (single DNS label). FQDN becomes
   # <appliance_name>.<dns_zone> for TLS, canonicalOrigin, and registry realm.
-  appliance_name: artifact-dns-1
+  # Must be unique on the LAN. When bundle_store.mode=appliance_files, do not
+  # reuse the distributor's name (the host in bundle_store.base_url).
+  appliance_name: storage-landns-1
   # LAN DNS zone for appliance identity and landns CoreDNS. Default when
   # omitted: appliance.internal (must not use .local — mDNS-only on Ubuntu).
   dns_zone: appliance.internal
