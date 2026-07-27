@@ -71,13 +71,12 @@ Optional overrides:
   DNS_VERSION=1.14.4
   DNS_IMAGE_PULL_REF=registry.k8s.io/coredns/coredns:v1.14.4
   DNS_IMAGE_ARCHIVE_SOURCE=/ci/inputs/coredns.oci.tar
-  # CoreDNS is also a first-class release artifact (like zot), packaged for the
-  # DNS-bearing appliance profiles (landns, storage-landns, builder-*-landns).
-  # Same online/offline export
-  # rules as Zot; derives registry.local/coredns@sha256:<platform-digest>.
+  # CoreDNS is a first-class release artifact. Online builds wrap upstream
+  # with an entrypoint that mirrors stdout/stderr into /data/zon/logs/dns;
+  # offline builds may supply that wrapper archive. Both paths derive
+  # registry.local/coredns@sha256:<platform-digest> from index.json.
 EOF
 }
-
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   usage
   exit 0
@@ -958,7 +957,15 @@ if [[ -n "${DNS_IMAGE_ARCHIVE_SOURCE}" ]]; then
   cp "${DNS_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/coredns-image.tar"
   DNS_IMAGE_REF="$(finalize_bundled_oci_archive "${CODE_REPO_DIR}/.run/coredns-image.tar" "registry.local/coredns")"
 else
-  DNS_IMAGE_REF="$(export_bundled_extra_oci_image_archive "${DNS_IMAGE_PULL_REF}" "registry.local/coredns" "${CODE_REPO_DIR}/.run/coredns-image.tar")"
+  # Build the appliance-owned CoreDNS wrapper (tees stdout/stderr into
+  # /data/zon/logs/dns). Do not re-label bare upstream: that leaves the
+  # host log directory empty because CoreDNS only writes to stdout.
+  bash "${CODE_REPO_DIR}/scripts/package/export-coredns-image-archive.sh" \
+    --out-file "${CODE_REPO_DIR}/.run/coredns-image.tar" \
+    --reference-out-file "${CODE_REPO_DIR}/.run/coredns-image.reference" \
+    --source-image "${DNS_IMAGE_PULL_REF}" \
+    --dns-version "${DNS_VERSION}"
+  DNS_IMAGE_REF="$(tr -d '\r\n' <"${CODE_REPO_DIR}/.run/coredns-image.reference")"
 fi
 
 if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" ]]; then

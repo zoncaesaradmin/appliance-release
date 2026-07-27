@@ -258,10 +258,11 @@ Runtime service logs live under:
 Common service log directories:
 
 ```text
-/data/zon/logs/control-plane/
+/data/zon/logs/api-server/
 /data/zon/logs/ui/
 /data/zon/logs/argo-controller/
-/data/zon/logs/zot/
+/data/zon/logs/artifactserver/
+/data/zon/logs/fileserver/
 /data/zon/logs/dns/
 ```
 
