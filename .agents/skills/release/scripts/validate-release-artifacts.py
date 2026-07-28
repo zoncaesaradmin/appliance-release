@@ -553,10 +553,10 @@ def validate_extra_oci_images(
             image_path, image_ref, f"extraOCIImages[{idx}]"
         )
         # Catch archive/reference pairing bugs for known appliance-owned images.
-        # Example failure mode: workspace-provisioner.tar labeled as automation-dev.
+        # Example failure mode: workspace-provisioner.tar labeled as dev-build.
         path_name = image_path.name.lower()
         ref_lower = image_ref.lower()
-        for token in ("workspace-provisioner", "automation-dev"):
+        for token in ("workspace-provisioner", "dev-build"):
             if token in path_name and token not in ref_lower:
                 raise ValueError(
                     f"release-input artifacts.extraOCIImages[{idx}] path {rel_path!r} "

@@ -241,7 +241,7 @@ if [[ "${DEV_PULL_TLS_VERIFY}" != "${PUBLISH_TLS_VERIFY}" ]]; then
 fi
 # Bundled/target OCI contract name (not configurable).
 BUILD_EXTRA_OCI_IMAGE_PULL_REFS="${IMAGE_REGISTRY_PULL_REF}"
-BUILD_EXTRA_OCI_IMAGE_REFS="registry.local/automation-dev"
+BUILD_EXTRA_OCI_IMAGE_REFS="registry.local/dev-build"
 if bool_true "${DEV_PULL_TLS_VERIFY}"; then
   OCI_COPY_SRC_TLS_VERIFY="true"
   DEV_REGISTRY_TLS_VERIFY="true"

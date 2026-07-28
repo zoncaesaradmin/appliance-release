@@ -304,9 +304,9 @@ def test_rejects_workspace_provisioner_path_ref_mismatch() -> None:
         release_input_path = tmp / "release-input" / "release-input.json"
         release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
         release_input["artifacts"]["extraOCIImages"][0]["path"] = "images/workspace-provisioner-image.tar"
-        # Keep the wrong automation-dev-style ref to simulate the pairing bug.
+        # Keep the wrong dev-build-style ref to simulate the pairing bug.
         release_input["artifacts"]["extraOCIImages"][0]["imageReference"] = (
-            "registry.local/automation-dev@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            "registry.local/dev-build@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         )
         release_input_path.write_text(json.dumps(release_input), encoding="utf-8")
         manifest_path = tmp / "bundle" / "release-manifest.json"

@@ -49,7 +49,7 @@ bundle_store:
 
 build_flow:
   # Scope 1: pull/login the development container image used for build tooling.
-  # Bundled target name remains registry.local/automation-dev (not configurable).
+  # Bundled target name remains registry.local/dev-build (not configurable).
   dev_image_pull:
     registry_env: DEV_REGISTRY
     image_repo_env: DEV_IMAGE_REPO

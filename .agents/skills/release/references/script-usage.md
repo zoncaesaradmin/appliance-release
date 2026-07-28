@@ -38,7 +38,7 @@ Notes:
 - Set `build_flow.dev_image_pull` (`registry`, `image_repo`, `image_name`,
   `image_tag`, username/token/TLS env names). The script derives the pull
   reference from these values. The bundled name is fixed as
-  `registry.local/automation-dev`.
+  `registry.local/dev-build`.
 - Set `build_flow.product_publish` (`registry`, `image_repo`,
   `image_name`, `image_tag`, username/token/TLS env names). This keeps
   build/publish knobs aligned with the development-container publishing pattern.
@@ -72,7 +72,7 @@ Notes:
   install temp dir and passed to `zonctl`; it should contain only product
   config, never private keys or tokens.
 - If the build catalog references a workspace provisioner image, ensure
-  `build_flow.dev_image_pull` is configured so `registry.local/automation-dev`
+  `build_flow.dev_image_pull` is configured so `registry.local/dev-build`
   is bundled and preloaded on the target.
 - Builder workflow repo URLs must use HTTPS.
 
@@ -150,7 +150,7 @@ The final bundle's `configuration/values.yaml` is also checked so
 those same control-plane and UI image references.
 Required release-input evidence checks include the configuration schema,
 compatibility metadata, checksums, SBOM, provenance, notices, and tests.
-`registry.local/automation-dev` (from `build_flow.dev_image_pull` settings)
+`registry.local/dev-build` (from `build_flow.dev_image_pull` settings)
 must appear in digest-pinned `extraOCIImages[]` evidence. Digests in config
 refs are advisory; the build derives the platform manifest digest from each
 OCI archive. The validation log is written to

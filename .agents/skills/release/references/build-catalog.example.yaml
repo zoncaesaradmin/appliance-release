@@ -28,8 +28,8 @@
 # Builder image:
 # Optional per-target builderImageDigest. Prefer the short bundle name
 # (default when omitted):
-#   builderImageDigest: automation-dev
-# Install resolves that to the digest-pinned automation-dev image packaged in
+#   builderImageDigest: dev-build
+# Install resolves that to the digest-pinned dev-build image packaged in
 # the signed bundle. Advanced overrides may use a digest-pinned reference that
 # is present in the bundle. Do not paste GHCR tags.
 #
@@ -78,13 +78,13 @@ repos:
         execution: make
         args: [build]
         imageRepository: users/example/platformkit
-        builderImageDigest: automation-dev
+        builderImageDigest: dev-build
       - name: platformkit-test
         description: Run platformkit unit tests (make test).
         execution: make
         args: [test]
         imageRepository: users/example/platformkit-test
-        builderImageDigest: automation-dev
+        builderImageDigest: dev-build
 
   - name: zonbundle
     url: https://github.com/zoncaesaradmin/zonbundle.git
@@ -96,7 +96,7 @@ repos:
         execution: make
         args: [build]
         imageRepository: users/example/zonbundle
-        builderImageDigest: automation-dev
+        builderImageDigest: dev-build
 
   - name: zoncore
     url: https://github.com/zoncaesaradmin/zoncore.git
@@ -113,13 +113,13 @@ repos:
         execution: make
         args: [build]
         imageRepository: users/example/forgeline
-        builderImageDigest: automation-dev
+        builderImageDigest: dev-build
       - name: forgeline-bridge
         description: Build the forgeline bridge binary (make build-bridge).
         execution: make
         args: [build-bridge]
         imageRepository: users/example/forgeline-bridge
-        builderImageDigest: automation-dev
+        builderImageDigest: dev-build
 
   - name: forgeline-release
     url: https://github.com/zoncaesaradmin/forgeline-release.git

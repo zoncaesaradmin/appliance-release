@@ -57,7 +57,7 @@ Optional overrides:
   # is the upstream pull ref (default docker.io/alpine/git:latest). The build copies the
   # linux/amd64 image, then sets registry.local/workspace-provisioner@sha256:<archived
   # platform manifest digest> from the archive contents (never from skopeo inspect).
-  EXTRA_OCI_IMAGE_REFS=registry.local/automation-dev
+  EXTRA_OCI_IMAGE_REFS=registry.local/dev-build
   EXTRA_OCI_IMAGE_PULL_REFS=ghcr.io/org/development-container/dev-build:v0.1.0
   # Pull extra OCI images from a registry only (GHCR or LAN). There is no
   # EXTRA_OCI_IMAGE_ARCHIVE_SOURCES path. Digests in EXTRA_OCI_IMAGE_REFS are
@@ -346,7 +346,7 @@ oci_image_repository() {
 }
 
 # Strip optional @sha256:... from a bundle imageReference, leaving the local name
-# (e.g. registry.local/automation-dev).
+# (e.g. registry.local/dev-build).
 oci_bundle_local_name() {
   local ref="${1#docker://}"
   if [[ "${ref}" == *@sha256:* ]]; then
@@ -939,9 +939,9 @@ if bool_true "${ARGO_ENABLED}"; then
 fi
 
 # Build the final archive/reference pairs carefully. EXTRA_OCI_IMAGE_REF_LIST is
-# the user-configured extra refs only (e.g. automation-dev). Do not append the
+# the user-configured extra refs only (e.g. dev-build). Do not append the
 # workspace provisioner ref onto that list before pairing archives, or the
-# provisioner archive will be labeled with the automation-dev reference and
+# provisioner archive will be labeled with the dev-build reference and
 # install-time ctr import will fail RequireReference checks.
 PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES=()
 PACKAGED_EXTRA_OCI_IMAGE_REFS=()
