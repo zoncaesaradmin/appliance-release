@@ -9,8 +9,9 @@
 #   1) BUILD / PUBLISH
 #   2) INSTALL / VERIFY
 #
-# Secrets via env (not this file); config names the env vars under
-# build_flow.dev_container_image_registry.registry_*_env (e.g. REGISTRY_USER / REGISTRY_TOKEN).
+# Secrets via env (not this file). Registry credentials are split by scope:
+# - build_flow.dev_image_pull.*_env (pull/login the dev container image)
+# - build_flow.product_publish.*_env (publish control-plane image destinations)
 # Also: APPLIANCE_BUILD_SUDO_PASSWORD, APPLIANCE_TARGET_SUDO_PASSWORD,
 #   APPLIANCE_FIRST_ADMIN_PASSWORD
 # Absolute remote paths only (no ~/...).
@@ -47,20 +48,28 @@ bundle_store:
   # cacert_path: /abs/path/to/ca.pem
 
 build_flow:
-  # Pull the development-container/dev-build image only (build tool +
-  # bundled builder). Other image pulls use their own build_flow keys.
-  # Login host is derived from pull_ref (first path segment).
-  # Bundled target name is always registry.local/automation-dev (not configurable).
-  #
-  dev_container_image_registry:
-    registry_user_env: REGISTRY_USER
-    registry_token_env: REGISTRY_TOKEN
-    # GHCR (works with internet only)
-    pull_ref: ghcr.io/zoncaesaradmin/development-container/dev-build:latest
-    tls_insecure: false
-    # LAN appliance registry instead:
-    # pull_ref: artifact-dns-1.appliance.internal/development-container/dev-build:latest
-    # tls_insecure: true
+  # Scope 1: pull/login the development container image used for build tooling.
+  # Bundled target name remains registry.local/automation-dev (not configurable).
+  dev_image_pull:
+    registry_env: DEV_REGISTRY
+    image_repo_env: DEV_IMAGE_REPO
+    image_name_env: DEV_IMAGE_NAME
+    image_tag: latest
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: DEV_TLS_VERIFY
+
+  # Scope 2: publish destination defaults for product image pushes.
+  # These are exported into remote build env even when the bundle build itself
+  # does not publish control-plane images.
+  product_publish:
+    registry: ghcr.io
+    image_repo_env: DEV_IMAGE_REPO
+    image_name_env: DEV_IMAGE_NAME
+    image_tag: 0.1.0
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: PRODUCT_PUBLISH_TLS_VERIFY
   bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
   bootstrap_needs_sudo: true
   build_needs_sudo: true

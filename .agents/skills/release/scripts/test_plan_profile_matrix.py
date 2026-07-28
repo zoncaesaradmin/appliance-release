@@ -54,11 +54,22 @@ buildTargets:
 release:
   version: 0.1.0
 build_flow:
-  dev_container_image_registry:
-    pull_ref: ghcr.io/example/development-container/dev-build:v0.1.0
-    registry_user_env: REGISTRY_USER
-    registry_token_env: REGISTRY_TOKEN
-    tls_insecure: false
+  dev_image_pull:
+    registry: ghcr.io
+    image_repo: example/development-container
+    image_name: dev-build
+    image_tag: v0.1.0
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: DEV_PULL_TLS_VERIFY
+  product_publish:
+    registry: ghcr.io
+    image_repo: example/appliance-code
+    image_name: appliance-control-plane
+    image_tag: v0.1.0
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: PRODUCT_PUBLISH_TLS_VERIFY
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -208,11 +219,22 @@ buildTargets:
             config,
             f"""
 build_flow:
-  dev_container_image_registry:
-    pull_ref: ghcr.io/example/development-container/dev-build:v0.1.0
-    registry_user_env: REGISTRY_USER
-    registry_token_env: REGISTRY_TOKEN
-    tls_insecure: false
+  dev_image_pull:
+    registry: ghcr.io
+    image_repo: example/development-container
+    image_name: dev-build
+    image_tag: v0.1.0
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: DEV_PULL_TLS_VERIFY
+  product_publish:
+    registry: ghcr.io
+    image_repo: example/appliance-code
+    image_name: appliance-control-plane
+    image_tag: v0.1.0
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: PRODUCT_PUBLISH_TLS_VERIFY
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -263,11 +285,22 @@ buildTargets:
             config,
             f"""
 build_flow:
-  dev_container_image_registry:
-    pull_ref: ghcr.io/example/development-container/dev-build:v0.1.0
-    registry_user_env: REGISTRY_USER
-    registry_token_env: REGISTRY_TOKEN
-    tls_insecure: false
+  dev_image_pull:
+    registry: ghcr.io
+    image_repo: example/development-container
+    image_name: dev-build
+    image_tag: v0.1.0
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: DEV_PULL_TLS_VERIFY
+  product_publish:
+    registry: ghcr.io
+    image_repo: example/appliance-code
+    image_name: appliance-control-plane
+    image_tag: v0.1.0
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: PRODUCT_PUBLISH_TLS_VERIFY
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -314,11 +347,22 @@ buildTargets:
             config,
             f"""
 build_flow:
-  dev_container_image_registry:
-    pull_ref: ghcr.io/example/development-container/dev-build:v0.1.0
-    registry_user_env: REGISTRY_USER
-    registry_token_env: REGISTRY_TOKEN
-    tls_insecure: false
+  dev_image_pull:
+    registry: ghcr.io
+    image_repo: example/development-container
+    image_name: dev-build
+    image_tag: v0.1.0
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: DEV_PULL_TLS_VERIFY
+  product_publish:
+    registry: ghcr.io
+    image_repo: example/appliance-code
+    image_name: appliance-control-plane
+    image_tag: v0.1.0
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: PRODUCT_PUBLISH_TLS_VERIFY
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),
@@ -356,11 +400,22 @@ buildTargets:
             config,
             f"""
 build_flow:
-  dev_container_image_registry:
-    pull_ref: ghcr.io/example/development-container/dev-build:v0.1.0
-    registry_user_env: REGISTRY_USER
-    registry_token_env: REGISTRY_TOKEN
-    tls_insecure: false
+  dev_image_pull:
+    registry: ghcr.io
+    image_repo: example/development-container
+    image_name: dev-build
+    image_tag: v0.1.0
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: DEV_PULL_TLS_VERIFY
+  product_publish:
+    registry: ghcr.io
+    image_repo: example/appliance-code
+    image_name: appliance-control-plane
+    image_tag: v0.1.0
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: PRODUCT_PUBLISH_TLS_VERIFY
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),
@@ -412,11 +467,22 @@ buildTargets:
                 config,
                 f"""
 build_flow:
-  dev_container_image_registry:
-    pull_ref: ghcr.io/example/development-container/dev-build:v0.1.0
-    registry_user_env: REGISTRY_USER
-    registry_token_env: REGISTRY_TOKEN
-    tls_insecure: false
+  dev_image_pull:
+    registry: ghcr.io
+    image_repo: example/development-container
+    image_name: dev-build
+    image_tag: v0.1.0
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: DEV_PULL_TLS_VERIFY
+  product_publish:
+    registry: ghcr.io
+    image_repo: example/appliance-code
+    image_name: appliance-control-plane
+    image_tag: v0.1.0
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: PRODUCT_PUBLISH_TLS_VERIFY
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),

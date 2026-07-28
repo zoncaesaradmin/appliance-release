@@ -126,7 +126,7 @@ source "${DEFAULTS_FILE}"
 set +a
 
 if [[ -n "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES-}" ]]; then
-  echo "build-full-bundle: EXTRA_OCI_IMAGE_ARCHIVE_SOURCES is no longer supported; pull extra OCI images via EXTRA_OCI_IMAGE_PULL_REFS (build_flow.dev_container_image_registry in the release config)" >&2
+  echo "build-full-bundle: EXTRA_OCI_IMAGE_ARCHIVE_SOURCES is no longer supported; pull extra OCI images via EXTRA_OCI_IMAGE_PULL_REFS (build_flow.dev_image_pull in the release config)" >&2
   exit 2
 fi
 
@@ -289,8 +289,8 @@ require_appliance_code_bootstrap() {
   podman_path="$(command -v podman)"
 
   if sudo -n "${podman_path}" --version >/dev/null 2>&1 \
-    && [[ "$(REGISTRY_USER="${probe_user}" sudo -n env 2>/dev/null | sed -n 's/^REGISTRY_USER=//p')" == "${probe_user}" ]] \
-    && [[ "$(IMAGE_TAG="${probe_tag}" sudo -n env 2>/dev/null | sed -n 's/^IMAGE_TAG=//p')" == "${probe_tag}" ]]; then
+    && [[ "$(DEV_REGISTRY_USER="${probe_user}" sudo -n env 2>/dev/null | sed -n 's/^DEV_REGISTRY_USER=//p')" == "${probe_user}" ]] \
+    && [[ "$(DEV_IMAGE_TAG="${probe_tag}" sudo -n env 2>/dev/null | sed -n 's/^DEV_IMAGE_TAG=//p')" == "${probe_tag}" ]]; then
     return 0
   fi
 
@@ -299,8 +299,8 @@ build-full-bundle: appliance-code host bootstrap is missing for non-interactive 
 build-full-bundle: this script will not prompt for sudo in CI
 build-full-bundle:
 build-full-bundle: run this once on the build host:
-build-full-bundle:   export REGISTRY_USER=<github-username>
-build-full-bundle:   export REGISTRY_TOKEN=<PAT with read:packages>
+build-full-bundle:   export DEV_REGISTRY_USER=<github-username>
+build-full-bundle:   export DEV_REGISTRY_TOKEN=<PAT with read:packages>
 build-full-bundle:   bash ${RELEASE_REPO_DIR}/scripts/ci/bootstrap-build-host.sh
 build-full-bundle:
 build-full-bundle: if the registry token changes later, rerun the same bootstrap script with the new token.

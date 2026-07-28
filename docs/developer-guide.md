@@ -86,8 +86,8 @@ Because `appliance-code` builds the control-plane image inside its shared dev
 container, the Linux build host needs the Podman / registry bootstrap once:
 
 ```bash
-export REGISTRY_USER=<github-username>
-export REGISTRY_TOKEN=<PAT with read:packages>
+export DEV_REGISTRY_USER=<github-username>
+export DEV_REGISTRY_TOKEN=<PAT with read:packages>
 bash ./scripts/ci/bootstrap-build-host.sh
 ```
 

@@ -4,8 +4,8 @@ Okay these exports you enable first and then run the script:
 
 ```bash
 export APPLIANCE_RELEASE_CONFIG=/Users/zoncaesar/ws/appliance-release/appliance-release.config.yaml
-export REGISTRY_USER=zoncaesaradmin
-export REGISTRY_TOKEN='...'
+export DEV_REGISTRY_USER=zoncaesaradmin
+export DEV_REGISTRY_TOKEN='...'
 export APPLIANCE_BUILD_SUDO_PASSWORD='caesar'
 export APPLIANCE_TARGET_SUDO_PASSWORD='caesar'
 export APPLIANCE_FIRST_ADMIN_PASSWORD='ins3965!'
@@ -21,14 +21,27 @@ Notes:
   `build_command` / `publish_command`, `bundle_download_dir`, verification
   commands, and capability flags.
 - If `APPLIANCE_RELEASE_CONFIG` is set, you usually do not need `--config`.
-- `REGISTRY_TOKEN` / `REGISTRY_USER` (or LAN equivalents) are named by
-  `build_flow.dev_container_image_registry.registry_token_env` /
-  `build_flow.dev_container_image_registry.registry_user_env` and must be exported in the
-  shell. They authenticate pulls of `dev_container_image_registry.pull_ref` (GHCR or LAN).
-- Set `build_flow.dev_container_image_registry` (`pull_ref`, `tls_insecure`, credential env
-  names). Login host is derived from `pull_ref`. The bundled name is fixed as
-  `registry.local/automation-dev`. There is no `extra_oci_image_archive_sources`
-  path — registry pull only.
+- Pull credentials for the dev container image are named by
+  `build_flow.dev_image_pull.username_env` /
+  `build_flow.dev_image_pull.token_env` and must be exported in the shell
+  (for example `DEV_REGISTRY_USER` / `DEV_REGISTRY_TOKEN`).
+- Pull TLS verification is also named by
+  `build_flow.dev_image_pull.tls_verify_env` and must resolve to `true` or
+  `false` in the shell.
+- Publish credentials are named independently by
+  `build_flow.product_publish.username_env` /
+  `build_flow.product_publish.token_env` (for example `DEV_REGISTRY_USER` /
+  `DEV_REGISTRY_TOKEN`).
+- Publish TLS verification is named by
+  `build_flow.product_publish.tls_verify_env` and must resolve to `true` or
+  `false` in the shell.
+- Set `build_flow.dev_image_pull` (`registry`, `image_repo`, `image_name`,
+  `image_tag`, username/token/TLS env names). The script derives the pull
+  reference from these values. The bundled name is fixed as
+  `registry.local/automation-dev`.
+- Set `build_flow.product_publish` (`registry`, `image_repo`,
+  `image_name`, `image_tag`, username/token/TLS env names). This keeps
+  build/publish knobs aligned with the development-container publishing pattern.
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used both for install and Mac-side API verification.
 - Set `install.appliance_profile` in the config (required).
 - A `run-release-flow.sh --appliance-profile` override is forwarded to install,
@@ -59,7 +72,7 @@ Notes:
   install temp dir and passed to `zonctl`; it should contain only product
   config, never private keys or tokens.
 - If the build catalog references a workspace provisioner image, ensure
-  `build_flow.dev_container_image_registry.pull_ref` is set so `registry.local/automation-dev`
+  `build_flow.dev_image_pull` is configured so `registry.local/automation-dev`
   is bundled and preloaded on the target.
 - Builder workflow repo URLs must use HTTPS.
 
@@ -137,7 +150,7 @@ The final bundle's `configuration/values.yaml` is also checked so
 those same control-plane and UI image references.
 Required release-input evidence checks include the configuration schema,
 compatibility metadata, checksums, SBOM, provenance, notices, and tests.
-`registry.local/automation-dev` (from `build_flow.dev_container_image_registry.pull_ref`)
+`registry.local/automation-dev` (from `build_flow.dev_image_pull` settings)
 must appear in digest-pinned `extraOCIImages[]` evidence. Digests in config
 refs are advisory; the build derives the platform manifest digest from each
 OCI archive. The validation log is written to
@@ -366,8 +379,8 @@ Most days, this is enough:
 
 ```bash
 export APPLIANCE_RELEASE_CONFIG=/Users/zoncaesar/ws/appliance-release/appliance-release.config.yaml
-export REGISTRY_USER=zoncaesaradmin
-export REGISTRY_TOKEN='...'
+export DEV_REGISTRY_USER=zoncaesaradmin
+export DEV_REGISTRY_TOKEN='...'
 export APPLIANCE_BUILD_SUDO_PASSWORD='caesar'
 export APPLIANCE_TARGET_SUDO_PASSWORD='caesar'
 export APPLIANCE_FIRST_ADMIN_PASSWORD='ins3965!'

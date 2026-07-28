@@ -11,8 +11,8 @@ Run this once on each Linux build machine before using:
   bash ./scripts/ci/build-full-bundle.sh
 
 Required environment:
-  REGISTRY_USER   Registry username for appliance-code dev-registry-login
-  REGISTRY_TOKEN  Registry token/PAT for appliance-code dev-registry-login
+  DEV_REGISTRY_USER   Registry username for appliance-code dev-registry-login
+  DEV_REGISTRY_TOKEN  Registry token/PAT for appliance-code dev-registry-login
 
 Optional environment:
   CODE_REPO_SOURCE        Source repo/URL for appliance-code
@@ -20,8 +20,8 @@ Optional environment:
   WORK_ROOT               Build root. Default: ${TMPDIR:-/tmp}/appliance-build
 
 Example:
-  export REGISTRY_USER=myuser
-  export REGISTRY_TOKEN=xxxxxxxx
+  export DEV_REGISTRY_USER=myuser
+  export DEV_REGISTRY_TOKEN=xxxxxxxx
   bash ./scripts/ci/bootstrap-build-host.sh
 EOF
 }
@@ -107,8 +107,8 @@ clone_repo() {
   fi
 }
 
-require_var REGISTRY_USER
-require_var REGISTRY_TOKEN
+require_var DEV_REGISTRY_USER
+require_var DEV_REGISTRY_TOKEN
 require_var CODE_REPO_SOURCE
 
 mkdir -p "${REPOS_DIR}"

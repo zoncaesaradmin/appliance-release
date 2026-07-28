@@ -43,6 +43,30 @@ resolve_secret() {
   fail "missing secret ${env_name}; export it or run interactively"
 }
 
+resolve_env_value() {
+  local env_name="$1"
+  local label="${2:-environment variable}"
+  local value="${!env_name:-}"
+  [[ -n "${value}" ]] || fail "missing ${label} ${env_name}; export it before running"
+  printf '%s' "${value}"
+}
+
+normalize_bool_value() {
+  local raw="${1:-}"
+  raw="$(printf '%s' "${raw}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  case "${raw}" in
+    1|true|yes|on)
+      printf 'true\n'
+      ;;
+    0|false|no|off)
+      printf 'false\n'
+      ;;
+    *)
+      fail "boolean value must be true or false (got ${1:-<empty>})"
+      ;;
+  esac
+}
+
 ensure_file() {
   local path="$1"
   [[ -f "${path}" ]] || fail "required file not found: ${path}"

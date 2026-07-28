@@ -26,8 +26,8 @@ The Linux build machine needs a one-time bootstrap for `appliance-code`'s
 Podman dev-container path:
 
 ```bash
-export REGISTRY_USER=<github-username>
-export REGISTRY_TOKEN=<PAT with read:packages>
+export DEV_REGISTRY_USER=<github-username>
+export DEV_REGISTRY_TOKEN=<PAT with read:packages>
 bash ./scripts/ci/bootstrap-build-host.sh
 ```
 
