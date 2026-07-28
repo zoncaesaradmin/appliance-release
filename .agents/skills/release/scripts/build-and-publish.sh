@@ -236,6 +236,9 @@ fi
 [[ -n "${PUBLISH_IMAGE_TAG}" ]] || fail "build_flow.product_publish.image_tag is required in config (or release.version must be set)"
 DEV_PULL_TLS_VERIFY="$(normalize_bool_value "$(resolve_env_value "${DEV_PULL_TLS_VERIFY_ENV}" "TLS verify env")")"
 PUBLISH_TLS_VERIFY="$(normalize_bool_value "$(resolve_env_value "${PUBLISH_TLS_VERIFY_ENV}" "TLS verify env")")"
+if [[ "${DEV_PULL_TLS_VERIFY}" != "${PUBLISH_TLS_VERIFY}" ]]; then
+  fail "build_flow.dev_image_pull.tls_verify_env (${DEV_PULL_TLS_VERIFY_ENV}=${DEV_PULL_TLS_VERIFY}) and build_flow.product_publish.tls_verify_env (${PUBLISH_TLS_VERIFY_ENV}=${PUBLISH_TLS_VERIFY}) must agree; use one shared env such as DEV_REGISTRY_TLS_VERIFY"
+fi
 # Bundled/target OCI contract name (not configurable).
 BUILD_EXTRA_OCI_IMAGE_PULL_REFS="${IMAGE_REGISTRY_PULL_REF}"
 BUILD_EXTRA_OCI_IMAGE_REFS="registry.local/automation-dev"
@@ -355,7 +358,6 @@ BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_REGISTRY" "
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_IMAGE_REPO" "${PUBLISH_IMAGE_REPO}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_IMAGE_NAME" "${PUBLISH_IMAGE_NAME}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_IMAGE_TAG" "${PUBLISH_IMAGE_TAG}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_TLS_VERIFY" "${PUBLISH_TLS_VERIFY}")"
 
 PUBLISH_ENV_PREFIX=""
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PRODUCT_VERSION" "${RELEASE_VERSION}")"
@@ -412,7 +414,6 @@ BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_REG
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_IMAGE_REPO" "${PUBLISH_IMAGE_REPO}")"
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_IMAGE_NAME" "${PUBLISH_IMAGE_NAME}")"
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_IMAGE_TAG" "${PUBLISH_IMAGE_TAG}")"
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_TLS_VERIFY" "${PUBLISH_TLS_VERIFY}")"
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_REGISTRY_USER" "${PRODUCT_PUBLISH_REGISTRY_USER}")"
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_REGISTRY_TOKEN" "${PRODUCT_PUBLISH_REGISTRY_TOKEN}")"
 # Also inject into the build so skopeo/podman can use the same auth after login.

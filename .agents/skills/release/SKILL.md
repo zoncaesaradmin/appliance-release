@@ -56,7 +56,7 @@ For day-to-day use, set:
 - `DEV_REGISTRY=...` (named by `build_flow.dev_image_pull.registry_env`)
 - `DEV_IMAGE_REPO=...` / `DEV_IMAGE_NAME=...` (named by image_repo_env / image_name_env)
 - `DEV_REGISTRY_USER=...` / `DEV_REGISTRY_TOKEN=...` (named by username_env / token_env for pull and publish)
-- `DEV_TLS_VERIFY=true|false` (named by both `dev_image_pull.tls_verify_env` and `product_publish.tls_verify_env`)
+- `DEV_REGISTRY_TLS_VERIFY=true|false` (named by both `dev_image_pull.tls_verify_env` and `product_publish.tls_verify_env`)
 - `APPLIANCE_BUILD_SUDO_PASSWORD=...`
 - `APPLIANCE_TARGET_SUDO_PASSWORD=...`
 - `APPLIANCE_FIRST_ADMIN_PASSWORD=...`

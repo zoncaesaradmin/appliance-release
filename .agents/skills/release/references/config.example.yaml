@@ -57,7 +57,7 @@ build_flow:
     image_tag: latest
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_TLS_VERIFY
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 
   # Scope 2: publish destination defaults for product image pushes.
   # These are exported into remote build env even when the bundle build itself
@@ -69,7 +69,7 @@ build_flow:
     image_tag: 0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_TLS_VERIFY
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
   bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
   bootstrap_needs_sudo: true
   build_needs_sudo: true
@@ -93,6 +93,8 @@ target_host:
 
 install:
   appliance_name: test-device-1
+  # Valid profiles: core, builder, storage, landns, storage-landns,
+  #   builder-landns, builder-storage-landns
   appliance_profile: storage-landns
   dns_zone: appliance.internal
   uninstall_first: true
@@ -116,10 +118,19 @@ verification:
   allow_ingress_warning: true
   allow_verify_schema_bug: false
   ui_home_command: 'body="$(curl -kfsS https://192.168.1.101/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
+  # Argo: required true for workflow-capable profiles (core, builder,
+  #   builder-landns, builder-storage-landns). When enabled=true, all three
+  #   commands below are required.
   argo:
     enabled: false
+    # namespaces_command: sudo kubectl get namespace workflows appliance-builds
+    # crds_command: sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io
+    # controller_command: sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods
+  # Builder: required true for builder / builder-landns / builder-storage-landns.
+  # When enabled=true, api_command is required (prove /api/v1/work-profiles != 404).
   builder:
     enabled: false
+    # api_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://192.168.1.101/api/v1/work-profiles)" && [ "$code" != "404" ]'
   artifact:
     enabled: true
     readiness_command: sudo kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data
@@ -130,6 +141,8 @@ verification:
 client_verification:
   base_url: https://192.168.1.101
   username: admin
+  # For builder* profiles: enabled: true, expect_disabled: false
+  # For non-builder profiles: enabled: false, expect_disabled: true
   builder:
     enabled: false
     expect_disabled: true

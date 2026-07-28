@@ -61,7 +61,7 @@ build_flow:
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_TLS_VERIFY
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
   product_publish:
     registry: ghcr.io
     image_repo: example/appliance-code
@@ -69,7 +69,7 @@ build_flow:
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_TLS_VERIFY
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -226,7 +226,7 @@ build_flow:
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_TLS_VERIFY
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
   product_publish:
     registry: ghcr.io
     image_repo: example/appliance-code
@@ -234,7 +234,7 @@ build_flow:
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_TLS_VERIFY
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -292,7 +292,7 @@ build_flow:
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_TLS_VERIFY
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
   product_publish:
     registry: ghcr.io
     image_repo: example/appliance-code
@@ -300,7 +300,7 @@ build_flow:
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_TLS_VERIFY
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -354,7 +354,7 @@ build_flow:
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_TLS_VERIFY
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
   product_publish:
     registry: ghcr.io
     image_repo: example/appliance-code
@@ -362,7 +362,7 @@ build_flow:
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_TLS_VERIFY
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),
@@ -407,7 +407,7 @@ build_flow:
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_TLS_VERIFY
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
   product_publish:
     registry: ghcr.io
     image_repo: example/appliance-code
@@ -415,7 +415,7 @@ build_flow:
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_TLS_VERIFY
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),
@@ -474,7 +474,7 @@ build_flow:
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_TLS_VERIFY
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
   product_publish:
     registry: ghcr.io
     image_repo: example/appliance-code
@@ -482,7 +482,7 @@ build_flow:
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_TLS_VERIFY
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),
