@@ -52,18 +52,15 @@ build_flow:
   # Login host is derived from pull_ref (first path segment).
   # Bundled target name is always registry.local/automation-dev (not configurable).
   #
-  # Default: GHCR (after: make VERSION=v0.1.0 publish)
   dev_container_image_registry:
-    pull_ref: ghcr.io/zoncaesaradmin/development-container/dev-build:v0.1.0
     registry_user_env: REGISTRY_USER
     registry_token_env: REGISTRY_TOKEN
+    # GHCR (works with internet only)
+    pull_ref: ghcr.io/zoncaesaradmin/development-container/dev-build:latest
     tls_insecure: false
-  # LAN only — after: make VERSION=v0.1.0 publish with IMAGE_OWNER=
-  # dev_container_image_registry:
-  #   pull_ref: artifact-dns-1.appliance.internal/development-container/dev-build:v0.1.0
-  #   registry_user_env: REGISTRY_USER
-  #   registry_token_env: REGISTRY_TOKEN
-  #   tls_insecure: true
+    # LAN appliance registry instead:
+    # pull_ref: artifact-dns-1.appliance.internal/development-container/dev-build:latest
+    # tls_insecure: true
   bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
   bootstrap_needs_sudo: true
   build_needs_sudo: true
