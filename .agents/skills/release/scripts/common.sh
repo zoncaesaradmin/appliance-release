@@ -340,7 +340,7 @@ reject_placeholder_client_base_url() {
   return 0
 }
 
-# Normalize bundle_store.mode to static_http|appliance_files. Empty defaults to static_http.
+# Normalize bundle_store.mode to static_http|appliance_files. Empty is rejected.
 _BUNDLE_STORE_LIB="$(cd "${SCRIPT_DIR}/../../../.." && pwd)/scripts/publish/bundle-store-lib.sh"
 if [[ -f "${_BUNDLE_STORE_LIB}" ]]; then
   # shellcheck source=/dev/null
@@ -358,12 +358,13 @@ resolve_bundle_store_mode() {
   local config_path="$1"
   local mode
   mode="$(bundle_store_get_optional "${config_path}" "mode" || true)"
+  [[ -n "${mode}" ]] || fail "bundle_store.mode is required in config (static_http or appliance_files)"
   if declare -F normalize_bundle_store_mode >/dev/null 2>&1; then
     normalize_bundle_store_mode "${mode}" || fail "bundle_store.mode must be static_http or appliance_files"
   else
     mode="$(printf '%s' "${mode}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
     case "${mode}" in
-      ""|static_http|http|http-static) printf 'static_http\n' ;;
+      static_http|http|http-static) printf 'static_http\n' ;;
       appliance_files|fileserver) printf 'appliance_files\n' ;;
       *) fail "bundle_store.mode must be static_http or appliance_files (got ${mode})" ;;
     esac
@@ -402,7 +403,7 @@ require_appliance_files_base_url() {
 }
 
 # Fill BUNDLE_STORE_CURL_TLS_ARGS for appliance_files HTTPS curls.
-# Prefer cacert_path when set; otherwise tls_insecure (default true) adds -k.
+# Prefer cacert_path when set; otherwise require explicit tls_insecure.
 # Uses a global array because macOS ships bash 3.2 (no namerefs).
 BUNDLE_STORE_CURL_TLS_ARGS=()
 bundle_store_fill_curl_tls_args() {
@@ -417,10 +418,8 @@ bundle_store_fill_curl_tls_args() {
     BUNDLE_STORE_CURL_TLS_ARGS+=(--cacert "${cacert}")
     return 0
   fi
-  # Default insecure=true for lab self-signed appliance certs (matches
-  # verify-client-access.sh). Set bundle_store.tls_insecure: false once the
-  # distributor CA is trusted on the Mac/build/target hosts.
-  if [[ -z "${insecure}" ]] || bool_true "${insecure}"; then
+  [[ -n "${insecure}" ]] || fail "bundle_store.tls_insecure is required in config when cacert_path is unset (true|false)"
+  if bool_true "${insecure}"; then
     BUNDLE_STORE_CURL_TLS_ARGS+=(-k)
   fi
 }

@@ -28,7 +28,6 @@ class BundleStoreModeTests(unittest.TestCase):
         script = f"""
 set -euo pipefail
 source {MODE_LIB.as_posix()!r}
-normalize_bundle_store_mode ''
 normalize_bundle_store_mode static_http
 normalize_bundle_store_mode http
 normalize_bundle_store_mode HTTP-static
@@ -43,11 +42,20 @@ normalize_bundle_store_mode fileserver
                 "static_http",
                 "static_http",
                 "static_http",
-                "static_http",
                 "appliance_files",
                 "appliance_files",
             ],
         )
+
+    def test_normalize_rejects_empty(self) -> None:
+        script = f"""
+set -euo pipefail
+source {MODE_LIB.as_posix()!r}
+normalize_bundle_store_mode ''
+"""
+        proc = run_bash(script)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("required", proc.stderr)
 
     def test_normalize_rejects_oci_and_unknown(self) -> None:
         for mode in ("oci", "s3"):
@@ -60,7 +68,7 @@ normalize_bundle_store_mode {mode}
             self.assertNotEqual(proc.returncode, 0, mode)
             self.assertIn("must be static_http or appliance_files", proc.stderr)
 
-    def test_resolve_mode_from_bundle_store_config_default_static_http(self) -> None:
+    def test_resolve_mode_requires_explicit_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / "cfg.yaml"
             cfg.write_text("bundle_store:\n  base_url: http://example\n", encoding="utf-8")
@@ -70,8 +78,8 @@ source {COMMON.as_posix()!r}
 resolve_bundle_store_mode {cfg.as_posix()!r}
 """
             proc = run_bash(script)
-            self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertEqual(proc.stdout.strip(), "static_http")
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("bundle_store.mode is required", proc.stderr)
 
     def test_resolve_mode_from_bundle_store_config_appliance_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

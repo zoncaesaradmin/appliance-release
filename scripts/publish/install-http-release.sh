@@ -23,35 +23,42 @@ Required:
                                example:
                                http://downloads.example.internal/releases
 
+Required (or stamped into the published helper at publish time):
+  --product-version VERSION    Product version to install. Published helpers
+                               stamp this; otherwise pass explicitly.
+  --path-prefix PATH           Path under base URL (from
+                               bundle_store.release_path_prefix). Published
+                               helpers stamp this; otherwise pass explicitly.
+  --state-dir DIR              zonctl state directory (from
+                               target_host.state_dir).
+  --appliance-profile NAME     Appliance profile (from
+                               install.appliance_profile).
+  --appliance-name NAME        Product LAN instance label (single DNS label).
+                               FQDN becomes <name>.<dns-zone> for TLS,
+                               canonicalOrigin, and registry realm.
+  --dns-zone ZONE              LAN DNS zone (from install.dns_zone).
+
 Optional:
-  --product-version VERSION    Product version to install. If omitted, the
-                               script uses its own embedded version set at
-                               publish time
-  --out-dir DIR                Local download/extract directory.
-                               Default: /tmp/appliance-<version>
-  --path-prefix PATH           Path under base URL. Default: appliance
+  --out-dir DIR                Local download/extract directory (from
+                               install.bundle_download_dir when using the
+                               release skill).
   --use-latest                 Fetch from <base-url>/<path-prefix>/latest/
                                instead of the explicit version directory
-  --state-dir DIR              zonctl state directory. Default: /var/lib/zon/state
-  --appliance-profile NAME     Product-facing appliance profile passed to
-                               zonctl install/upgrade. Default: core
   --build-catalog PATH         Target-local build catalog YAML/JSON passed to
                                zonctl install/upgrade as control-plane config
   --node-name NAME             Optional zonctl --node-name override
-  --appliance-name NAME        Product LAN instance label (single DNS label).
-                               FQDN becomes <name>.<dns-zone> for TLS,
-                               canonicalOrigin, and registry realm
-  --dns-zone ZONE              LAN DNS zone (default appliance.internal)
   --tls-san SAN                Additional TLS SAN to include on the appliance
                                certificate. Repeatable
   --dry-run                    Pass --dry-run to zonctl install/upgrade
   --output FORMAT              zonctl output format. Default: text
   --help                       Show this help
 
-Example (piped, no local file needed — the version below is embedded in
-the published script's content, not inferred from its filename):
+Example (piped; version and path-prefix are stamped at publish; pass target flags):
   curl -fsSL http://downloads.example.internal/releases/appliance/0.1.0/install-http-release.sh \
-    | bash -s -- --base-url http://downloads.example.internal/releases
+    | bash -s -- --base-url http://downloads.example.internal/releases \
+      --out-dir /tmp/appliance-0.1.0 --state-dir /var/lib/zon/state \
+      --appliance-profile storage-landns --appliance-name storage-landns-1 \
+      --dns-zone appliance.internal
 
 If the distribution endpoint requires appliance authentication, export:
   ARTIFACT_BEARER_TOKEN=<appliance API token>
@@ -72,13 +79,15 @@ EOF
 # piped straight into `bash` (curl ... | bash). Left empty in the tracked source copy;
 # publish-release.sh's sed substitution is the only thing that sets it.
 PRODUCT_VERSION_EMBEDDED=""
+# Stamped by publish-release.sh from bundle_store.release_path_prefix.
+PATH_PREFIX_EMBEDDED=""
 
 BASE_URL=""
 PRODUCT_VERSION=""
 OUT_DIR=""
-PATH_PREFIX="appliance"
+PATH_PREFIX=""
 USE_LATEST="0"
-STATE_DIR="/var/lib/zon/state"
+STATE_DIR=""
 APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
 NODE_NAME=""
@@ -261,12 +270,15 @@ if [[ -z "${PRODUCT_VERSION}" ]]; then
 fi
 require_var PRODUCT_VERSION
 
-if [[ -z "${OUT_DIR}" ]]; then
-  OUT_DIR="/tmp/appliance-${PRODUCT_VERSION}"
+if [[ -z "${PATH_PREFIX}" ]]; then
+  PATH_PREFIX="${PATH_PREFIX_EMBEDDED}"
 fi
-if [[ -z "${APPLIANCE_PROFILE}" ]]; then
-  APPLIANCE_PROFILE="core"
-fi
+require_var PATH_PREFIX
+require_var STATE_DIR
+require_var APPLIANCE_PROFILE
+require_var APPLIANCE_NAME
+require_var DNS_ZONE
+require_var OUT_DIR
 
 BASE_URL="$(trim_trailing_slashes "${BASE_URL}")"
 PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"

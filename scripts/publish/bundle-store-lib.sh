@@ -3,20 +3,24 @@
 # Sourced by publish-release.sh and the release skill (via common.sh).
 
 # Normalize bundle_store.mode / --mode to static_http|appliance_files.
-# Empty and historical aliases (http, http-static) map to static_http.
-# Historical fileserver maps to appliance_files.
+# Historical aliases: http/http-static -> static_http; fileserver -> appliance_files.
+# Empty is rejected (callers must pass an explicit mode from config or --mode).
 normalize_bundle_store_mode() {
   local mode
   mode="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
   case "${mode}" in
-    ""|static_http|http|http-static)
+    static_http|http|http-static)
       printf 'static_http\n'
       ;;
     appliance_files|fileserver)
       printf 'appliance_files\n'
       ;;
+    "")
+      echo "bundle_store.mode / --mode is required (static_http or appliance_files)" >&2
+      return 2
+      ;;
     *)
-      echo "bundle_store.mode must be static_http or appliance_files (got ${mode:-<empty>})" >&2
+      echo "bundle_store.mode must be static_http or appliance_files (got ${mode})" >&2
       return 2
       ;;
   esac

@@ -118,9 +118,8 @@ fi
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 fi
-if [[ -z "${APPLIANCE_PROFILE}" ]]; then
-  APPLIANCE_PROFILE="core"
-fi
+[[ -n "${APPLIANCE_PROFILE}" ]] || fail "install.appliance_profile is required in config"
+[[ -n "${RELEASE_VERSION}" ]] || fail "release.version is required in config (or pass --release-version)"
 if [[ -z "${BUILD_CATALOG_PATH}" ]]; then
   BUILD_CATALOG_PATH="$(config_get_optional "${CONFIG_PATH}" "install.build_catalog_path" || true)"
 fi

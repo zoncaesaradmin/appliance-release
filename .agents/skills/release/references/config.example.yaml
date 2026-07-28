@@ -1,14 +1,18 @@
 # Appliance release skill config (single file for now).
 # Copy locally (e.g. ~/appliance-release.config.yaml); do not commit secrets.
 #
-# Layout:
-#   1) BUILD / PUBLISH  — build host, workspace, bundle contents, distribution
-#   2) INSTALL / VERIFY — target host, appliance identity, post-install checks
+# run-release-flow.sh takes this file as the source of truth. Scripts do not
+# invent operational defaults when a key is missing — put every required
+# value here (fixed lab defaults are fine; they must still be explicit).
 #
-# A later change may split these into two files; keep the grouping so that is easy.
-# Absolute remote paths only (no ~/...). Secrets via env, not this file:
+# Layout:
+#   1) BUILD / PUBLISH
+#   2) INSTALL / VERIFY
+#
+# Secrets via env (not this file):
 #   REGISTRY_TOKEN, APPLIANCE_BUILD_SUDO_PASSWORD,
 #   APPLIANCE_TARGET_SUDO_PASSWORD, APPLIANCE_FIRST_ADMIN_PASSWORD
+# Absolute remote paths only (no ~/...).
 
 # =============================================================================
 # BUILD / PUBLISH
@@ -18,68 +22,50 @@ build_host:
   alias: zonsys@192.168.1.102
 
 release_workspace:
-  # Skill-managed checkout on the build host (clone or hard-reset to remote_repo_ref).
   remote_repo_path: /home/zonsys/ws/appliance-release
   remote_export_dir: /home/zonsys/appliance-build/export
-  # Defaults: origin of the local appliance-release checkout, and ref "main".
-  # remote_repo_source: https://github.com/zoncaesaradmin/appliance-release.git
-  # remote_repo_ref: main
+  remote_repo_source: https://github.com/zoncaesaradmin/appliance-release.git
+  remote_repo_ref: main
 
 release:
   version: 0.1.0
-  # publish_latest_alias: true   # also publish <prefix>/latest/ (default false)
+  publish_latest_alias: false
 
 bundle_store:
-  # How the signed bundle is published and how targets download it.
-  #   static_http     — SCP to a plain HTTP(S) box (default)
-  #   appliance_files — POST/GET authenticated /api/v1/files on a distributor
-  # Aliases: http/http-static → static_http, fileserver → appliance_files.
+  # static_http | appliance_files (aliases: http/http-static, fileserver)
   mode: static_http
   release_path_prefix: appliance
   base_url: http://192.168.1.105:28081
-
-  # static_http publish target (injected as PUBLISH_SERVER / PUBLISH_REMOTE_ROOT)
   publish_server_alias: zonsys@192.168.1.105
   publish_remote_root: /home/zonsys/releases
+  # Required for appliance_files HTTPS (and whenever scripts call curl TLS fill):
+  # tls_insecure: true
+  # cacert_path: /abs/path/to/ca.pem
 
   # --- appliance_files (day-2 distributor) ---
-  # Distributor FQDN in base_url must NOT equal install.appliance_name on the
-  # target (zonctl seeds /etc/hosts for the target FQDN and would shadow DNS).
   # mode: appliance_files
   # base_url: https://artifact-dns-1.appliance.internal/api/v1/files
-  # access_token: apt_….…   # Dashboard → API tokens; keep this file local
-  # tls_insecure: true      # default when omitted (lab self-signed)
-  # cacert_path: /abs/path/to/distributor-ca.pem
+  # access_token: apt_….…
+  # tls_insecure: true
+  # Do not reuse install.appliance_name as the distributor FQDN in base_url.
 
 build_flow:
-  # One-time / GHCR login on the build host (optional if already bootstrapped).
   registry_user: your-registry-username
-  # registry_token_env: REGISTRY_TOKEN   # default
-  # bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
-  # bootstrap_needs_sudo: true
-
+  registry_token_env: REGISTRY_TOKEN
+  bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
+  bootstrap_needs_sudo: true
   build_needs_sudo: true
-  # Required for the default build command (build-full-bundle.sh).
+  code_repo_ref: main
+  ctl_repo_ref: main
   k3s_binary_source: /home/zonsys/ci/inputs/k3s
   k3s_airgap_images_source: /home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst
-  # Defaults when omitted:
-  #   build_command: bash scripts/ci/build-full-bundle.sh
-  #   publish_command: make publish-release
-  # (skill injects PRODUCT_VERSION, EXPORT_DIR, PUBLISH_*, K3S_*)
-
-  # Complete v1 bundles need automation-dev for builder-capable installs.
+  build_command: bash scripts/ci/build-full-bundle.sh
+  publish_command: make publish-release
   extra_oci_image_pull_refs: ghcr.io/zoncaesaradmin/development-container/automation-dev:v0.1.0
   extra_oci_image_refs: registry.local/automation-dev
-
-  # --- advanced / offline overrides (omit for online builds) ---
-  # code_repo_ref / ctl_repo_ref
-  # argo: { enabled, version, crds_dir_source, controller_image_ref, ... }
-  # zot: { version, image_pull_ref, image_archive_source }   # defaults in build-full-bundle.sh
-  # dns: { version, image_pull_ref, image_archive_source }
-  # workspace_provisioner_image_ref / workspace_provisioner_image_archive_source
-  # extra_oci_image_archive_sources: /home/zonsys/ci/inputs/automation-dev.oci.tar
-  # remote fallbacks if build-log path parsing fails:
-  # (set under release_workspace) remote_release_input_path / remote_bundle_dir
+  # Offline / pin overrides only when needed:
+  # argo / zot / dns / workspace_provisioner_* / extra_oci_image_archive_sources
+  # release_workspace.remote_release_input_path / remote_bundle_dir
 
 # =============================================================================
 # INSTALL / VERIFY
@@ -87,38 +73,52 @@ build_flow:
 
 target_host:
   alias: zonsys@192.168.1.101
-  # state_dir: /var/lib/zon/state   # rare override; must match zonctl --state-dir
+  state_dir: /var/lib/zon/state
 
 install:
-  # Required. Must be unique on the LAN and distinct from the distributor FQDN
-  # in bundle_store.base_url when mode=appliance_files.
   appliance_name: storage-landns-1
-  # core | storage | builder | landns | storage-landns | builder-landns | builder-storage-landns
   appliance_profile: storage-landns
-  # dns_zone: appliance.internal   # default
-  # Required for builder* profiles:
-  # build_catalog_path: /Users/you/build-catalog.yaml
-  # additional_tls_sans_csv: 192.168.1.101
+  dns_zone: appliance.internal
   uninstall_first: true
-  # bootstrap_admin_username: admin
-  # kubernetes_namespace: control
-  # control_plane_deployment: api-server
+  # Must match release.version (download/extract path on the target).
+  bundle_download_dir: /tmp/appliance-0.1.0
+  bootstrap_admin_username: admin
+  kubernetes_namespace: control
+  control_plane_deployment: api-server
+  # build_catalog_path: /Users/you/build-catalog.yaml   # required for builder*
+  # additional_tls_sans_csv: 192.168.1.101
 
 verification:
-  # Most checks default from appliance_profile. Override only when needed.
-  # smoke_test_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
+  status_command: sudo zonctl status --output json
+  verify_command: sudo zonctl verify --output json
+  service_health_command: sudo kubectl get pods -A
+  app_version_command: sudo zonctl status --output json
+  failure_log_command: sudo zonctl support-bundle --output json
+  smoke_test_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
+  smoke_test_retries: 5
+  smoke_test_retry_delay_seconds: 3
   allow_ingress_warning: true
-  # allow_verify_schema_bug: true
-  # Custom command overrides (defaults exist for status/verify/kubectl/support-bundle/argo):
-  # status_command / verify_command / service_health_command / failure_log_command
-  # argo: { enabled, namespaces_command, crds_command, controller_command }
-  # builder: { enabled, api_command }
-  # artifact: { enabled, readiness_command }
-  # dns: { enabled, readiness_command, absence_command }
+  allow_verify_schema_bug: false
+  # Required when client_verification.base_url is set:
+  ui_home_command: 'body="$(curl -kfsS https://192.168.1.101/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
+  # Capability checks: set explicitly for this install profile (storage-landns).
+  argo:
+    enabled: false
+  builder:
+    enabled: false
+  artifact:
+    enabled: true
+    readiness_command: sudo kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data
+  dns:
+    enabled: true
+    readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/dns-server --timeout=120s && dig +short @127.0.0.1 -p 53 SOA appliance.internal
 
 client_verification:
-  # Required for macOS-side verify-client-access.sh. Prefer the target URL/IP.
   base_url: https://192.168.1.101
   username: admin
-  # builder: { enabled, expect_disabled, workflow: { enabled, workspace_name, ... } }
-  # artifact: { enabled, expect_denied_scope, oci_smoke_command, ... }
+  builder:
+    enabled: false
+    expect_disabled: true
+  artifact:
+    enabled: true
+    expect_denied_scope: false

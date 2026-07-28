@@ -20,12 +20,8 @@ Options:
                                 APPLIANCE_RELEASE_CONFIG is set or a local
                                 appliance-release.config.yaml exists.
   --bootstrap-cmd CMD           Optional remote bootstrap command.
-  --build-cmd CMD               Remote build command. Defaults to
-                                build_flow.build_command, or
-                                bash scripts/ci/build-full-bundle.sh.
-  --publish-cmd CMD             Remote publish command. Defaults to
-                                build_flow.publish_command, or
-                                make publish-release.
+  --build-cmd CMD               Remote build command. Defaults to build_flow.build_command.
+  --publish-cmd CMD             Remote publish command. Defaults to build_flow.publish_command.
   --remote-cwd PATH             Remote working directory. Defaults to release_workspace.remote_repo_path.
   --remote-export-dir PATH      Optional remote export directory to rsync back locally.
   --remote-release-input PATH   Optional remote release-input file or directory to copy back.
@@ -45,7 +41,6 @@ REMOTE_RELEASE_INPUT=""
 REMOTE_BUNDLE_DIR=""
 RELEASE_VERSION=""
 RUN_DIR=""
-USING_DEFAULT_BUILD_CMD="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -122,15 +117,8 @@ fi
 if [[ -z "${BUILD_CMD}" ]]; then
   BUILD_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_command" || true)"
 fi
-if [[ -z "${BUILD_CMD}" ]]; then
-  BUILD_CMD="bash scripts/ci/build-full-bundle.sh"
-  USING_DEFAULT_BUILD_CMD="true"
-fi
 if [[ -z "${PUBLISH_CMD}" ]]; then
   PUBLISH_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.publish_command" || true)"
-fi
-if [[ -z "${PUBLISH_CMD}" ]]; then
-  PUBLISH_CMD="make publish-release"
 fi
 if [[ -z "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
@@ -145,30 +133,25 @@ if [[ -z "${REMOTE_BUNDLE_DIR}" ]]; then
   REMOTE_BUNDLE_DIR="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_bundle_dir" || true)"
 fi
 
-if bool_true "${USING_DEFAULT_BUILD_CMD}"; then
-  [[ -n "${BUILD_K3S_BINARY_SOURCE}" ]] || fail "default build_command requires build_flow.k3s_binary_source"
-  [[ -n "${BUILD_K3S_AIRGAP_IMAGES_SOURCE}" ]] || fail "default build_command requires build_flow.k3s_airgap_images_source"
-fi
-[[ -n "${PUBLISH_CMD}" ]] || fail "publish command not provided and build_flow.publish_command is missing"
+[[ -n "${BUILD_CMD}" ]] || fail "build_flow.build_command is required in config"
+[[ -n "${PUBLISH_CMD}" ]] || fail "build_flow.publish_command is required in config"
+[[ -n "${BUILD_K3S_BINARY_SOURCE}" ]] || fail "build_flow.k3s_binary_source is required in config"
+[[ -n "${BUILD_K3S_AIRGAP_IMAGES_SOURCE}" ]] || fail "build_flow.k3s_airgap_images_source is required in config"
+[[ -n "${RELEASE_VERSION}" ]] || fail "release.version is required in config"
+[[ -n "${REMOTE_EXPORT_DIR}" ]] || fail "release_workspace.remote_export_dir is required in config"
 
 SKILL_RELEASE_REPO_ROOT="$(skill_release_repo_root "${SCRIPT_DIR}")"
 if [[ -z "${REMOTE_REPO_SOURCE}" ]]; then
   REMOTE_REPO_SOURCE="$(resolve_local_git_origin "${SKILL_RELEASE_REPO_ROOT}")"
 fi
-[[ -n "${REMOTE_REPO_SOURCE}" ]] || fail "release_workspace.remote_repo_source is required when the build host checkout is missing; set it in config or run from a local appliance-release git checkout"
+[[ -n "${REMOTE_REPO_SOURCE}" ]] || fail "release_workspace.remote_repo_source is required in config (or run from a local appliance-release git checkout with an origin)"
 EFFECTIVE_REMOTE_REPO_SOURCE="$(normalize_readonly_git_source "${REMOTE_REPO_SOURCE}")"
 if [[ "${EFFECTIVE_REMOTE_REPO_SOURCE}" != "${REMOTE_REPO_SOURCE}" ]]; then
   log "normalizing release workspace repo source from ${REMOTE_REPO_SOURCE} to read-only ${EFFECTIVE_REMOTE_REPO_SOURCE} for build-host sync"
 fi
-if [[ -z "${REMOTE_REPO_REF}" ]]; then
-  REMOTE_REPO_REF="main"
-fi
-if [[ -z "${CODE_REPO_REF}" ]]; then
-  CODE_REPO_REF="main"
-fi
-if [[ -z "${CTL_REPO_REF}" ]]; then
-  CTL_REPO_REF="main"
-fi
+[[ -n "${REMOTE_REPO_REF}" ]] || fail "release_workspace.remote_repo_ref is required in config"
+[[ -n "${CODE_REPO_REF}" ]] || fail "build_flow.code_repo_ref is required in config"
+[[ -n "${CTL_REPO_REF}" ]] || fail "build_flow.ctl_repo_ref is required in config"
 
 require_cmd rsync
 require_cmd ssh
@@ -177,8 +160,11 @@ require_cmd python3
 BUILD_HOST="$(config_get "${CONFIG_PATH}" "build_host.alias")"
 BOOTSTRAP_NEEDS_SUDO="$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_needs_sudo" || true)"
 BUILD_NEEDS_SUDO="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_needs_sudo" || true)"
+[[ -n "${BOOTSTRAP_NEEDS_SUDO}" ]] || fail "build_flow.bootstrap_needs_sudo is required in config (true|false)"
+[[ -n "${BUILD_NEEDS_SUDO}" ]] || fail "build_flow.build_needs_sudo is required in config (true|false)"
 BOOTSTRAP_REGISTRY_USER="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user" || true)"
 BOOTSTRAP_REGISTRY_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token_env" || true)"
+[[ -n "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]] || fail "build_flow.registry_token_env is required in config"
 BOOTSTRAP_REGISTRY_TOKEN="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token" || true)"
 BUILD_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.enabled" || true)"
 BUILD_ARGO_REQUIRED="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.required" || true)"
@@ -201,12 +187,16 @@ BUILD_EXTRA_OCI_IMAGE_REFS="$(config_get_optional "${CONFIG_PATH}" "build_flow.e
 BUILD_EXTRA_OCI_IMAGE_PULL_REFS="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_pull_refs" || true)"
 APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
+[[ -n "${APPLIANCE_PROFILE}" ]] || fail "install.appliance_profile is required in config"
+[[ -n "${VERIFY_ARGO_ENABLED}" ]] || fail "verification.argo.enabled is required in config (true|false)"
 BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
 PUBLISH_PUBLIC_BASE_URL="$(bundle_store_get_optional "${CONFIG_PATH}" "base_url" || true)"
 PUBLISH_PATH_PREFIX="$(bundle_store_get_optional "${CONFIG_PATH}" "release_path_prefix" || true)"
 PUBLISH_LATEST_ALIAS="$(config_get_optional "${CONFIG_PATH}" "release.publish_latest_alias" || true)"
 PUBLISH_SERVER="$(bundle_store_get_optional "${CONFIG_PATH}" "publish_server_alias" || true)"
 PUBLISH_REMOTE_ROOT="$(bundle_store_get_optional "${CONFIG_PATH}" "publish_remote_root" || true)"
+[[ -n "${PUBLISH_PATH_PREFIX}" ]] || fail "bundle_store.release_path_prefix is required in config"
+[[ -n "${PUBLISH_LATEST_ALIAS}" ]] || fail "release.publish_latest_alias is required in config (true|false)"
 case "${BUNDLE_STORE_MODE}" in
   static_http|appliance_files)
     [[ -n "${PUBLISH_PUBLIC_BASE_URL}" ]] || fail "bundle_store.mode=${BUNDLE_STORE_MODE} requires bundle_store.base_url"
@@ -218,9 +208,6 @@ if [[ "${BUNDLE_STORE_MODE}" == "static_http" ]]; then
 fi
 if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
   require_appliance_files_base_url "${PUBLISH_PUBLIC_BASE_URL}"
-fi
-if [[ -z "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
-  BOOTSTRAP_REGISTRY_TOKEN_ENV="REGISTRY_TOKEN"
 fi
 ensure_dir "${RUN_DIR}"
 ensure_dir "${RUN_DIR}/logs"
@@ -249,15 +236,8 @@ profile_supports_workflows() {
 }
 
 EFFECTIVE_VERIFY_ARGO_ENABLED="${VERIFY_ARGO_ENABLED}"
-if [[ -z "${EFFECTIVE_VERIFY_ARGO_ENABLED}" ]]; then
-  if profile_supports_workflows "${APPLIANCE_PROFILE}"; then
-    EFFECTIVE_VERIFY_ARGO_ENABLED="true"
-  else
-    EFFECTIVE_VERIFY_ARGO_ENABLED="false"
-  fi
-elif bool_true "${EFFECTIVE_VERIFY_ARGO_ENABLED}" && ! profile_supports_workflows "${APPLIANCE_PROFILE}"; then
-  EFFECTIVE_VERIFY_ARGO_ENABLED="false"
-  log "skipping Argo release-artifact requirement because appliance profile ${APPLIANCE_PROFILE:-unknown} does not enable workflows"
+if bool_true "${EFFECTIVE_VERIFY_ARGO_ENABLED}" && ! profile_supports_workflows "${APPLIANCE_PROFILE}"; then
+  fail "verification.argo.enabled=true but install.appliance_profile=${APPLIANCE_PROFILE} does not enable workflows; set verification.argo.enabled=false in config"
 fi
 
 BUILD_ENV_PREFIX=""

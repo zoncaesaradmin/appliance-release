@@ -434,7 +434,19 @@ publish-release:
 		echo "publish-release: required env vars are EXPORT_DIR=/abs/path/to/export PRODUCT_VERSION=..." >&2; \
 		exit 2; \
 	fi
-	@mode="$${PUBLISH_MODE:-static_http}"; \
+	@if [ -z "$${PUBLISH_MODE:-}" ]; then \
+		echo "publish-release: PUBLISH_MODE is required (from bundle_store.mode)" >&2; \
+		exit 2; \
+	fi; \
+	if [ -z "$${PUBLISH_PATH_PREFIX:-}" ]; then \
+		echo "publish-release: PUBLISH_PATH_PREFIX is required (from bundle_store.release_path_prefix)" >&2; \
+		exit 2; \
+	fi; \
+	if [ -z "$${PUBLISH_PUBLIC_BASE_URL:-}" ]; then \
+		echo "publish-release: PUBLISH_PUBLIC_BASE_URL is required (from bundle_store.base_url)" >&2; \
+		exit 2; \
+	fi; \
+	mode="$${PUBLISH_MODE}"; \
 	case "$$mode" in \
 		static_http|http|http-static) \
 			if [ -z "$${PUBLISH_SERVER:-}" ] || [ -z "$${PUBLISH_REMOTE_ROOT:-}" ]; then \
@@ -447,9 +459,9 @@ publish-release:
 				--mode static_http \
 				--server "$${PUBLISH_SERVER}" \
 				--remote-root "$${PUBLISH_REMOTE_ROOT}" \
-				$${PUBLISH_PATH_PREFIX:+--path-prefix "$${PUBLISH_PATH_PREFIX}"} \
+				--path-prefix "$${PUBLISH_PATH_PREFIX}" \
+				--public-base-url "$${PUBLISH_PUBLIC_BASE_URL}" \
 				$${PUBLISH_SSH_PORT:+--ssh-port "$${PUBLISH_SSH_PORT}"} \
-				$${PUBLISH_PUBLIC_BASE_URL:+--public-base-url "$${PUBLISH_PUBLIC_BASE_URL}"} \
 				$${PUBLISH_LATEST_ALIAS:+--latest-alias} \
 			;; \
 		appliance_files|fileserver) \
@@ -457,8 +469,8 @@ publish-release:
 				--export-dir "$${EXPORT_DIR}" \
 				--product-version "$${PRODUCT_VERSION}" \
 				--mode appliance_files \
-				$${PUBLISH_PATH_PREFIX:+--path-prefix "$${PUBLISH_PATH_PREFIX}"} \
-				$${PUBLISH_PUBLIC_BASE_URL:+--public-base-url "$${PUBLISH_PUBLIC_BASE_URL}"} \
+				--path-prefix "$${PUBLISH_PATH_PREFIX}" \
+				--public-base-url "$${PUBLISH_PUBLIC_BASE_URL}" \
 				$${PUBLISH_LATEST_ALIAS:+--latest-alias} \
 			;; \
 		*) \

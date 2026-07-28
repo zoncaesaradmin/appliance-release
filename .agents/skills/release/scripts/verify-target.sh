@@ -172,11 +172,18 @@ reject_placeholder_client_base_url "${CLIENT_BASE_URL}" "client_verification.bas
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 fi
-STATUS_CMD="${STATUS_CMD:-sudo zonctl status --output json}"
-VERIFY_CMD="${VERIFY_CMD:-sudo zonctl verify --output json}"
-SERVICE_HEALTH_CMD="${SERVICE_HEALTH_CMD:-sudo kubectl get pods -A}"
-APP_VERSION_CMD="${APP_VERSION_CMD:-sudo zonctl status --output json}"
-FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-sudo zonctl support-bundle --output json}"
+[[ -n "${APPLIANCE_PROFILE}" ]] || fail "install.appliance_profile is required in config"
+[[ -n "${STATUS_CMD}" ]] || fail "verification.status_command is required in config"
+[[ -n "${VERIFY_CMD}" ]] || fail "verification.verify_command is required in config"
+[[ -n "${SERVICE_HEALTH_CMD}" ]] || fail "verification.service_health_command is required in config"
+[[ -n "${APP_VERSION_CMD}" ]] || fail "verification.app_version_command is required in config"
+[[ -n "${FAILURE_LOG_CMD}" ]] || fail "verification.failure_log_command is required in config"
+[[ -n "${SMOKE_TEST_RETRIES}" ]] || fail "verification.smoke_test_retries is required in config"
+[[ -n "${SMOKE_TEST_RETRY_DELAY_SECONDS}" ]] || fail "verification.smoke_test_retry_delay_seconds is required in config"
+[[ -n "${ALLOW_INGRESS_WARNING}" ]] || fail "verification.allow_ingress_warning is required in config (true|false)"
+[[ -n "${ALLOW_VERIFY_SCHEMA_BUG}" ]] || fail "verification.allow_verify_schema_bug is required in config (true|false)"
+[[ -n "${TARGET_STATE_DIR}" ]] || fail "target_host.state_dir is required in config"
+[[ -n "${SMOKE_TEST_CMD}" ]] || fail "verification.smoke_test_command is required in config"
 
 profile_supports_workflows() {
   case "$1" in
@@ -186,72 +193,32 @@ profile_supports_workflows() {
 }
 
 ARGO_SKIP_REASON=""
-if [[ -z "${ARGO_ENABLED}" ]]; then
-  if profile_supports_workflows "${APPLIANCE_PROFILE}"; then
-    ARGO_ENABLED="true"
-  else
-    ARGO_ENABLED="false"
-  fi
-fi
-if [[ -z "${BUILDER_ENABLED}" ]]; then
-  case "${APPLIANCE_PROFILE}" in
-    builder|builder-landns|builder-storage-landns) BUILDER_ENABLED="true" ;;
-    *) BUILDER_ENABLED="false" ;;
-  esac
-fi
-if [[ -z "${ARTIFACT_ENABLED}" ]]; then
-  case "${APPLIANCE_PROFILE}" in
-    storage|builder|storage-landns|builder-landns|builder-storage-landns) ARTIFACT_ENABLED="true" ;;
-    *) ARTIFACT_ENABLED="false" ;;
-  esac
-fi
+[[ -n "${ARGO_ENABLED}" ]] || fail "verification.argo.enabled is required in config (true|false)"
+[[ -n "${BUILDER_ENABLED}" ]] || fail "verification.builder.enabled is required in config (true|false)"
+[[ -n "${ARTIFACT_ENABLED}" ]] || fail "verification.artifact.enabled is required in config (true|false)"
+[[ -n "${DNS_ENABLED}" ]] || fail "verification.dns.enabled is required in config (true|false)"
 if bool_true "${ARTIFACT_ENABLED}"; then
-  ARTIFACT_READINESS_CMD="${ARTIFACT_READINESS_CMD:-sudo kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data}"
-fi
-if [[ -z "${DNS_ENABLED}" ]]; then
-  case "${APPLIANCE_PROFILE}" in
-    landns|storage-landns|builder-landns|builder-storage-landns) DNS_ENABLED="true" ;;
-    *) DNS_ENABLED="false" ;;
-  esac
+  [[ -n "${ARTIFACT_READINESS_CMD}" ]] || fail "verification.artifact.readiness_command is required when verification.artifact.enabled=true"
 fi
 if bool_true "${DNS_ENABLED}"; then
-  # landns does not seed product A records. Readiness is Deployment Available
-  # plus a successful SOA answer for the configured dns_zone (zone
-  # infrastructure only). Host A records are proven separately after API/UI
-  # (or peer publish) creates them.
   if [[ -z "${DNS_ZONE}" ]]; then
     DNS_ZONE="$(config_get_optional "${CONFIG_PATH}" "install.dns_zone" || true)"
   fi
-  if [[ -z "${DNS_ZONE}" ]]; then
-    DNS_ZONE="appliance.internal"
-  fi
-  if [[ -z "${DNS_READINESS_CMD}" ]]; then
-    DNS_READINESS_CMD="sudo kubectl -n dns wait --for=condition=Available deployment/dns-server --timeout=120s && if command -v dig >/dev/null 2>&1; then dig +short @127.0.0.1 -p 53 SOA ${DNS_ZONE} | grep -E '.'; else sudo kubectl -n dns exec deploy/dns-server -- wget -qO- http://127.0.0.1:8181/ready; fi"
-  fi
+  [[ -n "${DNS_ZONE}" ]] || fail "install.dns_zone is required in config when verification.dns.enabled=true"
+  [[ -n "${DNS_READINESS_CMD}" ]] || fail "verification.dns.readiness_command is required when verification.dns.enabled=true"
 else
-  DNS_ABSENCE_CMD="${DNS_ABSENCE_CMD:-! sudo helm status appliance-dns --namespace dns >/dev/null 2>&1}"
-fi
-if [[ -z "${SMOKE_TEST_RETRIES}" ]]; then
-  SMOKE_TEST_RETRIES="5"
-fi
-if [[ -z "${SMOKE_TEST_RETRY_DELAY_SECONDS}" ]]; then
-  SMOKE_TEST_RETRY_DELAY_SECONDS="3"
-fi
-if [[ -n "${ARGO_NAMESPACES_CMD}" || -n "${ARGO_CRDS_CMD}" || -n "${ARGO_CONTROLLER_CMD}" ]]; then
-  ARGO_ENABLED="true"
+  DNS_ABSENCE_CMD="${DNS_ABSENCE_CMD:-}"
 fi
 if bool_true "${ARGO_ENABLED}" && ! profile_supports_workflows "${APPLIANCE_PROFILE}"; then
-  ARGO_ENABLED="false"
-  ARGO_SKIP_REASON="skipping Argo verification because appliance profile ${APPLIANCE_PROFILE:-unknown} does not enable workflows"
-  ARGO_NAMESPACES_CMD=""
-  ARGO_CRDS_CMD=""
-  ARGO_CONTROLLER_CMD=""
-  log "${ARGO_SKIP_REASON}"
+  fail "verification.argo.enabled=true but install.appliance_profile=${APPLIANCE_PROFILE} does not enable workflows; set verification.argo.enabled=false in config"
 fi
 if bool_true "${ARGO_ENABLED}"; then
-  ARGO_NAMESPACES_CMD="${ARGO_NAMESPACES_CMD:-sudo kubectl get namespace workflows appliance-builds}"
-  ARGO_CRDS_CMD="${ARGO_CRDS_CMD:-sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io}"
-  ARGO_CONTROLLER_CMD="${ARGO_CONTROLLER_CMD:-sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods}"
+  [[ -n "${ARGO_NAMESPACES_CMD}" ]] || fail "verification.argo.namespaces_command is required when verification.argo.enabled=true"
+  [[ -n "${ARGO_CRDS_CMD}" ]] || fail "verification.argo.crds_command is required when verification.argo.enabled=true"
+  [[ -n "${ARGO_CONTROLLER_CMD}" ]] || fail "verification.argo.controller_command is required when verification.argo.enabled=true"
+fi
+if bool_true "${BUILDER_ENABLED}"; then
+  [[ -n "${BUILDER_API_CMD}" ]] || fail "verification.builder.api_command is required when verification.builder.enabled=true"
 fi
 
 if [[ -n "${CLIENT_BASE_URL}" ]]; then
@@ -261,12 +228,7 @@ if [[ -n "${CLIENT_BASE_URL}" ]]; then
     SMOKE_TEST_CMD="${rewritten_smoke_test}"
     log "rewrote localhost smoke test to use client_verification.base_url: ${CLIENT_BASE_URL}"
   fi
-  if [[ -z "${UI_HOME_CMD}" ]]; then
-    UI_HOME_CMD="body=\$(curl -kfsS $(shell_quote "${CLIENT_BASE_URL}/")) && printf '%s' \"\$body\" | grep -Eiq '<!doctype html|<html' && printf '%s' \"\$body\" | grep -Eiq 'Zon Appliance|Sign in to continue|Appliance status|Create first administrator'"
-  fi
-  if bool_true "${BUILDER_ENABLED}" && [[ -z "${BUILDER_API_CMD}" ]]; then
-    BUILDER_API_CMD="code=\$(curl -ksS -o /dev/null -w '%{http_code}' $(shell_quote "${CLIENT_BASE_URL}/api/v1/work-profiles")) && [ \"\$code\" != \"404\" ]"
-  fi
+  [[ -n "${UI_HOME_CMD}" ]] || fail "verification.ui_home_command is required in config when client_verification.base_url is set"
 fi
 
 ensure_dir "${RUN_DIR}"
@@ -314,7 +276,7 @@ if [[ -z "${BUNDLE_DIR}" && -n "${RELEASE_VERSION}" ]]; then
   BUNDLE_BIN_DIR="${BUNDLE_DIR}/bin"
 fi
 if [[ -z "${TARGET_STATE_DIR}" ]]; then
-  TARGET_STATE_DIR="/var/lib/zon/state"
+  fail "target_host.state_dir is required in config"
 fi
 
 if [[ -n "${BUNDLE_BIN_DIR}" && "${STATUS_CMD}" == "sudo zonctl status --output json" ]]; then

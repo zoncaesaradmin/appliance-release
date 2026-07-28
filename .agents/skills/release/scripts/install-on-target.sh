@@ -113,19 +113,13 @@ fi
 BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
 BASE_URL="$(bundle_store_get_optional "${CONFIG_PATH}" "base_url" || true)"
 PATH_PREFIX="$(bundle_store_get_optional "${CONFIG_PATH}" "release_path_prefix" || true)"
-if [[ -z "${PATH_PREFIX}" ]]; then
-  PATH_PREFIX="appliance"
-fi
+[[ -n "${PATH_PREFIX}" ]] || fail "bundle_store.release_path_prefix is required in config"
 STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || true)"
-if [[ -z "${STATE_DIR}" ]]; then
-  STATE_DIR="/var/lib/zon/state"
-fi
+[[ -n "${STATE_DIR}" ]] || fail "target_host.state_dir is required in config"
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 fi
-if [[ -z "${APPLIANCE_PROFILE}" ]]; then
-  APPLIANCE_PROFILE="core"
-fi
+[[ -n "${APPLIANCE_PROFILE}" ]] || fail "install.appliance_profile is required in config"
 if [[ -z "${BUILD_CATALOG_PATH}" ]]; then
   BUILD_CATALOG_PATH="$(config_get_optional "${CONFIG_PATH}" "install.build_catalog_path" || true)"
 fi
@@ -136,6 +130,7 @@ fi
 if [[ -z "${DNS_ZONE}" ]]; then
   DNS_ZONE="$(config_get_optional "${CONFIG_PATH}" "install.dns_zone" || true)"
 fi
+[[ -n "${DNS_ZONE}" ]] || fail "install.dns_zone is required in config"
 ADDITIONAL_TLS_SANS_CSV="$(config_get_optional "${CONFIG_PATH}" "install.additional_tls_sans_csv" || true)"
 if [[ -n "${ADDITIONAL_TLS_SANS_CSV}" ]]; then
   IFS=',' read -r -a configured_tls_sans <<<"${ADDITIONAL_TLS_SANS_CSV}"
@@ -156,11 +151,10 @@ fi
 if [[ -z "${UNINSTALL_FIRST}" ]]; then
   UNINSTALL_FIRST="$(config_get_optional "${CONFIG_PATH}" "install.uninstall_first" || true)"
 fi
-if [[ -n "${RELEASE_VERSION}" ]]; then
-  OUT_DIR="/tmp/appliance-${RELEASE_VERSION}"
-else
-  OUT_DIR="/tmp/appliance-release"
-fi
+[[ -n "${UNINSTALL_FIRST}" ]] || fail "install.uninstall_first is required in config (true|false)"
+[[ -n "${RELEASE_VERSION}" ]] || fail "release.version is required in config (or pass --release-version)"
+OUT_DIR="$(config_get_optional "${CONFIG_PATH}" "install.bundle_download_dir" || true)"
+[[ -n "${OUT_DIR}" ]] || fail "install.bundle_download_dir is required in config"
 OUTPUT_FORMAT="text"
 
 TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"

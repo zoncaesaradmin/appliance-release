@@ -15,32 +15,31 @@ Notes:
 
 - `APPLIANCE_RELEASE_CONFIG` is the main common input for all scripts.
 - Start from `references/config.example.yaml`: one file with **BUILD / PUBLISH**
-  then **INSTALL / VERIFY** sections. Prefer omitting keys that have defaults
-  (`build_command`, `publish_command`, most `verification.*` commands, online
-  zot/dns pins). Set `build_flow.k3s_binary_source` /
-  `k3s_airgap_images_source` for the default build.
+  then **INSTALL / VERIFY** sections. Scripts do **not** invent operational
+  defaults — every required key must be present in the config (fixed lab values
+  are fine in YAML). See the example for `release_path_prefix`,
+  `build_command` / `publish_command`, `bundle_download_dir`, verification
+  commands, and capability flags.
 - If `APPLIANCE_RELEASE_CONFIG` is set, you usually do not need `--config`.
 - `REGISTRY_TOKEN` is mainly needed for build-host bootstrap and build.
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used both for install and Mac-side API verification.
-- Set `install.appliance_profile` in the config if you want a non-default appliance profile.
-- If you omit `install.appliance_profile`, the product default profile is `core`.
+- Set `install.appliance_profile` in the config (required).
 - A `run-release-flow.sh --appliance-profile` override is forwarded to install,
   target verification, and client verification so all phases use the same
   effective profile.
-- Set `install.appliance_name` (required) and optional `install.dns_zone`
-  (default `appliance.internal`). The installer derives the FQDN as
-  `<appliance_name>.<dns_zone>` for TLS, `canonicalOrigin`, and the registry
-  realm. There is no separate `public_host` override.
-- Set `bundle_store.mode` to `static_http` (default) or `appliance_files`:
+- Set `install.appliance_name` and `install.dns_zone` (both required). The
+  installer derives the FQDN as `<appliance_name>.<dns_zone>` for TLS,
+  `canonicalOrigin`, and the registry realm. There is no separate `public_host`
+  override.
+- Set `bundle_store.mode` to `static_http` or `appliance_files` (required):
   - `static_http` — publish/install via an external static HTTP server (`base_url`,
-    `publish_server_alias`, `publish_remote_root`)
+    `publish_server_alias`, `publish_remote_root`, `release_path_prefix`)
   - `appliance_files` — publish/install via the appliance-managed authenticated
     file API. `base_url` must be `https://<distributor-fqdn>/api/v1/files`
     (Traefik `/files` was removed). Set `bundle_store.access_token` to a
     long-lived API token from the distributor Dashboard → API tokens (prefer
-    “Artifact files only” scopes). TLS defaults to insecure verify for
-    self-signed lab certs; set `bundle_store.cacert_path` or
-    `bundle_store.tls_insecure: false` when the CA is trusted. Requires an
+    “Artifact files only” scopes). Set `bundle_store.tls_insecure` or
+    `bundle_store.cacert_path` explicitly (no silent `-k`). Requires an
     already-installed artifact-capable distributor appliance (day-2 path).
   Historical aliases: `http`/`http-static` → `static_http`, `fileserver` →
   `appliance_files`.

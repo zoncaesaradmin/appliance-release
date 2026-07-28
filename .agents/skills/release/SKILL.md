@@ -45,7 +45,8 @@ Important rules:
 - use absolute remote paths, not `~/...`
 - do not store passwords in the config
 - keep machine-specific values in the config, not in the skill
-- omit keys that have script defaults (build/publish commands, most verification commands, online zot/dns pins)
+- put every required operational value in the config (scripts fail closed when a
+  key is missing; fixed lab defaults belong in YAML, not hardcoded in scripts)
 
 Runtime secrets such as remote `sudo` passwords and first-admin credentials must be supplied at runtime, not written into the skill. Prefer environment variables or an interactive prompt.
 
@@ -58,14 +59,14 @@ For day-to-day use, set:
 - `APPLIANCE_TARGET_SUDO_PASSWORD=...`
 - `APPLIANCE_FIRST_ADMIN_PASSWORD=...`
 
-Distribution modes (`bundle_store.mode`): `static_http` (default external
-publish box) or `appliance_files` (appliance-managed authenticated file API).
-Both install with target `curl` against `bundle_store.base_url`. For
-`appliance_files`, set `bundle_store.access_token` to a long-lived API token
-from the distributor Dashboard → API tokens, apply TLS `-k` by default for
-self-signed lab certs (or `cacert_path`), and require `base_url` to end in
-`/api/v1/files` (Traefik `/files` was removed). Historical aliases:
-`http`/`http-static` → `static_http`, `fileserver` → `appliance_files`.
+Distribution modes (`bundle_store.mode`): `static_http` or `appliance_files`
+(appliance-managed authenticated file API). Both install with target `curl`
+against `bundle_store.base_url`. Mode, `release_path_prefix`, and `base_url`
+are required in config. For `appliance_files`, set `bundle_store.access_token`
+to a long-lived API token from the distributor Dashboard → API tokens, set
+`bundle_store.tls_insecure` (or `cacert_path`) explicitly, and require
+`base_url` to end in `/api/v1/files` (Traefik `/files` was removed). Historical
+aliases: `http`/`http-static` → `static_http`, `fileserver` → `appliance_files`.
 
 Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `--config`.
 

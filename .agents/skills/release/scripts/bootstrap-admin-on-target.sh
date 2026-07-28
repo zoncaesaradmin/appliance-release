@@ -77,24 +77,15 @@ ensure_dir "${RUN_DIR}/metadata"
 if [[ -z "${ADMIN_USERNAME}" ]]; then
   ADMIN_USERNAME="$(config_get_optional "${CONFIG_PATH}" "install.bootstrap_admin_username" || true)"
 fi
-if [[ -z "${ADMIN_USERNAME}" ]]; then
-  ADMIN_USERNAME="$(config_get_optional "${CONFIG_PATH}" "client_verification.username" || true)"
-fi
-if [[ -z "${ADMIN_USERNAME}" ]]; then
-  ADMIN_USERNAME="admin"
-fi
+[[ -n "${ADMIN_USERNAME}" ]] || fail "install.bootstrap_admin_username is required in config"
 if [[ -z "${NAMESPACE}" ]]; then
   NAMESPACE="$(config_get_optional "${CONFIG_PATH}" "install.kubernetes_namespace" || true)"
 fi
-if [[ -z "${NAMESPACE}" ]]; then
-  NAMESPACE="control"
-fi
+[[ -n "${NAMESPACE}" ]] || fail "install.kubernetes_namespace is required in config"
 if [[ -z "${DEPLOYMENT}" ]]; then
   DEPLOYMENT="$(config_get_optional "${CONFIG_PATH}" "install.control_plane_deployment" || true)"
 fi
-if [[ -z "${DEPLOYMENT}" ]]; then
-  DEPLOYMENT="api-server"
-fi
+[[ -n "${DEPLOYMENT}" ]] || fail "install.control_plane_deployment is required in config"
 
 TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"

@@ -105,10 +105,26 @@ require_appliance_files_base_url 'https://host.example/api/v1/files'
         proc = run_bash(script)
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
-    def test_tls_args_default_insecure(self) -> None:
+    def test_tls_args_require_explicit_insecure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / "cfg.yaml"
             cfg.write_text("bundle_store:\n  mode: appliance_files\n", encoding="utf-8")
+            script = f"""
+set -euo pipefail
+source {COMMON.as_posix()!r}
+bundle_store_fill_curl_tls_args {cfg.as_posix()!r}
+"""
+            proc = run_bash(script)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("tls_insecure", proc.stderr)
+
+    def test_tls_args_insecure_true(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "cfg.yaml"
+            cfg.write_text(
+                "bundle_store:\n  mode: appliance_files\n  tls_insecure: true\n",
+                encoding="utf-8",
+            )
             script = f"""
 set -euo pipefail
 source {COMMON.as_posix()!r}

@@ -28,16 +28,17 @@ Options:
                              Required.
   --product-version VERSION  Product version to publish. Required.
   --mode MODE                static_http|appliance_files (aliases: http,
-                             http-static, fileserver). Default: static_http.
+                             http-static, fileserver). Required.
   --latest-alias             Also publish/update <path-prefix>/latest/ (static_http).
 
 static_http mode options:
   --server USER@HOST         Remote SSH target. Required for static_http.
   --remote-root DIR          Remote root directory to publish under. Required.
-  --path-prefix PATH         Prefix under remote root. Default: appliance
+  --path-prefix PATH         Prefix under remote root / URL. Required
+                             (from bundle_store.release_path_prefix).
   --ssh-port PORT            SSH port. Default: 22
-  --public-base-url URL      Optional public base URL override. If omitted,
-                             the script derives http://<host> from --server.
+  --public-base-url URL      Public base URL. Required (from
+                             bundle_store.base_url).
   appliance_files mode requires:
     PUBLISH_BEARER_TOKEN     Appliance API bearer token with artifacts.write.
     PUBLISH_TLS_INSECURE=1   Optional; skip TLS verify for self-signed certs.
@@ -49,20 +50,20 @@ Examples:
     --product-version 0.1.0 \
     --server release@downloads.internal \
     --remote-root /srv/www/releases \
+    --path-prefix appliance \
     --public-base-url https://downloads.internal/releases
 EOF
 }
 
-MODE="static_http"
+MODE=""
 EXPORT_DIR=""
 PRODUCT_VERSION=""
 SERVER_TARGET=""
 REMOTE_ROOT=""
-PATH_PREFIX="appliance"
+PATH_PREFIX=""
 SSH_PORT="22"
 PUBLIC_BASE_URL=""
 LATEST_ALIAS="0"
-PUBLIC_BASE_URL_DERIVED="0"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -181,10 +182,16 @@ curl_upload_file() {
   rm -f "${body}"
 }
 
-MODE="$(normalize_bundle_store_mode "${MODE}")"
+MODE="$(normalize_bundle_store_mode "${MODE}")" || {
+  echo "publish-release: --mode is required (static_http or appliance_files)" >&2
+  usage >&2
+  exit 2
+}
 
 require_var EXPORT_DIR
 require_var PRODUCT_VERSION
+require_var PATH_PREFIX
+require_var PUBLIC_BASE_URL
 
 EXPORT_DIR="$(cd "$(dirname "${EXPORT_DIR}")" && pwd)/$(basename "${EXPORT_DIR}")"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-bundle.tar.gz"
@@ -209,9 +216,12 @@ else
   ) > "${CHECKSUM_FILE}"
 fi
 
-stamp_version() {
+stamp_helper() {
   local src="$1" dest="$2"
-  sed "s/^PRODUCT_VERSION_EMBEDDED=\"\"\$/PRODUCT_VERSION_EMBEDDED=\"${PRODUCT_VERSION}\"/" "${src}" > "${dest}"
+  sed \
+    -e "s/^PRODUCT_VERSION_EMBEDDED=\"\"\$/PRODUCT_VERSION_EMBEDDED=\"${PRODUCT_VERSION}\"/" \
+    -e "s/^PATH_PREFIX_EMBEDDED=\"\"\$/PATH_PREFIX_EMBEDDED=\"${PATH_PREFIX}\"/" \
+    "${src}" > "${dest}"
   chmod +x "${dest}"
 }
 
@@ -222,21 +232,20 @@ case "${MODE}" in
 
     REMOTE_ROOT="$(trim_trailing_slashes "${REMOTE_ROOT}")"
     PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"
-    if [[ -n "${PUBLIC_BASE_URL}" ]]; then
-      PUBLIC_BASE_URL="$(trim_trailing_slashes "${PUBLIC_BASE_URL}")"
-    else
-      PUBLIC_BASE_URL="http://$(extract_host_from_target "${SERVER_TARGET}")"
-      PUBLIC_BASE_URL_DERIVED="1"
-    fi
+    PUBLIC_BASE_URL="$(trim_trailing_slashes "${PUBLIC_BASE_URL}")"
 
     REMOTE_VERSION_DIR="${REMOTE_ROOT}/${PATH_PREFIX}/${PRODUCT_VERSION}"
     REMOTE_LATEST_DIR="${REMOTE_ROOT}/${PATH_PREFIX}/latest"
     PUBLISH_STAGE_DIR="$(mktemp -d "${EXPORT_DIR}/.publish-stage.XXXXXX")"
     trap 'rm -rf "${PUBLISH_STAGE_DIR}"' EXIT
 
-    stamp_version "${INSTALL_HELPER_HTTP}" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
+    stamp_helper "${INSTALL_HELPER_HTTP}" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
     if ! grep -q "PRODUCT_VERSION_EMBEDDED=\"${PRODUCT_VERSION}\"" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"; then
       echo "publish-release: failed to stamp PRODUCT_VERSION_EMBEDDED into ${INSTALL_HELPER_HTTP_PUBLISHED}" >&2
+      exit 1
+    fi
+    if ! grep -q "PATH_PREFIX_EMBEDDED=\"${PATH_PREFIX}\"" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"; then
+      echo "publish-release: failed to stamp PATH_PREFIX_EMBEDDED into ${INSTALL_HELPER_HTTP_PUBLISHED}" >&2
       exit 1
     fi
 
@@ -263,9 +272,6 @@ case "${MODE}" in
     echo
     echo "public base URL used for commands:"
     echo "  ${PUBLIC_BASE_URL}"
-    if [[ "${PUBLIC_BASE_URL_DERIVED}" == "1" ]]; then
-      echo "  note: derived automatically from PUBLISH_SERVER; override with PUBLISH_PUBLIC_BASE_URL if your HTTP server uses a non-default port or extra base path."
-    fi
     echo
     echo "download URLs:"
     echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${BUNDLE_ARCHIVE}")"
@@ -275,12 +281,20 @@ case "${MODE}" in
     echo "helper script URL:"
     echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_HTTP_PUBLISHED}"
     echo
-    echo "target host install command (single line, piped):"
-    echo "  curl -fsSL ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_HTTP_PUBLISHED} | bash -s -- --base-url ${PUBLIC_BASE_URL}"
+    echo "target host install command (pass target-specific flags; version/path-prefix are stamped):"
+    echo "  curl -fsSL ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_HTTP_PUBLISHED} | bash -s -- \\"
+    echo "    --base-url ${PUBLIC_BASE_URL} \\"
+    echo "    --out-dir /tmp/appliance-${PRODUCT_VERSION} \\"
+    echo "    --state-dir /var/lib/zon/state \\"
+    echo "    --appliance-profile <profile> \\"
+    echo "    --appliance-name <name> \\"
+    echo "    --dns-zone <zone>"
     echo
     echo "target host install commands (download then run):"
     echo "  curl -fLo /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_HTTP_PUBLISHED}"
-    echo "  bash /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} --base-url ${PUBLIC_BASE_URL}"
+    echo "  bash /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} --base-url ${PUBLIC_BASE_URL} \\"
+    echo "    --out-dir /tmp/appliance-${PRODUCT_VERSION} --state-dir /var/lib/zon/state \\"
+    echo "    --appliance-profile <profile> --appliance-name <name> --dns-zone <zone>"
     if [[ "${LATEST_ALIAS}" == "1" ]]; then
       echo
       echo "latest alias URLs:"
@@ -291,21 +305,26 @@ case "${MODE}" in
       echo
       echo "target host latest-install commands:"
       echo "  curl -fLo /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${INSTALL_HELPER_HTTP_PUBLISHED}"
-      echo "  bash /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} --base-url ${PUBLIC_BASE_URL} --use-latest"
+      echo "  bash /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} --base-url ${PUBLIC_BASE_URL} --use-latest \\"
+      echo "    --out-dir /tmp/appliance-${PRODUCT_VERSION} --state-dir /var/lib/zon/state \\"
+      echo "    --appliance-profile <profile> --appliance-name <name> --dns-zone <zone>"
     fi
     ;;
   appliance_files)
     PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"
-    require_var PUBLIC_BASE_URL
     require_var PUBLISH_BEARER_TOKEN
 
     PUBLIC_BASE_URL="$(trim_trailing_slashes "${PUBLIC_BASE_URL}")"
     PUBLISH_STAGE_DIR="$(mktemp -d "${EXPORT_DIR}/.publish-stage.XXXXXX")"
     trap 'rm -rf "${PUBLISH_STAGE_DIR}"' EXIT
 
-    stamp_version "${INSTALL_HELPER_HTTP}" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
+    stamp_helper "${INSTALL_HELPER_HTTP}" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
     if ! grep -q "PRODUCT_VERSION_EMBEDDED=\"${PRODUCT_VERSION}\"" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"; then
       echo "publish-release: failed to stamp PRODUCT_VERSION_EMBEDDED into ${INSTALL_HELPER_HTTP_PUBLISHED}" >&2
+      exit 1
+    fi
+    if ! grep -q "PATH_PREFIX_EMBEDDED=\"${PATH_PREFIX}\"" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"; then
+      echo "publish-release: failed to stamp PATH_PREFIX_EMBEDDED into ${INSTALL_HELPER_HTTP_PUBLISHED}" >&2
       exit 1
     fi
 
