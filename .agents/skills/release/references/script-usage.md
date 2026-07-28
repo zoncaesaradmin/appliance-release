@@ -14,6 +14,11 @@ export APPLIANCE_FIRST_ADMIN_PASSWORD='ins3965!'
 Notes:
 
 - `APPLIANCE_RELEASE_CONFIG` is the main common input for all scripts.
+- Start from `references/config.example.yaml`: one file with **BUILD / PUBLISH**
+  then **INSTALL / VERIFY** sections. Prefer omitting keys that have defaults
+  (`build_command`, `publish_command`, most `verification.*` commands, online
+  zot/dns pins). Set `build_flow.k3s_binary_source` /
+  `k3s_airgap_images_source` for the default build.
 - If `APPLIANCE_RELEASE_CONFIG` is set, you usually do not need `--config`.
 - `REGISTRY_TOKEN` is mainly needed for build-host bootstrap and build.
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used both for install and Mac-side API verification.

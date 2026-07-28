@@ -471,11 +471,6 @@ render_ensure_remote_release_repo_cmd() {
   local remote_cwd="$1"
   local repo_source="$2"
   local repo_ref="$3"
-  # pull_cmd is retained for callers/metadata compatibility but intentionally
-  # unused: the build-host checkout is skill-managed and must sync to the
-  # configured ref even when the working tree is dirty (for example after an
-  # accidental scp during debugging).
-  local _pull_cmd="${4:-}"
 
   local quoted_cwd quoted_source quoted_ref
   quoted_cwd="$(shell_quote "${remote_cwd}")"

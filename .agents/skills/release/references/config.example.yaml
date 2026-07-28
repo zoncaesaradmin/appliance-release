@@ -1,325 +1,124 @@
-# Example config for the appliance-release skill.
-# Fill in the SSH user/host or SSH alias details for your environment.
-# Use absolute remote paths.
+# Appliance release skill config (single file for now).
+# Copy locally (e.g. ~/appliance-release.config.yaml); do not commit secrets.
+#
+# Layout:
+#   1) BUILD / PUBLISH  — build host, workspace, bundle contents, distribution
+#   2) INSTALL / VERIFY — target host, appliance identity, post-install checks
+#
+# A later change may split these into two files; keep the grouping so that is easy.
+# Absolute remote paths only (no ~/...). Secrets via env, not this file:
+#   REGISTRY_TOKEN, APPLIANCE_BUILD_SUDO_PASSWORD,
+#   APPLIANCE_TARGET_SUDO_PASSWORD, APPLIANCE_FIRST_ADMIN_PASSWORD
+
+# =============================================================================
+# BUILD / PUBLISH
+# =============================================================================
 
 build_host:
-  # Example:
-  # alias: zonsys@192.168.1.102
   alias: zonsys@192.168.1.102
 
-target_host:
-  # Example:
-  # alias: target-user@192.168.1.101
-  alias: zonsys@192.168.1.101
-  # Do not set state_dir for normal use. Install/status/verify already use
-  # zonctl's product default (/var/lib/zon/state). An explicit override is only
-  # for rare lab cases and must match zonctl --state-dir exactly.
-
 release_workspace:
-  # Remote appliance-release checkout on the build machine. If this path does not
-  # exist yet, build-and-publish.sh clones it before bootstrap/build.
+  # Skill-managed checkout on the build host (clone or hard-reset to remote_repo_ref).
   remote_repo_path: /home/zonsys/ws/appliance-release
-  # Optional when running the skill from a local appliance-release git checkout:
-  # defaults to that checkout's origin remote. Set explicitly for automation
-  # outside a git checkout or when you need a different upstream URL.
-  remote_repo_source: https://github.com/zoncaesaradmin/appliance-release.git
-  remote_repo_ref: main
-  # The build-host checkout at remote_repo_path is skill-managed: missing paths
-  # are cloned, existing checkouts are fetched and hard-reset to remote_repo_ref,
-  # and local dirty files are discarded. Do not hand-edit files on the build host.
-  # Export directory produced on the build machine.
-  # The skill injects this as EXPORT_DIR for both build and publish so the
-  # publish step does not accidentally use a stale export from an older run.
   remote_export_dir: /home/zonsys/appliance-build/export
-  # Optional fallback only. The skill now prefers the real paths printed by the
-  # build log, so these are mainly used if log parsing fails.
-  remote_release_input_path: /tmp/appliance-product-ci/artifacts/release-input-0.1.0.tar.gz
-  # Optional fallback only. The skill now prefers the real paths printed by the
-  # build log, so this is mainly used if log parsing fails.
-  remote_bundle_dir: /tmp/appliance-product-ci/workspace/out/appliance-0.1.0-bundle
-
-bundle_store:
-  # RELEASE DISTRIBUTION backend for the signed installer/bundle package.
-  # This is not the target appliance's runtime registry identity — it is how
-  # build/publish delivers the air-gap bundle to installers.
-  #
-  # mode:
-  #   static_http     — external plain HTTP/HTTPS static publish box (default)
-  #   appliance_files — appliance-managed authenticated file API on a
-  #                     storage/artifact appliance (day-2 distributor). Requires
-  #                     that distributor to already be installed with an
-  #                     artifact-capable profile; cannot bootstrap the first
-  #                     store host by itself.
-  # Historical aliases still accepted: http/http-static -> static_http,
-  # fileserver -> appliance_files.
-  #
-  # Both modes install with target-side curl against base_url. Mac only SSHs.
-  # Publish: static_http uses SCP to publish_server_alias; appliance_files uses
-  # POST against the appliance file API (Bearer token).
-  #
-  # --- static_http (default lab publish box) ---
-  mode: static_http
-  release_path_prefix: appliance
-  base_url: http://192.168.1.105:28081
-  publish_server_alias: zonsys@192.168.1.105
-  publish_remote_root: /home/zonsys/releases
-
-  # --- appliance_files (authenticated distributor API) ---
-  # Create a long-lived API token on the distributor Dashboard → API tokens
-  # (prefer scopes "Artifact files only", lifetime up to 365 days). Paste the
-  # apt_… secret into access_token below. Keep this config file local (not in git).
-  # The distributor FQDN in base_url must NOT equal install.appliance_name on the
-  # target: zonctl seeds /etc/hosts for the target FQDN, which would shadow LAN
-  # DNS and break downloads from the distributor. Use a distinct target name.
-  # mode: appliance_files
-  # release_path_prefix: appliance
-  # base_url: https://artifact-dns-1.appliance.internal/api/v1/files
-  # access_token: apt_….…
-  # # Optional TLS for self-signed lab certs (default insecure when omitted):
-  # tls_insecure: true
-  # # Or pin the distributor CA instead of -k:
-  # # cacert_path: /abs/path/to/distributor-ca.pem
-  # publish_server_alias / publish_remote_root are unused in appliance_files mode.
+  # Defaults: origin of the local appliance-release checkout, and ref "main".
+  # remote_repo_source: https://github.com/zoncaesaradmin/appliance-release.git
+  # remote_repo_ref: main
 
 release:
   version: 0.1.0
-  publish_latest_alias: false
+  # publish_latest_alias: true   # also publish <prefix>/latest/ (default false)
+
+bundle_store:
+  # How the signed bundle is published and how targets download it.
+  #   static_http     — SCP to a plain HTTP(S) box (default)
+  #   appliance_files — POST/GET authenticated /api/v1/files on a distributor
+  # Aliases: http/http-static → static_http, fileserver → appliance_files.
+  mode: static_http
+  release_path_prefix: appliance
+  base_url: http://192.168.1.105:28081
+
+  # static_http publish target (injected as PUBLISH_SERVER / PUBLISH_REMOTE_ROOT)
+  publish_server_alias: zonsys@192.168.1.105
+  publish_remote_root: /home/zonsys/releases
+
+  # --- appliance_files (day-2 distributor) ---
+  # Distributor FQDN in base_url must NOT equal install.appliance_name on the
+  # target (zonctl seeds /etc/hosts for the target FQDN and would shadow DNS).
+  # mode: appliance_files
+  # base_url: https://artifact-dns-1.appliance.internal/api/v1/files
+  # access_token: apt_….…   # Dashboard → API tokens; keep this file local
+  # tls_insecure: true      # default when omitted (lab self-signed)
+  # cacert_path: /abs/path/to/distributor-ca.pem
 
 build_flow:
-  # Required for bootstrap-build-host.sh when the build host still needs the
-  # one-time appliance-code registry login/bootstrap.
-  # Put the username here and keep the token in the existing Mac env var:
-  # export REGISTRY_TOKEN='...'
+  # One-time / GHCR login on the build host (optional if already bootstrapped).
   registry_user: your-registry-username
-  registry_token_env: REGISTRY_TOKEN
-  # Optional but less secure alternative if you really want the token in config:
-  # registry_token: your-registry-token
-  git_pull_command: git pull
-  # NOTE: build-and-publish.sh no longer runs git_pull_command against the
-  # build-host checkout. It clones or hard-resets release_workspace.remote_repo_path
-  # to remote_repo_ref so dirty local files cannot block the flow. Keep this key
-  # only for older docs/tooling compatibility.
-  bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
-  bootstrap_needs_sudo: true
+  # registry_token_env: REGISTRY_TOKEN   # default
+  # bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
+  # bootstrap_needs_sudo: true
+
   build_needs_sudo: true
-  # PRODUCT_VERSION and EXPORT_DIR are injected automatically by the skill from
-  # release.version and release_workspace.remote_export_dir.
-  build_command: K3S_BINARY_SOURCE=/home/zonsys/ci/inputs/k3s K3S_AIRGAP_IMAGES_SOURCE=/home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst bash /home/zonsys/ws/appliance-release/scripts/ci/build-full-bundle.sh
-  # PRODUCT_VERSION, EXPORT_DIR, and PUBLISH_* are injected automatically by
-  # the skill from release.version / release_workspace / bundle_store.
-  # For bundle_store.mode=static_http keep PUBLISH_SERVER and PUBLISH_REMOTE_ROOT
-  # here (or rely on Makefile defaults from your shell).
-  # For bundle_store.mode=appliance_files the skill injects PUBLISH_MODE,
-  # PUBLISH_PUBLIC_BASE_URL, PUBLISH_BEARER_TOKEN (from bundle_store.access_token),
-  # and TLS flags — a plain `make publish-release` is enough:
+  # Required for the default build command (build-full-bundle.sh).
+  k3s_binary_source: /home/zonsys/ci/inputs/k3s
+  k3s_airgap_images_source: /home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst
+  # Defaults when omitted:
+  #   build_command: bash scripts/ci/build-full-bundle.sh
   #   publish_command: make publish-release
-  publish_command: make publish-release PUBLISH_SERVER=zonsys@192.168.1.105 PUBLISH_REMOTE_ROOT=/home/zonsys/releases
-  # Argo Workflows is a mandatory component of the complete v1 appliance
-  # (ADR 0011) and build-full-bundle.sh enables it by default with zero
-  # configuration: its version and controller/executor image references
-  # are derived automatically from appliance-code's own
-  # deploy/charts/argo-workflows/Chart.yaml, and its CRDs are fetched
-  # automatically from the matching upstream GitHub release. Nothing
-  # below is required for an ordinary build — uncomment only to override
-  # a specific default (e.g. an offline/pinned CRD source, or a mirrored
-  # image reference).
-  argo:
-    # enabled: false                  # opt out entirely (control-plane-only debug build)
-    # crds_dir_source: /home/zonsys/ci/inputs/argo-crds   # use a local CRD copy instead of fetching from GitHub
-    # version: v3.5.10                                    # pin a different Argo version than the chart's appVersion
-    # controller_image_ref: quay.io/argoproj/workflow-controller:v3.5.10
-    # executor_image_ref: quay.io/argoproj/argoexec:v3.5.10
-    # Optional local archive overrides if you already mirrored the OCI images.
-    # controller_image_archive_source: /home/zonsys/ci/inputs/argo/workflow-controller.oci.tar
-    # executor_image_archive_source: /home/zonsys/ci/inputs/argo/argoexec.oci.tar
-  # Workspace provisioning uses an appliance-owned generic image with git and
-  # CA certificates. Online build hosts can omit both fields: build-full-bundle.sh
-  # then pulls docker.io/alpine/git:latest for linux/amd64, reads the archived
-  # platform manifest digest from index.json, and labels the archive as
-  # registry.local/workspace-provisioner@sha256:<that-digest>. Do not pin digests
-  # from `skopeo inspect` alone — multi-arch index digests will not match the archive.
-  # For a pinned/offline tryout, export once then set the archive source (digest is
-  # derived from the archive; the ref name is optional):
-  #   skopeo copy --override-os linux --override-arch amd64 \
-  #     docker://docker.io/alpine/git:latest \
-  #     oci-archive:/home/zonsys/ci/inputs/workspace-provisioner.oci.tar:registry.local/workspace-provisioner
-  # workspace_provisioner_image_archive_source: /home/zonsys/ci/inputs/workspace-provisioner.oci.tar
-  # workspace_provisioner_image_ref: registry.local/workspace-provisioner
-  # Zot is a required first-class image/chart contract in every complete bundle.
-  # It is activated at install time only for artifact-bearing profiles:
-  # storage, builder, storage-landns, builder-landns, and builder-storage-landns.
-  # Online builds pull this exact version on the build host, copy linux/amd64,
-  # and derive registry.local/zot@sha256:<index.json platform digest>. The
-  # archive is relabeled registry.local/zot:bundled for reliable ctr import.
-  zot:
-    version: 2.1.8
-    image_pull_ref: ghcr.io/project-zot/zot-linux-amd64:v2.1.8
-    # Offline/premirrored alternative; version and digest are still validated:
-    # image_archive_source: /home/zonsys/ci/inputs/zot.oci.tar
-  # CoreDNS is also a required first-class image/chart contract in every
-  # complete bundle (same treatment as Zot above). It is activated at install
-  # time only for DNS-bearing profiles: landns, storage-landns, builder-landns, builder-storage-landns.
-  # Online builds wrap upstream CoreDNS inside the appliance-code dev-run
-  # environment (buildah+skopeo), producing registry.local/coredns:bundled plus
-  # registry.local/coredns@sha256:<index.json platform digest>. Do not expect
-  # bare skopeo on the build host PATH; set image_archive_source for offline.
-  dns:
-    version: 1.14.4
-    image_pull_ref: registry.k8s.io/coredns/coredns:v1.14.4
-    # Offline/premirrored alternative; version and digest are still validated:
-    # image_archive_source: /home/zonsys/ci/inputs/coredns.oci.tar
-  # Builder-profile builds require the bundled automation-dev (CI/dev-container)
-  # image. zonctl picks the automation-dev@sha256 ref from the bundle and injects
-  # config.builderImageDigest. Catalogs must not set per-target builder digests.
-  # Online build hosts can pull from GHCR during the bundle build (requires skopeo
-  # and the same REGISTRY_USER / REGISTRY_TOKEN bootstrap used for appliance-code).
-  # Digests in extra_oci_image_refs are advisory; the build overwrites them with the
-  # archived platform manifest digest:
+  # (skill injects PRODUCT_VERSION, EXPORT_DIR, PUBLISH_*, K3S_*)
+
+  # Complete v1 bundles need automation-dev for builder-capable installs.
   extra_oci_image_pull_refs: ghcr.io/zoncaesaradmin/development-container/automation-dev:v0.1.0
   extra_oci_image_refs: registry.local/automation-dev
-  # Offline/pinned alternative: export once, then use archive sources instead of pull refs.
-  # The build derives registry.local/automation-dev@sha256:<platform-digest> from the archive:
-  #   skopeo copy --override-os linux --override-arch amd64 \
-  #     docker://ghcr.io/zoncaesaradmin/development-container/automation-dev:v0.1.0 \
-  #     oci-archive:/home/zonsys/ci/inputs/automation-dev.oci.tar:registry.local/automation-dev
+
+  # --- advanced / offline overrides (omit for online builds) ---
+  # code_repo_ref / ctl_repo_ref
+  # argo: { enabled, version, crds_dir_source, controller_image_ref, ... }
+  # zot: { version, image_pull_ref, image_archive_source }   # defaults in build-full-bundle.sh
+  # dns: { version, image_pull_ref, image_archive_source }
+  # workspace_provisioner_image_ref / workspace_provisioner_image_archive_source
   # extra_oci_image_archive_sources: /home/zonsys/ci/inputs/automation-dev.oci.tar
-  # extra_oci_image_refs: registry.local/automation-dev
+  # remote fallbacks if build-log path parsing fails:
+  # (set under release_workspace) remote_release_input_path / remote_bundle_dir
+
+# =============================================================================
+# INSTALL / VERIFY
+# =============================================================================
+
+target_host:
+  alias: zonsys@192.168.1.101
+  # state_dir: /var/lib/zon/state   # rare override; must match zonctl --state-dir
 
 install:
-  bootstrap_admin_username: admin
-  # Optional rollout/bootstrap overrides if chart naming changes again.
-  # rollout_namespace: control
-  # control_plane_deployment: api-server
-  # Product-facing appliance profile passed into the control plane.
-  # Valid v1 values: core, builder, storage, landns, storage-landns, builder-landns, builder-storage-landns
-  appliance_profile: storage-landns
-  # Local build catalog JSON/YAML. Copied to the target install temp dir and
-  # passed to zonctl as product config. Required for a useful builder tryout.
-  # Do not put private keys, tokens, or passwords in this file.
-  # Builder workflow repo URLs must use HTTPS.
-  # Start from references/build-catalog.example.yaml (no builderImageDigest keys).
-  build_catalog_path: /Users/zoncaesar/build-catalog.yaml
-  # Product LAN instance label (single DNS label). FQDN becomes
-  # <appliance_name>.<dns_zone> for TLS, canonicalOrigin, and registry realm.
-  # Must be unique on the LAN. When bundle_store.mode=appliance_files, do not
-  # reuse the distributor's name (the host in bundle_store.base_url).
+  # Required. Must be unique on the LAN and distinct from the distributor FQDN
+  # in bundle_store.base_url when mode=appliance_files.
   appliance_name: storage-landns-1
-  # LAN DNS zone for appliance identity and landns CoreDNS. Default when
-  # omitted: appliance.internal (must not use .local — mDNS-only on Ubuntu).
-  dns_zone: appliance.internal
-  # Extra TLS SANs in addition to the derived FQDN and node-name, as a
-  # comma-separated list (for example a raw IP for direct access).
+  # core | storage | builder | landns | storage-landns | builder-landns | builder-storage-landns
+  appliance_profile: storage-landns
+  # dns_zone: appliance.internal   # default
+  # Required for builder* profiles:
+  # build_catalog_path: /Users/you/build-catalog.yaml
   # additional_tls_sans_csv: 192.168.1.101
-  # DNS-bearing profiles: CoreDNS serves dns_zone. Install does not seed or
-  # publish A records. Add the appliance FQDN on the landns appliance via
-  # API/UI, or from any appliance via POST /api/v1/dns/publish.
-  # zonctl auto-disables systemd-resolved's stub listener before install so
-  # :53 is free, seeds /etc/hosts for the node hostname, and restores the stub
-  # on uninstall. Point LAN clients at the DNS appliance LAN IP on UDP/TCP 53
-  # (see docs/operator-guide.md and docs/lan-dns.md).
   uninstall_first: true
+  # bootstrap_admin_username: admin
+  # kubernetes_namespace: control
+  # control_plane_deployment: api-server
 
 verification:
-  status_command: sudo zonctl status --output json
-  verify_command: sudo zonctl verify --output json
-  service_health_command: sudo kubectl get pods -A
-  app_version_command: sudo cat /var/lib/zon/state/installed-state.json
-  # Only enable a smoke test here if the target host can actually reach the
-  # appliance HTTPS endpoint you want to prove. If you copy the localhost
-  # example below unchanged, verify-target.sh will automatically rewrite it to
-  # client_verification.base_url when that value is set. Otherwise replace it
-  # with a host-specific reachable URL.
-  smoke_test_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
-  failure_log_command: sudo zonctl support-bundle --output json
-  # Argo verification now follows the installed profile capability by default:
-  # core/builder/builder-*-landns profiles verify workflows, while storage,
-  # landns, and storage-landns skip those checks even if this block is left enabled from
-  # an older config. Keep this true only when you want Argo checks for a
-  # workflow-capable profile.
-  argo:
-    enabled: true
-    namespaces_command: sudo kubectl get namespace workflows appliance-builds
-    crds_command: sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io
-    controller_command: sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods
-  # Builder checks default to enabled when install.appliance_profile is builder.
-  # The target-side check proves the build API route is registered by asserting
-  # /api/v1/work-profiles does not return 404. Authenticated REST/MCP tool
-  # availability is checked from the client verifier below.
-  builder:
-    # enabled: true
-    # api_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://target-ip-or-dns/api/v1/work-profiles)" && [ "$code" != "404" ]'
-    # Builder workflow repo URLs must use HTTPS. Override only when you need a
-    # custom builder-specific readiness rule.
+  # Most checks default from appliance_profile. Override only when needed.
+  # smoke_test_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
   allow_ingress_warning: true
-  allow_verify_schema_bug: true
-  # Defaults enabled for storage/builder/storage-landns/builder-*-landns and disabled for
-  # core/landns. The default readiness command waits for the zot Deployment
-  # and confirms its PVC.
-  artifact:
-    # enabled: true
-    # readiness_command: sudo kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data
-  # Defaults enabled for landns/storage-landns/builder-*-landns and disabled for
-  # core/storage/builder. The default readiness command waits for the
-  # dns-server Deployment, then queries 127.0.0.1:53 for the local-zone A
-  # zone SOA for install.dns_zone (default appliance.internal).
-  dns:
-    # enabled: true
-    # readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/dns-server --timeout=120s && dig +short @127.0.0.1 -p 53 SOA appliance.internal
+  # allow_verify_schema_bug: true
+  # Custom command overrides (defaults exist for status/verify/kubectl/support-bundle/argo):
+  # status_command / verify_command / service_health_command / failure_log_command
+  # argo: { enabled, namespaces_command, crds_command, controller_command }
+  # builder: { enabled, api_command }
+  # artifact: { enabled, readiness_command }
+  # dns: { enabled, readiness_command, absence_command }
 
 client_verification:
-  # Required for macOS-side verify-client-access.sh. Also rewrites target-side
-  # smoke/UI checks away from https://127.0.0.1. Must be a real appliance URL
-  # for the current target (NOT the placeholder). Example for .103:
-  #   base_url: https://192.168.1.103
-  # Omit this key entirely to keep target-side smoke on https://127.0.0.1.
+  # Required for macOS-side verify-client-access.sh. Prefer the target URL/IP.
   base_url: https://192.168.1.101
   username: admin
-  # Builder checks default to enabled when install.appliance_profile is builder.
-  # They log in, GET /api/v1/work-profiles, initialize MCP, and assert
-  # tools/list includes the full initial builder tool surface:
-  # list_work_profiles, get_workspace, set_workspace, list_build_targets,
-  # submit_build, list_jobs, get_job_status, get_job_steps, get_job_logs,
-  # and cancel_job.
-  builder:
-    # enabled: true
-    # For non-builder profiles this defaults to true and requires
-    # /api/v1/work-profiles to return 404 and MCP tools/list to omit builder
-    # workflow tools, proving build routes/tools are not registered when the
-    # build capability is disabled.
-    # expect_disabled: true
-    # Optional real builder workflow smoke. This submits an actual build through
-    # REST, polls the job, fetches steps/logs, and expects success by default.
-    # Enable only when the builder catalog, Git host reachability,
-    # builder image, and registry are all ready for a real build.
-    workflow:
-      # enabled: true
-      # workspace_name: release-smoke
-      # Workspace profile name for the temporary test workspace. The
-      # wire-format key stays work_profile for ForgeLine compatibility.
-      # work_profile: builder
-      # repo: app
-      # v1 workflow smoke requires an immutable lowercase 40-character commit SHA.
-      # Mutable refs can be accepted later only after commit resolution is added.
-      # source_ref: 0123456789abcdef0123456789abcdef01234567
-      # target_name: app
-      # image_tag: release-smoke
-      # poll_attempts: 60
-      # poll_delay_seconds: 5
-      # expect_success: true
-      # delete_workspace_on_success: false
-  # Defaults enabled for storage/builder/storage-landns/builder-*-landns and disabled for
-  # core/landns. Built-in checks cover capability routing, /v2 bearer
-  # challenge, API-token issuance,
-  # filtered catalog access, anonymous/denied/malformed-token rejection, and
-  # token revocation. Optional smoke commands receive only process-local
-  # APPLIANCE_REGISTRY_URL, APPLIANCE_REGISTRY_USERNAME, and
-  # APPLIANCE_REGISTRY_TOKEN environment variables; never echo them.
-  artifact:
-    # enabled: true
-    # Defaults to false for username=admin because administrators legitimately
-    # receive broad registry pull/push grants. Set this to true only when the
-    # configured verification user should be denied a probe repository scope.
-    # expect_denied_scope: false
-    # oci_smoke_command: /abs/path/to/oci-push-pull-smoke.sh
-    # oras_smoke_command: /abs/path/to/oras-referrer-smoke.sh
-    # offline_smoke_command: /abs/path/to/assert-no-public-egress-smoke.sh
+  # builder: { enabled, expect_disabled, workflow: { enabled, workspace_name, ... } }
+  # artifact: { enabled, expect_denied_scope, oci_smoke_command, ... }

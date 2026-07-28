@@ -19,10 +19,13 @@ Options:
   --config PATH                 YAML or JSON config file. Optional if
                                 APPLIANCE_RELEASE_CONFIG is set or a local
                                 appliance-release.config.yaml exists.
-  --git-pull-cmd CMD            Optional remote git-pull command.
   --bootstrap-cmd CMD           Optional remote bootstrap command.
-  --build-cmd CMD               Remote build command. Defaults to build_flow.build_command.
-  --publish-cmd CMD             Remote publish command. Defaults to build_flow.publish_command.
+  --build-cmd CMD               Remote build command. Defaults to
+                                build_flow.build_command, or
+                                bash scripts/ci/build-full-bundle.sh.
+  --publish-cmd CMD             Remote publish command. Defaults to
+                                build_flow.publish_command, or
+                                make publish-release.
   --remote-cwd PATH             Remote working directory. Defaults to release_workspace.remote_repo_path.
   --remote-export-dir PATH      Optional remote export directory to rsync back locally.
   --remote-release-input PATH   Optional remote release-input file or directory to copy back.
@@ -33,7 +36,6 @@ EOF
 }
 
 CONFIG_PATH=""
-GIT_PULL_CMD=""
 BOOTSTRAP_CMD=""
 BUILD_CMD=""
 PUBLISH_CMD=""
@@ -43,15 +45,12 @@ REMOTE_RELEASE_INPUT=""
 REMOTE_BUNDLE_DIR=""
 RELEASE_VERSION=""
 RUN_DIR=""
+USING_DEFAULT_BUILD_CMD="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)
       CONFIG_PATH="${2:-}"
-      shift 2
-      ;;
-    --git-pull-cmd)
-      GIT_PULL_CMD="${2:-}"
       shift 2
       ;;
     --bootstrap-cmd)
@@ -115,17 +114,23 @@ REMOTE_REPO_SOURCE="$(config_get_optional "${CONFIG_PATH}" "release_workspace.re
 REMOTE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_repo_ref" || true)"
 CODE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.code_repo_ref" || true)"
 CTL_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.ctl_repo_ref" || true)"
-if [[ -z "${GIT_PULL_CMD}" ]]; then
-  GIT_PULL_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.git_pull_command" || true)"
-fi
+BUILD_K3S_BINARY_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.k3s_binary_source" || true)"
+BUILD_K3S_AIRGAP_IMAGES_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.k3s_airgap_images_source" || true)"
 if [[ -z "${BOOTSTRAP_CMD}" ]]; then
   BOOTSTRAP_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_command" || true)"
 fi
 if [[ -z "${BUILD_CMD}" ]]; then
   BUILD_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_command" || true)"
 fi
+if [[ -z "${BUILD_CMD}" ]]; then
+  BUILD_CMD="bash scripts/ci/build-full-bundle.sh"
+  USING_DEFAULT_BUILD_CMD="true"
+fi
 if [[ -z "${PUBLISH_CMD}" ]]; then
   PUBLISH_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.publish_command" || true)"
+fi
+if [[ -z "${PUBLISH_CMD}" ]]; then
+  PUBLISH_CMD="make publish-release"
 fi
 if [[ -z "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
@@ -140,7 +145,10 @@ if [[ -z "${REMOTE_BUNDLE_DIR}" ]]; then
   REMOTE_BUNDLE_DIR="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_bundle_dir" || true)"
 fi
 
-[[ -n "${BUILD_CMD}" ]] || fail "build command not provided and build_flow.build_command is missing"
+if bool_true "${USING_DEFAULT_BUILD_CMD}"; then
+  [[ -n "${BUILD_K3S_BINARY_SOURCE}" ]] || fail "default build_command requires build_flow.k3s_binary_source"
+  [[ -n "${BUILD_K3S_AIRGAP_IMAGES_SOURCE}" ]] || fail "default build_command requires build_flow.k3s_airgap_images_source"
+fi
 [[ -n "${PUBLISH_CMD}" ]] || fail "publish command not provided and build_flow.publish_command is missing"
 
 SKILL_RELEASE_REPO_ROOT="$(skill_release_repo_root "${SCRIPT_DIR}")"
@@ -197,11 +205,17 @@ BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
 PUBLISH_PUBLIC_BASE_URL="$(bundle_store_get_optional "${CONFIG_PATH}" "base_url" || true)"
 PUBLISH_PATH_PREFIX="$(bundle_store_get_optional "${CONFIG_PATH}" "release_path_prefix" || true)"
 PUBLISH_LATEST_ALIAS="$(config_get_optional "${CONFIG_PATH}" "release.publish_latest_alias" || true)"
+PUBLISH_SERVER="$(bundle_store_get_optional "${CONFIG_PATH}" "publish_server_alias" || true)"
+PUBLISH_REMOTE_ROOT="$(bundle_store_get_optional "${CONFIG_PATH}" "publish_remote_root" || true)"
 case "${BUNDLE_STORE_MODE}" in
   static_http|appliance_files)
     [[ -n "${PUBLISH_PUBLIC_BASE_URL}" ]] || fail "bundle_store.mode=${BUNDLE_STORE_MODE} requires bundle_store.base_url"
     ;;
 esac
+if [[ "${BUNDLE_STORE_MODE}" == "static_http" ]]; then
+  [[ -n "${PUBLISH_SERVER}" ]] || fail "bundle_store.mode=static_http requires bundle_store.publish_server_alias"
+  [[ -n "${PUBLISH_REMOTE_ROOT}" ]] || fail "bundle_store.mode=static_http requires bundle_store.publish_remote_root"
+fi
 if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
   require_appliance_files_base_url "${PUBLISH_PUBLIC_BASE_URL}"
 fi
@@ -249,6 +263,8 @@ fi
 BUILD_ENV_PREFIX=""
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "PRODUCT_VERSION" "${RELEASE_VERSION}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXPORT_DIR" "${REMOTE_EXPORT_DIR}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "K3S_BINARY_SOURCE" "${BUILD_K3S_BINARY_SOURCE}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "K3S_AIRGAP_IMAGES_SOURCE" "${BUILD_K3S_AIRGAP_IMAGES_SOURCE}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "CODE_REPO_REF" "${CODE_REPO_REF}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "CTL_REPO_REF" "${CTL_REPO_REF}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_ENABLED" "${BUILD_ARGO_ENABLED}")"
@@ -277,6 +293,10 @@ PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "EXPORT_DIR"
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_MODE" "${BUNDLE_STORE_MODE}")"
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_PUBLIC_BASE_URL" "${PUBLISH_PUBLIC_BASE_URL}")"
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_PATH_PREFIX" "${PUBLISH_PATH_PREFIX}")"
+if [[ "${BUNDLE_STORE_MODE}" == "static_http" ]]; then
+  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_SERVER" "${PUBLISH_SERVER}")"
+  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_REMOTE_ROOT" "${PUBLISH_REMOTE_ROOT}")"
+fi
 if bool_true "${PUBLISH_LATEST_ALIAS:-false}"; then
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_LATEST_ALIAS" "1")"
 fi
@@ -299,7 +319,7 @@ if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
 fi
 
 release_repo_sync_remote_cmd=""
-release_repo_sync_remote_cmd="$(render_ensure_remote_release_repo_cmd "${REMOTE_CWD}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" "${GIT_PULL_CMD}")"
+release_repo_sync_remote_cmd="$(render_ensure_remote_release_repo_cmd "${REMOTE_CWD}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}")"
 
 # Resolve bootstrap registry secrets before composing remote commands so the
 # env-prefix style matches build/publish (NAME=quoted-value cmd) and never uses
@@ -320,14 +340,14 @@ fi
 build_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BUILD_ENV_PREFIX}${BUILD_CMD}"
 publish_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PUBLISH_ENV_PREFIX}${PUBLISH_CMD}"
 
-git_pull_log="${RUN_DIR}/logs/git-pull.log"
+release_repo_sync_log="${RUN_DIR}/logs/release-repo-sync.log"
 bootstrap_log="${RUN_DIR}/logs/bootstrap.log"
 build_log="${RUN_DIR}/logs/build.log"
 publish_log="${RUN_DIR}/logs/publish.log"
 
 if [[ -n "${release_repo_sync_remote_cmd}" ]]; then
   log "ensuring remote appliance-release checkout on ${BUILD_HOST} (${REMOTE_CWD})"
-  run_ssh_logged "${BUILD_HOST}" "${git_pull_log}" "${release_repo_sync_remote_cmd}"
+  run_ssh_logged "${BUILD_HOST}" "${release_repo_sync_log}" "${release_repo_sync_remote_cmd}"
 fi
 
 build_sudo_password=""
@@ -533,7 +553,7 @@ fi
 remote_release_commit_cmd="cd $(shell_quote "${REMOTE_CWD}") && git rev-parse HEAD"
 remote_release_commit="$(ssh "${BUILD_HOST}" "bash -lc $(shell_quote "${remote_release_commit_cmd}")" 2>/dev/null || true)"
 
-python3 - "${RUN_DIR}" "${CONFIG_PATH}" "${BUILD_HOST}" "${REMOTE_CWD}" "${RELEASE_VERSION}" "${GIT_PULL_CMD}" "${BOOTSTRAP_CMD}" "${BUILD_CMD}" "${PUBLISH_CMD}" "${remote_release_commit}" "${REMOTE_REPO_SOURCE}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" <<'PY'
+python3 - "${RUN_DIR}" "${CONFIG_PATH}" "${BUILD_HOST}" "${REMOTE_CWD}" "${RELEASE_VERSION}" "${BOOTSTRAP_CMD}" "${BUILD_CMD}" "${PUBLISH_CMD}" "${remote_release_commit}" "${REMOTE_REPO_SOURCE}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -544,7 +564,6 @@ run_dir = Path(sys.argv[1])
     build_host,
     remote_cwd,
     release_version,
-    git_pull_cmd,
     bootstrap_cmd,
     build_cmd,
     publish_cmd,
@@ -552,7 +571,7 @@ run_dir = Path(sys.argv[1])
     remote_repo_source,
     effective_remote_repo_source,
     remote_repo_ref,
-) = sys.argv[2:14]
+) = sys.argv[2:13]
 
 def read_text(path: Path):
     if path.is_file():
@@ -622,7 +641,6 @@ payload = {
     "remoteRepoSource": remote_repo_source or None,
     "effectiveRemoteRepoSource": effective_remote_repo_source or None,
     "remoteRepoRef": remote_repo_ref or None,
-    "gitPullCommand": git_pull_cmd or None,
     "bootstrapCommand": bootstrap_cmd or None,
     "buildCommand": build_cmd,
     "publishCommand": publish_cmd,
@@ -630,7 +648,7 @@ payload = {
     "releaseInputArtifacts": image_digests,
     "bundleEntries": bundle_entries,
     "logs": {
-        "gitPull": str(run_dir / "logs" / "git-pull.log"),
+        "releaseRepoSync": str(run_dir / "logs" / "release-repo-sync.log"),
         "bootstrap": str(run_dir / "logs" / "bootstrap.log"),
         "build": str(run_dir / "logs" / "build.log"),
         "publish": str(run_dir / "logs" / "publish.log"),

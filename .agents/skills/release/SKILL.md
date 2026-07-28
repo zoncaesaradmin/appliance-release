@@ -37,6 +37,7 @@ Read each participating repository's `AGENTS.md` before making code or command d
 ## Configuration
 
 The scripts read a local YAML or JSON config file. Start from [references/config.example.yaml](references/config.example.yaml).
+That example is one file with two clear sections (**BUILD / PUBLISH** then **INSTALL / VERIFY**); a later change may split them into two configs.
 
 Important rules:
 
@@ -44,6 +45,7 @@ Important rules:
 - use absolute remote paths, not `~/...`
 - do not store passwords in the config
 - keep machine-specific values in the config, not in the skill
+- omit keys that have script defaults (build/publish commands, most verification commands, online zot/dns pins)
 
 Runtime secrets such as remote `sudo` passwords and first-admin credentials must be supplied at runtime, not written into the skill. Prefer environment variables or an interactive prompt.
 
@@ -72,7 +74,7 @@ Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `
 - `scripts/run-release-flow.sh`
   One-shot wrapper for the common flow from the `appliance-release` repo: build/publish, install, target verify, then macOS-side API verify.
 - `scripts/build-and-publish.sh`
-  Run the deterministic build-host flow: optional `git pull`, build-host bootstrap, bundle build, publish, and artifact metadata capture. Publish uses `bundle_store.mode` (`static_http` or `appliance_files`).
+  Run the deterministic build-host flow: sync the skill-managed release checkout, optional bootstrap, bundle build, publish, and artifact metadata capture. Publish uses `bundle_store.mode` (`static_http` or `appliance_files`).
 - `scripts/install-on-target.sh`
   Optionally uninstall the previous appliance, then install the published release on the target host via HTTP `curl` against `base_url` (Mac only SSHs).
 - `scripts/verify-target.sh`
