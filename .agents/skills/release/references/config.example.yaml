@@ -69,7 +69,7 @@ build_flow:
     image_tag: 0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: PRODUCT_PUBLISH_TLS_VERIFY
+    tls_verify_env: DEV_TLS_VERIFY
   bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
   bootstrap_needs_sudo: true
   build_needs_sudo: true
