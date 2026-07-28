@@ -11,7 +11,7 @@
 #
 # Secrets via env (not this file). Registry credentials are split by scope:
 # - build_flow.dev_image_pull.*_env (pull/login the dev container image)
-# - build_flow.product_publish.*_env (publish control-plane image destinations)
+# - build_flow.product_publish.*_env (publish destination defaults / credentials)
 # Also: APPLIANCE_BUILD_SUDO_PASSWORD, APPLIANCE_TARGET_SUDO_PASSWORD,
 #   APPLIANCE_FIRST_ADMIN_PASSWORD
 # Absolute remote paths only (no ~/...).
@@ -59,16 +59,13 @@ build_flow:
     token_env: DEV_REGISTRY_TOKEN
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 
-  # Scope 2: service-image push destination (registry host + repo path only).
-  # Defaults in build/service-image.mk: registry host from DEV_REGISTRY,
-  # repo appliance-images, name from service Makefile / SERVICE_IMAGE_NAME.
-  # Do not set image_name from DEV_IMAGE_* (those name the development-container pull).
+  # Scope 2: publish destination defaults for product image pushes.
+  # These are exported into remote build env even when the bundle build itself
+  # does not publish control-plane images.
   product_publish:
     registry: ghcr.io
-    # Or: registry_env: SERVICE_IMAGE_REGISTRY
-    image_repo: appliance-images
-    # Or: image_repo_env: SERVICE_IMAGE_REPO
-    image_name: appliance-control-plane   # documentary; Makefile owns the real name
+    image_repo_env: DEV_IMAGE_REPO
+    image_name_env: DEV_IMAGE_NAME
     image_tag: 0.1.0
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
@@ -108,6 +105,18 @@ install:
   control_plane_deployment: api-server
   # build_catalog_path: /Users/you/build-catalog.yaml   # required for builder*
   # additional_tls_sans_csv: 192.168.1.101
+  #
+  # Optional: teach K3s/containerd to pull from a private LAN registry
+  # (writes /etc/rancher/k3s/registries.yaml). Bundle preload remains the
+  # primary image source; this enables lab pulls such as updating
+  # api-server from artifact-dns-1…/appliance-images/….
+  # Omit the whole block for pure air-gap (preload-only) installs.
+  # image_pull_registry:
+  #   registry: artifact-dns-1.appliance.internal
+  #   # Or: registry_env: DEV_REGISTRY
+  #   username_env: DEV_REGISTRY_USER
+  #   token_env: DEV_REGISTRY_TOKEN
+  #   tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 
 verification:
   status_command: sudo zonctl status --output json

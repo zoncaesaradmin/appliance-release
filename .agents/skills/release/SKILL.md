@@ -55,10 +55,9 @@ For day-to-day use, set:
 - `APPLIANCE_RELEASE_CONFIG=/abs/path/to/appliance-release.config.yaml`
 - `DEV_REGISTRY=...` (named by `build_flow.dev_image_pull.registry_env`)
 - `DEV_IMAGE_REPO=...` / `DEV_IMAGE_NAME=...` (named by pull image_repo_env / image_name_env — development-container only)
-- `SERVICE_IMAGE_REGISTRY=...` / `SERVICE_IMAGE_REPO=...` (optional; default host of `DEV_REGISTRY` + `appliance-images`; image *name* is per-service `SERVICE_IMAGE_NAME`)
-- `SERVICE_IMAGE_NAME=...` (optional override; otherwise service Makefile or directory name)
 - `DEV_REGISTRY_USER=...` / `DEV_REGISTRY_TOKEN=...` (named by username_env / token_env for pull and publish)
 - `DEV_REGISTRY_TLS_VERIFY=true|false` (named by both `dev_image_pull.tls_verify_env` and `product_publish.tls_verify_env`)
+- Optional `install.image_pull_registry` in config (same env names) so target K3s can pull from the LAN registry
 - `APPLIANCE_BUILD_SUDO_PASSWORD=...`
 - `APPLIANCE_TARGET_SUDO_PASSWORD=...`
 - `APPLIANCE_FIRST_ADMIN_PASSWORD=...`

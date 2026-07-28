@@ -40,12 +40,10 @@ Notes:
   reference from these values. The bundled name is fixed as
   `registry.local/dev-build`.
 - Set `build_flow.product_publish` (`registry` / `registry_env`, `image_repo` /
-  `image_repo_env`, optional documentary `image_name`, `image_tag`,
-  username/token/TLS env names). Injected as `SERVICE_IMAGE_REGISTRY` /
-  `SERVICE_IMAGE_REPO` only. Defaults in appliance-code `build/service-image.mk`
-  are registry host from `DEV_REGISTRY` and repo `appliance-images`; each
-  service sets `SERVICE_IMAGE_NAME` (or uses the service directory name).
-  Never reuse pull `DEV_IMAGE_*`.
+  `image_repo_env`, `image_name` / `image_name_env`, `image_tag`,
+  username/token/TLS env names). These are publish-destination defaults for the
+  remote build env (same pattern as before). Per-service `make image` push
+  defaults live in appliance-code `build/service-image.mk`, not this block.
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used both for install and Mac-side API verification.
 - Set `install.appliance_profile` in the config (required).
 - A `run-release-flow.sh --appliance-profile` override is forwarded to install,
@@ -55,6 +53,11 @@ Notes:
   installer derives the FQDN as `<appliance_name>.<dns_zone>` for TLS,
   `canonicalOrigin`, and the registry realm. There is no separate `public_host`
   override.
+- Optional `install.image_pull_registry` teaches K3s/containerd to pull from a
+  private LAN registry (`registries.yaml`). Bundle preload stays primary.
+  Typical shape reuses the same env names as product publish:
+  `registry`, `username_env: DEV_REGISTRY_USER`, `token_env: DEV_REGISTRY_TOKEN`,
+  `tls_verify_env: DEV_REGISTRY_TLS_VERIFY`. Omit the block for preload-only.
 - Set `bundle_store.mode` to `static_http` or `appliance_files` (required):
   - `static_http` — publish/install via an external static HTTP server (`base_url`,
     `publish_server_alias`, `publish_remote_root`, `release_path_prefix`)

@@ -142,6 +142,32 @@ if [[ -n "${ADDITIONAL_TLS_SANS_CSV}" ]]; then
     fi
   done
 fi
+
+# Optional K3s image-pull registry (registries.yaml). Same env names as
+# product_publish / DEV_REGISTRY_* are typical.
+IMAGE_PULL_REGISTRY="$(config_get_optional "${CONFIG_PATH}" "install.image_pull_registry.registry" || true)"
+IMAGE_PULL_REGISTRY_ENV="$(config_get_optional "${CONFIG_PATH}" "install.image_pull_registry.registry_env" || true)"
+IMAGE_PULL_USERNAME_ENV="$(config_get_optional "${CONFIG_PATH}" "install.image_pull_registry.username_env" || true)"
+IMAGE_PULL_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "install.image_pull_registry.token_env" || true)"
+IMAGE_PULL_TLS_VERIFY_ENV="$(config_get_optional "${CONFIG_PATH}" "install.image_pull_registry.tls_verify_env" || true)"
+if [[ -n "${IMAGE_PULL_REGISTRY_ENV}" ]]; then
+  IMAGE_PULL_REGISTRY="$(resolve_env_value "${IMAGE_PULL_REGISTRY_ENV}" "Image pull registry env")"
+fi
+IMAGE_PULL_USERNAME=""
+IMAGE_PULL_TOKEN=""
+IMAGE_PULL_TLS_VERIFY=""
+IMAGE_PULL_PRESERVE_ENV=""
+if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
+  [[ -n "${IMAGE_PULL_USERNAME_ENV}" ]] || fail "install.image_pull_registry.username_env is required when registry is set"
+  [[ -n "${IMAGE_PULL_TOKEN_ENV}" ]] || fail "install.image_pull_registry.token_env is required when registry is set"
+  IMAGE_PULL_USERNAME="$(resolve_env_value "${IMAGE_PULL_USERNAME_ENV}" "Image pull registry username env")"
+  IMAGE_PULL_TOKEN="$(resolve_env_value "${IMAGE_PULL_TOKEN_ENV}" "Image pull registry token env")"
+  IMAGE_PULL_PRESERVE_ENV="--preserve-env=${IMAGE_PULL_USERNAME_ENV},${IMAGE_PULL_TOKEN_ENV}"
+  if [[ -n "${IMAGE_PULL_TLS_VERIFY_ENV}" ]]; then
+    IMAGE_PULL_TLS_VERIFY="$(resolve_env_value "${IMAGE_PULL_TLS_VERIFY_ENV}" "Image pull registry TLS verify env")"
+    IMAGE_PULL_PRESERVE_ENV="${IMAGE_PULL_PRESERVE_ENV},${IMAGE_PULL_TLS_VERIFY_ENV}"
+  fi
+fi
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   ensure_file "${BUILD_CATALOG_PATH}"
 fi
@@ -348,6 +374,31 @@ if [[ -n '"$(shell_quote "${DNS_ZONE}")"' ]]; then
   upgrade_args+=(--dns-zone '"$(shell_quote "${DNS_ZONE}")"')
 fi
 '
+if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
+  remote_script+='
+export '"$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")"'='"$(shell_quote "${IMAGE_PULL_USERNAME}")"'
+export '"$(shell_quote "${IMAGE_PULL_TOKEN_ENV}")"'='"$(shell_quote "${IMAGE_PULL_TOKEN}")"'
+'
+  if [[ -n "${IMAGE_PULL_TLS_VERIFY_ENV}" ]]; then
+    remote_script+='
+export '"$(shell_quote "${IMAGE_PULL_TLS_VERIFY_ENV}")"'='"$(shell_quote "${IMAGE_PULL_TLS_VERIFY}")"'
+'
+  fi
+  remote_script+='
+install_args+=(--image-pull-registry '"$(shell_quote "${IMAGE_PULL_REGISTRY}")"')
+install_args+=(--image-pull-registry-username-env '"$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")"')
+install_args+=(--image-pull-registry-token-env '"$(shell_quote "${IMAGE_PULL_TOKEN_ENV}")"')
+upgrade_args+=(--image-pull-registry '"$(shell_quote "${IMAGE_PULL_REGISTRY}")"')
+upgrade_args+=(--image-pull-registry-username-env '"$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")"')
+upgrade_args+=(--image-pull-registry-token-env '"$(shell_quote "${IMAGE_PULL_TOKEN_ENV}")"')
+'
+  if [[ -n "${IMAGE_PULL_TLS_VERIFY_ENV}" ]]; then
+    remote_script+='
+install_args+=(--image-pull-registry-tls-verify-env '"$(shell_quote "${IMAGE_PULL_TLS_VERIFY_ENV}")"')
+upgrade_args+=(--image-pull-registry-tls-verify-env '"$(shell_quote "${IMAGE_PULL_TLS_VERIFY_ENV}")"')
+'
+  fi
+fi
 if ((${#TLS_SANS[@]} > 0)); then
   for tls_san in "${TLS_SANS[@]}"; do
     remote_script+='
@@ -434,7 +485,15 @@ remote_script+='
 echo "[target 5/5] Installing appliance platform."
 install_stdout="$(mktemp "${out_dir}/.zonctl-install-stdout.XXXXXX")"
 install_stderr="$(mktemp "${out_dir}/.zonctl-install-stderr.XXXXXX")"
-if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" sudo -n "${zonctl}" install "${install_args[@]}"; then
+zonctl_sudo=(sudo -n)
+'
+if [[ -n "${IMAGE_PULL_PRESERVE_ENV}" ]]; then
+  remote_script+='
+zonctl_sudo+=('"$(shell_quote "${IMAGE_PULL_PRESERVE_ENV}")"')
+'
+fi
+remote_script+='
+if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${zonctl}" install "${install_args[@]}"; then
   rm -f "${install_stdout}" "${install_stderr}"
   echo "[target 5/5] Appliance installation completed."
 else
@@ -442,7 +501,7 @@ else
   if [[ "${install_output}" == *"refusing to install (reuse-owned)"* || "${install_output}" == *"refusing to install (upgrade-owned)"* ]]; then
     rm -f "${install_stdout}" "${install_stderr}"
     echo "[target 5/5] Existing owned appliance detected. Switching to in-place upgrade/reconcile."
-    sudo -n "${zonctl}" upgrade "${upgrade_args[@]}"
+    "${zonctl_sudo[@]}" "${zonctl}" upgrade "${upgrade_args[@]}"
     echo "[target 5/5] Appliance upgrade/reconcile completed."
   else
     print_captured_failure "[target 5/5] Appliance installation failed." "${install_stdout}" "${install_stderr}"

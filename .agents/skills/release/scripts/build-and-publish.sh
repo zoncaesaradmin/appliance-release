@@ -350,10 +350,10 @@ BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DNS_IMAGE_ARCHI
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE_REFS" "${BUILD_EXTRA_OCI_IMAGE_REFS}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE_PULL_REFS" "${BUILD_EXTRA_OCI_IMAGE_PULL_REFS}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "OCI_COPY_SRC_TLS_VERIFY" "${OCI_COPY_SRC_TLS_VERIFY}")"
-# Point appliance-code at the pull image (DEV_*) and the service-image push
-# destination (SERVICE_IMAGE_REGISTRY / SERVICE_IMAGE_REPO only). Image *names*
-# stay Makefile-owned per service (build/service-image.mk) so DEV_IMAGE_NAME
-# cannot clobber make -C services/<svc> image.
+# Point appliance-code at the pull image (DEV_*). Per-service image push
+# destination is owned by appliance-code build/service-image.mk (defaults from
+# DEV_REGISTRY host + appliance-images); do not route that through
+# product_publish / DEV_IMAGE_*.
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_IMAGE" "${IMAGE_REGISTRY_PULL_REF}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_REGISTRY_HOST" "${IMAGE_REGISTRY_HOST}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}")"
@@ -361,8 +361,6 @@ BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_REGISTRY" "
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_IMAGE_REPO" "${DEV_PULL_IMAGE_REPO}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_IMAGE_NAME" "${DEV_PULL_IMAGE_NAME}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_IMAGE_TAG" "${DEV_PULL_IMAGE_TAG}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "SERVICE_IMAGE_REGISTRY" "${PUBLISH_REGISTRY}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "SERVICE_IMAGE_REPO" "${PUBLISH_IMAGE_REPO}")"
 
 PUBLISH_ENV_PREFIX=""
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PRODUCT_VERSION" "${RELEASE_VERSION}")"
@@ -419,8 +417,6 @@ BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_REG
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_IMAGE_REPO" "${DEV_PULL_IMAGE_REPO}")"
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_IMAGE_NAME" "${DEV_PULL_IMAGE_NAME}")"
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_IMAGE_TAG" "${DEV_PULL_IMAGE_TAG}")"
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "SERVICE_IMAGE_REGISTRY" "${PUBLISH_REGISTRY}")"
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "SERVICE_IMAGE_REPO" "${PUBLISH_IMAGE_REPO}")"
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_REGISTRY_USER" "${PRODUCT_PUBLISH_REGISTRY_USER}")"
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_REGISTRY_TOKEN" "${PRODUCT_PUBLISH_REGISTRY_TOKEN}")"
 # Also inject into the build so skopeo/podman can use the same auth after login.
