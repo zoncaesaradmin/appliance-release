@@ -9,8 +9,8 @@
 #   1) BUILD / PUBLISH
 #   2) INSTALL / VERIFY
 #
-# Secrets via env (not this file); config names the env vars under build_flow:
-#   registry_user_env / registry_token_env → REGISTRY_USER / REGISTRY_TOKEN
+# Secrets via env (not this file); config names the env vars under
+# build_flow.dev_container_image_registry.registry_*_env (e.g. REGISTRY_USER / REGISTRY_TOKEN).
 # Also: APPLIANCE_BUILD_SUDO_PASSWORD, APPLIANCE_TARGET_SUDO_PASSWORD,
 #   APPLIANCE_FIRST_ADMIN_PASSWORD
 # Absolute remote paths only (no ~/...).
@@ -43,14 +43,27 @@ bundle_store:
   # --- appliance_files (day-2 distributor) ---
   # base_url: https://artifact-dns-1.appliance.internal/api/v1/files
   # access_token: apt_….…
-  # Required for appliance_files HTTPS (and whenever scripts call curl TLS fill):
   # tls_insecure: true
   # cacert_path: /abs/path/to/ca.pem
 
 build_flow:
-  # Env var NAMES only — export the values in the shell that runs the skill.
-  registry_user_env: REGISTRY_USER
-  registry_token_env: REGISTRY_TOKEN
+  # Pull the development-container/dev-build image only (build tool +
+  # bundled builder). Other image pulls use their own build_flow keys.
+  # Login host is derived from pull_ref (first path segment).
+  # Bundled target name is always registry.local/automation-dev (not configurable).
+  #
+  # Default: GHCR (after: make VERSION=v0.1.0 publish)
+  dev_container_image_registry:
+    pull_ref: ghcr.io/zoncaesaradmin/development-container/dev-build:v0.1.0
+    registry_user_env: REGISTRY_USER
+    registry_token_env: REGISTRY_TOKEN
+    tls_insecure: false
+  # LAN only — after: make VERSION=v0.1.0 publish with IMAGE_OWNER=
+  # dev_container_image_registry:
+  #   pull_ref: artifact-dns-1.appliance.internal/development-container/dev-build:v0.1.0
+  #   registry_user_env: REGISTRY_USER
+  #   registry_token_env: REGISTRY_TOKEN
+  #   tls_insecure: true
   bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
   bootstrap_needs_sudo: true
   build_needs_sudo: true
@@ -60,10 +73,8 @@ build_flow:
   k3s_airgap_images_source: /home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst
   build_command: bash scripts/ci/build-full-bundle.sh
   publish_command: make publish-release
-  extra_oci_image_pull_refs: ghcr.io/zoncaesaradmin/development-container/automation-dev:v0.1.0
-  extra_oci_image_refs: registry.local/automation-dev
   # Offline / pin overrides only when needed:
-  # argo / zot / dns / workspace_provisioner_* / extra_oci_image_archive_sources
+  # argo / zot / dns / workspace_provisioner_*
   # release_workspace.remote_release_input_path / remote_bundle_dir
 
 # =============================================================================
@@ -75,7 +86,7 @@ target_host:
   state_dir: /var/lib/zon/state
 
 install:
-  appliance_name: storage-landns-1
+  appliance_name: test-device-1
   appliance_profile: storage-landns
   dns_zone: appliance.internal
   uninstall_first: true
@@ -98,9 +109,7 @@ verification:
   smoke_test_retry_delay_seconds: 3
   allow_ingress_warning: true
   allow_verify_schema_bug: false
-  # Required when client_verification.base_url is set:
   ui_home_command: 'body="$(curl -kfsS https://192.168.1.101/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
-  # Capability checks: set explicitly for this install profile (storage-landns).
   argo:
     enabled: false
   builder:

@@ -57,11 +57,12 @@ Optional overrides:
   # is the upstream pull ref (default docker.io/alpine/git:latest). The build copies the
   # linux/amd64 image, then sets registry.local/workspace-provisioner@sha256:<archived
   # platform manifest digest> from the archive contents (never from skopeo inspect).
-  EXTRA_OCI_IMAGE_ARCHIVE_SOURCES=/ci/inputs/buildah.tar,/ci/inputs/tooling.tar
-  EXTRA_OCI_IMAGE_REFS=registry.local/buildah@sha256:...,registry.local/tooling@sha256:...
-  EXTRA_OCI_IMAGE_PULL_REFS=ghcr.io/org/automation-dev:v0.1.0
-  # EXTRA_OCI_IMAGE_REFS names the local registry.local/... reference. Digests in those
-  # refs are optional advisory pins; the archived platform manifest digest always wins.
+  EXTRA_OCI_IMAGE_REFS=registry.local/automation-dev
+  EXTRA_OCI_IMAGE_PULL_REFS=ghcr.io/org/development-container/dev-build:v0.1.0
+  # Pull extra OCI images from a registry only (GHCR or LAN). There is no
+  # EXTRA_OCI_IMAGE_ARCHIVE_SOURCES path. Digests in EXTRA_OCI_IMAGE_REFS are
+  # optional advisory pins; the archived platform manifest digest always wins.
+  # OCI_COPY_SRC_TLS_VERIFY=false  # for LAN registries with self-signed TLS
   ZOT_VERSION=2.1.8
   ZOT_IMAGE_PULL_REF=ghcr.io/project-zot/zot-linux-amd64:v2.1.8
   ZOT_IMAGE_ARCHIVE_SOURCE=/ci/inputs/zot.oci.tar
@@ -115,14 +116,19 @@ USER_ZOT_IMAGE_ARCHIVE_SOURCE="${ZOT_IMAGE_ARCHIVE_SOURCE-}"
 USER_DNS_VERSION="${DNS_VERSION-}"
 USER_DNS_IMAGE_PULL_REF="${DNS_IMAGE_PULL_REF-}"
 USER_DNS_IMAGE_ARCHIVE_SOURCE="${DNS_IMAGE_ARCHIVE_SOURCE-}"
-USER_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES-}"
 USER_EXTRA_OCI_IMAGE_REFS="${EXTRA_OCI_IMAGE_REFS-}"
 USER_EXTRA_OCI_IMAGE_PULL_REFS="${EXTRA_OCI_IMAGE_PULL_REFS-}"
+USER_OCI_COPY_SRC_TLS_VERIFY="${OCI_COPY_SRC_TLS_VERIFY-}"
 
 set -a
 # shellcheck disable=SC1090
 source "${DEFAULTS_FILE}"
 set +a
+
+if [[ -n "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES-}" ]]; then
+  echo "build-full-bundle: EXTRA_OCI_IMAGE_ARCHIVE_SOURCES is no longer supported; pull extra OCI images via EXTRA_OCI_IMAGE_PULL_REFS (build_flow.dev_container_image_registry in the release config)" >&2
+  exit 2
+fi
 
 PRODUCT_VERSION="${USER_PRODUCT_VERSION:-${PRODUCT_VERSION:-}}"
 CODE_REPO_SOURCE="${USER_CODE_REPO_SOURCE:-${CODE_REPO_SOURCE:-}}"
@@ -160,9 +166,9 @@ DNS_VERSION="${USER_DNS_VERSION:-${DNS_VERSION:-1.14.4}}"
 DNS_VERSION="${DNS_VERSION#v}"
 DNS_IMAGE_PULL_REF="${USER_DNS_IMAGE_PULL_REF:-${DNS_IMAGE_PULL_REF:-registry.k8s.io/coredns/coredns:v${DNS_VERSION}}}"
 DNS_IMAGE_ARCHIVE_SOURCE="${USER_DNS_IMAGE_ARCHIVE_SOURCE:-${DNS_IMAGE_ARCHIVE_SOURCE:-}}"
-EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="${USER_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES:-${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES:-}}"
 EXTRA_OCI_IMAGE_REFS="${USER_EXTRA_OCI_IMAGE_REFS:-${EXTRA_OCI_IMAGE_REFS:-}}"
 EXTRA_OCI_IMAGE_PULL_REFS="${USER_EXTRA_OCI_IMAGE_PULL_REFS:-${EXTRA_OCI_IMAGE_PULL_REFS:-}}"
+OCI_COPY_SRC_TLS_VERIFY="${USER_OCI_COPY_SRC_TLS_VERIFY:-${OCI_COPY_SRC_TLS_VERIFY:-true}}"
 
 # Argo Workflows is a mandatory component of the complete v1 appliance
 # (ADR 0011 in appliance-code), so it is on by default. ARGO_VERSION is
@@ -499,20 +505,27 @@ skopeo_copy_oci_archive() {
   local dest_name="$3"
   local skopeo_bin podman_bin auth_file skopeo_image
   local -a overrides=(--override-os "${BUNDLE_IMAGE_OS}" --override-arch "${BUNDLE_IMAGE_ARCH}")
+  local -a tls_args=()
   local -a copy_cmd
+
+  case "$(printf '%s' "${OCI_COPY_SRC_TLS_VERIFY}" | tr '[:upper:]' '[:lower:]')" in
+    0|false|no|off)
+      tls_args+=(--src-tls-verify=false)
+      ;;
+  esac
 
   mkdir -p "$(dirname "${output_path}")"
   rm -f "${output_path}"
 
   skopeo_bin="$(command -v skopeo || true)"
   if [[ -n "${skopeo_bin}" ]]; then
-    copy_cmd=(sudo -n "${skopeo_bin}" copy "${overrides[@]}" "docker://${source_ref#docker://}" "oci-archive:${output_path}:${dest_name}")
+    copy_cmd=(sudo -n "${skopeo_bin}" copy "${overrides[@]}" "${tls_args[@]}" "docker://${source_ref#docker://}" "oci-archive:${output_path}:${dest_name}")
   else
     podman_bin="$(command -v podman || true)"
     if [[ -z "${podman_bin}" ]]; then
       cat >&2 <<EOF
 build-full-bundle: skopeo or podman is required to export ${dest_name} from ${source_ref}
-build-full-bundle: install skopeo on the build host, or pre-export the archive and set EXTRA_OCI_IMAGE_ARCHIVE_SOURCES / WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE instead
+build-full-bundle: install skopeo on the build host, or supply a first-class offline archive env for this image when supported
 EOF
       exit 1
     fi
@@ -525,6 +538,7 @@ EOF
       "${skopeo_image}"
       copy --authfile /tmp/auth.json
       "${overrides[@]}"
+      "${tls_args[@]}"
       "docker://${source_ref#docker://}"
       "oci-archive:/out/$(basename "${output_path}"):${dest_name}"
     )
@@ -533,7 +547,7 @@ EOF
   if ! "${copy_cmd[@]}" >/dev/null; then
     cat >&2 <<EOF
 build-full-bundle: failed to export ${dest_name} from ${source_ref}
-build-full-bundle: ensure the build host can pull the image (make dev-registry-login in appliance-code for GHCR) or pre-export the archive locally
+build-full-bundle: ensure the build host can pull the image (make dev-registry-login in appliance-code for the configured registry) or fix registry auth/TLS settings
 EOF
     exit 1
   fi
@@ -826,34 +840,16 @@ elif [[ "${DNS_IMAGE_PULL_REF}" == *:latest || "${DNS_IMAGE_PULL_REF}" == regist
   exit 2
 fi
 
-EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST=()
 EXTRA_OCI_IMAGE_REF_LIST=()
 EXTRA_OCI_IMAGE_PULL_REF_LIST=()
-split_csv "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES}" EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST
 split_csv "${EXTRA_OCI_IMAGE_REFS}" EXTRA_OCI_IMAGE_REF_LIST
 split_csv "${EXTRA_OCI_IMAGE_PULL_REFS}" EXTRA_OCI_IMAGE_PULL_REF_LIST
-if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -gt 0 && ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -gt 0 ]]; then
-  echo "build-full-bundle: set either EXTRA_OCI_IMAGE_ARCHIVE_SOURCES or EXTRA_OCI_IMAGE_PULL_REFS, not both" >&2
-  exit 2
-fi
-if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -gt 0 ]]; then
-  if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -ne ${#EXTRA_OCI_IMAGE_REF_LIST[@]} ]]; then
-    echo "build-full-bundle: EXTRA_OCI_IMAGE_ARCHIVE_SOURCES and EXTRA_OCI_IMAGE_REFS must have the same comma-separated length" >&2
+if [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -eq 0 ]]; then
+  if [[ ${#EXTRA_OCI_IMAGE_REF_LIST[@]} -gt 0 ]]; then
+    echo "build-full-bundle: EXTRA_OCI_IMAGE_REFS is set without EXTRA_OCI_IMAGE_PULL_REFS" >&2
     exit 2
   fi
-  for idx in "${!EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]}"; do
-    if [[ -z "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[idx]}" || -z "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" ]]; then
-      echo "build-full-bundle: extra OCI image archive sources and refs must not contain empty entries" >&2
-      exit 2
-    fi
-    require_file "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[idx]}" "extra OCI image archive"
-    local_name="$(oci_bundle_local_name "${EXTRA_OCI_IMAGE_REF_LIST[idx]}")"
-    if [[ "${local_name}" != registry.local/* ]]; then
-      echo "build-full-bundle: EXTRA_OCI_IMAGE_REFS[${idx}] must be a registry.local/... name (optional @sha256 digest is derived from the archived platform manifest)" >&2
-      exit 2
-    fi
-  done
-elif [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -gt 0 ]]; then
+else
   if [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -ne ${#EXTRA_OCI_IMAGE_REF_LIST[@]} ]]; then
     echo "build-full-bundle: EXTRA_OCI_IMAGE_PULL_REFS and EXTRA_OCI_IMAGE_REFS must have the same comma-separated length" >&2
     exit 2
@@ -869,9 +865,6 @@ elif [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -gt 0 ]]; then
       exit 2
     fi
   done
-elif [[ ${#EXTRA_OCI_IMAGE_REF_LIST[@]} -gt 0 ]]; then
-  echo "build-full-bundle: EXTRA_OCI_IMAGE_REFS is set without matching EXTRA_OCI_IMAGE_ARCHIVE_SOURCES or EXTRA_OCI_IMAGE_PULL_REFS" >&2
-  exit 2
 fi
 
 rm -rf "${ARTIFACTS_DIR}" "${WORKSPACE}"
@@ -988,16 +981,7 @@ fi
 PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
 PACKAGED_EXTRA_OCI_IMAGE_REFS+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
 
-if [[ ${#EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]} -gt 0 ]]; then
-  mkdir -p "${CODE_REPO_DIR}/.run/extra-oci-images"
-  for idx in "${!EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[@]}"; do
-    dest="${CODE_REPO_DIR}/.run/extra-oci-images/extra-oci-image-${idx}.tar"
-    cp "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCE_LIST[idx]}" "${dest}"
-    derived_ref="$(finalize_bundled_oci_archive "${dest}" "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" "${EXTRA_OCI_IMAGE_REF_LIST[idx]}")"
-    PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES+=("/workspace/.run/extra-oci-images/extra-oci-image-${idx}.tar")
-    PACKAGED_EXTRA_OCI_IMAGE_REFS+=("${derived_ref}")
-  done
-elif [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -gt 0 ]]; then
+if [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -gt 0 ]]; then
   mkdir -p "${CODE_REPO_DIR}/.run/extra-oci-images"
   for idx in "${!EXTRA_OCI_IMAGE_PULL_REF_LIST[@]}"; do
     dest="${CODE_REPO_DIR}/.run/extra-oci-images/extra-oci-image-${idx}.tar"

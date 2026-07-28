@@ -53,8 +53,8 @@ Runtime secrets such as remote `sudo` passwords and first-admin credentials must
 For day-to-day use, set:
 
 - `APPLIANCE_RELEASE_CONFIG=/abs/path/to/appliance-release.config.yaml`
-- `REGISTRY_USER=...` (named by `build_flow.registry_user_env`)
-- `REGISTRY_TOKEN=...` (named by `build_flow.registry_token_env`)
+- `REGISTRY_USER=...` (named by `build_flow.dev_container_image_registry.registry_user_env`)
+- `REGISTRY_TOKEN=...` (named by `build_flow.dev_container_image_registry.registry_token_env`)
 - `APPLIANCE_BUILD_SUDO_PASSWORD=...`
 - `APPLIANCE_TARGET_SUDO_PASSWORD=...`
 - `APPLIANCE_FIRST_ADMIN_PASSWORD=...`

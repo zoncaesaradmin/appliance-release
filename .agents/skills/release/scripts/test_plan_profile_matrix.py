@@ -54,7 +54,11 @@ buildTargets:
 release:
   version: 0.1.0
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  dev_container_image_registry:
+    pull_ref: ghcr.io/example/development-container/dev-build:v0.1.0
+    registry_user_env: REGISTRY_USER
+    registry_token_env: REGISTRY_TOKEN
+    tls_insecure: false
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -204,7 +208,11 @@ buildTargets:
             config,
             f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  dev_container_image_registry:
+    pull_ref: ghcr.io/example/development-container/dev-build:v0.1.0
+    registry_user_env: REGISTRY_USER
+    registry_token_env: REGISTRY_TOKEN
+    tls_insecure: false
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -255,7 +263,11 @@ buildTargets:
             config,
             f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  dev_container_image_registry:
+    pull_ref: ghcr.io/example/development-container/dev-build:v0.1.0
+    registry_user_env: REGISTRY_USER
+    registry_token_env: REGISTRY_TOKEN
+    tls_insecure: false
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 client_verification:
@@ -302,7 +314,11 @@ buildTargets:
             config,
             f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  dev_container_image_registry:
+    pull_ref: ghcr.io/example/development-container/dev-build:v0.1.0
+    registry_user_env: REGISTRY_USER
+    registry_token_env: REGISTRY_TOKEN
+    tls_insecure: false
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),
@@ -340,7 +356,11 @@ buildTargets:
             config,
             f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  dev_container_image_registry:
+    pull_ref: ghcr.io/example/development-container/dev-build:v0.1.0
+    registry_user_env: REGISTRY_USER
+    registry_token_env: REGISTRY_TOKEN
+    tls_insecure: false
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),
@@ -392,7 +412,11 @@ buildTargets:
                 config,
                 f"""
 build_flow:
-  extra_oci_image_refs: registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  dev_container_image_registry:
+    pull_ref: ghcr.io/example/development-container/dev-build:v0.1.0
+    registry_user_env: REGISTRY_USER
+    registry_token_env: REGISTRY_TOKEN
+    tls_insecure: false
 install:
   build_catalog_path: {tmp / "catalog.yaml"}
 """.lstrip(),

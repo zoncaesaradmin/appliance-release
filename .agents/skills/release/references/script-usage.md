@@ -21,9 +21,14 @@ Notes:
   `build_command` / `publish_command`, `bundle_download_dir`, verification
   commands, and capability flags.
 - If `APPLIANCE_RELEASE_CONFIG` is set, you usually do not need `--config`.
-- `REGISTRY_TOKEN` / `REGISTRY_USER` are named by `build_flow.registry_token_env`
-  / `build_flow.registry_user_env` and must be exported in the shell (not stored
-  as values in YAML). They are injected into bootstrap for GHCR login.
+- `REGISTRY_TOKEN` / `REGISTRY_USER` (or LAN equivalents) are named by
+  `build_flow.dev_container_image_registry.registry_token_env` /
+  `build_flow.dev_container_image_registry.registry_user_env` and must be exported in the
+  shell. They authenticate pulls of `dev_container_image_registry.pull_ref` (GHCR or LAN).
+- Set `build_flow.dev_container_image_registry` (`pull_ref`, `tls_insecure`, credential env
+  names). Login host is derived from `pull_ref`. The bundled name is fixed as
+  `registry.local/automation-dev`. There is no `extra_oci_image_archive_sources`
+  path — registry pull only.
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used both for install and Mac-side API verification.
 - Set `install.appliance_profile` in the config (required).
 - A `run-release-flow.sh --appliance-profile` override is forwarded to install,
@@ -53,10 +58,9 @@ Notes:
   digest-pinned workspace provisioner image. The file is copied to the target
   install temp dir and passed to `zonctl`; it should contain only product
   config, never private keys or tokens.
-- If the build catalog references a workspace provisioner image, also set
-  `build_flow.extra_oci_image_archive_sources` and
-  `build_flow.extra_oci_image_refs` so that image is included in the signed
-  bundle and preloaded on the target.
+- If the build catalog references a workspace provisioner image, ensure
+  `build_flow.dev_container_image_registry.pull_ref` is set so `registry.local/automation-dev`
+  is bundled and preloaded on the target.
 - Builder workflow repo URLs must use HTTPS.
 
 ## 1. Full Flow
@@ -132,11 +136,11 @@ The final bundle's `configuration/values.yaml` is also checked so
 `image.repository/tag/digest` and `ui.image.repository/tag/digest` resolve to
 those same control-plane and UI image references.
 Required release-input evidence checks include the configuration schema,
-compatibility metadata, checksums, SBOM, provenance, notices, and tests. If
-`build_flow.extra_oci_image_refs` is set, those local names (for example
-`registry.local/automation-dev`) must appear in digest-pinned `extraOCIImages[]`
-evidence. Digests in the config refs are advisory; the build derives the
-platform manifest digest from each OCI archive. The validation log is written to
+compatibility metadata, checksums, SBOM, provenance, notices, and tests.
+`registry.local/automation-dev` (from `build_flow.dev_container_image_registry.pull_ref`)
+must appear in digest-pinned `extraOCIImages[]` evidence. Digests in config
+refs are advisory; the build derives the platform manifest digest from each
+OCI archive. The validation log is written to
 `.run/appliance-release/<timestamp>/logs/release-artifact-validation.json`.
 
 ## 3. Install On Target Only

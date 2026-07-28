@@ -162,15 +162,51 @@ BOOTSTRAP_NEEDS_SUDO="$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstr
 BUILD_NEEDS_SUDO="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_needs_sudo" || true)"
 [[ -n "${BOOTSTRAP_NEEDS_SUDO}" ]] || fail "build_flow.bootstrap_needs_sudo is required in config (true|false)"
 [[ -n "${BUILD_NEEDS_SUDO}" ]] || fail "build_flow.build_needs_sudo is required in config (true|false)"
-BOOTSTRAP_REGISTRY_USER_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user_env" || true)"
-BOOTSTRAP_REGISTRY_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token_env" || true)"
-[[ -n "${BOOTSTRAP_REGISTRY_USER_ENV}" ]] || fail "build_flow.registry_user_env is required in config (env var name that holds the registry username, e.g. REGISTRY_USER)"
-[[ -n "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]] || fail "build_flow.registry_token_env is required in config (env var name that holds the registry token, e.g. REGISTRY_TOKEN)"
-if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user" || true)" ]]; then
-  fail "build_flow.registry_user is no longer supported; set build_flow.registry_user_env (e.g. REGISTRY_USER) and export that env var instead"
+
+# Dev-container image registry (development-container/dev-build pull only).
+# Bundled name remains registry.local/automation-dev. Other build-time pulls
+# (zot/dns/argo/…) stay on their own keys. Replaces the old extra_oci_image_* /
+# top-level registry_*_env keys.
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_archive_sources" || true)" ]]; then
+  fail "build_flow.extra_oci_image_archive_sources is no longer supported; use build_flow.dev_container_image_registry.pull_ref"
 fi
-if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token" || true)" ]]; then
-  fail "build_flow.registry_token must not be stored in config; set build_flow.registry_token_env and export that env var"
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_pull_refs" || true)" || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_refs" || true)" ]]; then
+  fail "build_flow.extra_oci_image_pull_refs / extra_oci_image_refs are no longer supported; use build_flow.dev_container_image_registry.pull_ref"
+fi
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user_env" || true)" || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token_env" || true)" ]]; then
+  fail "build_flow.registry_user_env / registry_token_env moved under build_flow.dev_container_image_registry"
+fi
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user" || true)" || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token" || true)" ]]; then
+  fail "build_flow.registry_user / registry_token must not be stored in config; use build_flow.dev_container_image_registry.registry_*_env"
+fi
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.mode" || true)" ]]; then
+  fail "build_flow.dev_container_image_registry.mode is no longer used; set pull_ref to the GHCR or LAN image reference"
+fi
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.registry_host" || true)" ]]; then
+  fail "build_flow.dev_container_image_registry.registry_host is no longer used; login host is derived from pull_ref"
+fi
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.local_ref" || true)" ]]; then
+  fail "build_flow.dev_container_image_registry.local_ref is no longer used; bundle name is fixed as registry.local/automation-dev"
+fi
+
+IMAGE_REGISTRY_PULL_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.pull_ref" || true)"
+BOOTSTRAP_REGISTRY_USER_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.registry_user_env" || true)"
+BOOTSTRAP_REGISTRY_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.registry_token_env" || true)"
+IMAGE_REGISTRY_TLS_INSECURE="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.tls_insecure" || true)"
+[[ -n "${IMAGE_REGISTRY_PULL_REF}" ]] || fail "build_flow.dev_container_image_registry.pull_ref is required in config"
+[[ -n "${BOOTSTRAP_REGISTRY_USER_ENV}" ]] || fail "build_flow.dev_container_image_registry.registry_user_env is required in config"
+[[ -n "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]] || fail "build_flow.dev_container_image_registry.registry_token_env is required in config"
+[[ -n "${IMAGE_REGISTRY_TLS_INSECURE}" ]] || fail "build_flow.dev_container_image_registry.tls_insecure is required in config (true|false)"
+# podman/buildah login host = first path segment of the pull ref.
+IMAGE_REGISTRY_HOST="${IMAGE_REGISTRY_PULL_REF%%/*}"
+[[ -n "${IMAGE_REGISTRY_HOST}" && "${IMAGE_REGISTRY_HOST}" != "${IMAGE_REGISTRY_PULL_REF}" ]] || fail "build_flow.dev_container_image_registry.pull_ref must be registry/path[:tag|@digest] (could not derive login host)"
+# Bundled/target OCI contract name (not configurable).
+BUILD_EXTRA_OCI_IMAGE_PULL_REFS="${IMAGE_REGISTRY_PULL_REF}"
+BUILD_EXTRA_OCI_IMAGE_REFS="registry.local/automation-dev"
+if bool_true "${IMAGE_REGISTRY_TLS_INSECURE}"; then
+  OCI_COPY_SRC_TLS_VERIFY="false"
+else
+  OCI_COPY_SRC_TLS_VERIFY="true"
 fi
 BOOTSTRAP_REGISTRY_USER=""
 BOOTSTRAP_REGISTRY_TOKEN=""
@@ -190,9 +226,6 @@ BUILD_ZOT_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_fl
 BUILD_DNS_VERSION="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.version" || true)"
 BUILD_DNS_IMAGE_PULL_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.image_pull_ref" || true)"
 BUILD_DNS_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.image_archive_source" || true)"
-BUILD_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_archive_sources" || true)"
-BUILD_EXTRA_OCI_IMAGE_REFS="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_refs" || true)"
-BUILD_EXTRA_OCI_IMAGE_PULL_REFS="$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_pull_refs" || true)"
 APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
 [[ -n "${APPLIANCE_PROFILE}" ]] || fail "install.appliance_profile is required in config"
@@ -271,9 +304,12 @@ BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ZOT_IMAGE_ARCHI
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DNS_VERSION" "${BUILD_DNS_VERSION}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DNS_IMAGE_PULL_REF" "${BUILD_DNS_IMAGE_PULL_REF}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DNS_IMAGE_ARCHIVE_SOURCE" "${BUILD_DNS_IMAGE_ARCHIVE_SOURCE}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE_ARCHIVE_SOURCES" "${BUILD_EXTRA_OCI_IMAGE_ARCHIVE_SOURCES}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE_REFS" "${BUILD_EXTRA_OCI_IMAGE_REFS}")"
 BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE_PULL_REFS" "${BUILD_EXTRA_OCI_IMAGE_PULL_REFS}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "OCI_COPY_SRC_TLS_VERIFY" "${OCI_COPY_SRC_TLS_VERIFY}")"
+# Point appliance-code packaging/dev-run at the same pull image and login host.
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_IMAGE" "${IMAGE_REGISTRY_PULL_REF}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_REGISTRY_HOST" "${IMAGE_REGISTRY_HOST}")"
 
 PUBLISH_ENV_PREFIX=""
 PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PRODUCT_VERSION" "${RELEASE_VERSION}")"
@@ -309,19 +345,21 @@ fi
 release_repo_sync_remote_cmd=""
 release_repo_sync_remote_cmd="$(render_ensure_remote_release_repo_cmd "${REMOTE_CWD}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}")"
 
-# Resolve bootstrap registry credentials from the env var names declared in
-# config (never invent usernames/tokens in scripts, and never store the token
-# value in YAML).
-if [[ -n "${BOOTSTRAP_CMD}" ]]; then
-  BOOTSTRAP_REGISTRY_USER="$(resolve_secret "${BOOTSTRAP_REGISTRY_USER_ENV}" "Build host registry username")"
-  [[ -n "${BOOTSTRAP_REGISTRY_USER}" ]] || fail "empty value for env ${BOOTSTRAP_REGISTRY_USER_ENV} (named by build_flow.registry_user_env)"
-  BOOTSTRAP_REGISTRY_TOKEN="$(resolve_secret "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" "Build host registry token")"
-  [[ -n "${BOOTSTRAP_REGISTRY_TOKEN}" ]] || fail "empty value for env ${BOOTSTRAP_REGISTRY_TOKEN_ENV} (named by build_flow.registry_token_env)"
-fi
+# Resolve registry credentials from the env var names in dev_container_image_registry.
+# Always required for the pull path (bootstrap login and/or skopeo authfile).
+BOOTSTRAP_REGISTRY_USER="$(resolve_secret "${BOOTSTRAP_REGISTRY_USER_ENV}" "Build host registry username")"
+[[ -n "${BOOTSTRAP_REGISTRY_USER}" ]] || fail "empty value for env ${BOOTSTRAP_REGISTRY_USER_ENV} (named by build_flow.dev_container_image_registry.registry_user_env)"
+BOOTSTRAP_REGISTRY_TOKEN="$(resolve_secret "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" "Build host registry token")"
+[[ -n "${BOOTSTRAP_REGISTRY_TOKEN}" ]] || fail "empty value for env ${BOOTSTRAP_REGISTRY_TOKEN_ENV} (named by build_flow.dev_container_image_registry.registry_token_env)"
 BOOTSTRAP_ENV_PREFIX=""
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "CODE_REPO_REF" "${CODE_REPO_REF}")"
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}")"
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}")"
+BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_IMAGE" "${IMAGE_REGISTRY_PULL_REF}")"
+BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_REGISTRY_HOST" "${IMAGE_REGISTRY_HOST}")"
+# Also inject into the build so skopeo/podman can use the same auth after login.
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}")"
+BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}")"
 
 bootstrap_remote_cmd=""
 if [[ -n "${BOOTSTRAP_CMD}" ]]; then
