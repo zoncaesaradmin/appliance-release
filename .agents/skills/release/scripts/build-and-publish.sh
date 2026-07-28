@@ -162,10 +162,18 @@ BOOTSTRAP_NEEDS_SUDO="$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstr
 BUILD_NEEDS_SUDO="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_needs_sudo" || true)"
 [[ -n "${BOOTSTRAP_NEEDS_SUDO}" ]] || fail "build_flow.bootstrap_needs_sudo is required in config (true|false)"
 [[ -n "${BUILD_NEEDS_SUDO}" ]] || fail "build_flow.build_needs_sudo is required in config (true|false)"
-BOOTSTRAP_REGISTRY_USER="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user" || true)"
+BOOTSTRAP_REGISTRY_USER_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user_env" || true)"
 BOOTSTRAP_REGISTRY_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token_env" || true)"
-[[ -n "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]] || fail "build_flow.registry_token_env is required in config"
-BOOTSTRAP_REGISTRY_TOKEN="$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token" || true)"
+[[ -n "${BOOTSTRAP_REGISTRY_USER_ENV}" ]] || fail "build_flow.registry_user_env is required in config (env var name that holds the registry username, e.g. REGISTRY_USER)"
+[[ -n "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]] || fail "build_flow.registry_token_env is required in config (env var name that holds the registry token, e.g. REGISTRY_TOKEN)"
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user" || true)" ]]; then
+  fail "build_flow.registry_user is no longer supported; set build_flow.registry_user_env (e.g. REGISTRY_USER) and export that env var instead"
+fi
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token" || true)" ]]; then
+  fail "build_flow.registry_token must not be stored in config; set build_flow.registry_token_env and export that env var"
+fi
+BOOTSTRAP_REGISTRY_USER=""
+BOOTSTRAP_REGISTRY_TOKEN=""
 BUILD_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.enabled" || true)"
 BUILD_ARGO_REQUIRED="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.required" || true)"
 BUILD_ARGO_VERSION="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.version" || true)"
@@ -301,12 +309,14 @@ fi
 release_repo_sync_remote_cmd=""
 release_repo_sync_remote_cmd="$(render_ensure_remote_release_repo_cmd "${REMOTE_CWD}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}")"
 
-# Resolve bootstrap registry secrets before composing remote commands so the
-# env-prefix style matches build/publish (NAME=quoted-value cmd) and never uses
-# the fragile `export NAME=$(shell_quote ...) ;` concatenation that can leave
-# residual tokens like `RAP_REGISTRY_TOKEN}) ;` as a local command.
-if [[ -n "${BOOTSTRAP_CMD}" && -z "${BOOTSTRAP_REGISTRY_TOKEN}" && -n "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" ]]; then
+# Resolve bootstrap registry credentials from the env var names declared in
+# config (never invent usernames/tokens in scripts, and never store the token
+# value in YAML).
+if [[ -n "${BOOTSTRAP_CMD}" ]]; then
+  BOOTSTRAP_REGISTRY_USER="$(resolve_secret "${BOOTSTRAP_REGISTRY_USER_ENV}" "Build host registry username")"
+  [[ -n "${BOOTSTRAP_REGISTRY_USER}" ]] || fail "empty value for env ${BOOTSTRAP_REGISTRY_USER_ENV} (named by build_flow.registry_user_env)"
   BOOTSTRAP_REGISTRY_TOKEN="$(resolve_secret "${BOOTSTRAP_REGISTRY_TOKEN_ENV}" "Build host registry token")"
+  [[ -n "${BOOTSTRAP_REGISTRY_TOKEN}" ]] || fail "empty value for env ${BOOTSTRAP_REGISTRY_TOKEN_ENV} (named by build_flow.registry_token_env)"
 fi
 BOOTSTRAP_ENV_PREFIX=""
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "CODE_REPO_REF" "${CODE_REPO_REF}")"

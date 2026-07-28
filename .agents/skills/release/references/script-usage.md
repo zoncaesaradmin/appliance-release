@@ -21,7 +21,9 @@ Notes:
   `build_command` / `publish_command`, `bundle_download_dir`, verification
   commands, and capability flags.
 - If `APPLIANCE_RELEASE_CONFIG` is set, you usually do not need `--config`.
-- `REGISTRY_TOKEN` is mainly needed for build-host bootstrap and build.
+- `REGISTRY_TOKEN` / `REGISTRY_USER` are named by `build_flow.registry_token_env`
+  / `build_flow.registry_user_env` and must be exported in the shell (not stored
+  as values in YAML). They are injected into bootstrap for GHCR login.
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used both for install and Mac-side API verification.
 - Set `install.appliance_profile` in the config (required).
 - A `run-release-flow.sh --appliance-profile` override is forwarded to install,

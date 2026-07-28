@@ -9,9 +9,10 @@
 #   1) BUILD / PUBLISH
 #   2) INSTALL / VERIFY
 #
-# Secrets via env (not this file):
-#   REGISTRY_TOKEN, APPLIANCE_BUILD_SUDO_PASSWORD,
-#   APPLIANCE_TARGET_SUDO_PASSWORD, APPLIANCE_FIRST_ADMIN_PASSWORD
+# Secrets via env (not this file); config names the env vars under build_flow:
+#   registry_user_env / registry_token_env → REGISTRY_USER / REGISTRY_TOKEN
+# Also: APPLIANCE_BUILD_SUDO_PASSWORD, APPLIANCE_TARGET_SUDO_PASSWORD,
+#   APPLIANCE_FIRST_ADMIN_PASSWORD
 # Absolute remote paths only (no ~/...).
 
 # =============================================================================
@@ -38,19 +39,17 @@ bundle_store:
   base_url: http://192.168.1.105:28081
   publish_server_alias: zonsys@192.168.1.105
   publish_remote_root: /home/zonsys/releases
+
+  # --- appliance_files (day-2 distributor) ---
+  # base_url: https://artifact-dns-1.appliance.internal/api/v1/files
+  # access_token: apt_….…
   # Required for appliance_files HTTPS (and whenever scripts call curl TLS fill):
   # tls_insecure: true
   # cacert_path: /abs/path/to/ca.pem
 
-  # --- appliance_files (day-2 distributor) ---
-  # mode: appliance_files
-  # base_url: https://artifact-dns-1.appliance.internal/api/v1/files
-  # access_token: apt_….…
-  # tls_insecure: true
-  # Do not reuse install.appliance_name as the distributor FQDN in base_url.
-
 build_flow:
-  registry_user: your-registry-username
+  # Env var NAMES only — export the values in the shell that runs the skill.
+  registry_user_env: REGISTRY_USER
   registry_token_env: REGISTRY_TOKEN
   bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
   bootstrap_needs_sudo: true
