@@ -39,9 +39,13 @@ Notes:
   `image_tag`, username/token/TLS env names). The script derives the pull
   reference from these values. The bundled name is fixed as
   `registry.local/dev-build`.
-- Set `build_flow.product_publish` (`registry`, `image_repo`,
-  `image_name`, `image_tag`, username/token/TLS env names). This keeps
-  build/publish knobs aligned with the development-container publishing pattern.
+- Set `build_flow.product_publish` (`registry` / `registry_env`, `image_repo` /
+  `image_repo_env`, optional documentary `image_name`, `image_tag`,
+  username/token/TLS env names). Injected as `SERVICE_IMAGE_REGISTRY` /
+  `SERVICE_IMAGE_REPO` only. Defaults in appliance-code `build/service-image.mk`
+  are registry host from `DEV_REGISTRY` and repo `appliance-images`; each
+  service sets `SERVICE_IMAGE_NAME` (or uses the service directory name).
+  Never reuse pull `DEV_IMAGE_*`.
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used both for install and Mac-side API verification.
 - Set `install.appliance_profile` in the config (required).
 - A `run-release-flow.sh --appliance-profile` override is forwarded to install,

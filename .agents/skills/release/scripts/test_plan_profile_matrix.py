@@ -64,7 +64,7 @@ build_flow:
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
   product_publish:
     registry: ghcr.io
-    image_repo: example/appliance-code
+    image_repo: appliance-images
     image_name: appliance-control-plane
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
@@ -229,7 +229,7 @@ build_flow:
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
   product_publish:
     registry: ghcr.io
-    image_repo: example/appliance-code
+    image_repo: appliance-images
     image_name: appliance-control-plane
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
@@ -295,7 +295,7 @@ build_flow:
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
   product_publish:
     registry: ghcr.io
-    image_repo: example/appliance-code
+    image_repo: appliance-images
     image_name: appliance-control-plane
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
@@ -357,7 +357,7 @@ build_flow:
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
   product_publish:
     registry: ghcr.io
-    image_repo: example/appliance-code
+    image_repo: appliance-images
     image_name: appliance-control-plane
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
@@ -410,7 +410,7 @@ build_flow:
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
   product_publish:
     registry: ghcr.io
-    image_repo: example/appliance-code
+    image_repo: appliance-images
     image_name: appliance-control-plane
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
@@ -477,7 +477,7 @@ build_flow:
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
   product_publish:
     registry: ghcr.io
-    image_repo: example/appliance-code
+    image_repo: appliance-images
     image_name: appliance-control-plane
     image_tag: v0.1.0
     username_env: DEV_REGISTRY_USER
