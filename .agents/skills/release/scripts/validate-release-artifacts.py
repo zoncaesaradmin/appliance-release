@@ -489,6 +489,48 @@ def validate_dns(
     return ["dnsChart", "dnsImage", f"dnsVersion={dns_version}"]
 
 
+def validate_host_service(
+    artifacts: dict,
+    release_input_dir: Path,
+    entries_by_path: dict[str, dict],
+) -> list:
+    image = require_artifact(artifacts, "hostServiceImage")
+    image_path = require_file_artifact(artifacts, "hostServiceImage", release_input_dir)
+    image_ref = require_image_reference(image, "hostServiceImage")
+    if not re.fullmatch(
+        r"registry\.local/appliance-host-service@sha256:[0-9a-f]{64}", image_ref
+    ):
+        raise ValueError(
+            "release-input artifacts.hostServiceImage.imageReference must be "
+            "registry.local/appliance-host-service@sha256:<64 lowercase hex>"
+        )
+    if "host-service" not in image_path.name.lower() and "hostservice" not in image_path.name.lower():
+        raise ValueError(
+            "release-input artifacts.hostServiceImage.path must identify "
+            f"appliance-host-service, got {image['path']!r}"
+        )
+    require_oci_archive_reference_matches_content(image_path, image_ref, "hostServiceImage")
+    index = load_oci_archive_index(image_path)
+    if index is None:
+        raise ValueError(f"hostServiceImage OCI archive {image_path} is missing index.json")
+    annotation = (
+        (index.get("manifests") or [{}])[0].get("annotations") or {}
+    ).get("org.opencontainers.image.ref.name")
+    if annotation != "registry.local/appliance-host-service:bundled":
+        raise ValueError(
+            "hostServiceImage OCI archive annotation must be "
+            "'registry.local/appliance-host-service:bundled', "
+            f"got {annotation!r}"
+        )
+    image_bundle_path = f"oci-images/{image_path.name}"
+    image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "hostServiceImage")
+    require_matching_bundle_digest(image_entry, image, image_bundle_path, "hostServiceImage")
+    require_matching_bundle_image_reference(
+        image_entry, image_ref, image_bundle_path, "hostServiceImage"
+    )
+    return ["hostServiceImage"]
+
+
 def validate_required_artifacts(artifacts: dict, release_input_dir: Path, entries_by_path: dict) -> list:
     checked = []
     runtime_targets = {"applianceChart": "charts"}
@@ -642,6 +684,11 @@ def main() -> int:
         "dns": validate_dns(
             release_input,
             bundle_manifest,
+            artifacts,
+            release_input_path.parent,
+            entries_by_path,
+        ),
+        "hostService": validate_host_service(
             artifacts,
             release_input_path.parent,
             entries_by_path,

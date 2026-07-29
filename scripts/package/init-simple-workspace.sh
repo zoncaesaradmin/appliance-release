@@ -543,6 +543,7 @@ def add_crd_artifacts():
 
 add_artifact_file("argoWorkflowsChart", "charts", "chart")
 add_artifact_file("uiImage", "oci-images", "oci-images", image_reference_field=True)
+add_artifact_file("hostServiceImage", "oci-images", "oci-images", image_reference_field=True)
 add_artifact_file("argoControllerImage", "oci-images", "oci-images", image_reference_field=True)
 add_artifact_file("argoExecutorImage", "oci-images", "oci-images", image_reference_field=True)
 add_extra_oci_images()

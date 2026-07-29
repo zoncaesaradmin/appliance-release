@@ -37,6 +37,7 @@ def run_validator(tmp: Path, *extra_args: str) -> subprocess.CompletedProcess:
 def populate_positive_case(tmp: Path) -> None:
     zot_digest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     dns_digest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    host_service_digest = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     write(tmp / "release-input" / "images" / "control-plane.tar", "control")
     write(tmp / "release-input" / "images" / "appliance-ui.tar", "ui")
     write(tmp / "release-input" / "chart" / "appliance-chart-1.0.0.tgz", "appliance chart")
@@ -63,6 +64,11 @@ def populate_positive_case(tmp: Path) -> None:
         tmp / "release-input" / "images" / "coredns-image.tar",
         "registry.local/coredns:bundled",
         dns_digest,
+    )
+    write_mismatched_oci_archive(
+        tmp / "release-input" / "images" / "appliance-host-service.tar",
+        "registry.local/appliance-host-service:bundled",
+        host_service_digest,
     )
     write(
         tmp / "bundle" / "configuration" / "values.yaml",
@@ -94,6 +100,7 @@ ingress:
   "artifacts": {
     "controlPlaneImage": {"path": "images/control-plane.tar", "digest": "sha256:control", "sizeBytes": 7, "imageReference": "internal/control-plane:1.0.0"},
     "uiImage": {"path": "images/appliance-ui.tar", "digest": "sha256:ui", "sizeBytes": 2, "imageReference": "internal/appliance-ui:1.0.0"},
+    "hostServiceImage": {"path": "images/appliance-host-service.tar", "digest": "sha256:host-service-archive", "sizeBytes": 256, "imageReference": "registry.local/appliance-host-service@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
     "applianceChart": {"path": "chart/appliance-chart-1.0.0.tgz", "digest": "sha256:appliance-chart", "sizeBytes": 15},
     "zotImage": {"path": "images/zot-image.tar", "digest": "sha256:zot-archive", "sizeBytes": 1024, "imageReference": "registry.local/zot@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
     "zotChart": {"path": "chart/appliance-registry-2.1.11.tgz", "digest": "sha256:zot-chart", "sizeBytes": 9},
@@ -126,6 +133,7 @@ ingress:
   "entries": [
     {"targetPath": "oci-images/control-plane.tar", "digest": "sha256:control", "sizeBytes": 7, "imageReference": "internal/control-plane:1.0.0"},
     {"targetPath": "oci-images/appliance-ui.tar", "digest": "sha256:ui", "sizeBytes": 2, "imageReference": "internal/appliance-ui:1.0.0"},
+    {"targetPath": "oci-images/appliance-host-service.tar", "digest": "sha256:host-service-archive", "sizeBytes": 256, "imageReference": "registry.local/appliance-host-service@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
     {"targetPath": "charts/appliance-chart-1.0.0.tgz", "digest": "sha256:appliance-chart", "sizeBytes": 15},
     {"targetPath": "oci-images/zot-image.tar", "digest": "sha256:zot-archive", "sizeBytes": 1024, "imageReference": "registry.local/zot@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
     {"targetPath": "charts/appliance-registry-2.1.11.tgz", "digest": "sha256:zot-chart", "sizeBytes": 9},

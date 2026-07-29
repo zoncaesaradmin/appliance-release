@@ -1007,6 +1007,8 @@ set -euo pipefail
 cd /workspace
 CONTROL_PLANE_IMAGE_OUT="/workspace/.run/control-plane-image.tar"
 UI_IMAGE_OUT="/workspace/.run/appliance-ui-image.tar"
+HOST_SERVICE_IMAGE_OUT="/workspace/.run/appliance-host-service-image.tar"
+HOST_SERVICE_IMAGE_REF_FILE="/workspace/.run/appliance-host-service-image.reference"
 ARGO_ARGS=()
 EXTRA_OCI_ARGS=()
 CODE_VERSION="\${CODE_VERSION:-\$(git describe --tags --always --dirty 2>/dev/null | sed 's/[^A-Za-z0-9_.-]/-/g')}"
@@ -1021,6 +1023,10 @@ bool_true() {
 
 make package-control-plane-image-archive OUT_FILE="\${CONTROL_PLANE_IMAGE_OUT}"
 make package-ui-image-archive OUT_FILE="\${UI_IMAGE_OUT}"
+make package-host-service-image-archive \
+  OUT_FILE="\${HOST_SERVICE_IMAGE_OUT}" \
+  REFERENCE_OUT_FILE="\${HOST_SERVICE_IMAGE_REF_FILE}"
+HOST_SERVICE_IMAGE_REF="\$(tr -d '\r\n' < "\${HOST_SERVICE_IMAGE_REF_FILE}")"
 
 DNS_IMAGE_ARCHIVE_FOR_DEV=$(shell_quote "${DNS_IMAGE_ARCHIVE_FOR_DEV}")
 DNS_IMAGE_REF=$(shell_quote "${DNS_IMAGE_REF}")
@@ -1068,6 +1074,8 @@ bash ./scripts/package/archive-release-input.sh \
   --control-plane-image-reference "localhost/appliance-control-plane:\${CODE_VERSION}" \
   --ui-image "\${UI_IMAGE_OUT}" \
   --ui-image-reference "localhost/appliance-ui:\${CODE_VERSION}" \
+  --host-service-image "\${HOST_SERVICE_IMAGE_OUT}" \
+  --host-service-image-reference "\${HOST_SERVICE_IMAGE_REF}" \
   --k3s-version $(shell_quote "${K3S_VERSION}") \
   --zot-version $(shell_quote "${ZOT_VERSION}") \
   --zot-image $(shell_quote "${ZOT_IMAGE_ARCHIVE_FOR_DEV}") \
