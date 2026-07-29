@@ -37,7 +37,7 @@ def run_validator(tmp: Path, *extra_args: str) -> subprocess.CompletedProcess:
 def populate_positive_case(tmp: Path) -> None:
     zot_digest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     dns_digest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-    host_service_digest = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    host_agent_digest = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     write(tmp / "release-input" / "images" / "control-plane.tar", "control")
     write(tmp / "release-input" / "images" / "appliance-ui.tar", "ui")
     write(tmp / "release-input" / "chart" / "appliance-chart-1.0.0.tgz", "appliance chart")
@@ -66,10 +66,11 @@ def populate_positive_case(tmp: Path) -> None:
         dns_digest,
     )
     write_mismatched_oci_archive(
-        tmp / "release-input" / "images" / "appliance-host-service.tar",
-        "registry.local/appliance-host-service:bundled",
-        host_service_digest,
+        tmp / "release-input" / "images" / "appliance-host-agent.tar",
+        "registry.local/appliance-host-agent:bundled",
+        host_agent_digest,
     )
+    write(tmp / "release-input" / "bin" / "appliance-host-agentd", "host-agentd")
     write(
         tmp / "bundle" / "configuration" / "values.yaml",
         """
@@ -100,7 +101,8 @@ ingress:
   "artifacts": {
     "controlPlaneImage": {"path": "images/control-plane.tar", "digest": "sha256:control", "sizeBytes": 7, "imageReference": "internal/control-plane:1.0.0"},
     "uiImage": {"path": "images/appliance-ui.tar", "digest": "sha256:ui", "sizeBytes": 2, "imageReference": "internal/appliance-ui:1.0.0"},
-    "hostServiceImage": {"path": "images/appliance-host-service.tar", "digest": "sha256:host-service-archive", "sizeBytes": 256, "imageReference": "registry.local/appliance-host-service@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
+    "hostAgentImage": {"path": "images/appliance-host-agent.tar", "digest": "sha256:host-agent-archive", "sizeBytes": 256, "imageReference": "registry.local/appliance-host-agent@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
+    "hostAgentBinary": {"path": "bin/appliance-host-agentd", "digest": "sha256:host-agentd", "sizeBytes": 11},
     "applianceChart": {"path": "chart/appliance-chart-1.0.0.tgz", "digest": "sha256:appliance-chart", "sizeBytes": 15},
     "zotImage": {"path": "images/zot-image.tar", "digest": "sha256:zot-archive", "sizeBytes": 1024, "imageReference": "registry.local/zot@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
     "zotChart": {"path": "chart/appliance-registry-2.1.11.tgz", "digest": "sha256:zot-chart", "sizeBytes": 9},
@@ -133,7 +135,8 @@ ingress:
   "entries": [
     {"targetPath": "oci-images/control-plane.tar", "digest": "sha256:control", "sizeBytes": 7, "imageReference": "internal/control-plane:1.0.0"},
     {"targetPath": "oci-images/appliance-ui.tar", "digest": "sha256:ui", "sizeBytes": 2, "imageReference": "internal/appliance-ui:1.0.0"},
-    {"targetPath": "oci-images/appliance-host-service.tar", "digest": "sha256:host-service-archive", "sizeBytes": 256, "imageReference": "registry.local/appliance-host-service@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
+    {"targetPath": "oci-images/appliance-host-agent.tar", "digest": "sha256:host-agent-archive", "sizeBytes": 256, "imageReference": "registry.local/appliance-host-agent@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
+    {"targetPath": "bin/appliance-host-agentd", "digest": "sha256:host-agentd", "sizeBytes": 11},
     {"targetPath": "charts/appliance-chart-1.0.0.tgz", "digest": "sha256:appliance-chart", "sizeBytes": 15},
     {"targetPath": "oci-images/zot-image.tar", "digest": "sha256:zot-archive", "sizeBytes": 1024, "imageReference": "registry.local/zot@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
     {"targetPath": "charts/appliance-registry-2.1.11.tgz", "digest": "sha256:zot-chart", "sizeBytes": 9},

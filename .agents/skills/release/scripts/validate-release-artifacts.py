@@ -489,46 +489,57 @@ def validate_dns(
     return ["dnsChart", "dnsImage", f"dnsVersion={dns_version}"]
 
 
-def validate_host_service(
+def validate_host_agent(
     artifacts: dict,
     release_input_dir: Path,
     entries_by_path: dict[str, dict],
 ) -> list:
-    image = require_artifact(artifacts, "hostServiceImage")
-    image_path = require_file_artifact(artifacts, "hostServiceImage", release_input_dir)
-    image_ref = require_image_reference(image, "hostServiceImage")
+    image = require_artifact(artifacts, "hostAgentImage")
+    image_path = require_file_artifact(artifacts, "hostAgentImage", release_input_dir)
+    image_ref = require_image_reference(image, "hostAgentImage")
     if not re.fullmatch(
-        r"registry\.local/appliance-host-service@sha256:[0-9a-f]{64}", image_ref
+        r"registry\.local/appliance-host-agent@sha256:[0-9a-f]{64}", image_ref
     ):
         raise ValueError(
-            "release-input artifacts.hostServiceImage.imageReference must be "
-            "registry.local/appliance-host-service@sha256:<64 lowercase hex>"
+            "release-input artifacts.hostAgentImage.imageReference must be "
+            "registry.local/appliance-host-agent@sha256:<64 lowercase hex>"
         )
-    if "host-service" not in image_path.name.lower() and "hostservice" not in image_path.name.lower():
+    if "host-agent" not in image_path.name.lower() and "hostagent" not in image_path.name.lower():
         raise ValueError(
-            "release-input artifacts.hostServiceImage.path must identify "
-            f"appliance-host-service, got {image['path']!r}"
+            "release-input artifacts.hostAgentImage.path must identify "
+            f"appliance-host-agent, got {image['path']!r}"
         )
-    require_oci_archive_reference_matches_content(image_path, image_ref, "hostServiceImage")
+    require_oci_archive_reference_matches_content(image_path, image_ref, "hostAgentImage")
     index = load_oci_archive_index(image_path)
     if index is None:
-        raise ValueError(f"hostServiceImage OCI archive {image_path} is missing index.json")
+        raise ValueError(f"hostAgentImage OCI archive {image_path} is missing index.json")
     annotation = (
         (index.get("manifests") or [{}])[0].get("annotations") or {}
     ).get("org.opencontainers.image.ref.name")
-    if annotation != "registry.local/appliance-host-service:bundled":
+    if annotation != "registry.local/appliance-host-agent:bundled":
         raise ValueError(
-            "hostServiceImage OCI archive annotation must be "
-            "'registry.local/appliance-host-service:bundled', "
+            "hostAgentImage OCI archive annotation must be "
+            "'registry.local/appliance-host-agent:bundled', "
             f"got {annotation!r}"
         )
     image_bundle_path = f"oci-images/{image_path.name}"
-    image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "hostServiceImage")
-    require_matching_bundle_digest(image_entry, image, image_bundle_path, "hostServiceImage")
+    image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "hostAgentImage")
+    require_matching_bundle_digest(image_entry, image, image_bundle_path, "hostAgentImage")
     require_matching_bundle_image_reference(
-        image_entry, image_ref, image_bundle_path, "hostServiceImage"
+        image_entry, image_ref, image_bundle_path, "hostAgentImage"
     )
-    return ["hostServiceImage"]
+
+    binary = require_artifact(artifacts, "hostAgentBinary")
+    binary_path = require_file_artifact(artifacts, "hostAgentBinary", release_input_dir)
+    if "host-agent" not in binary_path.name.lower() and "hostagent" not in binary_path.name.lower():
+        raise ValueError(
+            "release-input artifacts.hostAgentBinary.path must identify "
+            f"appliance-host-agentd, got {binary['path']!r}"
+        )
+    binary_bundle_path = f"bin/{binary_path.name}"
+    binary_entry = require_bundle_entry(entries_by_path, binary_bundle_path, "hostAgentBinary")
+    require_matching_bundle_digest(binary_entry, binary, binary_bundle_path, "hostAgentBinary")
+    return ["hostAgentImage", "hostAgentBinary"]
 
 
 def validate_required_artifacts(artifacts: dict, release_input_dir: Path, entries_by_path: dict) -> list:
@@ -688,7 +699,7 @@ def main() -> int:
             release_input_path.parent,
             entries_by_path,
         ),
-        "hostService": validate_host_service(
+        "hostAgent": validate_host_agent(
             artifacts,
             release_input_path.parent,
             entries_by_path,
