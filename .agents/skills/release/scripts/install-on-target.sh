@@ -143,23 +143,25 @@ if [[ -n "${ADDITIONAL_TLS_SANS_CSV}" ]]; then
   done
 fi
 
-# Optional K3s image-pull registry (registries.yaml). Same env names as
-# product_publish / DEV_REGISTRY_* are typical.
-IMAGE_PULL_REGISTRY="$(config_get_optional "${CONFIG_PATH}" "install.image_pull_registry.registry" || true)"
+# Optional K3s image-pull registry (registries.yaml). Host comes only from
+# install.image_pull_registry.registry_env (same DEV_REGISTRY pattern as
+# build_flow.dev_image_pull). Credentials via *_env names.
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "install.image_pull_registry.registry" || true)" ]]; then
+  fail "install.image_pull_registry.registry was removed; use install.image_pull_registry.registry_env (for example DEV_REGISTRY)"
+fi
 IMAGE_PULL_REGISTRY_ENV="$(config_get_optional "${CONFIG_PATH}" "install.image_pull_registry.registry_env" || true)"
 IMAGE_PULL_USERNAME_ENV="$(config_get_optional "${CONFIG_PATH}" "install.image_pull_registry.username_env" || true)"
 IMAGE_PULL_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "install.image_pull_registry.token_env" || true)"
 IMAGE_PULL_TLS_VERIFY_ENV="$(config_get_optional "${CONFIG_PATH}" "install.image_pull_registry.tls_verify_env" || true)"
-if [[ -n "${IMAGE_PULL_REGISTRY_ENV}" ]]; then
-  IMAGE_PULL_REGISTRY="$(resolve_env_value "${IMAGE_PULL_REGISTRY_ENV}" "Image pull registry env")"
-fi
+IMAGE_PULL_REGISTRY=""
 IMAGE_PULL_USERNAME=""
 IMAGE_PULL_TOKEN=""
 IMAGE_PULL_TLS_VERIFY=""
 IMAGE_PULL_PRESERVE_ENV=""
-if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
-  [[ -n "${IMAGE_PULL_USERNAME_ENV}" ]] || fail "install.image_pull_registry.username_env is required when registry is set"
-  [[ -n "${IMAGE_PULL_TOKEN_ENV}" ]] || fail "install.image_pull_registry.token_env is required when registry is set"
+if [[ -n "${IMAGE_PULL_REGISTRY_ENV}" ]]; then
+  IMAGE_PULL_REGISTRY="$(resolve_env_value "${IMAGE_PULL_REGISTRY_ENV}" "Image pull registry env")"
+  [[ -n "${IMAGE_PULL_USERNAME_ENV}" ]] || fail "install.image_pull_registry.username_env is required when registry_env is set"
+  [[ -n "${IMAGE_PULL_TOKEN_ENV}" ]] || fail "install.image_pull_registry.token_env is required when registry_env is set"
   IMAGE_PULL_USERNAME="$(resolve_env_value "${IMAGE_PULL_USERNAME_ENV}" "Image pull registry username env")"
   IMAGE_PULL_TOKEN="$(resolve_env_value "${IMAGE_PULL_TOKEN_ENV}" "Image pull registry token env")"
   IMAGE_PULL_PRESERVE_ENV="--preserve-env=${IMAGE_PULL_USERNAME_ENV},${IMAGE_PULL_TOKEN_ENV}"
@@ -167,6 +169,8 @@ if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
     IMAGE_PULL_TLS_VERIFY="$(resolve_env_value "${IMAGE_PULL_TLS_VERIFY_ENV}" "Image pull registry TLS verify env")"
     IMAGE_PULL_PRESERVE_ENV="${IMAGE_PULL_PRESERVE_ENV},${IMAGE_PULL_TLS_VERIFY_ENV}"
   fi
+elif [[ -n "${IMAGE_PULL_USERNAME_ENV}" || -n "${IMAGE_PULL_TOKEN_ENV}" || -n "${IMAGE_PULL_TLS_VERIFY_ENV}" ]]; then
+  fail "install.image_pull_registry.registry_env is required when username_env/token_env/tls_verify_env are set"
 fi
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   ensure_file "${BUILD_CATALOG_PATH}"

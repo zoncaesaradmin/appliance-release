@@ -1,23 +1,20 @@
 # Appliance release skill config (single file for now).
 # Copy locally (e.g. ~/appliance-release.config.yaml); do not commit secrets.
 #
-# run-release-flow.sh takes this file as the source of truth. Scripts do not
-# invent operational defaults when a key is missing — put every required
-# value here (fixed lab defaults are fine; they must still be explicit).
+# run-release-flow.sh stages:
+#   1) build/publish  (build_host + build_flow + bundle_store)
+#   2) install/verify (target_host + install + verification + client_verification)
 #
-# Layout:
-#   1) BUILD / PUBLISH
-#   2) INSTALL / VERIFY
-#
-# Secrets via env (not this file). Registry credentials are split by scope:
-# - build_flow.dev_image_pull.*_env (pull/login the dev container image)
-# - build_flow.product_publish.*_env (publish destination defaults / credentials)
-# Also: APPLIANCE_BUILD_SUDO_PASSWORD, APPLIANCE_TARGET_SUDO_PASSWORD,
+# Scripts fail closed when a required key is missing — only list what is used.
+# Secrets via env (not this file):
+#   DEV_REGISTRY / DEV_IMAGE_REPO / DEV_IMAGE_NAME
+#   DEV_REGISTRY_USER / DEV_REGISTRY_TOKEN / DEV_REGISTRY_TLS_VERIFY
+#   APPLIANCE_BUILD_SUDO_PASSWORD / APPLIANCE_TARGET_SUDO_PASSWORD
 #   APPLIANCE_FIRST_ADMIN_PASSWORD
 # Absolute remote paths only (no ~/...).
 
 # =============================================================================
-# BUILD / PUBLISH
+# 1) BUILD / PUBLISH
 # =============================================================================
 
 build_host:
@@ -33,14 +30,14 @@ release:
   version: 0.1.0
   publish_latest_alias: false
 
+# Signed-bundle distribution (not a container image push).
 bundle_store:
-  # static_http | appliance_files (aliases: http/http-static, fileserver)
+  # static_http | appliance_files
   mode: static_http
   release_path_prefix: appliance
   base_url: http://192.168.1.105:28081
   publish_server_alias: zonsys@192.168.1.105
   publish_remote_root: /home/zonsys/releases
-
   # --- appliance_files (day-2 distributor) ---
   # base_url: https://artifact-dns-1.appliance.internal/api/v1/files
   # access_token: apt_….…
@@ -48,8 +45,8 @@ bundle_store:
   # cacert_path: /abs/path/to/ca.pem
 
 build_flow:
-  # Scope 1: pull/login the development container image used for build tooling.
-  # Bundled target name remains registry.local/dev-build (not configurable).
+  # Pull/login the development-container used as build tooling.
+  # Bundled offline name is fixed: registry.local/dev-build
   dev_image_pull:
     registry_env: DEV_REGISTRY
     image_repo_env: DEV_IMAGE_REPO
@@ -59,17 +56,6 @@ build_flow:
     token_env: DEV_REGISTRY_TOKEN
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 
-  # Scope 2: publish destination defaults for product image pushes.
-  # These are exported into remote build env even when the bundle build itself
-  # does not publish control-plane images.
-  product_publish:
-    registry: ghcr.io
-    image_repo_env: DEV_IMAGE_REPO
-    image_name_env: DEV_IMAGE_NAME
-    image_tag: 0.1.0
-    username_env: DEV_REGISTRY_USER
-    token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
   bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
   bootstrap_needs_sudo: true
   build_needs_sudo: true
@@ -79,12 +65,9 @@ build_flow:
   k3s_airgap_images_source: /home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst
   build_command: bash scripts/ci/build-full-bundle.sh
   publish_command: make publish-release
-  # Offline / pin overrides only when needed:
-  # argo / zot / dns / workspace_provisioner_*
-  # release_workspace.remote_release_input_path / remote_bundle_dir
 
 # =============================================================================
-# INSTALL / VERIFY
+# 2) INSTALL / VERIFY
 # =============================================================================
 
 target_host:
@@ -93,27 +76,20 @@ target_host:
 
 install:
   appliance_name: test-device-1
-  # Valid profiles: core, builder, storage, landns, storage-landns,
-  #   builder-landns, builder-storage-landns
+  # core | builder | storage | landns | storage-landns | builder-landns | builder-storage-landns
   appliance_profile: storage-landns
   dns_zone: appliance.internal
   uninstall_first: true
-  # Must match release.version (download/extract path on the target).
+  # Keep in sync with release.version
   bundle_download_dir: /tmp/appliance-0.1.0
   bootstrap_admin_username: admin
   kubernetes_namespace: control
   control_plane_deployment: api-server
   # build_catalog_path: /Users/you/build-catalog.yaml   # required for builder*
   # additional_tls_sans_csv: 192.168.1.101
-  #
-  # Optional: teach K3s/containerd to pull from a private LAN registry
-  # (writes /etc/rancher/k3s/registries.yaml). Bundle preload remains the
-  # primary image source; this enables lab pulls such as updating
-  # api-server from artifact-dns-1…/appliance-images/….
-  # Omit the whole block for pure air-gap (preload-only) installs.
+  # Optional lab pulls (K3s registries.yaml); omit for preload-only:
   # image_pull_registry:
-  #   registry: artifact-dns-1.appliance.internal
-  #   # Or: registry_env: DEV_REGISTRY
+  #   registry_env: DEV_REGISTRY
   #   username_env: DEV_REGISTRY_USER
   #   token_env: DEV_REGISTRY_TOKEN
   #   tls_verify_env: DEV_REGISTRY_TLS_VERIFY
@@ -130,19 +106,10 @@ verification:
   allow_ingress_warning: true
   allow_verify_schema_bug: false
   ui_home_command: 'body="$(curl -kfsS https://192.168.1.101/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
-  # Argo: required true for workflow-capable profiles (core, builder,
-  #   builder-landns, builder-storage-landns). When enabled=true, all three
-  #   commands below are required.
   argo:
     enabled: false
-    # namespaces_command: sudo kubectl get namespace workflows appliance-builds
-    # crds_command: sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io
-    # controller_command: sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods
-  # Builder: required true for builder / builder-landns / builder-storage-landns.
-  # When enabled=true, api_command is required (prove /api/v1/work-profiles != 404).
   builder:
     enabled: false
-    # api_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://192.168.1.101/api/v1/work-profiles)" && [ "$code" != "404" ]'
   artifact:
     enabled: true
     readiness_command: sudo kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data
@@ -153,8 +120,6 @@ verification:
 client_verification:
   base_url: https://192.168.1.101
   username: admin
-  # For builder* profiles: enabled: true, expect_disabled: false
-  # For non-builder profiles: enabled: false, expect_disabled: true
   builder:
     enabled: false
     expect_disabled: true

@@ -28,22 +28,14 @@ Notes:
 - Pull TLS verification is also named by
   `build_flow.dev_image_pull.tls_verify_env` and must resolve to `true` or
   `false` in the shell.
-- Publish credentials are named independently by
-  `build_flow.product_publish.username_env` /
-  `build_flow.product_publish.token_env` (for example `DEV_REGISTRY_USER` /
-  `DEV_REGISTRY_TOKEN`).
-- Publish TLS verification is named by
-  `build_flow.product_publish.tls_verify_env` and must resolve to `true` or
-  `false` in the shell.
-- Set `build_flow.dev_image_pull` (`registry`, `image_repo`, `image_name`,
-  `image_tag`, username/token/TLS env names). The script derives the pull
-  reference from these values. The bundled name is fixed as
-  `registry.local/dev-build`.
-- Set `build_flow.product_publish` (`registry` / `registry_env`, `image_repo` /
-  `image_repo_env`, `image_name` / `image_name_env`, `image_tag`,
-  username/token/TLS env names). These are publish-destination defaults for the
-  remote build env (same pattern as before). Per-service `make image` push
-  defaults live in appliance-code `build/service-image.mk`, not this block.
+- Set `build_flow.dev_image_pull` (registry/repo/name env names, `image_tag`,
+  username/token/TLS env names). That block is only for pulling the
+  development-container used as build tooling. The bundled offline name is
+  fixed as `registry.local/dev-build`.
+- Do **not** put a `build_flow.product_publish` block in config. Signed-bundle
+  distribution is `bundle_store` + `publish_command`. Service image push defaults
+  live in appliance-code `build/service-image.mk` (`SERVICE_IMAGE_*` /
+  `DEV_REGISTRY`).
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used both for install and Mac-side API verification.
 - Set `install.appliance_profile` in the config (required).
 - A `run-release-flow.sh --appliance-profile` override is forwarded to install,
@@ -55,9 +47,11 @@ Notes:
   override.
 - Optional `install.image_pull_registry` teaches K3s/containerd to pull from a
   private LAN registry (`registries.yaml`). Bundle preload stays primary.
-  Typical shape reuses the same env names as product publish:
-  `registry`, `username_env: DEV_REGISTRY_USER`, `token_env: DEV_REGISTRY_TOKEN`,
-  `tls_verify_env: DEV_REGISTRY_TLS_VERIFY`. Omit the block for preload-only.
+  Typical shape reuses the same env names as `dev_image_pull`:
+  `registry_env: DEV_REGISTRY`, `username_env: DEV_REGISTRY_USER`,
+  `token_env: DEV_REGISTRY_TOKEN`, `tls_verify_env: DEV_REGISTRY_TLS_VERIFY`.
+  Do not set literal `install.image_pull_registry.registry` (rejected).
+  Omit the block for preload-only.
 - Set `bundle_store.mode` to `static_http` or `appliance_files` (required):
   - `static_http` — publish/install via an external static HTTP server (`base_url`,
     `publish_server_alias`, `publish_remote_root`, `release_path_prefix`)
@@ -103,12 +97,16 @@ Common explicit example:
   --final-ok
 ```
 
-This does:
+This does (stage banners print as `── stage <name>: …`):
 
-- build and publish on the build host
-- install on the target host
-- verify on the target host
-- verify login/session/users from the Mac
+- **Step 1** `buildPublish` — build and publish on the build host
+- **Step 2** `install` — install on the target host
+- **Step 2b–2d** bootstrap admin, target verify, client/API verify from the Mac
+- **Step 3** `report` — summarize the run
+
+One config file today; stages are ordered so build/publish and install/verify
+can later use separate configs without rewriting the orchestrator.
+
 - for the `builder` profile, verify builder REST route registration from the
   target and authenticated builder REST/MCP tool availability from the Mac
 - write a final aggregate report to

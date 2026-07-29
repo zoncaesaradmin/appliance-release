@@ -1,4 +1,22 @@
 #!/usr/bin/env bash
+# run-release-flow.sh — stage orchestrator for the appliance release path.
+#
+# One config file today (build + install + verify). A future split into two
+# configs (build/publish vs install/verify) is planned; keep stage boundaries
+# sharp so that split is easy later.
+#
+# This script is intentionally thin: each stage is mostly a one-liner that
+# calls a dedicated helper under the same directory.
+#
+# Stages (in order):
+#   0  prepare         resolve config / run-dir / validate inputs
+#   1  buildPublish    build-and-publish.sh   (--skip-build)
+#   2  install         install-on-target.sh   (--skip-install)
+#   2b bootstrapAdmin  bootstrap-admin-on-target.sh  (--skip-bootstrap-admin)
+#   2c targetVerify    verify-target.sh
+#   2d clientVerify    verify-client-access.sh  (skipped with bootstrap)
+#   3  report          summarize-release-run.py + run metadata
+#
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,31 +27,50 @@ usage() {
   cat <<'EOF'
 usage: run-release-flow.sh [options]
 
-Run the common Zon appliance release flow from the appliance-release repo:
-1. build and publish on the build host
-2. install on the target host
-3. verify on the target host
-4. verify client/API access from macOS
+Thin stage runner. One config today; stages stay ordered so build/publish and
+install/verify can later use separate configs without rewriting the flow.
+
+  Stage 0  prepare         config, run-dir, catalog checks
+  Stage 1  buildPublish    → build-and-publish.sh
+  Stage 2  install         → install-on-target.sh
+  Stage 2b bootstrapAdmin  → bootstrap-admin-on-target.sh
+  Stage 2c targetVerify    → verify-target.sh
+  Stage 2d clientVerify    → verify-client-access.sh
+  Stage 3  report          summarize run + write metadata
 
 Options:
-  --config PATH              YAML or JSON config file. Optional if
-                             APPLIANCE_RELEASE_CONFIG is set or a local
-                             appliance-release.config.yaml exists.
-  --run-dir DIR              Run directory. Default: <repo>/.run/appliance-release/<timestamp>
-  --release-version VERSION  Release version override.
-  --appliance-profile NAME   Install-time appliance profile override.
-  --build-catalog PATH       Local build catalog JSON/YAML passed to zonctl.
-  --preserve-failed-state    Pass zonctl's debug preserve-failed-state mode
-                             through to install/upgrade on the target.
-  --uninstall-first          Uninstall the previous appliance before install.
-  --skip-bootstrap-admin     Skip explicit first-admin creation and leave
-                             setup to the appliance UI or a later manual
-                             bootstrap step.
-  --skip-build               Skip build/publish.
-  --skip-install             Skip install.
-  --final-ok                 Print OK run on success.
+  --config PATH              YAML/JSON config (or APPLIANCE_RELEASE_CONFIG /
+                             local appliance-release.config.yaml).
+  --run-dir DIR              Default: <cwd>/.run/appliance-release/<timestamp>
+  --release-version VERSION  Override release.version
+  --appliance-profile NAME   Override install.appliance_profile
+  --build-catalog PATH       Local build catalog for zonctl (builder profiles)
+  --preserve-failed-state    Pass through to install/upgrade
+  --uninstall-first          Uninstall previous appliance before install
+  --skip-bootstrap-admin     Skip first-admin bootstrap and client verify
+  --skip-build               Skip stage 1 (build/publish)
+  --skip-install             Skip stage 2 (install)
+  --final-ok                 Print "OK run" on success
 EOF
 }
+
+# ---------------------------------------------------------------------------
+# Stage helpers (console progress only; keep noise low)
+# ---------------------------------------------------------------------------
+
+begin_stage() {
+  # CURRENT_STEP is also used by finalize_release_flow for crash metadata.
+  CURRENT_STEP="$1"
+  log "── stage ${CURRENT_STEP}: $2"
+}
+
+end_stage() {
+  log "── stage ${CURRENT_STEP}: done"
+}
+
+# ---------------------------------------------------------------------------
+# Args
+# ---------------------------------------------------------------------------
 
 CONFIG_PATH=""
 RUN_DIR=""
@@ -51,59 +88,27 @@ CURRENT_STEP="startup"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config)
-      CONFIG_PATH="${2:-}"
-      shift 2
-      ;;
-    --run-dir)
-      RUN_DIR="${2:-}"
-      shift 2
-      ;;
-    --release-version)
-      RELEASE_VERSION="${2:-}"
-      shift 2
-      ;;
-    --appliance-profile)
-      APPLIANCE_PROFILE="${2:-}"
-      shift 2
-      ;;
-    --build-catalog)
-      BUILD_CATALOG_PATH="${2:-}"
-      shift 2
-      ;;
-    --preserve-failed-state)
-      PRESERVE_FAILED_STATE="true"
-      shift 1
-      ;;
-    --uninstall-first)
-      UNINSTALL_FIRST="true"
-      shift 1
-      ;;
-    --skip-bootstrap-admin)
-      SKIP_BOOTSTRAP_ADMIN="true"
-      shift 1
-      ;;
-    --skip-build)
-      SKIP_BUILD="true"
-      shift 1
-      ;;
-    --skip-install)
-      SKIP_INSTALL="true"
-      shift 1
-      ;;
-    --final-ok)
-      FINAL_OK="true"
-      shift 1
-      ;;
-    --help|-h)
-      usage
-      exit 0
-      ;;
-    *)
-      fail "unknown argument: $1"
-      ;;
+    --config) CONFIG_PATH="${2:-}"; shift 2 ;;
+    --run-dir) RUN_DIR="${2:-}"; shift 2 ;;
+    --release-version) RELEASE_VERSION="${2:-}"; shift 2 ;;
+    --appliance-profile) APPLIANCE_PROFILE="${2:-}"; shift 2 ;;
+    --build-catalog) BUILD_CATALOG_PATH="${2:-}"; shift 2 ;;
+    --preserve-failed-state) PRESERVE_FAILED_STATE="true"; shift 1 ;;
+    --uninstall-first) UNINSTALL_FIRST="true"; shift 1 ;;
+    --skip-bootstrap-admin) SKIP_BOOTSTRAP_ADMIN="true"; shift 1 ;;
+    --skip-build) SKIP_BUILD="true"; shift 1 ;;
+    --skip-install) SKIP_INSTALL="true"; shift 1 ;;
+    --final-ok) FINAL_OK="true"; shift 1 ;;
+    --help|-h) usage; exit 0 ;;
+    *) fail "unknown argument: $1" ;;
   esac
 done
+
+# ---------------------------------------------------------------------------
+# Stage 0 — prepare
+# ---------------------------------------------------------------------------
+
+begin_stage "prepare" "resolve config and run directory"
 
 CONFIG_PATH="$(resolve_config_path "${CONFIG_PATH}" || true)"
 [[ -n "${CONFIG_PATH}" ]] || fail "config not provided; use --config or APPLIANCE_RELEASE_CONFIG"
@@ -140,9 +145,41 @@ fi
 if [[ "${APPLIANCE_PROFILE}" == "builder" || "${APPLIANCE_PROFILE}" == "builder-landns" || "${APPLIANCE_PROFILE}" == "builder-storage-landns" ]] && [[ -z "${BUILD_CATALOG_PATH}" ]]; then
   fail "builder appliance profile requires install.build_catalog_path or --build-catalog; start from .agents/skills/release/references/build-catalog.example.yaml"
 fi
+
 ensure_dir "${RUN_DIR}"
 ensure_dir "${RUN_DIR}/logs"
 ensure_dir "${RUN_DIR}/metadata"
+
+log "run-dir=${RUN_DIR}"
+log "config=${CONFIG_PATH}"
+log "release=${RELEASE_VERSION} profile=${APPLIANCE_PROFILE}"
+if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
+  log "build-catalog=${BUILD_CATALOG_PATH}"
+fi
+if ((${#TLS_SANS[@]} > 0)); then
+  log "tls-sans=${TLS_SANS[*]}"
+fi
+if bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
+  log "bootstrap-admin + client verify skipped (--skip-bootstrap-admin)"
+fi
+
+if [[ "${APPLIANCE_PROFILE}" == "builder" || "${APPLIANCE_PROFILE}" == "builder-landns" || "${APPLIANCE_PROFILE}" == "builder-storage-landns" ]] && [[ -n "${BUILD_CATALOG_PATH}" ]]; then
+  catalog_validation_log="${RUN_DIR}/logs/build-catalog-validation.json"
+  if ! python3 "${SCRIPT_DIR}/validate-build-catalog.py" \
+    --config "${CONFIG_PATH}" \
+    --build-catalog "${BUILD_CATALOG_PATH}" \
+    --output-json "${catalog_validation_log}" \
+    >"${catalog_validation_log}.stdout" 2>"${catalog_validation_log}.stderr"; then
+    fail "builder build catalog validation failed; see ${catalog_validation_log}"
+  fi
+  log "build-catalog validation ok"
+fi
+
+end_stage
+
+# ---------------------------------------------------------------------------
+# Finalize helpers (trap writes metadata if a stage fails mid-flow)
+# ---------------------------------------------------------------------------
 
 FLOW_FINALIZED="false"
 finalize_release_flow() {
@@ -255,12 +292,12 @@ payload = {
 Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
 
-  log "release flow metadata written to ${RUN_DIR}/metadata/run-release-flow.json"
+  log "flow metadata → ${RUN_DIR}/metadata/run-release-flow.json"
   if python3 "${SCRIPT_DIR}/summarize-release-run.py" --run-dir "${RUN_DIR}" \
     >"${RUN_DIR}/logs/release-report.log" 2>&1; then
-    log "release report written to ${RUN_DIR}/metadata/release-report.json and ${RUN_DIR}/release-report.md"
+    log "report → ${RUN_DIR}/release-report.md"
   else
-    log "release report generation failed; log: ${RUN_DIR}/logs/release-report.log"
+    log "report generation failed; see ${RUN_DIR}/logs/release-report.log"
   fi
 }
 
@@ -273,47 +310,28 @@ finalize_on_exit() {
 }
 trap finalize_on_exit EXIT
 
-log "release flow run directory: ${RUN_DIR}"
-log "using config: ${CONFIG_PATH}"
-if [[ -n "${RELEASE_VERSION}" ]]; then
-  log "release version: ${RELEASE_VERSION}"
-fi
-if [[ -n "${APPLIANCE_PROFILE}" ]]; then
-  log "appliance profile: ${APPLIANCE_PROFILE}"
-fi
-if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
-  log "build catalog: ${BUILD_CATALOG_PATH}"
-fi
-if ((${#TLS_SANS[@]} > 0)); then
-  log "additional TLS SANs: ${TLS_SANS[*]}"
-fi
-if bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
-  log "bootstrap-admin is skipped; client/API verification will also be skipped so first-user setup can be completed later in the UI"
-fi
-if [[ "${APPLIANCE_PROFILE}" == "builder" || "${APPLIANCE_PROFILE}" == "builder-landns" || "${APPLIANCE_PROFILE}" == "builder-storage-landns" ]] && [[ -n "${BUILD_CATALOG_PATH}" ]]; then
-  catalog_validation_log="${RUN_DIR}/logs/build-catalog-validation.json"
-  if ! python3 "${SCRIPT_DIR}/validate-build-catalog.py" \
-    --config "${CONFIG_PATH}" \
-    --build-catalog "${BUILD_CATALOG_PATH}" \
-    --output-json "${catalog_validation_log}" \
-    >"${catalog_validation_log}.stdout" 2>"${catalog_validation_log}.stderr"; then
-    fail "builder build catalog validation failed; see ${catalog_validation_log}"
-  fi
-  log "builder build catalog validation completed; log: ${catalog_validation_log}"
-fi
+# ===========================================================================
+# STEP 1 — Build & publish  (future: own config file)
+# ===========================================================================
 
 if ! bool_true "${SKIP_BUILD}"; then
-  CURRENT_STEP="buildPublish"
+  begin_stage "buildPublish" "build and publish on build host → build-and-publish.sh"
   build_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
   if [[ -n "${RELEASE_VERSION}" ]]; then
     build_args+=(--release-version "${RELEASE_VERSION}")
   fi
-  log "starting build/publish phase"
   bash "${SCRIPT_DIR}/build-and-publish.sh" "${build_args[@]}"
+  end_stage
+else
+  log "── stage buildPublish: skipped (--skip-build)"
 fi
 
+# ===========================================================================
+# STEP 2 — Install & verify  (future: own config file)
+# ===========================================================================
+
 if ! bool_true "${SKIP_INSTALL}"; then
-  CURRENT_STEP="install"
+  begin_stage "install" "install on target → install-on-target.sh"
   install_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
   if [[ -n "${RELEASE_VERSION}" ]]; then
     install_args+=(--release-version "${RELEASE_VERSION}")
@@ -335,37 +353,49 @@ if ! bool_true "${SKIP_INSTALL}"; then
   if bool_true "${UNINSTALL_FIRST}"; then
     install_args+=(--uninstall-first)
   fi
-  log "starting install phase"
   bash "${SCRIPT_DIR}/install-on-target.sh" "${install_args[@]}"
+  end_stage
+else
+  log "── stage install: skipped (--skip-install)"
 fi
 
 if ! bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
-  CURRENT_STEP="bootstrapAdmin"
-  log "starting explicit first-admin bootstrap phase"
+  begin_stage "bootstrapAdmin" "first-admin bootstrap → bootstrap-admin-on-target.sh"
   bash "${SCRIPT_DIR}/bootstrap-admin-on-target.sh" --config "${CONFIG_PATH}" --run-dir "${RUN_DIR}"
+  end_stage
+else
+  log "── stage bootstrapAdmin: skipped (--skip-bootstrap-admin)"
 fi
 
+begin_stage "targetVerify" "target host verification → verify-target.sh"
 target_verify_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
 if [[ -n "${APPLIANCE_PROFILE}" ]]; then
   target_verify_args+=(--appliance-profile "${APPLIANCE_PROFILE}")
 fi
-CURRENT_STEP="targetVerify"
-log "starting target verification phase"
 bash "${SCRIPT_DIR}/verify-target.sh" "${target_verify_args[@]}"
+end_stage
 
 if ! bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
-  CURRENT_STEP="clientVerify"
+  begin_stage "clientVerify" "client/API verification from Mac → verify-client-access.sh"
   client_verify_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
   if [[ -n "${APPLIANCE_PROFILE}" ]]; then
     client_verify_args+=(--appliance-profile "${APPLIANCE_PROFILE}")
   fi
-  log "starting client/API verification phase"
   bash "${SCRIPT_DIR}/verify-client-access.sh" "${client_verify_args[@]}"
+  end_stage
+else
+  log "── stage clientVerify: skipped (follows --skip-bootstrap-admin)"
 fi
 
+# ===========================================================================
+# STEP 3 — Report
+# ===========================================================================
+
+begin_stage "report" "write flow metadata and release report"
+finalize_release_flow 0
+end_stage
 CURRENT_STEP="done"
 
-finalize_release_flow 0
 trap - EXIT
 if bool_true "${FINAL_OK}"; then
   printf 'OK run\n'

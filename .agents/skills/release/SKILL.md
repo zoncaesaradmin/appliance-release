@@ -53,11 +53,12 @@ Runtime secrets such as remote `sudo` passwords and first-admin credentials must
 For day-to-day use, set:
 
 - `APPLIANCE_RELEASE_CONFIG=/abs/path/to/appliance-release.config.yaml`
-- `DEV_REGISTRY=...` (named by `build_flow.dev_image_pull.registry_env`)
-- `DEV_IMAGE_REPO=...` / `DEV_IMAGE_NAME=...` (named by pull image_repo_env / image_name_env — development-container only)
-- `DEV_REGISTRY_USER=...` / `DEV_REGISTRY_TOKEN=...` (named by username_env / token_env for pull and publish)
-- `DEV_REGISTRY_TLS_VERIFY=true|false` (named by both `dev_image_pull.tls_verify_env` and `product_publish.tls_verify_env`)
-- Optional `install.image_pull_registry` in config (same env names) so target K3s can pull from the LAN registry
+- `DEV_REGISTRY=...` (named by `build_flow.dev_image_pull.registry_env`; also used by appliance-code `SERVICE_IMAGE_REGISTRY`)
+- `DEV_IMAGE_REPO=...` / `DEV_IMAGE_NAME=...` (named by pull `image_repo_env` / `image_name_env` — development-container only)
+- `DEV_REGISTRY_USER=...` / `DEV_REGISTRY_TOKEN=...` (named by `dev_image_pull` username/token env keys; also optional LAN pull on install)
+- `DEV_REGISTRY_TLS_VERIFY=true|false` (named by `dev_image_pull.tls_verify_env`)
+- Optional `install.image_pull_registry` in config (`registry_env` + credential env names; no literal `registry`) so target K3s can pull from the LAN registry
+- Do not set `build_flow.product_publish` — that block is rejected; use `bundle_store` for signed-bundle publish
 - `APPLIANCE_BUILD_SUDO_PASSWORD=...`
 - `APPLIANCE_TARGET_SUDO_PASSWORD=...`
 - `APPLIANCE_FIRST_ADMIN_PASSWORD=...`
