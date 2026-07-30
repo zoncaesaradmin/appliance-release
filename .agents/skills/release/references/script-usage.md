@@ -62,8 +62,6 @@ Notes:
     “Artifact files only” scopes). Set `bundle_store.tls_insecure` or
     `bundle_store.cacert_path` explicitly (no silent `-k`). Requires an
     already-installed artifact-capable distributor appliance (day-2 path).
-  Historical aliases: `http`/`http-static` → `static_http`, `fileserver` →
-  `appliance_files`.
 - For advanced extra SANs beyond the derived FQDN, use
   `install.additional_tls_sans_csv` in the config.
 - For the `builder` profile, set `install.build_catalog_path` or pass
@@ -234,10 +232,6 @@ If `install.appliance_profile` is a build-capable profile (`builder`,
 `verification.builder.enabled` or `verification.builder.api_command` only when
 you need custom reachability behavior.
 
-Builder workflow repo URLs must use HTTPS. Override
-`verification.builder.source_credentials_command` only for legacy-compatible
-custom builder-specific readiness rules.
-
 ## 5. Verify Client/API Only
 
 Use this from the Mac if the appliance is already installed and reachable.
@@ -269,8 +263,7 @@ This script checks:
   non-empty `artifactRef`; this resolved image reference is copied into the
   final release report
 - for that workflow smoke, a returned-evidence leak check that fails if job,
-  step, or log output contains private-key markers or managed builder Git
-  Secret names
+  step, or log output contains private-key markers
 - writes a clear request log for each API call with method, full URL, sanitized headers, and sanitized POST body fields
 - keeps the response body and response headers in separate log files
 

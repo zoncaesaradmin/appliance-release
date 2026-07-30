@@ -24,8 +24,6 @@ Options:
   --publish-cmd CMD             Remote publish command. Defaults to build_flow.publish_command.
   --remote-cwd PATH             Remote working directory. Defaults to release_workspace.remote_repo_path.
   --remote-export-dir PATH      Optional remote export directory to rsync back locally.
-  --remote-release-input PATH   Optional remote release-input file or directory to copy back.
-  --remote-bundle-dir PATH      Optional remote extracted bundle directory to copy back.
   --release-version VERSION     Optional release version for metadata and filenames.
   --run-dir DIR                 Local run directory.
 EOF
@@ -68,14 +66,6 @@ while [[ $# -gt 0 ]]; do
       REMOTE_EXPORT_DIR="${2:-}"
       shift 2
       ;;
-    --remote-release-input)
-      REMOTE_RELEASE_INPUT="${2:-}"
-      shift 2
-      ;;
-    --remote-bundle-dir)
-      REMOTE_BUNDLE_DIR="${2:-}"
-      shift 2
-      ;;
     --release-version)
       RELEASE_VERSION="${2:-}"
       shift 2
@@ -94,12 +84,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-CONFIG_PATH="$(resolve_config_path "${CONFIG_PATH}" || true)"
-[[ -n "${CONFIG_PATH}" ]] || fail "config not provided; use --config or APPLIANCE_RELEASE_CONFIG"
-ensure_file "${CONFIG_PATH}"
+CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
 
 if [[ -z "${RUN_DIR}" ]]; then
-  RUN_DIR="$(pwd)/.run/appliance-release/$(date -u +%Y%m%dT%H%M%SZ)"
+  RUN_DIR="$(default_release_run_dir)"
 fi
 
 if [[ -z "${REMOTE_CWD}" ]]; then
@@ -126,12 +114,6 @@ fi
 if [[ -z "${REMOTE_EXPORT_DIR}" ]]; then
   REMOTE_EXPORT_DIR="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_export_dir" || true)"
 fi
-if [[ -z "${REMOTE_RELEASE_INPUT}" ]]; then
-  REMOTE_RELEASE_INPUT="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_release_input_path" || true)"
-fi
-if [[ -z "${REMOTE_BUNDLE_DIR}" ]]; then
-  REMOTE_BUNDLE_DIR="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_bundle_dir" || true)"
-fi
 
 [[ -n "${BUILD_CMD}" ]] || fail "build_flow.build_command is required in config"
 [[ -n "${PUBLISH_CMD}" ]] || fail "build_flow.publish_command is required in config"
@@ -139,6 +121,10 @@ fi
 [[ -n "${BUILD_K3S_AIRGAP_IMAGES_SOURCE}" ]] || fail "build_flow.k3s_airgap_images_source is required in config"
 [[ -n "${RELEASE_VERSION}" ]] || fail "release.version is required in config"
 [[ -n "${REMOTE_EXPORT_DIR}" ]] || fail "release_workspace.remote_export_dir is required in config"
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_release_input_path" || true)" \
+  || -n "$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_bundle_dir" || true)" ]]; then
+  fail "release_workspace.remote_release_input_path and remote_bundle_dir were removed; build-and-publish now auto-detects release-input and bundle paths from the build log"
+fi
 
 SKILL_RELEASE_REPO_ROOT="$(skill_release_repo_root "${SCRIPT_DIR}")"
 if [[ -z "${REMOTE_REPO_SOURCE}" ]]; then
@@ -193,11 +179,13 @@ if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.product_publish.reg
   || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.product_publish.tls_verify_env" || true)" ]]; then
   fail "build_flow.product_publish.* was removed (destination fields were unused). Use build_flow.dev_image_pull.* for registry login; remove the product_publish block from config"
 fi
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.image_repo" || true)" \
+  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.image_name" || true)" ]]; then
+  fail "build_flow.dev_image_pull.image_repo and image_name were removed; use image_repo_env and image_name_env"
+fi
 
 DEV_PULL_REGISTRY_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.registry_env" || true)"
-DEV_PULL_IMAGE_REPO="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.image_repo" || true)"
 DEV_PULL_IMAGE_REPO_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.image_repo_env" || true)"
-DEV_PULL_IMAGE_NAME="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.image_name" || true)"
 DEV_PULL_IMAGE_NAME_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.image_name_env" || true)"
 DEV_PULL_IMAGE_TAG="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.image_tag" || true)"
 DEV_PULL_USER_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.username_env" || true)"
@@ -205,14 +193,10 @@ DEV_PULL_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image
 DEV_PULL_TLS_VERIFY_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.tls_verify_env" || true)"
 [[ -n "${DEV_PULL_REGISTRY_ENV}" ]] || fail "build_flow.dev_image_pull.registry_env is required in config"
 DEV_PULL_REGISTRY="$(resolve_env_value "${DEV_PULL_REGISTRY_ENV}" "Dev image pull registry env")"
-if [[ -n "${DEV_PULL_IMAGE_REPO_ENV}" ]]; then
-  DEV_PULL_IMAGE_REPO="$(resolve_env_value "${DEV_PULL_IMAGE_REPO_ENV}" "Dev image pull image repo env")"
-fi
-if [[ -n "${DEV_PULL_IMAGE_NAME_ENV}" ]]; then
-  DEV_PULL_IMAGE_NAME="$(resolve_env_value "${DEV_PULL_IMAGE_NAME_ENV}" "Dev image pull image name env")"
-fi
-[[ -n "${DEV_PULL_IMAGE_REPO}" ]] || fail "build_flow.dev_image_pull.image_repo or image_repo_env is required in config"
-[[ -n "${DEV_PULL_IMAGE_NAME}" ]] || fail "build_flow.dev_image_pull.image_name or image_name_env is required in config"
+[[ -n "${DEV_PULL_IMAGE_REPO_ENV}" ]] || fail "build_flow.dev_image_pull.image_repo_env is required in config"
+[[ -n "${DEV_PULL_IMAGE_NAME_ENV}" ]] || fail "build_flow.dev_image_pull.image_name_env is required in config"
+DEV_PULL_IMAGE_REPO="$(resolve_env_value "${DEV_PULL_IMAGE_REPO_ENV}" "Dev image pull image repo env")"
+DEV_PULL_IMAGE_NAME="$(resolve_env_value "${DEV_PULL_IMAGE_NAME_ENV}" "Dev image pull image name env")"
 [[ -n "${DEV_PULL_IMAGE_TAG}" ]] || fail "build_flow.dev_image_pull.image_tag is required in config"
 [[ -n "${DEV_PULL_USER_ENV}" ]] || fail "build_flow.dev_image_pull.username_env is required in config"
 [[ -n "${DEV_PULL_TOKEN_ENV}" ]] || fail "build_flow.dev_image_pull.token_env is required in config"
@@ -222,7 +206,6 @@ IMAGE_REGISTRY_HOST="${DEV_PULL_REGISTRY}"
 
 DEV_PULL_TLS_VERIFY="$(normalize_bool_value "$(resolve_env_value "${DEV_PULL_TLS_VERIFY_ENV}" "TLS verify env")")"
 # Bundled/target OCI contract name (not configurable).
-BUILD_EXTRA_OCI_IMAGE_PULL_REFS="${IMAGE_REGISTRY_PULL_REF}"
 BUILD_EXTRA_OCI_IMAGE_REFS="registry.local/dev-build"
 if bool_true "${DEV_PULL_TLS_VERIFY}"; then
   OCI_COPY_SRC_TLS_VERIFY="true"
@@ -231,8 +214,6 @@ else
   OCI_COPY_SRC_TLS_VERIFY="false"
   DEV_REGISTRY_TLS_VERIFY="false"
 fi
-BOOTSTRAP_REGISTRY_USER=""
-BOOTSTRAP_REGISTRY_TOKEN=""
 BUILD_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.enabled" || true)"
 BUILD_ARGO_REQUIRED="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.required" || true)"
 BUILD_ARGO_VERSION="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.version" || true)"
@@ -249,9 +230,8 @@ BUILD_ZOT_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_fl
 BUILD_DNS_VERSION="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.version" || true)"
 BUILD_DNS_IMAGE_PULL_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.image_pull_ref" || true)"
 BUILD_DNS_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.image_archive_source" || true)"
-APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
+APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}")"
 VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
-[[ -n "${APPLIANCE_PROFILE}" ]] || fail "install.appliance_profile is required in config"
 [[ -n "${VERIFY_ARGO_ENABLED}" ]] || fail "verification.argo.enabled is required in config (true|false)"
 BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
 PUBLISH_PUBLIC_BASE_URL="$(bundle_store_get_optional "${CONFIG_PATH}" "base_url" || true)"
@@ -273,79 +253,58 @@ fi
 if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
   require_appliance_files_base_url "${PUBLISH_PUBLIC_BASE_URL}"
 fi
-ensure_dir "${RUN_DIR}"
-ensure_dir "${RUN_DIR}/logs"
-ensure_dir "${RUN_DIR}/artifacts"
-ensure_dir "${RUN_DIR}/metadata"
+ensure_release_run_dirs "${RUN_DIR}" "artifacts"
 
 log "running local live-build repo preflight against release=${REMOTE_REPO_REF}, appliance-code=${CODE_REPO_REF}, appliance-ctl=${CTL_REPO_REF}"
 preflight_live_release_inputs "${SKILL_RELEASE_REPO_ROOT}" "${REMOTE_REPO_REF}" "${CODE_REPO_REF}" "${CTL_REPO_REF}"
 
-append_env_assignment() {
-  local current="$1"
-  local name="$2"
-  local value="$3"
-  if [[ -z "${value}" ]]; then
-    printf '%s' "${current}"
-    return 0
-  fi
-  printf '%s%s=%s ' "${current}" "${name}" "$(shell_quote "${value}")"
-}
-
-profile_supports_workflows() {
-  case "$1" in
-    core|builder|builder-landns|builder-storage-landns) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-EFFECTIVE_VERIFY_ARGO_ENABLED="${VERIFY_ARGO_ENABLED}"
-if bool_true "${EFFECTIVE_VERIFY_ARGO_ENABLED}" && ! profile_supports_workflows "${APPLIANCE_PROFILE}"; then
-  fail "verification.argo.enabled=true but install.appliance_profile=${APPLIANCE_PROFILE} does not enable workflows; set verification.argo.enabled=false in config"
-fi
+require_profile_supports_workflows "${VERIFY_ARGO_ENABLED}" "${APPLIANCE_PROFILE}" "verification.argo.enabled"
 
 BUILD_ENV_PREFIX=""
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "PRODUCT_VERSION" "${RELEASE_VERSION}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXPORT_DIR" "${REMOTE_EXPORT_DIR}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "K3S_BINARY_SOURCE" "${BUILD_K3S_BINARY_SOURCE}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "K3S_AIRGAP_IMAGES_SOURCE" "${BUILD_K3S_AIRGAP_IMAGES_SOURCE}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "CODE_REPO_REF" "${CODE_REPO_REF}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "CTL_REPO_REF" "${CTL_REPO_REF}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_ENABLED" "${BUILD_ARGO_ENABLED}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_REQUIRED" "${BUILD_ARGO_REQUIRED}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_VERSION" "${BUILD_ARGO_VERSION}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_CRDS_DIR_SOURCE" "${BUILD_ARGO_CRDS_DIR_SOURCE}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_CONTROLLER_IMAGE_REF" "${BUILD_ARGO_CONTROLLER_IMAGE_REF}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_EXECUTOR_IMAGE_REF" "${BUILD_ARGO_EXECUTOR_IMAGE_REF}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE" "${BUILD_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE" "${BUILD_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "WORKSPACE_PROVISIONER_IMAGE_REF" "${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE" "${BUILD_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ZOT_VERSION" "${BUILD_ZOT_VERSION}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ZOT_IMAGE_PULL_REF" "${BUILD_ZOT_IMAGE_PULL_REF}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "ZOT_IMAGE_ARCHIVE_SOURCE" "${BUILD_ZOT_IMAGE_ARCHIVE_SOURCE}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DNS_VERSION" "${BUILD_DNS_VERSION}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DNS_IMAGE_PULL_REF" "${BUILD_DNS_IMAGE_PULL_REF}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DNS_IMAGE_ARCHIVE_SOURCE" "${BUILD_DNS_IMAGE_ARCHIVE_SOURCE}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE_REFS" "${BUILD_EXTRA_OCI_IMAGE_REFS}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "EXTRA_OCI_IMAGE_PULL_REFS" "${BUILD_EXTRA_OCI_IMAGE_PULL_REFS}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "OCI_COPY_SRC_TLS_VERIFY" "${OCI_COPY_SRC_TLS_VERIFY}")"
+BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
+  "PRODUCT_VERSION" "${RELEASE_VERSION}" \
+  "EXPORT_DIR" "${REMOTE_EXPORT_DIR}" \
+  "K3S_BINARY_SOURCE" "${BUILD_K3S_BINARY_SOURCE}" \
+  "K3S_AIRGAP_IMAGES_SOURCE" "${BUILD_K3S_AIRGAP_IMAGES_SOURCE}" \
+  "CODE_REPO_REF" "${CODE_REPO_REF}" \
+  "CTL_REPO_REF" "${CTL_REPO_REF}" \
+  "ARGO_ENABLED" "${BUILD_ARGO_ENABLED}" \
+  "ARGO_REQUIRED" "${BUILD_ARGO_REQUIRED}" \
+  "ARGO_VERSION" "${BUILD_ARGO_VERSION}" \
+  "ARGO_CRDS_DIR_SOURCE" "${BUILD_ARGO_CRDS_DIR_SOURCE}" \
+  "ARGO_CONTROLLER_IMAGE_REF" "${BUILD_ARGO_CONTROLLER_IMAGE_REF}" \
+  "ARGO_EXECUTOR_IMAGE_REF" "${BUILD_ARGO_EXECUTOR_IMAGE_REF}" \
+  "ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE" "${BUILD_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" \
+  "ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE" "${BUILD_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" \
+  "WORKSPACE_PROVISIONER_IMAGE_REF" "${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}" \
+  "WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE" "${BUILD_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" \
+  "ZOT_VERSION" "${BUILD_ZOT_VERSION}" \
+  "ZOT_IMAGE_PULL_REF" "${BUILD_ZOT_IMAGE_PULL_REF}" \
+  "ZOT_IMAGE_ARCHIVE_SOURCE" "${BUILD_ZOT_IMAGE_ARCHIVE_SOURCE}" \
+  "DNS_VERSION" "${BUILD_DNS_VERSION}" \
+  "DNS_IMAGE_PULL_REF" "${BUILD_DNS_IMAGE_PULL_REF}" \
+  "DNS_IMAGE_ARCHIVE_SOURCE" "${BUILD_DNS_IMAGE_ARCHIVE_SOURCE}" \
+  "EXTRA_OCI_IMAGE_REFS" "${BUILD_EXTRA_OCI_IMAGE_REFS}" \
+  "EXTRA_OCI_IMAGE_PULL_REFS" "${IMAGE_REGISTRY_PULL_REF}" \
+  "OCI_COPY_SRC_TLS_VERIFY" "${OCI_COPY_SRC_TLS_VERIFY}")"
 # Point appliance-code at the pull image (DEV_*). Per-service image push
 # destination is owned by appliance-code build/service-image.mk.
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_IMAGE" "${IMAGE_REGISTRY_PULL_REF}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_REGISTRY_HOST" "${IMAGE_REGISTRY_HOST}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_REGISTRY" "${DEV_PULL_REGISTRY}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_IMAGE_REPO" "${DEV_PULL_IMAGE_REPO}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_IMAGE_NAME" "${DEV_PULL_IMAGE_NAME}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_IMAGE_TAG" "${DEV_PULL_IMAGE_TAG}")"
+BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
+  "DEV_IMAGE" "${IMAGE_REGISTRY_PULL_REF}" \
+  "DEV_REGISTRY_HOST" "${IMAGE_REGISTRY_HOST}" \
+  "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}" \
+  "DEV_REGISTRY" "${DEV_PULL_REGISTRY}" \
+  "DEV_IMAGE_REPO" "${DEV_PULL_IMAGE_REPO}" \
+  "DEV_IMAGE_NAME" "${DEV_PULL_IMAGE_NAME}" \
+  "DEV_IMAGE_TAG" "${DEV_PULL_IMAGE_TAG}")"
 
 PUBLISH_ENV_PREFIX=""
-PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PRODUCT_VERSION" "${RELEASE_VERSION}")"
-PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "EXPORT_DIR" "${REMOTE_EXPORT_DIR}")"
-PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_MODE" "${BUNDLE_STORE_MODE}")"
-PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_PUBLIC_BASE_URL" "${PUBLISH_PUBLIC_BASE_URL}")"
-PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_PATH_PREFIX" "${PUBLISH_PATH_PREFIX}")"
+PUBLISH_ENV_PREFIX="$(append_env_assignments "${PUBLISH_ENV_PREFIX}" \
+  "PRODUCT_VERSION" "${RELEASE_VERSION}" \
+  "EXPORT_DIR" "${REMOTE_EXPORT_DIR}" \
+  "PUBLISH_MODE" "${BUNDLE_STORE_MODE}" \
+  "PUBLISH_PUBLIC_BASE_URL" "${PUBLISH_PUBLIC_BASE_URL}" \
+  "PUBLISH_PATH_PREFIX" "${PUBLISH_PATH_PREFIX}")"
 if [[ "${BUNDLE_STORE_MODE}" == "static_http" ]]; then
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_SERVER" "${PUBLISH_SERVER}")"
   PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_REMOTE_ROOT" "${PUBLISH_REMOTE_ROOT}")"
@@ -380,19 +339,21 @@ BOOTSTRAP_REGISTRY_USER="$(resolve_secret "${DEV_PULL_USER_ENV}" "Dev image pull
 BOOTSTRAP_REGISTRY_TOKEN="$(resolve_secret "${DEV_PULL_TOKEN_ENV}" "Dev image pull token")"
 [[ -n "${BOOTSTRAP_REGISTRY_TOKEN}" ]] || fail "empty value for env ${DEV_PULL_TOKEN_ENV} (named by build_flow.dev_image_pull.token_env)"
 BOOTSTRAP_ENV_PREFIX=""
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "CODE_REPO_REF" "${CODE_REPO_REF}")"
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}")"
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}")"
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_IMAGE" "${IMAGE_REGISTRY_PULL_REF}")"
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_REGISTRY_HOST" "${IMAGE_REGISTRY_HOST}")"
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}")"
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_REGISTRY" "${DEV_PULL_REGISTRY}")"
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_IMAGE_REPO" "${DEV_PULL_IMAGE_REPO}")"
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_IMAGE_NAME" "${DEV_PULL_IMAGE_NAME}")"
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "DEV_IMAGE_TAG" "${DEV_PULL_IMAGE_TAG}")"
+BOOTSTRAP_ENV_PREFIX="$(append_env_assignments "${BOOTSTRAP_ENV_PREFIX}" \
+  "CODE_REPO_REF" "${CODE_REPO_REF}" \
+  "DEV_REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}" \
+  "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}" \
+  "DEV_IMAGE" "${IMAGE_REGISTRY_PULL_REF}" \
+  "DEV_REGISTRY_HOST" "${IMAGE_REGISTRY_HOST}" \
+  "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}" \
+  "DEV_REGISTRY" "${DEV_PULL_REGISTRY}" \
+  "DEV_IMAGE_REPO" "${DEV_PULL_IMAGE_REPO}" \
+  "DEV_IMAGE_NAME" "${DEV_PULL_IMAGE_NAME}" \
+  "DEV_IMAGE_TAG" "${DEV_PULL_IMAGE_TAG}")"
 # Same auth for the build so skopeo/podman can use it after login.
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}")"
-BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}")"
+BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
+  "DEV_REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}" \
+  "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}")"
 
 bootstrap_remote_cmd=""
 if [[ -n "${BOOTSTRAP_CMD}" ]]; then
@@ -411,7 +372,6 @@ if [[ -n "${release_repo_sync_remote_cmd}" ]]; then
   run_ssh_logged "${BUILD_HOST}" "${release_repo_sync_log}" "${release_repo_sync_remote_cmd}"
 fi
 
-build_sudo_password=""
 if bool_true "${BOOTSTRAP_NEEDS_SUDO:-false}" || bool_true "${BUILD_NEEDS_SUDO:-false}"; then
   build_sudo_password="$(resolve_secret "APPLIANCE_BUILD_SUDO_PASSWORD" "Build host sudo password")"
 fi
@@ -421,7 +381,7 @@ wrap_remote_cmd_with_sudo() {
   local sudo_password="$2"
   # Keep password quoting in a variable first so a failed shell_quote cannot
   # leave a partial `$(...)` residue on the local parser's command line.
-  local quoted_password=""
+  local quoted_password
   quoted_password="$(shell_quote "${sudo_password}")"
   printf '%s' "printf '%s\n' ${quoted_password} | sudo -S -p '' -v >/dev/null && ${remote_cmd}"
 }
@@ -586,7 +546,7 @@ elif [[ -n "${REMOTE_BUNDLE_DIR}" ]]; then
 fi
 
 VALIDATE_RELEASE_ARTIFACTS_ARGS=()
-if bool_true "${BUILD_ARGO_ENABLED:-false}" || bool_true "${EFFECTIVE_VERIFY_ARGO_ENABLED:-false}"; then
+if bool_true "${BUILD_ARGO_ENABLED:-false}" || bool_true "${VERIFY_ARGO_ENABLED:-false}"; then
   VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--require-argo)
 fi
 EXPECTED_EXTRA_OCI_IMAGE_REFS="${BUILD_EXTRA_OCI_IMAGE_REFS}"

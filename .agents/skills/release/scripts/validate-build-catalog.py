@@ -5,11 +5,8 @@ import argparse
 import importlib.util
 import json
 from pathlib import Path
-import sys
 
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-PLAN_SCRIPT = SCRIPT_DIR / "plan-profile-matrix.py"
+PLAN_SCRIPT = Path(__file__).resolve().with_name("plan-profile-matrix.py")
 
 
 def load_plan_module():

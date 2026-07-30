@@ -90,10 +90,11 @@ verify-release-artifacts:
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_plan_profile_matrix.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_verify_client_access.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_live_release_repo_preflight.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_build_and_publish_config.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_write_local_milestone_report.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_write_final_readiness_report.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_bundle_store_mode.py"
-	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_appliance_files_auth.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_appliance_files_bundle_store.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_shell_quote_env.py"
 
 .PHONY: verify-final-targets
@@ -448,7 +449,7 @@ publish-release:
 	fi; \
 	mode="$${PUBLISH_MODE}"; \
 	case "$$mode" in \
-		static_http|http|http-static) \
+		static_http) \
 			if [ -z "$${PUBLISH_SERVER:-}" ] || [ -z "$${PUBLISH_REMOTE_ROOT:-}" ]; then \
 				echo "publish-release: static_http mode requires PUBLISH_SERVER and PUBLISH_REMOTE_ROOT" >&2; \
 				exit 2; \
@@ -464,7 +465,7 @@ publish-release:
 				$${PUBLISH_SSH_PORT:+--ssh-port "$${PUBLISH_SSH_PORT}"} \
 				$${PUBLISH_LATEST_ALIAS:+--latest-alias} \
 			;; \
-		appliance_files|fileserver) \
+		appliance_files) \
 			bash ./scripts/publish/publish-release.sh \
 				--export-dir "$${EXPORT_DIR}" \
 				--product-version "$${PRODUCT_VERSION}" \

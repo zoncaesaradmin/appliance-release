@@ -77,7 +77,6 @@ RUN_DIR=""
 RELEASE_VERSION=""
 APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
-TLS_SANS=()
 PRESERVE_FAILED_STATE="false"
 UNINSTALL_FIRST="false"
 SKIP_BOOTSTRAP_ADMIN="false"
@@ -110,45 +109,21 @@ done
 
 begin_stage "prepare" "resolve config and run directory"
 
-CONFIG_PATH="$(resolve_config_path "${CONFIG_PATH}" || true)"
-[[ -n "${CONFIG_PATH}" ]] || fail "config not provided; use --config or APPLIANCE_RELEASE_CONFIG"
-ensure_file "${CONFIG_PATH}"
+CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
 
 if [[ -z "${RUN_DIR}" ]]; then
-  RUN_DIR="${PWD}/.run/appliance-release/$(date -u +%Y%m%dT%H%M%SZ)"
+  RUN_DIR="$(default_release_run_dir)"
 fi
 if [[ -z "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
 fi
-if [[ -z "${APPLIANCE_PROFILE}" ]]; then
-  APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
-fi
-[[ -n "${APPLIANCE_PROFILE}" ]] || fail "install.appliance_profile is required in config"
+BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
+APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}" "${APPLIANCE_PROFILE}")"
 [[ -n "${RELEASE_VERSION}" ]] || fail "release.version is required in config (or pass --release-version)"
-if [[ -z "${BUILD_CATALOG_PATH}" ]]; then
-  BUILD_CATALOG_PATH="$(config_get_optional "${CONFIG_PATH}" "install.build_catalog_path" || true)"
-fi
-ADDITIONAL_TLS_SANS_CSV="$(config_get_optional "${CONFIG_PATH}" "install.additional_tls_sans_csv" || true)"
-if [[ -n "${ADDITIONAL_TLS_SANS_CSV}" ]]; then
-  IFS=',' read -r -a configured_tls_sans <<<"${ADDITIONAL_TLS_SANS_CSV}"
-  for configured_san in "${configured_tls_sans[@]}"; do
-    configured_san="${configured_san#"${configured_san%%[![:space:]]*}"}"
-    configured_san="${configured_san%"${configured_san##*[![:space:]]}"}"
-    if [[ -n "${configured_san}" ]]; then
-      TLS_SANS+=("${configured_san}")
-    fi
-  done
-fi
-if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
-  ensure_file "${BUILD_CATALOG_PATH}"
-fi
-if [[ "${APPLIANCE_PROFILE}" == "builder" || "${APPLIANCE_PROFILE}" == "builder-landns" || "${APPLIANCE_PROFILE}" == "builder-storage-landns" ]] && [[ -z "${BUILD_CATALOG_PATH}" ]]; then
-  fail "builder appliance profile requires install.build_catalog_path or --build-catalog; start from .agents/skills/release/references/build-catalog.example.yaml"
-fi
+BUILD_CATALOG_PATH="$(resolve_build_catalog_path "${CONFIG_PATH}" "${BUILD_CATALOG_PATH}")"
+require_builder_build_catalog_path "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}"
 
-ensure_dir "${RUN_DIR}"
-ensure_dir "${RUN_DIR}/logs"
-ensure_dir "${RUN_DIR}/metadata"
+ensure_release_run_dirs "${RUN_DIR}"
 
 log "run-dir=${RUN_DIR}"
 log "config=${CONFIG_PATH}"
@@ -156,24 +131,11 @@ log "release=${RELEASE_VERSION} profile=${APPLIANCE_PROFILE}"
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   log "build-catalog=${BUILD_CATALOG_PATH}"
 fi
-if ((${#TLS_SANS[@]} > 0)); then
-  log "tls-sans=${TLS_SANS[*]}"
-fi
 if bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
   log "bootstrap-admin + client verify skipped (--skip-bootstrap-admin)"
 fi
 
-if [[ "${APPLIANCE_PROFILE}" == "builder" || "${APPLIANCE_PROFILE}" == "builder-landns" || "${APPLIANCE_PROFILE}" == "builder-storage-landns" ]] && [[ -n "${BUILD_CATALOG_PATH}" ]]; then
-  catalog_validation_log="${RUN_DIR}/logs/build-catalog-validation.json"
-  if ! python3 "${SCRIPT_DIR}/validate-build-catalog.py" \
-    --config "${CONFIG_PATH}" \
-    --build-catalog "${BUILD_CATALOG_PATH}" \
-    --output-json "${catalog_validation_log}" \
-    >"${catalog_validation_log}.stdout" 2>"${catalog_validation_log}.stderr"; then
-    fail "builder build catalog validation failed; see ${catalog_validation_log}"
-  fi
-  log "build-catalog validation ok"
-fi
+validate_builder_build_catalog "${SCRIPT_DIR}" "${CONFIG_PATH}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${RUN_DIR}" "build-catalog validation ok"
 
 end_stage
 
@@ -193,7 +155,11 @@ finalize_release_flow() {
     && ! bool_true "${SKIP_INSTALL}" \
     && [[ ! -f "${RUN_DIR}/metadata/install.json" ]] \
     && [[ -f "${RUN_DIR}/logs/install.log" ]]; then
-    python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${UNINSTALL_FIRST}" "${PRESERVE_FAILED_STATE}" "${RUN_DIR}/logs/install.log" "${exit_code}" <<'PY'
+    local install_mode="install"
+    if grep -Fq "Existing owned appliance detected. Switching to in-place upgrade/reconcile." "${RUN_DIR}/logs/install.log"; then
+      install_mode="upgrade"
+    fi
+    python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${BUNDLE_STORE_MODE}" "${install_mode}" "${UNINSTALL_FIRST}" "${PRESERVE_FAILED_STATE}" "${RUN_DIR}/logs/install.log" "${exit_code}" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -204,17 +170,25 @@ from pathlib import Path
     release_version,
     appliance_profile,
     build_catalog_path,
+    distribution_mode,
+    install_mode,
     uninstall_first,
     preserve_failed_state,
     install_log,
     exit_code,
-) = sys.argv[1:10]
+) = sys.argv[1:12]
+
+install_method = {
+    "static_http": "direct-static_http-zonctl-auto",
+    "appliance_files": "direct-appliance_files-zonctl-auto",
+}.get(distribution_mode, f"direct-{distribution_mode}-zonctl-auto")
 
 payload = {
     "configPath": config_path,
     "targetHost": None,
     "helperUrl": None,
-    "installMethod": "direct-static_http-zonctl-auto",
+    "installMethod": install_method,
+    "distributionMode": distribution_mode,
     "releaseVersion": release_version or None,
     "baseUrl": None,
     "pathPrefix": None,
@@ -223,20 +197,20 @@ payload = {
     "bundleDir": f"/tmp/appliance-{release_version}/appliance-{release_version}-bundle" if release_version else None,
     "applianceProfile": appliance_profile or None,
     "buildCatalogPath": build_catalog_path or None,
+    "installMode": install_mode,
     "outputFormat": "text",
     "uninstallFirst": uninstall_first == "true",
     "preserveFailedState": preserve_failed_state == "true",
     "log": install_log,
     "status": "passed" if int(exit_code) == 0 else "failed",
     "exitCode": int(exit_code),
-    "inferred": True,
 }
 
 Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
   fi
 
-  python3 - "${RUN_DIR}/metadata/run-release-flow.json" "${CONFIG_PATH}" "${RUN_DIR}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${ADDITIONAL_TLS_SANS_CSV}" "${SKIP_BUILD}" "${SKIP_INSTALL}" "${SKIP_BOOTSTRAP_ADMIN}" "${UNINSTALL_FIRST}" "${PRESERVE_FAILED_STATE}" "${exit_code}" <<'PY'
+  python3 - "${RUN_DIR}/metadata/run-release-flow.json" "${CONFIG_PATH}" "${RUN_DIR}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${SKIP_BUILD}" "${SKIP_INSTALL}" "${SKIP_BOOTSTRAP_ADMIN}" "${UNINSTALL_FIRST}" "${PRESERVE_FAILED_STATE}" "${exit_code}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -248,14 +222,13 @@ import sys
     release_version,
     appliance_profile,
     build_catalog_path,
-    additional_tls_sans_csv,
     skip_build,
     skip_install,
     skip_bootstrap_admin,
     uninstall_first,
     preserve_failed_state,
     exit_code,
-) = sys.argv[1:14]
+) = sys.argv[1:13]
 
 run_dir_path = Path(run_dir)
 exit_code_int = int(exit_code)
@@ -266,7 +239,6 @@ payload = {
     "releaseVersion": release_version or None,
     "applianceProfile": appliance_profile or None,
     "buildCatalogPath": build_catalog_path or None,
-    "additionalTLSSANsCSV": additional_tls_sans_csv or None,
     "status": "passed" if exit_code_int == 0 else "failed",
     "exitCode": exit_code_int,
     "steps": {
@@ -284,8 +256,6 @@ payload = {
         "bootstrapAdmin": str(run_dir_path / "metadata" / "bootstrap-admin.json"),
         "targetVerify": str(run_dir_path / "metadata" / "verify.json"),
         "clientVerify": str(run_dir_path / "metadata" / "client-verify.json"),
-        "releaseReportJson": str(run_dir_path / "metadata" / "release-report.json"),
-        "releaseReportMarkdown": str(run_dir_path / "release-report.md"),
     },
 }
 
@@ -341,11 +311,6 @@ if ! bool_true "${SKIP_INSTALL}"; then
   fi
   if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
     install_args+=(--build-catalog "${BUILD_CATALOG_PATH}")
-  fi
-  if ((${#TLS_SANS[@]} > 0)); then
-    for tls_san in "${TLS_SANS[@]}"; do
-      install_args+=(--tls-san "${tls_san}")
-    done
   fi
   if bool_true "${PRESERVE_FAILED_STATE}"; then
     install_args+=(--preserve-failed-state)

@@ -27,7 +27,7 @@ Options:
   --appliance-name NAME      Product LAN instance label (single DNS label).
                              FQDN becomes <name>.<dns-zone> for TLS,
                              canonicalOrigin, and registry realm.
-  --dns-zone ZONE            LAN DNS zone (default appliance.internal).
+  --dns-zone ZONE            Override install.dns_zone.
   --tls-san SAN              Additional TLS SAN to include on the appliance
                              certificate. Repeatable.
   --preserve-failed-state    Pass zonctl's debug preserve-failed-state mode
@@ -100,12 +100,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-CONFIG_PATH="$(resolve_config_path "${CONFIG_PATH}" || true)"
-[[ -n "${CONFIG_PATH}" ]] || fail "config not provided; use --config or APPLIANCE_RELEASE_CONFIG"
-ensure_file "${CONFIG_PATH}"
+CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
 
 if [[ -z "${RUN_DIR}" ]]; then
-  RUN_DIR="$(pwd)/.run/appliance-release/$(date -u +%Y%m%dT%H%M%SZ)"
+  RUN_DIR="$(default_release_run_dir)"
 fi
 if [[ -z "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
@@ -116,13 +114,8 @@ PATH_PREFIX="$(bundle_store_get_optional "${CONFIG_PATH}" "release_path_prefix" 
 [[ -n "${PATH_PREFIX}" ]] || fail "bundle_store.release_path_prefix is required in config"
 STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || true)"
 [[ -n "${STATE_DIR}" ]] || fail "target_host.state_dir is required in config"
-if [[ -z "${APPLIANCE_PROFILE}" ]]; then
-  APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
-fi
-[[ -n "${APPLIANCE_PROFILE}" ]] || fail "install.appliance_profile is required in config"
-if [[ -z "${BUILD_CATALOG_PATH}" ]]; then
-  BUILD_CATALOG_PATH="$(config_get_optional "${CONFIG_PATH}" "install.build_catalog_path" || true)"
-fi
+APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}" "${APPLIANCE_PROFILE}")"
+BUILD_CATALOG_PATH="$(resolve_build_catalog_path "${CONFIG_PATH}" "${BUILD_CATALOG_PATH}")"
 if [[ -z "${APPLIANCE_NAME}" ]]; then
   APPLIANCE_NAME="$(config_get_optional "${CONFIG_PATH}" "install.appliance_name" || true)"
 fi
@@ -132,16 +125,9 @@ if [[ -z "${DNS_ZONE}" ]]; then
 fi
 [[ -n "${DNS_ZONE}" ]] || fail "install.dns_zone is required in config"
 ADDITIONAL_TLS_SANS_CSV="$(config_get_optional "${CONFIG_PATH}" "install.additional_tls_sans_csv" || true)"
-if [[ -n "${ADDITIONAL_TLS_SANS_CSV}" ]]; then
-  IFS=',' read -r -a configured_tls_sans <<<"${ADDITIONAL_TLS_SANS_CSV}"
-  for configured_san in "${configured_tls_sans[@]}"; do
-    configured_san="${configured_san#"${configured_san%%[![:space:]]*}"}"
-    configured_san="${configured_san%"${configured_san##*[![:space:]]}"}"
-    if [[ -n "${configured_san}" ]]; then
-      TLS_SANS+=("${configured_san}")
-    fi
-  done
-fi
+while IFS= read -r configured_san; do
+  TLS_SANS+=("${configured_san}")
+done < <(csv_items_trimmed "${ADDITIONAL_TLS_SANS_CSV}")
 
 # Optional K3s image-pull registry (registries.yaml). Host comes only from
 # install.image_pull_registry.registry_env (same DEV_REGISTRY pattern as
@@ -172,12 +158,7 @@ if [[ -n "${IMAGE_PULL_REGISTRY_ENV}" ]]; then
 elif [[ -n "${IMAGE_PULL_USERNAME_ENV}" || -n "${IMAGE_PULL_TOKEN_ENV}" || -n "${IMAGE_PULL_TLS_VERIFY_ENV}" ]]; then
   fail "install.image_pull_registry.registry_env is required when username_env/token_env/tls_verify_env are set"
 fi
-if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
-  ensure_file "${BUILD_CATALOG_PATH}"
-fi
-if [[ "${APPLIANCE_PROFILE}" == "builder" || "${APPLIANCE_PROFILE}" == "builder-landns" || "${APPLIANCE_PROFILE}" == "builder-storage-landns" ]] && [[ -z "${BUILD_CATALOG_PATH}" ]]; then
-  fail "builder appliance profile requires install.build_catalog_path or --build-catalog; start from .agents/skills/release/references/build-catalog.example.yaml"
-fi
+require_builder_build_catalog_path "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}"
 if [[ -z "${UNINSTALL_FIRST}" ]]; then
   UNINSTALL_FIRST="$(config_get_optional "${CONFIG_PATH}" "install.uninstall_first" || true)"
 fi
@@ -188,16 +169,12 @@ OUT_DIR="$(config_get_optional "${CONFIG_PATH}" "install.bundle_download_dir" ||
 OUTPUT_FORMAT="text"
 
 TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
-ensure_dir "${RUN_DIR}"
-ensure_dir "${RUN_DIR}/logs"
-ensure_dir "${RUN_DIR}/metadata"
-ensure_dir "${RUN_DIR}/artifacts"
+ensure_release_run_dirs "${RUN_DIR}" "artifacts"
 
 [[ -n "${RELEASE_VERSION}" ]] || fail "--release-version is required for automated install"
 
 # static_http and appliance_files both fetch over HTTP(S). appliance_files uses
 # the appliance-managed authenticated file API path.
-BUNDLE_STORE_CURL_TLS_ARGS=()
 case "${BUNDLE_STORE_MODE}" in
   static_http|appliance_files)
     [[ -n "${BASE_URL}" ]] || fail "bundle_store.mode=${BUNDLE_STORE_MODE} requires bundle_store.base_url"
@@ -272,17 +249,7 @@ curl \"\${curl_args[@]}\" \"\${url}\" >/dev/null"
     fail "unsupported bundle_store.mode: ${BUNDLE_STORE_MODE}"
     ;;
 esac
-if [[ "${APPLIANCE_PROFILE}" == "builder" || "${APPLIANCE_PROFILE}" == "builder-landns" || "${APPLIANCE_PROFILE}" == "builder-storage-landns" ]] && [[ -n "${BUILD_CATALOG_PATH}" ]]; then
-  catalog_validation_log="${RUN_DIR}/logs/build-catalog-validation.json"
-  if ! python3 "${SCRIPT_DIR}/validate-build-catalog.py" \
-    --config "${CONFIG_PATH}" \
-    --build-catalog "${BUILD_CATALOG_PATH}" \
-    --output-json "${catalog_validation_log}" \
-    >"${catalog_validation_log}.stdout" 2>"${catalog_validation_log}.stderr"; then
-    fail "builder build catalog validation failed; see ${catalog_validation_log}"
-  fi
-  log "builder build catalog validation completed; log: ${catalog_validation_log}"
-fi
+validate_builder_build_catalog "${SCRIPT_DIR}" "${CONFIG_PATH}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${RUN_DIR}" "builder build catalog validation completed; log: ${RUN_DIR}/logs/build-catalog-validation.json"
 
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 build_catalog_b64=""
@@ -351,13 +318,7 @@ chmod +x "${zonctl}"
 echo "[target 3/5] Bundle extracted to ${bundle_dir}."
 '
 remote_script+='
-install_args=(
-  --bundle-dir "${bundle_dir}"
-  --public-key "${public_key}"
-  --state-dir "${state_dir}"
-  --output '"$(shell_quote "${OUTPUT_FORMAT}")"'
-)
-upgrade_args=(
+lifecycle_args=(
   --bundle-dir "${bundle_dir}"
   --public-key "${public_key}"
   --state-dir "${state_dir}"
@@ -366,16 +327,13 @@ upgrade_args=(
 if [[ -n "${build_catalog_b64}" ]]; then
   build_catalog_path="${out_dir}/build-catalog.yaml"
   printf "%s" "${build_catalog_b64}" | base64 -d > "${build_catalog_path}"
-  install_args+=(--build-catalog "${build_catalog_path}")
-  upgrade_args+=(--build-catalog "${build_catalog_path}")
+  lifecycle_args+=(--build-catalog "${build_catalog_path}")
 fi
 if [[ -n '"$(shell_quote "${APPLIANCE_NAME}")"' ]]; then
-  install_args+=(--appliance-name '"$(shell_quote "${APPLIANCE_NAME}")"')
-  upgrade_args+=(--appliance-name '"$(shell_quote "${APPLIANCE_NAME}")"')
+  lifecycle_args+=(--appliance-name '"$(shell_quote "${APPLIANCE_NAME}")"')
 fi
 if [[ -n '"$(shell_quote "${DNS_ZONE}")"' ]]; then
-  install_args+=(--dns-zone '"$(shell_quote "${DNS_ZONE}")"')
-  upgrade_args+=(--dns-zone '"$(shell_quote "${DNS_ZONE}")"')
+  lifecycle_args+=(--dns-zone '"$(shell_quote "${DNS_ZONE}")"')
 fi
 '
 if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
@@ -389,31 +347,25 @@ export '"$(shell_quote "${IMAGE_PULL_TLS_VERIFY_ENV}")"'='"$(shell_quote "${IMAG
 '
   fi
   remote_script+='
-install_args+=(--image-pull-registry '"$(shell_quote "${IMAGE_PULL_REGISTRY}")"')
-install_args+=(--image-pull-registry-username-env '"$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")"')
-install_args+=(--image-pull-registry-token-env '"$(shell_quote "${IMAGE_PULL_TOKEN_ENV}")"')
-upgrade_args+=(--image-pull-registry '"$(shell_quote "${IMAGE_PULL_REGISTRY}")"')
-upgrade_args+=(--image-pull-registry-username-env '"$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")"')
-upgrade_args+=(--image-pull-registry-token-env '"$(shell_quote "${IMAGE_PULL_TOKEN_ENV}")"')
+lifecycle_args+=(--image-pull-registry '"$(shell_quote "${IMAGE_PULL_REGISTRY}")"')
+lifecycle_args+=(--image-pull-registry-username-env '"$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")"')
+lifecycle_args+=(--image-pull-registry-token-env '"$(shell_quote "${IMAGE_PULL_TOKEN_ENV}")"')
 '
   if [[ -n "${IMAGE_PULL_TLS_VERIFY_ENV}" ]]; then
     remote_script+='
-install_args+=(--image-pull-registry-tls-verify-env '"$(shell_quote "${IMAGE_PULL_TLS_VERIFY_ENV}")"')
-upgrade_args+=(--image-pull-registry-tls-verify-env '"$(shell_quote "${IMAGE_PULL_TLS_VERIFY_ENV}")"')
+lifecycle_args+=(--image-pull-registry-tls-verify-env '"$(shell_quote "${IMAGE_PULL_TLS_VERIFY_ENV}")"')
 '
   fi
 fi
 if ((${#TLS_SANS[@]} > 0)); then
   for tls_san in "${TLS_SANS[@]}"; do
     remote_script+='
-install_args+=(--tls-san '"$(shell_quote "${tls_san}")"')
-upgrade_args+=(--tls-san '"$(shell_quote "${tls_san}")"')'
+lifecycle_args+=(--tls-san '"$(shell_quote "${tls_san}")"')'
   done
 fi
 remote_script+='
 if [[ "${preserve_failed_state}" == "true" ]]; then
-  install_args+=(--preserve-failed-state)
-  upgrade_args+=(--preserve-failed-state)
+  lifecycle_args+=(--preserve-failed-state)
 fi
 capture_zonctl_step() {
   local stdout_file="$1"
@@ -442,8 +394,7 @@ print_captured_failure() {
 
 if [[ -n "${APPLIANCE_PROFILE}" ]]; then
   remote_script+='
-install_args+=(--appliance-profile '"$(shell_quote "${APPLIANCE_PROFILE}")"')
-upgrade_args+=(--appliance-profile '"$(shell_quote "${APPLIANCE_PROFILE}")"')'
+lifecycle_args+=(--appliance-profile '"$(shell_quote "${APPLIANCE_PROFILE}")"')'
 fi
 
 remote_script+='
@@ -497,7 +448,7 @@ zonctl_sudo+=('"$(shell_quote "${IMAGE_PULL_PRESERVE_ENV}")"')
 '
 fi
 remote_script+='
-if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${zonctl}" install "${install_args[@]}"; then
+if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${zonctl}" install "${lifecycle_args[@]}"; then
   rm -f "${install_stdout}" "${install_stderr}"
   echo "[target 5/5] Appliance installation completed."
 else
@@ -505,7 +456,7 @@ else
   if [[ "${install_output}" == *"refusing to install (reuse-owned)"* || "${install_output}" == *"refusing to install (upgrade-owned)"* ]]; then
     rm -f "${install_stdout}" "${install_stderr}"
     echo "[target 5/5] Existing owned appliance detected. Switching to in-place upgrade/reconcile."
-    "${zonctl_sudo[@]}" "${zonctl}" upgrade "${upgrade_args[@]}"
+    "${zonctl_sudo[@]}" "${zonctl}" upgrade "${lifecycle_args[@]}"
     echo "[target 5/5] Appliance upgrade/reconcile completed."
   else
     print_captured_failure "[target 5/5] Appliance installation failed." "${install_stdout}" "${install_stderr}"
@@ -522,7 +473,12 @@ run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"
 install_exit_code=$?
 set -e
 
-python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BUNDLE_STORE_MODE}" "${BASE_URL:-}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${APPLIANCE_NAME}" "${DNS_ZONE}" "${ADDITIONAL_TLS_SANS_CSV}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${PRESERVE_FAILED_STATE}" "${install_log}" "${install_exit_code}" <<'PY'
+install_mode="install"
+if [[ -f "${install_log}" ]] && grep -Fq "Existing owned appliance detected. Switching to in-place upgrade/reconcile." "${install_log}"; then
+  install_mode="upgrade"
+fi
+
+python3 - "${RUN_DIR}/metadata/install.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${helper_url}" "${RELEASE_VERSION}" "${BUNDLE_STORE_MODE}" "${BASE_URL:-}" "${PATH_PREFIX}" "${STATE_DIR}" "${OUT_DIR}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${install_mode}" "${OUTPUT_FORMAT}" "${UNINSTALL_FIRST:-false}" "${PRESERVE_FAILED_STATE}" "${install_log}" "${install_exit_code}" <<'PY'
 import json
 import sys
 
@@ -539,15 +495,13 @@ import sys
     out_dir,
     appliance_profile,
     build_catalog_path,
-    appliance_name,
-    dns_zone,
-    additional_tls_sans_csv,
+    install_mode,
     output_format,
     uninstall_first,
     preserve_failed_state,
     install_log,
     install_exit_code,
-) = sys.argv[1:21]
+) = sys.argv[1:19]
 
 install_method = {
     "static_http": "direct-static_http-zonctl-auto",
@@ -568,9 +522,7 @@ payload = {
     "bundleDir": f"{out_dir}/appliance-{release_version}-bundle" if release_version else None,
     "applianceProfile": appliance_profile or None,
     "buildCatalogPath": build_catalog_path or None,
-    "applianceName": appliance_name or None,
-    "dnsZone": dns_zone or None,
-    "additionalTLSSANsCSV": additional_tls_sans_csv or None,
+    "installMode": install_mode,
     "outputFormat": output_format,
     "uninstallFirst": uninstall_first == "true",
     "preserveFailedState": preserve_failed_state == "true",

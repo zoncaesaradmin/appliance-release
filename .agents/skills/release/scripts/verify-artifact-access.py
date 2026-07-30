@@ -21,8 +21,6 @@ def request(url: str, *, method: str = "GET", token: str = "", basic: tuple[str,
     if token:
         headers["Authorization"] = f"Bearer {token}"
     if basic:
-        import base64
-
         raw = base64.b64encode(f"{basic[0]}:{basic[1]}".encode()).decode()
         headers["Authorization"] = f"Basic {raw}"
     data = None

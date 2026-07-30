@@ -25,6 +25,8 @@ from config_query import load_config  # noqa: E402
 PROFILES = ("core", "storage", "builder")
 OCI_REPO_RE = re.compile(r"^[a-z0-9]+([._/-][a-z0-9]+)*$")
 MAKE_TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+
+
 def lookup(data: dict, path: str, default: Any = "") -> Any:
     value: Any = data
     for part in path.split("."):
@@ -224,10 +226,6 @@ def item_names(items: list[dict[str, Any]]) -> set[str]:
     return {as_str(item.get("name", "")) for item in items if as_str(item.get("name", ""))}
 
 
-def item_ids(items: list[dict[str, Any]]) -> set[str]:
-    return {as_str(item.get("id", "")) for item in items if as_str(item.get("id", ""))}
-
-
 def build_target_lookup_names(items: list[dict[str, Any]]) -> set[str]:
     names = item_names(items)
     for item in items:
@@ -235,30 +233,6 @@ def build_target_lookup_names(items: list[dict[str, Any]]) -> set[str]:
         if isinstance(aliases, list):
             names.update(as_str(alias) for alias in aliases if as_str(alias))
     return names
-
-
-def git_url_host(raw: str) -> str:
-    raw = raw.strip()
-    if not raw:
-        return ""
-    parsed = urlparse(raw)
-    if parsed.hostname:
-        return parsed.hostname
-    if ":" in raw and "/" not in raw.split(":", 1)[0]:
-        before_colon = raw.split(":", 1)[0]
-        if "@" in before_colon:
-            return before_colon.split("@", 1)[1]
-    return ""
-
-
-def is_ssh_git_url(raw: str) -> bool:
-    raw = raw.strip()
-    if not raw:
-        return False
-    parsed = urlparse(raw)
-    if parsed.scheme == "ssh":
-        return True
-    return ":" in raw and "/" not in raw.split(":", 1)[0] and "@" in raw.split(":", 1)[0]
 
 
 def valid_repo_relative_path(raw: str) -> bool:
@@ -541,7 +515,7 @@ def main() -> int:
         "Confirm core has negative artifact route evidence, while storage and builder have zot pod/PVC readiness, /v2 bearer challenge, token/catalog, anonymous/denied/malformed-token, and revocation evidence.",
         "When OCI, ORAS, or offline artifact smoke commands are configured, confirm each completed successfully.",
         "For the builder run, confirm builder REST/MCP tool evidence is present.",
-        "For final builder workflow evidence, confirm the optional workflow smoke succeeded, produced a non-empty artifactRef, and returned no managed builder Git Secret names or private-key markers in job, step, or log evidence.",
+        "For final builder workflow evidence, confirm the optional workflow smoke succeeded, produced a non-empty artifactRef, and returned no private-key markers in job, step, or log evidence.",
     ]
 
     plan = {

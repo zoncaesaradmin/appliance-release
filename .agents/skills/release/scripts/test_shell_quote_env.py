@@ -31,21 +31,6 @@ def run_bash(script: str, env: dict[str, str] | None = None) -> subprocess.Compl
         env=merged,
     )
 
-
-APPEND_HELPER = r"""
-append_env_assignment() {
-  local current="$1"
-  local name="$2"
-  local value="$3"
-  if [[ -z "${value}" ]]; then
-    printf '%s' "${current}"
-    return 0
-  fi
-  printf '%s%s=%s ' "${current}" "${name}" "$(shell_quote "${value}")"
-}
-"""
-
-
 class ShellQuoteEnvTests(unittest.TestCase):
     def test_append_env_assignment_survives_metacharacters(self) -> None:
         cases = [
@@ -67,7 +52,6 @@ class ShellQuoteEnvTests(unittest.TestCase):
 set -euo pipefail
 set +H
 source {COMMON.as_posix()!r}
-{APPEND_HELPER}
 prefix=""
 prefix="$(append_env_assignment "${{prefix}}" "CODE_REPO_REF" "main")"
 prefix="$(append_env_assignment "${{prefix}}" "REGISTRY_USER" "user")"
@@ -97,6 +81,29 @@ printf 'ok\\n'
                     msg=f"stdout={result.stdout!r} stderr={result.stderr!r}",
                 )
                 self.assertEqual(result.stdout.strip(), "ok")
+
+    def test_append_env_assignments_survives_metacharacters(self) -> None:
+        script = f"""
+set -euo pipefail
+set +H
+source {COMMON.as_posix()!r}
+prefix=""
+prefix="$(append_env_assignments "${{prefix}}" \
+  "CODE_REPO_REF" "main" \
+  "REGISTRY_USER" "user" \
+  "REGISTRY_TOKEN" "$TOKEN")"
+remote_cmd="cd /tmp && set -euo pipefail && ${{prefix}}printenv REGISTRY_TOKEN"
+bash -n -c "${{remote_cmd}}"
+got="$(bash -c "${{remote_cmd}}")"
+[[ "${{got}}" == "$TOKEN" ]] || {{
+  echo "token round-trip failed got=${{got}}" >&2
+  exit 1
+}}
+printf 'ok\\n'
+"""
+        result = run_bash(script, env={"TOKEN": "tok$(id);with spaces'and\"quotes"})
+        self.assertEqual(result.returncode, 0, msg=f"stdout={result.stdout!r} stderr={result.stderr!r}")
+        self.assertEqual(result.stdout.strip(), "ok")
 
     def test_run_ssh_quote_variable_form_parses(self) -> None:
         script = f"""

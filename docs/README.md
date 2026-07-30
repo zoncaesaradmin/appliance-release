@@ -11,7 +11,7 @@ Use this index to find the one canonical document for your task.
 - Using the artifact registry from another machine:
   [artifact-registry.md](artifact-registry.md)
 - Using the appliance-managed HTTP file API for signed bundles:
-  [fileserver.md](fileserver.md)
+  [file-api.md](file-api.md)
 - Using the LAN DNS capability:
   [lan-dns.md](lan-dns.md)
 - Understanding trust, ownership, and safety rules:

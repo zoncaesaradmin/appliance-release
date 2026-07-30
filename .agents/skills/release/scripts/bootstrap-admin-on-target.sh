@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
-source "${SCRIPT_DIR}/common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 usage() {
   cat <<'EOF'
@@ -19,9 +18,9 @@ Options:
                              appliance-release.config.yaml exists.
   --run-dir DIR              Local run directory.
   --admin-username NAME      Override install.bootstrap_admin_username.
-  --namespace NAME           Kubernetes namespace. Default: control
+  --namespace NAME           Override install.kubernetes_namespace.
   --deployment NAME          Control-plane deployment name.
-                             Default: control-plane
+                             Override install.control_plane_deployment.
 EOF
 }
 
@@ -63,16 +62,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-CONFIG_PATH="$(resolve_config_path "${CONFIG_PATH}" || true)"
-[[ -n "${CONFIG_PATH}" ]] || fail "config not provided; use --config or APPLIANCE_RELEASE_CONFIG"
-ensure_file "${CONFIG_PATH}"
+CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
 
 if [[ -z "${RUN_DIR}" ]]; then
-  RUN_DIR="$(pwd)/.run/appliance-release/$(date -u +%Y%m%dT%H%M%SZ)"
+  RUN_DIR="$(default_release_run_dir)"
 fi
-ensure_dir "${RUN_DIR}"
-ensure_dir "${RUN_DIR}/logs"
-ensure_dir "${RUN_DIR}/metadata"
+ensure_release_run_dirs "${RUN_DIR}"
 
 if [[ -z "${ADMIN_USERNAME}" ]]; then
   ADMIN_USERNAME="$(config_get_optional "${CONFIG_PATH}" "install.bootstrap_admin_username" || true)"

@@ -55,26 +55,21 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-CONFIG_PATH="$(resolve_config_path "${CONFIG_PATH}" || true)"
-[[ -n "${CONFIG_PATH}" ]] || fail "config not provided; use --config or APPLIANCE_RELEASE_CONFIG"
-ensure_file "${CONFIG_PATH}"
+CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
 require_cmd curl
 require_cmd python3
 
 if [[ -z "${RUN_DIR}" ]]; then
-  RUN_DIR="$(pwd)/.run/appliance-release/$(date -u +%Y%m%dT%H%M%SZ)"
+  RUN_DIR="$(default_release_run_dir)"
 fi
 BASE_URL="$(config_get_optional "${CONFIG_PATH}" "client_verification.base_url" || true)"
 USERNAME="$(config_get_optional "${CONFIG_PATH}" "client_verification.username" || true)"
-reject_placeholder_client_base_url "${BASE_URL}" "client_verification.base_url"
 BASE_URL="${BASE_URL:-https://192.168.1.101}"
 reject_placeholder_client_base_url "${BASE_URL}" "client_verification.base_url"
 USERNAME="${USERNAME:-admin}"
 PASSWORD="$(resolve_secret "APPLIANCE_FIRST_ADMIN_PASSWORD" "Appliance first-admin password")"
 
-ensure_dir "${RUN_DIR}"
-ensure_dir "${RUN_DIR}/logs"
-ensure_dir "${RUN_DIR}/metadata"
+ensure_release_run_dirs "${RUN_DIR}"
 
 TEMP_PAYLOAD_FILES=()
 cleanup_temp_payload_files() {
@@ -137,21 +132,20 @@ ARTIFACT_OFFLINE_SMOKE_CMD="$(config_get_optional "${CONFIG_PATH}" "client_verif
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
 fi
-BUILD_CATALOG_PATH="$(config_get_optional "${CONFIG_PATH}" "install.build_catalog_path" || true)"
-if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
-  ensure_file "${BUILD_CATALOG_PATH}"
-fi
+APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}" "${APPLIANCE_PROFILE}")"
 if [[ -z "${BUILDER_ENABLED}" ]]; then
-  case "${APPLIANCE_PROFILE}" in
-    builder|builder-landns|builder-storage-landns) BUILDER_ENABLED="true" ;;
-    *) BUILDER_ENABLED="false" ;;
-  esac
+  if profile_supports_builder "${APPLIANCE_PROFILE}"; then
+    BUILDER_ENABLED="true"
+  else
+    BUILDER_ENABLED="false"
+  fi
 fi
 if [[ -z "${ARTIFACT_ENABLED}" ]]; then
-  case "${APPLIANCE_PROFILE}" in
-    storage|builder|storage-landns|builder-landns|builder-storage-landns) ARTIFACT_ENABLED="true" ;;
-    *) ARTIFACT_ENABLED="false" ;;
-  esac
+  if profile_supports_artifacts "${APPLIANCE_PROFILE}"; then
+    ARTIFACT_ENABLED="true"
+  else
+    ARTIFACT_ENABLED="false"
+  fi
 fi
 if [[ -z "${ARTIFACT_EXPECT_DENIED_SCOPE}" ]]; then
   if [[ "${USERNAME}" == "admin" ]]; then
@@ -849,7 +843,7 @@ PY
   fi
 fi
 
-python3 - "${RUN_DIR}/metadata/client-verify.json" "${SCRIPT_DIR}" "${CONFIG_PATH}" "${BASE_URL}" "${USERNAME}" "${BUILDER_ENABLED}" "${BUILDER_EXPECT_DISABLED}" "${BUILDER_WORKFLOW_ENABLED}" "${BUILDER_WORKFLOW_EXPECT_SUCCESS}" "${BUILD_CATALOG_PATH}" "${WORKFLOW_WORKSPACE_ID}" "${WORKFLOW_JOB_ID}" "${WORKFLOW_FINAL_STATUS}" "${LOGIN_BODY_FILE}" "${LOGIN_META_FILE}" "${LOGIN_REQUEST_FILE}" "${SESSION_BODY_FILE}" "${SESSION_META_FILE}" "${SESSION_REQUEST_FILE}" "${USERS_BODY_FILE}" "${USERS_META_FILE}" "${USERS_REQUEST_FILE}" "${DISABLED_BUILD_PROFILES_BODY_FILE}" "${DISABLED_BUILD_PROFILES_META_FILE}" "${DISABLED_BUILD_PROFILES_REQUEST_FILE}" "${DISABLED_MCP_INITIALIZE_BODY_FILE}" "${DISABLED_MCP_INITIALIZE_META_FILE}" "${DISABLED_MCP_INITIALIZE_REQUEST_FILE}" "${DISABLED_MCP_TOOLS_BODY_FILE}" "${DISABLED_MCP_TOOLS_META_FILE}" "${DISABLED_MCP_TOOLS_REQUEST_FILE}" "${DISABLED_MCP_CALL_BODY_FILE}" "${DISABLED_MCP_CALL_META_FILE}" "${DISABLED_MCP_CALL_REQUEST_FILE}" "${BUILDER_PROFILES_BODY_FILE}" "${BUILDER_PROFILES_META_FILE}" "${BUILDER_PROFILES_REQUEST_FILE}" "${MCP_INITIALIZE_BODY_FILE}" "${MCP_INITIALIZE_META_FILE}" "${MCP_INITIALIZE_REQUEST_FILE}" "${MCP_TOOLS_BODY_FILE}" "${MCP_TOOLS_META_FILE}" "${MCP_TOOLS_REQUEST_FILE}" "${WORKFLOW_CREATE_WORKSPACE_BODY_FILE}" "${WORKFLOW_CREATE_WORKSPACE_META_FILE}" "${WORKFLOW_CREATE_WORKSPACE_REQUEST_FILE}" "${WORKFLOW_TARGETS_BODY_FILE}" "${WORKFLOW_TARGETS_META_FILE}" "${WORKFLOW_TARGETS_REQUEST_FILE}" "${WORKFLOW_SUBMIT_BODY_FILE}" "${WORKFLOW_SUBMIT_META_FILE}" "${WORKFLOW_SUBMIT_REQUEST_FILE}" "${WORKFLOW_JOB_BODY_FILE}" "${WORKFLOW_JOB_META_FILE}" "${WORKFLOW_JOB_REQUEST_FILE}" "${WORKFLOW_JOB_POLL_FILE}" "${WORKFLOW_STEPS_BODY_FILE}" "${WORKFLOW_STEPS_META_FILE}" "${WORKFLOW_STEPS_REQUEST_FILE}" "${WORKFLOW_LOGS_BODY_FILE}" "${WORKFLOW_LOGS_META_FILE}" "${WORKFLOW_LOGS_REQUEST_FILE}" "${WORKFLOW_DELETE_WORKSPACE_BODY_FILE}" "${WORKFLOW_DELETE_WORKSPACE_META_FILE}" "${WORKFLOW_DELETE_WORKSPACE_REQUEST_FILE}" <<'PY'
+python3 - "${RUN_DIR}/metadata/client-verify.json" "${SCRIPT_DIR}" "${CONFIG_PATH}" "${BASE_URL}" "${USERNAME}" "${BUILDER_ENABLED}" "${BUILDER_EXPECT_DISABLED}" "${BUILDER_WORKFLOW_ENABLED}" "${BUILDER_WORKFLOW_EXPECT_SUCCESS}" "${WORKFLOW_WORKSPACE_ID}" "${WORKFLOW_JOB_ID}" "${WORKFLOW_FINAL_STATUS}" "${LOGIN_BODY_FILE}" "${LOGIN_META_FILE}" "${LOGIN_REQUEST_FILE}" "${SESSION_BODY_FILE}" "${SESSION_META_FILE}" "${SESSION_REQUEST_FILE}" "${USERS_BODY_FILE}" "${USERS_META_FILE}" "${USERS_REQUEST_FILE}" "${DISABLED_BUILD_PROFILES_BODY_FILE}" "${DISABLED_BUILD_PROFILES_META_FILE}" "${DISABLED_BUILD_PROFILES_REQUEST_FILE}" "${DISABLED_MCP_INITIALIZE_BODY_FILE}" "${DISABLED_MCP_INITIALIZE_META_FILE}" "${DISABLED_MCP_INITIALIZE_REQUEST_FILE}" "${DISABLED_MCP_TOOLS_BODY_FILE}" "${DISABLED_MCP_TOOLS_META_FILE}" "${DISABLED_MCP_TOOLS_REQUEST_FILE}" "${DISABLED_MCP_CALL_BODY_FILE}" "${DISABLED_MCP_CALL_META_FILE}" "${DISABLED_MCP_CALL_REQUEST_FILE}" "${BUILDER_PROFILES_BODY_FILE}" "${BUILDER_PROFILES_META_FILE}" "${BUILDER_PROFILES_REQUEST_FILE}" "${MCP_INITIALIZE_BODY_FILE}" "${MCP_INITIALIZE_META_FILE}" "${MCP_INITIALIZE_REQUEST_FILE}" "${MCP_TOOLS_BODY_FILE}" "${MCP_TOOLS_META_FILE}" "${MCP_TOOLS_REQUEST_FILE}" "${WORKFLOW_CREATE_WORKSPACE_BODY_FILE}" "${WORKFLOW_CREATE_WORKSPACE_META_FILE}" "${WORKFLOW_CREATE_WORKSPACE_REQUEST_FILE}" "${WORKFLOW_TARGETS_BODY_FILE}" "${WORKFLOW_TARGETS_META_FILE}" "${WORKFLOW_TARGETS_REQUEST_FILE}" "${WORKFLOW_SUBMIT_BODY_FILE}" "${WORKFLOW_SUBMIT_META_FILE}" "${WORKFLOW_SUBMIT_REQUEST_FILE}" "${WORKFLOW_JOB_BODY_FILE}" "${WORKFLOW_JOB_META_FILE}" "${WORKFLOW_JOB_REQUEST_FILE}" "${WORKFLOW_JOB_POLL_FILE}" "${WORKFLOW_STEPS_BODY_FILE}" "${WORKFLOW_STEPS_META_FILE}" "${WORKFLOW_STEPS_REQUEST_FILE}" "${WORKFLOW_LOGS_BODY_FILE}" "${WORKFLOW_LOGS_META_FILE}" "${WORKFLOW_LOGS_REQUEST_FILE}" "${WORKFLOW_DELETE_WORKSPACE_BODY_FILE}" "${WORKFLOW_DELETE_WORKSPACE_META_FILE}" "${WORKFLOW_DELETE_WORKSPACE_REQUEST_FILE}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -864,7 +858,6 @@ import sys
     builder_expect_disabled,
     builder_workflow_enabled,
     builder_workflow_expect_success,
-    build_catalog_path,
     workflow_workspace_id,
     workflow_job_id,
     workflow_final_status,
@@ -979,12 +972,9 @@ def poll_history(path: str):
         if not line.strip():
             continue
         out.append(json.loads(line))
-    return out
-
-def load_source_secret_names(path: str):
     return []
 
-def scan_for_secret_leaks(paths, source_secret_names):
+def scan_for_private_key_markers(paths):
     markers = [
         "-----BEGIN OPENSSH PRIVATE KEY-----",
         "-----BEGIN RSA PRIVATE KEY-----",
@@ -1001,9 +991,6 @@ def scan_for_secret_leaks(paths, source_secret_names):
         for marker in markers:
             if marker in text:
                 findings.append({"log": str(p), "kind": "private-key-marker", "value": marker})
-        for name in source_secret_names:
-            if name and name in text:
-                findings.append({"log": str(p), "kind": "source-secret-name", "value": name})
     return findings
 
 payload = {
@@ -1219,7 +1206,6 @@ if builder_enabled == "true":
                 "bodyLog": workflow_delete_workspace_body,
                 "metaLog": workflow_delete_workspace_meta,
             }
-        source_secret_names = load_source_secret_names(build_catalog_path)
         submit_body = load_json_object(workflow_submit_body)
         job_body = load_json_object(workflow_job_body)
         submit_artifact_ref = str(submit_body.get("artifactRef") or "").strip()
@@ -1229,17 +1215,15 @@ if builder_enabled == "true":
             "job": job_artifact_ref,
             "matched": bool(submit_artifact_ref and job_artifact_ref and submit_artifact_ref == job_artifact_ref),
         }
-        leak_findings = scan_for_secret_leaks(
+        leak_findings = scan_for_private_key_markers(
             [
                 ("job", workflow_job_body),
                 ("steps", workflow_steps_body),
                 ("logs", workflow_logs_body),
-            ],
-            source_secret_names,
+            ]
         )
         workflow_payload["secretLeakCheck"] = {
             "scannedLogs": [workflow_job_body, workflow_steps_body, workflow_logs_body],
-            "sourceSecretNamesChecked": source_secret_names,
             "privateKeyMarkersChecked": True,
             "findings": leak_findings,
             "passed": len(leak_findings) == 0,

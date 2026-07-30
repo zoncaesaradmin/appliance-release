@@ -481,6 +481,7 @@ def main() -> None:
     test_positive_case_with_nested_bundle_root()
     test_allows_empty_directory_artifacts()
     test_rejects_tag_only_extra_oci_image()
+    test_rejects_placeholder_extra_oci_image_digest()
     test_rejects_missing_expected_extra_oci_image_ref()
     test_allows_expected_extra_oci_image_ref_with_stale_advisory_digest()
     test_rejects_workspace_provisioner_path_ref_mismatch()

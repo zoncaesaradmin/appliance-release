@@ -62,7 +62,6 @@ Example (piped; version and path-prefix are stamped at publish; pass target flag
 
 If the distribution endpoint requires appliance authentication, export:
   ARTIFACT_BEARER_TOKEN=<appliance API token>
-  APPLIANCE_RELEASE_BEARER_TOKEN=<appliance API token>   # legacy alias
 
 The release skill sets this from bundle_store.access_token when installing.
 
@@ -96,9 +95,8 @@ DNS_ZONE=""
 TLS_SANS=()
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
-# Prefer ARTIFACT_BEARER_TOKEN (skill injects from bundle_store.access_token);
-# keep APPLIANCE_RELEASE_BEARER_TOKEN as a documented legacy alias.
-ARTIFACT_BEARER_TOKEN="${ARTIFACT_BEARER_TOKEN:-${APPLIANCE_RELEASE_BEARER_TOKEN:-}}"
+# The release skill injects ARTIFACT_BEARER_TOKEN from bundle_store.access_token.
+ARTIFACT_BEARER_TOKEN="${ARTIFACT_BEARER_TOKEN:-}"
 TLS_INSECURE="${APPLIANCE_RELEASE_TLS_INSECURE:-}"
 TLS_CACERT="${APPLIANCE_RELEASE_CACERT:-}"
 
@@ -189,6 +187,22 @@ trim_trailing_slashes() {
   printf '%s\n' "${value}"
 }
 
+print_captured_output() {
+  local stdout_file="$1"
+  local stderr_file="$2"
+  if [[ -s "${stdout_file}" ]]; then
+    sed 's/^/  /' "${stdout_file}" >&2
+  fi
+  if [[ -s "${stderr_file}" ]]; then
+    echo "  details:" >&2
+    sed 's/^/    /' "${stderr_file}" >&2
+  fi
+}
+
+announce_zonctl_ready() {
+  echo "zonctl is now available at /usr/local/bin/zonctl on the target host."
+}
+
 run_zonctl_step() {
   local start_message="$1"
   local success_message="$2"
@@ -208,13 +222,7 @@ run_zonctl_step() {
   fi
 
   echo "${failure_message}" >&2
-  if [[ -s "${stdout_file}" ]]; then
-    sed 's/^/  /' "${stdout_file}" >&2
-  fi
-  if [[ -s "${stderr_file}" ]]; then
-    echo "  details:" >&2
-    sed 's/^/    /' "${stderr_file}" >&2
-  fi
+  print_captured_output "${stdout_file}" "${stderr_file}"
   rm -f "${stdout_file}" "${stderr_file}"
   exit 1
 }
@@ -239,13 +247,7 @@ print_captured_failure() {
   local stderr_file="$3"
 
   echo "${failure_message}" >&2
-  if [[ -s "${stdout_file}" ]]; then
-    sed 's/^/  /' "${stdout_file}" >&2
-  fi
-  if [[ -s "${stderr_file}" ]]; then
-    echo "  details:" >&2
-    sed 's/^/    /' "${stderr_file}" >&2
-  fi
+  print_captured_output "${stdout_file}" "${stderr_file}"
 }
 
 curl_download() {
@@ -296,11 +298,16 @@ CHECKSUM_FILE="sha256sum.txt"
 BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-bundle"
 PUBLIC_KEY="${OUT_DIR}/release-signing.pub"
 ZONCTL="${BUNDLE_DIR}/zonctl"
+RELEASE_PAYLOAD_FILES=(
+  "${BUNDLE_ARCHIVE}"
+  "${PUBLIC_KEY_FILE}"
+  "${CHECKSUM_FILE}"
+)
 
 echo "[1/5] Downloading release files..."
-curl_download "${OUT_DIR}/${BUNDLE_ARCHIVE}" "${REMOTE_DIR}/${BUNDLE_ARCHIVE}"
-curl_download "${OUT_DIR}/${PUBLIC_KEY_FILE}" "${REMOTE_DIR}/${PUBLIC_KEY_FILE}"
-curl_download "${OUT_DIR}/${CHECKSUM_FILE}" "${REMOTE_DIR}/${CHECKSUM_FILE}"
+for payload in "${RELEASE_PAYLOAD_FILES[@]}"; do
+  curl_download "${OUT_DIR}/${payload}" "${REMOTE_DIR}/${payload}"
+done
 echo "[1/5] Release files downloaded."
 
 echo "[2/5] Verifying release checksums..."
@@ -331,73 +338,38 @@ run_zonctl_step \
   "[4/5] Host preflight failed." \
   sudo "${ZONCTL}" preflight --output "${OUTPUT_FORMAT}"
 
-install_args=(
+lifecycle_args=(
   --bundle-dir "${BUNDLE_DIR}"
   --public-key "${PUBLIC_KEY}"
   --state-dir "${STATE_DIR}"
   --output "${OUTPUT_FORMAT}"
+  --appliance-profile "${APPLIANCE_PROFILE}"
+  --appliance-name "${APPLIANCE_NAME}"
+  --dns-zone "${DNS_ZONE}"
 )
-if [[ -n "${APPLIANCE_PROFILE}" ]]; then
-  install_args+=(--appliance-profile "${APPLIANCE_PROFILE}")
-fi
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
-  install_args+=(--build-catalog "${BUILD_CATALOG_PATH}")
+  lifecycle_args+=(--build-catalog "${BUILD_CATALOG_PATH}")
 fi
 if [[ -n "${NODE_NAME}" ]]; then
-  install_args+=(--node-name "${NODE_NAME}")
-fi
-if [[ -n "${APPLIANCE_NAME}" ]]; then
-  install_args+=(--appliance-name "${APPLIANCE_NAME}")
-fi
-if [[ -n "${DNS_ZONE}" ]]; then
-  install_args+=(--dns-zone "${DNS_ZONE}")
+  lifecycle_args+=(--node-name "${NODE_NAME}")
 fi
 if ((${#TLS_SANS[@]} > 0)); then
   for tls_san in "${TLS_SANS[@]}"; do
-    install_args+=(--tls-san "${tls_san}")
+    lifecycle_args+=(--tls-san "${tls_san}")
   done
 fi
 if [[ "${DRY_RUN}" == "1" ]]; then
-  install_args+=(--dry-run)
-fi
-upgrade_args=(
-  --bundle-dir "${BUNDLE_DIR}"
-  --public-key "${PUBLIC_KEY}"
-  --state-dir "${STATE_DIR}"
-  --output "${OUTPUT_FORMAT}"
-)
-if [[ -n "${APPLIANCE_PROFILE}" ]]; then
-  upgrade_args+=(--appliance-profile "${APPLIANCE_PROFILE}")
-fi
-if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
-  upgrade_args+=(--build-catalog "${BUILD_CATALOG_PATH}")
-fi
-if [[ -n "${NODE_NAME}" ]]; then
-  upgrade_args+=(--node-name "${NODE_NAME}")
-fi
-if [[ -n "${APPLIANCE_NAME}" ]]; then
-  upgrade_args+=(--appliance-name "${APPLIANCE_NAME}")
-fi
-if [[ -n "${DNS_ZONE}" ]]; then
-  upgrade_args+=(--dns-zone "${DNS_ZONE}")
-fi
-if ((${#TLS_SANS[@]} > 0)); then
-  for tls_san in "${TLS_SANS[@]}"; do
-    upgrade_args+=(--tls-san "${tls_san}")
-  done
-fi
-if [[ "${DRY_RUN}" == "1" ]]; then
-  upgrade_args+=(--dry-run)
+  lifecycle_args+=(--dry-run)
 fi
 
 install_stdout="$(mktemp "${OUT_DIR}/.zonctl-install-stdout.XXXXXX")"
 install_stderr="$(mktemp "${OUT_DIR}/.zonctl-install-stderr.XXXXXX")"
 
 echo "[5/5] Installing appliance platform. This can take several minutes."
-if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" sudo "${ZONCTL}" install "${install_args[@]}"; then
+if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" sudo "${ZONCTL}" install "${lifecycle_args[@]}"; then
   echo "[5/5] Appliance installation completed."
   rm -f "${install_stdout}" "${install_stderr}"
-  echo "zonctl is now available at /usr/local/bin/zonctl on the target host."
+  announce_zonctl_ready
   echo "If this is a fresh install, open the appliance UI to create the first administrator."
   exit 0
 fi
@@ -409,8 +381,8 @@ if [[ "${install_output}" == *"refusing to install (reuse-owned)"* || "${install
     "[5/5] Existing owned appliance detected. Switching to in-place upgrade/reconcile." \
     "[5/5] Appliance upgrade/reconcile completed." \
     "[5/5] Appliance upgrade/reconcile failed." \
-    sudo "${ZONCTL}" upgrade "${upgrade_args[@]}"
-  echo "zonctl is now available at /usr/local/bin/zonctl on the target host."
+    sudo "${ZONCTL}" upgrade "${lifecycle_args[@]}"
+  announce_zonctl_ready
   exit 0
 fi
 

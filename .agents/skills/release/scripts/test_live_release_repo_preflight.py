@@ -6,8 +6,7 @@ import tempfile
 from pathlib import Path
 
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-COMMON_SH = SCRIPT_DIR / "common.sh"
+COMMON_SH = Path(__file__).resolve().parent / "common.sh"
 
 
 def run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -112,12 +111,265 @@ def test_real_client_base_url_passes() -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_profile_capability_helpers() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{COMMON_SH}"; '
+                'profile_supports_builder builder && '
+                '! profile_supports_builder storage && '
+                'profile_supports_artifacts storage-landns && '
+                '! profile_supports_artifacts core && '
+                'profile_supports_workflows core && '
+                '! profile_supports_workflows storage'
+            ),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_require_builder_build_catalog_helper() -> None:
+    with tempfile.TemporaryDirectory(prefix="builder-catalog-helper-") as tmp:
+        catalog = Path(tmp) / "catalog.yaml"
+        catalog.write_text("buildTargets: []\n", encoding="utf-8")
+        pass_result = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                (
+                    f'source "{COMMON_SH}"; '
+                    f'require_builder_build_catalog_path core ""; '
+                    f'require_builder_build_catalog_path builder "{catalog}"'
+                ),
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert pass_result.returncode == 0, pass_result.stderr
+
+        fail_result = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                f'source "{COMMON_SH}"; require_builder_build_catalog_path builder ""',
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert fail_result.returncode != 0
+        assert "builder appliance profile requires install.build_catalog_path" in fail_result.stderr
+
+
+def test_csv_items_trimmed_and_workflow_guard_helpers() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{COMMON_SH}"; '
+                'joined="$(csv_items_trimmed \' one.example , two.example,, three.example \' | tr \'\\n\' \',\')"; '
+                '[[ "${joined}" == "one.example,two.example,three.example," ]]; '
+                'require_profile_supports_workflows true core verification.argo.enabled'
+            ),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    fail_result = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{COMMON_SH}"; '
+                'require_profile_supports_workflows true storage verification.argo.enabled'
+            ),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert fail_result.returncode != 0
+    assert "verification.argo.enabled=true but install.appliance_profile=storage does not enable workflows" in fail_result.stderr
+
+
+def test_inject_env_path_after_sudo_helper() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{COMMON_SH}"; '
+                'rewritten="$(inject_env_path_after_sudo '
+                '\'sudo kubectl get pods -A && sudo kubectl get svc\' '
+                '\'/bundle/bin:/usr/bin\')"; '
+                '[[ "${rewritten}" == '
+                '"sudo env PATH=/bundle/bin:/usr/bin kubectl get pods -A && '
+                'sudo env PATH=/bundle/bin:/usr/bin kubectl get svc" ]]'
+            ),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_require_config_path_helper() -> None:
+    with tempfile.TemporaryDirectory(prefix="config-path-helper-") as tmp:
+        config = Path(tmp) / "appliance-release.config.yaml"
+        config.write_text("release:\n  version: 0.1.0\n", encoding="utf-8")
+        pass_result = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                (
+                    f'source "{COMMON_SH}"; '
+                    f'got="$(require_config_path "{config}")"; '
+                    f'[[ "${{got}}" == "{config}" ]]'
+                ),
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert pass_result.returncode == 0, pass_result.stderr
+
+        fail_result = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                f'source "{COMMON_SH}"; require_config_path ""',
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert fail_result.returncode != 0
+        assert "config not provided; use --config or APPLIANCE_RELEASE_CONFIG" in fail_result.stderr
+
+
+def test_release_run_dir_helpers() -> None:
+    with tempfile.TemporaryDirectory(prefix="run-dir-helper-") as tmp:
+        run_dir = Path(tmp) / "custom-run"
+        result = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                (
+                    f'source "{COMMON_SH}"; '
+                    f'cd "{tmp}"; '
+                    'generated="$(default_release_run_dir)"; '
+                    '[[ "${generated}" == "$PWD/.run/appliance-release/"* ]]; '
+                    f'ensure_release_run_dirs "{run_dir}" artifacts; '
+                    f'[[ -d "{run_dir}" && -d "{run_dir}/logs" && -d "{run_dir}/metadata" && -d "{run_dir}/artifacts" ]]'
+                ),
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+
+def test_require_appliance_profile_helper() -> None:
+    with tempfile.TemporaryDirectory(prefix="appliance-profile-helper-") as tmp:
+        config = Path(tmp) / "appliance-release.config.yaml"
+        config.write_text("install:\n  appliance_profile: builder\n", encoding="utf-8")
+        pass_result = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                (
+                    f'source "{COMMON_SH}"; '
+                    f'from_config="$(require_appliance_profile "{config}" "")"; '
+                    f'override="$(require_appliance_profile "{config}" core)"; '
+                    '[[ "${from_config}" == "builder" && "${override}" == "core" ]]'
+                ),
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert pass_result.returncode == 0, pass_result.stderr
+
+        missing_config = Path(tmp) / "missing-profile.yaml"
+        missing_config.write_text("install: {}\n", encoding="utf-8")
+        fail_result = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                f'source "{COMMON_SH}"; require_appliance_profile "{missing_config}" ""',
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert fail_result.returncode != 0
+        assert "install.appliance_profile is required in config" in fail_result.stderr
+
+
+def test_resolve_build_catalog_path_helper() -> None:
+    with tempfile.TemporaryDirectory(prefix="build-catalog-helper-") as tmp:
+        catalog = Path(tmp) / "catalog.yaml"
+        catalog.write_text("buildTargets: []\n", encoding="utf-8")
+        config = Path(tmp) / "appliance-release.config.yaml"
+        config.write_text(f"install:\n  build_catalog_path: {catalog}\n", encoding="utf-8")
+        pass_result = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                (
+                    f'source "{COMMON_SH}"; '
+                    f'from_config="$(resolve_build_catalog_path "{config}" "")"; '
+                    f'override="$(resolve_build_catalog_path "{config}" "{catalog}")"; '
+                    f'[[ "${{from_config}}" == "{catalog}" && "${{override}}" == "{catalog}" ]]'
+                ),
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert pass_result.returncode == 0, pass_result.stderr
+
+        missing = Path(tmp) / "missing.yaml"
+        fail_result = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                f'source "{COMMON_SH}"; resolve_build_catalog_path "{config}" "{missing}"',
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert fail_result.returncode != 0
+        assert "required file not found" in fail_result.stderr
+
+
 def main() -> None:
     test_clean_repo_passes()
     test_dirty_build_affecting_repo_fails()
     test_dirty_docs_only_repo_warns_and_passes()
     test_placeholder_client_base_url_fails()
     test_real_client_base_url_passes()
+    test_profile_capability_helpers()
+    test_require_builder_build_catalog_helper()
+    test_csv_items_trimmed_and_workflow_guard_helpers()
+    test_inject_env_path_after_sudo_helper()
+    test_require_config_path_helper()
+    test_release_run_dir_helpers()
+    test_require_appliance_profile_helper()
+    test_resolve_build_catalog_path_helper()
     print("live release repo preflight tests passed")
 
 

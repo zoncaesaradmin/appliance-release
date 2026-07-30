@@ -69,8 +69,7 @@ against `bundle_store.base_url`. Mode, `release_path_prefix`, and `base_url`
 are required in config. For `appliance_files`, set `bundle_store.access_token`
 to a long-lived API token from the distributor Dashboard → API tokens, set
 `bundle_store.tls_insecure` (or `cacert_path`) explicitly, and require
-`base_url` to end in `/api/v1/files` (Traefik `/files` was removed). Historical
-aliases: `http`/`http-static` → `static_http`, `fileserver` → `appliance_files`.
+`base_url` to end in `/api/v1/files` (Traefik `/files` was removed).
 
 Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `--config`.
 

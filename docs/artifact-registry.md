@@ -14,7 +14,7 @@ If your appliance TLS certificate is not trusted yet, keep the insecure flags
 shown below for quick testing. After you trust the certificate, remove `-k`,
 `--tls-verify=false`, and `--insecure`.
 
-## Release distribution (HTTP vs appliance fileserver)
+## Release Distribution (HTTP vs appliance file API)
 
 Signed appliance **bundles** are distributed as static files over HTTP(S), not
 as OCI/ORAS artifacts. The Artifact Server (`/v2`) remains for container images.
@@ -46,7 +46,7 @@ For `appliance_files`, the storage/artifact appliance stores bundle files under
 `/api/v1/files/...`. Publish uses `POST`, pull uses `GET`, and both require an
 appliance bearer token with artifact file permissions. Put that long-lived API
 token in `bundle_store.access_token`. Operator curl examples are in
-[fileserver.md](fileserver.md).
+[file-api.md](file-api.md).
 
 `base_url` must end with `/api/v1/files`. Traefik `/files` (unauthenticated
 nginx static serving) has been removed; do not use that path.

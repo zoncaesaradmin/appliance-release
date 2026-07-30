@@ -14,12 +14,10 @@ Publish the already-built customer delivery files from scripts/ci/build-full-bun
 Modes:
   static_http       Copy exported files to a remote server over SSH/SCP for a
                     plain HTTP/HTTPS static file server (default).
-                    Historical aliases: http, http-static.
   appliance_files   Publish through the appliance-managed authenticated file API.
                     Set PUBLISH_BEARER_TOKEN and point --public-base-url at the
                     appliance file API base, for example:
                     https://artifact-dns-1.appliance.internal/api/v1/files
-                    Historical alias: fileserver.
 
 Options:
   --export-dir DIR           Directory containing:
@@ -27,8 +25,7 @@ Options:
                                release-signing.pub
                              Required.
   --product-version VERSION  Product version to publish. Required.
-  --mode MODE                static_http|appliance_files (aliases: http,
-                             http-static, fileserver). Required.
+  --mode MODE                static_http|appliance_files. Required.
   --latest-alias             Also publish/update <path-prefix>/latest/ (static_http).
 
 static_http mode options:
@@ -141,14 +138,6 @@ trim_trailing_slashes() {
   printf '%s\n' "${value}"
 }
 
-extract_host_from_target() {
-  local target="$1"
-  target="${target##*@}"
-  target="${target#\[}"
-  target="${target%\]}"
-  printf '%s\n' "${target}"
-}
-
 curl_upload_file() {
   local src="$1"
   local url="$2"
@@ -180,6 +169,29 @@ curl_upload_file() {
   fi
   cat "${body}"
   rm -f "${body}"
+}
+
+upload_payloads_to_api_dir() {
+  local remote_dir="$1"
+  local payload=""
+  for payload in "${RELEASE_PAYLOADS[@]}"; do
+    curl_upload_file "${payload}" "${remote_dir}/$(basename "${payload}")" >/dev/null
+  done
+}
+
+print_target_download_and_run_commands() {
+  local heading="$1"
+  local helper_url="$2"
+  local use_latest_flag="${3:-}"
+  echo "${heading}:"
+  echo "  curl -fLo /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} ${helper_url}"
+  if [[ -n "${use_latest_flag}" ]]; then
+    echo "  bash /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} --base-url ${PUBLIC_BASE_URL} ${use_latest_flag} \\"
+  else
+    echo "  bash /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} --base-url ${PUBLIC_BASE_URL} \\"
+  fi
+  echo "    --out-dir /tmp/appliance-${PRODUCT_VERSION} --state-dir /var/lib/zon/state \\"
+  echo "    --appliance-profile <profile> --appliance-name <name> --dns-zone <zone>"
 }
 
 MODE="$(normalize_bundle_store_mode "${MODE}")" || {
@@ -223,7 +235,31 @@ stamp_helper() {
     -e "s/^PATH_PREFIX_EMBEDDED=\"\"\$/PATH_PREFIX_EMBEDDED=\"${PATH_PREFIX}\"/" \
     "${src}" > "${dest}"
   chmod +x "${dest}"
+  if ! grep -q "PRODUCT_VERSION_EMBEDDED=\"${PRODUCT_VERSION}\"" "${dest}"; then
+    echo "publish-release: failed to stamp PRODUCT_VERSION_EMBEDDED into ${dest}" >&2
+    exit 1
+  fi
+  if ! grep -q "PATH_PREFIX_EMBEDDED=\"${PATH_PREFIX}\"" "${dest}"; then
+    echo "publish-release: failed to stamp PATH_PREFIX_EMBEDDED into ${dest}" >&2
+    exit 1
+  fi
 }
+
+PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"
+PUBLIC_BASE_URL="$(trim_trailing_slashes "${PUBLIC_BASE_URL}")"
+PUBLISH_STAGE_DIR="$(mktemp -d "${EXPORT_DIR}/.publish-stage.XXXXXX")"
+trap 'rm -rf "${PUBLISH_STAGE_DIR}"' EXIT
+PUBLISHED_INSTALL_HELPER="${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
+stamp_helper "${INSTALL_HELPER_HTTP}" "${PUBLISHED_INSTALL_HELPER}"
+RELEASE_FILE_PAYLOADS=(
+  "${BUNDLE_ARCHIVE}"
+  "${PUBLIC_KEY_FILE}"
+  "${CHECKSUM_FILE}"
+)
+RELEASE_PAYLOADS=(
+  "${RELEASE_FILE_PAYLOADS[@]}"
+  "${PUBLISHED_INSTALL_HELPER}"
+)
 
 case "${MODE}" in
   static_http)
@@ -231,41 +267,25 @@ case "${MODE}" in
     require_var REMOTE_ROOT
 
     REMOTE_ROOT="$(trim_trailing_slashes "${REMOTE_ROOT}")"
-    PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"
-    PUBLIC_BASE_URL="$(trim_trailing_slashes "${PUBLIC_BASE_URL}")"
-
     REMOTE_VERSION_DIR="${REMOTE_ROOT}/${PATH_PREFIX}/${PRODUCT_VERSION}"
     REMOTE_LATEST_DIR="${REMOTE_ROOT}/${PATH_PREFIX}/latest"
-    PUBLISH_STAGE_DIR="$(mktemp -d "${EXPORT_DIR}/.publish-stage.XXXXXX")"
-    trap 'rm -rf "${PUBLISH_STAGE_DIR}"' EXIT
-
-    stamp_helper "${INSTALL_HELPER_HTTP}" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
-    if ! grep -q "PRODUCT_VERSION_EMBEDDED=\"${PRODUCT_VERSION}\"" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"; then
-      echo "publish-release: failed to stamp PRODUCT_VERSION_EMBEDDED into ${INSTALL_HELPER_HTTP_PUBLISHED}" >&2
-      exit 1
-    fi
-    if ! grep -q "PATH_PREFIX_EMBEDDED=\"${PATH_PREFIX}\"" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"; then
-      echo "publish-release: failed to stamp PATH_PREFIX_EMBEDDED into ${INSTALL_HELPER_HTTP_PUBLISHED}" >&2
-      exit 1
-    fi
 
     ssh -p "${SSH_PORT}" "${SERVER_TARGET}" "mkdir -p '${REMOTE_VERSION_DIR}'"
-    scp -P "${SSH_PORT}" \
-      "${BUNDLE_ARCHIVE}" \
-      "${PUBLIC_KEY_FILE}" \
-      "${CHECKSUM_FILE}" \
-      "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}" \
-      "${SERVER_TARGET}:${REMOTE_VERSION_DIR}/"
+    scp -P "${SSH_PORT}" "${RELEASE_PAYLOADS[@]}" "${SERVER_TARGET}:${REMOTE_VERSION_DIR}/"
 
     if [[ "${LATEST_ALIAS}" == "1" ]]; then
+      latest_copy_cmd="mkdir -p '${REMOTE_LATEST_DIR}'"
+      for payload in "${RELEASE_PAYLOADS[@]}"; do
+        latest_copy_cmd+=" && cp '${REMOTE_VERSION_DIR}/$(basename "${payload}")' '${REMOTE_LATEST_DIR}/'"
+      done
       ssh -p "${SSH_PORT}" "${SERVER_TARGET}" \
-        "mkdir -p '${REMOTE_LATEST_DIR}' && cp '${REMOTE_VERSION_DIR}/$(basename "${BUNDLE_ARCHIVE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${PUBLIC_KEY_FILE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/$(basename "${CHECKSUM_FILE}")' '${REMOTE_LATEST_DIR}/' && cp '${REMOTE_VERSION_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}' '${REMOTE_LATEST_DIR}/'"
+        "${latest_copy_cmd}"
     fi
 
     echo "published release files:"
-    echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${BUNDLE_ARCHIVE}")"
-    echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${PUBLIC_KEY_FILE}")"
-    echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${CHECKSUM_FILE}")"
+    for payload in "${RELEASE_FILE_PAYLOADS[@]}"; do
+      echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${payload}")"
+    done
     echo
     echo "published helper script:"
     echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
@@ -274,9 +294,9 @@ case "${MODE}" in
     echo "  ${PUBLIC_BASE_URL}"
     echo
     echo "download URLs:"
-    echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${BUNDLE_ARCHIVE}")"
-    echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${PUBLIC_KEY_FILE}")"
-    echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${CHECKSUM_FILE}")"
+    for payload in "${RELEASE_FILE_PAYLOADS[@]}"; do
+      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${payload}")"
+    done
     echo
     echo "helper script URL:"
     echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_HTTP_PUBLISHED}"
@@ -290,62 +310,38 @@ case "${MODE}" in
     echo "    --appliance-name <name> \\"
     echo "    --dns-zone <zone>"
     echo
-    echo "target host install commands (download then run):"
-    echo "  curl -fLo /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_HTTP_PUBLISHED}"
-    echo "  bash /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} --base-url ${PUBLIC_BASE_URL} \\"
-    echo "    --out-dir /tmp/appliance-${PRODUCT_VERSION} --state-dir /var/lib/zon/state \\"
-    echo "    --appliance-profile <profile> --appliance-name <name> --dns-zone <zone>"
+    print_target_download_and_run_commands \
+      "target host install commands (download then run)" \
+      "${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_HTTP_PUBLISHED}"
     if [[ "${LATEST_ALIAS}" == "1" ]]; then
       echo
       echo "latest alias URLs:"
-      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${BUNDLE_ARCHIVE}")"
-      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${PUBLIC_KEY_FILE}")"
-      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${CHECKSUM_FILE}")"
+      for payload in "${RELEASE_FILE_PAYLOADS[@]}"; do
+        echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${payload}")"
+      done
       echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${INSTALL_HELPER_HTTP_PUBLISHED}"
       echo
-      echo "target host latest-install commands:"
-      echo "  curl -fLo /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${INSTALL_HELPER_HTTP_PUBLISHED}"
-      echo "  bash /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} --base-url ${PUBLIC_BASE_URL} --use-latest \\"
-      echo "    --out-dir /tmp/appliance-${PRODUCT_VERSION} --state-dir /var/lib/zon/state \\"
-      echo "    --appliance-profile <profile> --appliance-name <name> --dns-zone <zone>"
+      print_target_download_and_run_commands \
+        "target host latest-install commands" \
+        "${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${INSTALL_HELPER_HTTP_PUBLISHED}" \
+        "--use-latest"
     fi
     ;;
   appliance_files)
-    PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"
     require_var PUBLISH_BEARER_TOKEN
 
-    PUBLIC_BASE_URL="$(trim_trailing_slashes "${PUBLIC_BASE_URL}")"
-    PUBLISH_STAGE_DIR="$(mktemp -d "${EXPORT_DIR}/.publish-stage.XXXXXX")"
-    trap 'rm -rf "${PUBLISH_STAGE_DIR}"' EXIT
-
-    stamp_helper "${INSTALL_HELPER_HTTP}" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
-    if ! grep -q "PRODUCT_VERSION_EMBEDDED=\"${PRODUCT_VERSION}\"" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"; then
-      echo "publish-release: failed to stamp PRODUCT_VERSION_EMBEDDED into ${INSTALL_HELPER_HTTP_PUBLISHED}" >&2
-      exit 1
-    fi
-    if ! grep -q "PATH_PREFIX_EMBEDDED=\"${PATH_PREFIX}\"" "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"; then
-      echo "publish-release: failed to stamp PATH_PREFIX_EMBEDDED into ${INSTALL_HELPER_HTTP_PUBLISHED}" >&2
-      exit 1
-    fi
-
     REMOTE_VERSION_DIR="${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}"
-    curl_upload_file "${BUNDLE_ARCHIVE}" "${REMOTE_VERSION_DIR}/$(basename "${BUNDLE_ARCHIVE}")" >/dev/null
-    curl_upload_file "${PUBLIC_KEY_FILE}" "${REMOTE_VERSION_DIR}/$(basename "${PUBLIC_KEY_FILE}")" >/dev/null
-    curl_upload_file "${CHECKSUM_FILE}" "${REMOTE_VERSION_DIR}/$(basename "${CHECKSUM_FILE}")" >/dev/null
-    curl_upload_file "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}" "${REMOTE_VERSION_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}" >/dev/null
+    upload_payloads_to_api_dir "${REMOTE_VERSION_DIR}"
 
     if [[ "${LATEST_ALIAS}" == "1" ]]; then
       REMOTE_LATEST_DIR="${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest"
-      curl_upload_file "${BUNDLE_ARCHIVE}" "${REMOTE_LATEST_DIR}/$(basename "${BUNDLE_ARCHIVE}")" >/dev/null
-      curl_upload_file "${PUBLIC_KEY_FILE}" "${REMOTE_LATEST_DIR}/$(basename "${PUBLIC_KEY_FILE}")" >/dev/null
-      curl_upload_file "${CHECKSUM_FILE}" "${REMOTE_LATEST_DIR}/$(basename "${CHECKSUM_FILE}")" >/dev/null
-      curl_upload_file "${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}" "${REMOTE_LATEST_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}" >/dev/null
+      upload_payloads_to_api_dir "${REMOTE_LATEST_DIR}"
     fi
 
     echo "published release files via appliance file API:"
-    echo "  ${REMOTE_VERSION_DIR}/$(basename "${BUNDLE_ARCHIVE}")"
-    echo "  ${REMOTE_VERSION_DIR}/$(basename "${PUBLIC_KEY_FILE}")"
-    echo "  ${REMOTE_VERSION_DIR}/$(basename "${CHECKSUM_FILE}")"
+    for payload in "${RELEASE_FILE_PAYLOADS[@]}"; do
+      echo "  ${REMOTE_VERSION_DIR}/$(basename "${payload}")"
+    done
     echo
     echo "published helper script:"
     echo "  ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"

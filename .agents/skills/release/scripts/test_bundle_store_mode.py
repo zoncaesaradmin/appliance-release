@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for bundle_store mode normalization (static_http|appliance_files)."""
 
-from __future__ import annotations
-
 import subprocess
 import tempfile
 import unittest
@@ -29,10 +27,7 @@ class BundleStoreModeTests(unittest.TestCase):
 set -euo pipefail
 source {MODE_LIB.as_posix()!r}
 normalize_bundle_store_mode static_http
-normalize_bundle_store_mode http
-normalize_bundle_store_mode HTTP-static
 normalize_bundle_store_mode appliance_files
-normalize_bundle_store_mode fileserver
 """
         proc = run_bash(script)
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -40,9 +35,6 @@ normalize_bundle_store_mode fileserver
             proc.stdout.strip().splitlines(),
             [
                 "static_http",
-                "static_http",
-                "static_http",
-                "appliance_files",
                 "appliance_files",
             ],
         )
@@ -97,7 +89,7 @@ resolve_bundle_store_mode {cfg.as_posix()!r}
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual(proc.stdout.strip(), "appliance_files")
 
-    def test_resolve_mode_accepts_legacy_fileserver_alias(self) -> None:
+    def test_resolve_mode_rejects_legacy_fileserver_alias(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / "cfg.yaml"
             cfg.write_text(
@@ -110,8 +102,8 @@ source {COMMON.as_posix()!r}
 resolve_bundle_store_mode {cfg.as_posix()!r}
 """
             proc = run_bash(script)
-            self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertEqual(proc.stdout.strip(), "appliance_files")
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("must be static_http or appliance_files", proc.stderr)
 
     def test_publish_release_help_mentions_appliance_files_not_oci(self) -> None:
         proc = subprocess.run(

@@ -102,12 +102,6 @@ config_get_optional() {
   fi
 }
 
-config_keys() {
-  local config_path="$1"
-  local query="$2"
-  python3 "${CONFIG_QUERY}" --keys "${config_path}" "${query}"
-}
-
 resolve_config_path() {
   local explicit_path="${1:-}"
 
@@ -147,6 +141,52 @@ resolve_config_path() {
   return 1
 }
 
+require_config_path() {
+  local config_path=""
+  config_path="$(resolve_config_path "${1:-}" || true)"
+  [[ -n "${config_path}" ]] || fail "config not provided; use --config or APPLIANCE_RELEASE_CONFIG"
+  ensure_file "${config_path}"
+  printf '%s\n' "${config_path}"
+}
+
+default_release_run_dir() {
+  printf '%s/.run/appliance-release/%s\n' "${PWD}" "$(date -u +%Y%m%dT%H%M%SZ)"
+}
+
+ensure_release_run_dirs() {
+  local run_dir="$1"
+  shift
+  ensure_dir "${run_dir}"
+  ensure_dir "${run_dir}/logs"
+  ensure_dir "${run_dir}/metadata"
+  while [[ $# -gt 0 ]]; do
+    ensure_dir "${run_dir}/$1"
+    shift
+  done
+}
+
+require_appliance_profile() {
+  local config_path="$1"
+  local appliance_profile="${2:-}"
+  if [[ -z "${appliance_profile}" ]]; then
+    appliance_profile="$(config_get_optional "${config_path}" "install.appliance_profile" || true)"
+  fi
+  [[ -n "${appliance_profile}" ]] || fail "install.appliance_profile is required in config"
+  printf '%s\n' "${appliance_profile}"
+}
+
+resolve_build_catalog_path() {
+  local config_path="$1"
+  local build_catalog_path="${2:-}"
+  if [[ -z "${build_catalog_path}" ]]; then
+    build_catalog_path="$(config_get_optional "${config_path}" "install.build_catalog_path" || true)"
+  fi
+  if [[ -n "${build_catalog_path}" ]]; then
+    ensure_file "${build_catalog_path}"
+  fi
+  printf '%s\n' "${build_catalog_path}"
+}
+
 bool_true() {
   local value="${1:-}"
   local normalized
@@ -157,16 +197,120 @@ bool_true() {
   esac
 }
 
-run_logged() {
-  local log_file="$1"
-  shift
+profile_supports_builder() {
+  case "${1:-}" in
+    builder|builder-landns|builder-storage-landns) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
-  ensure_dir "$(dirname "${log_file}")"
-  set +e
-  "$@" 2>&1 | tee "${log_file}"
-  local cmd_status="${PIPESTATUS[0]}"
-  set -e
-  return "${cmd_status}"
+profile_supports_artifacts() {
+  case "${1:-}" in
+    storage|builder|storage-landns|builder-landns|builder-storage-landns) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+profile_supports_workflows() {
+  case "${1:-}" in
+    core|builder|builder-landns|builder-storage-landns) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+csv_items_trimmed() {
+  local input="${1:-}"
+  local item=""
+  local csv_items=()
+  [[ -n "${input}" ]] || return 0
+  IFS=',' read -r -a csv_items <<<"${input}"
+  for item in "${csv_items[@]}"; do
+    item="${item#"${item%%[![:space:]]*}"}"
+    item="${item%"${item##*[![:space:]]}"}"
+    [[ -n "${item}" ]] && printf '%s\n' "${item}"
+  done
+}
+
+require_profile_supports_workflows() {
+  local enabled_value="${1:-}"
+  local profile="${2:-}"
+  local setting_name="${3:-verification.argo.enabled}"
+  if bool_true "${enabled_value}" && ! profile_supports_workflows "${profile}"; then
+    fail "${setting_name}=true but install.appliance_profile=${profile} does not enable workflows; set ${setting_name}=false in config"
+  fi
+}
+
+append_env_assignment() {
+  local current="$1"
+  local name="$2"
+  local value="$3"
+  if [[ -z "${value}" ]]; then
+    printf '%s' "${current}"
+    return 0
+  fi
+  printf '%s%s=%s ' "${current}" "${name}" "$(shell_quote "${value}")"
+}
+
+append_env_assignments() {
+  local current="$1"
+  local name=""
+  local value=""
+  shift
+  if (( $# % 2 != 0 )); then
+    fail "append_env_assignments requires NAME VALUE pairs"
+  fi
+  while [[ $# -gt 0 ]]; do
+    name="$1"
+    value="$2"
+    current="$(append_env_assignment "${current}" "${name}" "${value}")"
+    shift 2
+  done
+  printf '%s' "${current}"
+}
+
+inject_env_path_after_sudo() {
+  local command="${1:-}"
+  local env_path="${2:-}"
+  if [[ -z "${env_path}" ]]; then
+    printf '%s\n' "${command}"
+    return 0
+  fi
+  printf '%s\n' "${command//sudo /sudo env PATH=${env_path} }"
+}
+
+require_builder_build_catalog_path() {
+  local profile="${1:-}"
+  local build_catalog_path="${2:-}"
+  if [[ -n "${build_catalog_path}" ]]; then
+    ensure_file "${build_catalog_path}"
+  fi
+  if profile_supports_builder "${profile}" && [[ -z "${build_catalog_path}" ]]; then
+    fail "builder appliance profile requires install.build_catalog_path or --build-catalog; start from .agents/skills/release/references/build-catalog.example.yaml"
+  fi
+}
+
+validate_builder_build_catalog() {
+  local script_dir="$1"
+  local config_path="$2"
+  local profile="$3"
+  local build_catalog_path="$4"
+  local run_dir="$5"
+  local success_message="${6:-build-catalog validation ok}"
+  local catalog_validation_log=""
+
+  if ! profile_supports_builder "${profile}" || [[ -z "${build_catalog_path}" ]]; then
+    return 0
+  fi
+
+  catalog_validation_log="${run_dir}/logs/build-catalog-validation.json"
+  if ! python3 "${script_dir}/validate-build-catalog.py" \
+    --config "${config_path}" \
+    --build-catalog "${build_catalog_path}" \
+    --output-json "${catalog_validation_log}" \
+    >"${catalog_validation_log}.stdout" 2>"${catalog_validation_log}.stderr"; then
+    fail "builder build catalog validation failed; see ${catalog_validation_log}"
+  fi
+  log "${success_message}"
 }
 
 run_ssh_logged() {
@@ -366,10 +510,9 @@ reject_placeholder_client_base_url() {
 
 # Normalize bundle_store.mode to static_http|appliance_files. Empty is rejected.
 _BUNDLE_STORE_LIB="$(cd "${SCRIPT_DIR}/../../../.." && pwd)/scripts/publish/bundle-store-lib.sh"
-if [[ -f "${_BUNDLE_STORE_LIB}" ]]; then
-  # shellcheck source=/dev/null
-  source "${_BUNDLE_STORE_LIB}"
-fi
+[[ -f "${_BUNDLE_STORE_LIB}" ]] || fail "missing shared bundle store library: ${_BUNDLE_STORE_LIB}"
+# shellcheck source=/dev/null
+source "${_BUNDLE_STORE_LIB}"
 unset _BUNDLE_STORE_LIB
 
 bundle_store_get_optional() {
@@ -383,35 +526,7 @@ resolve_bundle_store_mode() {
   local mode
   mode="$(bundle_store_get_optional "${config_path}" "mode" || true)"
   [[ -n "${mode}" ]] || fail "bundle_store.mode is required in config (static_http or appliance_files)"
-  if declare -F normalize_bundle_store_mode >/dev/null 2>&1; then
-    normalize_bundle_store_mode "${mode}" || fail "bundle_store.mode must be static_http or appliance_files"
-  else
-    mode="$(printf '%s' "${mode}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-    case "${mode}" in
-      static_http|http|http-static) printf 'static_http\n' ;;
-      appliance_files|fileserver) printf 'appliance_files\n' ;;
-      *) fail "bundle_store.mode must be static_http or appliance_files (got ${mode})" ;;
-    esac
-  fi
-}
-
-# Derive the appliance API origin from bundle_store.base_url
-# (https://host/api/v1/files → https://host).
-derive_appliance_files_api_origin() {
-  local base_url="$1"
-  local override="${2:-}"
-  if [[ -n "${override}" ]]; then
-    printf '%s\n' "${override%/}"
-    return 0
-  fi
-  python3 - "${base_url}" <<'PY'
-import sys
-value = sys.argv[1].strip().rstrip("/")
-marker = "/api/v1/files"
-if marker in value:
-    value = value[: value.index(marker)]
-print(value.rstrip("/"))
-PY
+  normalize_bundle_store_mode "${mode}" || fail "bundle_store.mode must be static_http or appliance_files"
 }
 
 require_appliance_files_base_url() {

@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
-source "${SCRIPT_DIR}/common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 usage() {
   cat <<'EOF'
@@ -24,8 +23,6 @@ Options:
   --ui-home-cmd CMD              Override verification.ui_home_command.
   --appliance-profile NAME       Effective installed appliance profile.
   --builder-api-cmd CMD          Override verification.builder.api_command.
-  --builder-source-credentials-cmd CMD
-                                 Legacy override for verification.builder.source_credentials_command.
   --artifact-readiness-cmd CMD   Override verification.artifact.readiness_command.
   --failure-log-cmd CMD          Override verification.failure_log_command.
   --argo-namespaces-cmd CMD      Override verification.argo.namespaces_command.
@@ -45,7 +42,6 @@ SMOKE_TEST_CMD=""
 UI_HOME_CMD=""
 APPLIANCE_PROFILE=""
 BUILDER_API_CMD=""
-BUILDER_SOURCE_CREDENTIALS_CMD=""
 ARTIFACT_READINESS_CMD=""
 DNS_ZONE=""
 FAILURE_LOG_CMD=""
@@ -92,10 +88,6 @@ while [[ $# -gt 0 ]]; do
       BUILDER_API_CMD="${2:-}"
       shift 2
       ;;
-    --builder-source-credentials-cmd)
-      BUILDER_SOURCE_CREDENTIALS_CMD="${2:-}"
-      shift 2
-      ;;
     --artifact-readiness-cmd)
       ARTIFACT_READINESS_CMD="${2:-}"
       shift 2
@@ -134,12 +126,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-CONFIG_PATH="$(resolve_config_path "${CONFIG_PATH}" || true)"
-[[ -n "${CONFIG_PATH}" ]] || fail "config not provided; use --config or APPLIANCE_RELEASE_CONFIG"
-ensure_file "${CONFIG_PATH}"
+CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
 
 if [[ -z "${RUN_DIR}" ]]; then
-  RUN_DIR="$(pwd)/.run/appliance-release/$(date -u +%Y%m%dT%H%M%SZ)"
+  RUN_DIR="$(default_release_run_dir)"
 fi
 
 TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
@@ -152,12 +142,10 @@ SMOKE_TEST_CMD="${SMOKE_TEST_CMD:-$(config_get_optional "${CONFIG_PATH}" "verifi
 UI_HOME_CMD="${UI_HOME_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.ui_home_command" || true)}"
 BUILDER_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.builder.enabled" || true)"
 BUILDER_API_CMD="${BUILDER_API_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.builder.api_command" || true)}"
-BUILDER_SOURCE_CREDENTIALS_CMD="${BUILDER_SOURCE_CREDENTIALS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.builder.source_credentials_command" || true)}"
 ARTIFACT_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.artifact.enabled" || true)"
 ARTIFACT_READINESS_CMD="${ARTIFACT_READINESS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.artifact.readiness_command" || true)}"
 DNS_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.dns.enabled" || true)"
 DNS_READINESS_CMD="${DNS_READINESS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.dns.readiness_command" || true)}"
-DNS_ABSENCE_CMD="${DNS_ABSENCE_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.dns.absence_command" || true)}"
 FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.failure_log_command" || true)}"
 SMOKE_TEST_RETRIES="${SMOKE_TEST_RETRIES:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_retries" || true)}"
 SMOKE_TEST_RETRY_DELAY_SECONDS="${SMOKE_TEST_RETRY_DELAY_SECONDS:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_retry_delay_seconds" || true)}"
@@ -169,10 +157,7 @@ ALLOW_INGRESS_WARNING="$(config_get_optional "${CONFIG_PATH}" "verification.allo
 ALLOW_VERIFY_SCHEMA_BUG="$(config_get_optional "${CONFIG_PATH}" "verification.allow_verify_schema_bug" || true)"
 CLIENT_BASE_URL="$(config_get_optional "${CONFIG_PATH}" "client_verification.base_url" || true)"
 reject_placeholder_client_base_url "${CLIENT_BASE_URL}" "client_verification.base_url"
-if [[ -z "${APPLIANCE_PROFILE}" ]]; then
-  APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
-fi
-[[ -n "${APPLIANCE_PROFILE}" ]] || fail "install.appliance_profile is required in config"
+APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}" "${APPLIANCE_PROFILE}")"
 [[ -n "${STATUS_CMD}" ]] || fail "verification.status_command is required in config"
 [[ -n "${VERIFY_CMD}" ]] || fail "verification.verify_command is required in config"
 [[ -n "${SERVICE_HEALTH_CMD}" ]] || fail "verification.service_health_command is required in config"
@@ -185,14 +170,6 @@ fi
 [[ -n "${TARGET_STATE_DIR}" ]] || fail "target_host.state_dir is required in config"
 [[ -n "${SMOKE_TEST_CMD}" ]] || fail "verification.smoke_test_command is required in config"
 
-profile_supports_workflows() {
-  case "$1" in
-    core|builder|builder-landns|builder-storage-landns) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-ARGO_SKIP_REASON=""
 [[ -n "${ARGO_ENABLED}" ]] || fail "verification.argo.enabled is required in config (true|false)"
 [[ -n "${BUILDER_ENABLED}" ]] || fail "verification.builder.enabled is required in config (true|false)"
 [[ -n "${ARTIFACT_ENABLED}" ]] || fail "verification.artifact.enabled is required in config (true|false)"
@@ -206,12 +183,8 @@ if bool_true "${DNS_ENABLED}"; then
   fi
   [[ -n "${DNS_ZONE}" ]] || fail "install.dns_zone is required in config when verification.dns.enabled=true"
   [[ -n "${DNS_READINESS_CMD}" ]] || fail "verification.dns.readiness_command is required when verification.dns.enabled=true"
-else
-  DNS_ABSENCE_CMD="${DNS_ABSENCE_CMD:-}"
 fi
-if bool_true "${ARGO_ENABLED}" && ! profile_supports_workflows "${APPLIANCE_PROFILE}"; then
-  fail "verification.argo.enabled=true but install.appliance_profile=${APPLIANCE_PROFILE} does not enable workflows; set verification.argo.enabled=false in config"
-fi
+require_profile_supports_workflows "${ARGO_ENABLED}" "${APPLIANCE_PROFILE}" "verification.argo.enabled"
 if bool_true "${ARGO_ENABLED}"; then
   [[ -n "${ARGO_NAMESPACES_CMD}" ]] || fail "verification.argo.namespaces_command is required when verification.argo.enabled=true"
   [[ -n "${ARGO_CRDS_CMD}" ]] || fail "verification.argo.crds_command is required when verification.argo.enabled=true"
@@ -231,9 +204,7 @@ if [[ -n "${CLIENT_BASE_URL}" ]]; then
   [[ -n "${UI_HOME_CMD}" ]] || fail "verification.ui_home_command is required in config when client_verification.base_url is set"
 fi
 
-ensure_dir "${RUN_DIR}"
-ensure_dir "${RUN_DIR}/logs"
-ensure_dir "${RUN_DIR}/metadata"
+ensure_release_run_dirs "${RUN_DIR}"
 
 read_install_metadata_value() {
   local metadata_path="$1"
@@ -279,6 +250,16 @@ if [[ -z "${TARGET_STATE_DIR}" ]]; then
   fail "target_host.state_dir is required in config"
 fi
 
+rewrite_default_command_with_bundle_path() {
+  local current_command="$1"
+  local default_command="$2"
+  if [[ -z "${BUNDLE_BIN_DIR}" || "${current_command}" != "${default_command}" ]]; then
+    printf '%s\n' "${current_command}"
+    return 0
+  fi
+  inject_env_path_after_sudo "${current_command}" "${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH}"
+}
+
 if [[ -n "${BUNDLE_BIN_DIR}" && "${STATUS_CMD}" == "sudo zonctl status --output json" ]]; then
   STATUS_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} zonctl status --state-dir $(shell_quote "${TARGET_STATE_DIR}") --output json"
 fi
@@ -291,24 +272,14 @@ fi
 if [[ "${APP_VERSION_CMD}" == "sudo cat /var/lib/zon/installed-state.json" ]]; then
   APP_VERSION_CMD="sudo cat $(shell_quote "${TARGET_STATE_DIR}/installed-state.json")"
 fi
-if [[ -n "${BUNDLE_BIN_DIR}" && "${SERVICE_HEALTH_CMD}" == "sudo kubectl get pods -A" ]]; then
-  SERVICE_HEALTH_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl get pods -A"
-fi
+SERVICE_HEALTH_CMD="$(rewrite_default_command_with_bundle_path "${SERVICE_HEALTH_CMD}" "sudo kubectl get pods -A")"
 if [[ -n "${BUNDLE_BIN_DIR}" && "${FAILURE_LOG_CMD}" == "sudo zonctl support-bundle --output json" ]]; then
   FAILURE_LOG_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} zonctl support-bundle --state-dir $(shell_quote "${TARGET_STATE_DIR}") --output json"
 fi
-if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_NAMESPACES_CMD}" == "sudo kubectl get namespace workflows appliance-builds" ]]; then
-  ARGO_NAMESPACES_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl get namespace workflows appliance-builds"
-fi
-if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_CRDS_CMD}" == "sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io" ]]; then
-  ARGO_CRDS_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io"
-fi
-if [[ -n "${BUNDLE_BIN_DIR}" && "${ARGO_CONTROLLER_CMD}" == "sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods" ]]; then
-  ARGO_CONTROLLER_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n workflows get deploy,pods"
-fi
-if [[ -n "${BUNDLE_BIN_DIR}" && "${ARTIFACT_READINESS_CMD}" == "sudo kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data" ]]; then
-  ARTIFACT_READINESS_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} kubectl -n artifacts get pvc appliance-registry-data"
-fi
+ARGO_NAMESPACES_CMD="$(rewrite_default_command_with_bundle_path "${ARGO_NAMESPACES_CMD}" "sudo kubectl get namespace workflows appliance-builds")"
+ARGO_CRDS_CMD="$(rewrite_default_command_with_bundle_path "${ARGO_CRDS_CMD}" "sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io")"
+ARGO_CONTROLLER_CMD="$(rewrite_default_command_with_bundle_path "${ARGO_CONTROLLER_CMD}" "sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods")"
+ARTIFACT_READINESS_CMD="$(rewrite_default_command_with_bundle_path "${ARTIFACT_READINESS_CMD}" "sudo kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data")"
 
 status_code="0"
 verify_code="0"
@@ -317,10 +288,8 @@ app_version_code="0"
 smoke_test_code=""
 ui_home_code=""
 builder_api_code=""
-builder_source_credentials_code=""
 artifact_readiness_code=""
 dns_readiness_code=""
-dns_absence_code=""
 failure_log_code=""
 argo_namespaces_code=""
 argo_crds_code=""
@@ -392,79 +361,43 @@ raise SystemExit(1)
 PY
 }
 
-verify_is_allowed_warning() {
+verify_allowed_warning_label() {
   local log_file="$1"
-  python3 - "${log_file}" <<'PY'
+  python3 - "${log_file}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+allow_ingress_warning = sys.argv[2].strip().lower() == "true"
+allow_verify_schema_bug = sys.argv[3].strip().lower() == "true"
+
 if "entriesFailed" in text and "expected array, but got null" in text:
-    raise SystemExit(10)
-
-for raw_line in text.replace("\r", "\n").splitlines():
-    line = raw_line.strip()
-    if not (line.startswith("{") and line.endswith("}")):
-        continue
-    try:
-        data = json.loads(line)
-    except json.JSONDecodeError:
-        continue
-    payload = data.get("data")
-    if not isinstance(payload, dict):
-        continue
-    manifest_valid = payload.get("manifestValid")
-    entries_failed = payload.get("entriesFailed")
-    if manifest_valid is True and entries_failed == []:
-        raise SystemExit(20)
-raise SystemExit(1)
-PY
-  case "$?" in
-    10)
-      [[ "${ALLOW_VERIFY_SCHEMA_BUG}" == "true" ]]
-      return
-      ;;
-    20)
-      [[ "${ALLOW_INGRESS_WARNING}" == "true" ]]
-      return
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-verify_warning_label() {
-  local log_file="$1"
-  python3 - "${log_file}" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
-if "entriesFailed" in text and "expected array, but got null" in text:
-    print("allowed schema warning")
-    raise SystemExit(0)
-
-for raw_line in text.replace("\r", "\n").splitlines():
-    line = raw_line.strip()
-    if not (line.startswith("{") and line.endswith("}")):
-        continue
-    try:
-        data = json.loads(line)
-    except json.JSONDecodeError:
-        continue
-    payload = data.get("data")
-    if not isinstance(payload, dict):
-        continue
-    manifest_valid = payload.get("manifestValid")
-    entries_failed = payload.get("entriesFailed")
-    if manifest_valid is True and entries_failed == []:
-        print("allowed ingress warning")
+    if allow_verify_schema_bug:
+        print("allowed schema warning")
         raise SystemExit(0)
+    raise SystemExit(1)
 
-print("allowed warning")
+for raw_line in text.replace("\r", "\n").splitlines():
+    line = raw_line.strip()
+    if not (line.startswith("{") and line.endswith("}")):
+        continue
+    try:
+        data = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    payload = data.get("data")
+    if not isinstance(payload, dict):
+        continue
+    manifest_valid = payload.get("manifestValid")
+    entries_failed = payload.get("entriesFailed")
+    if manifest_valid is True and entries_failed == []:
+        if allow_ingress_warning:
+            print("allowed ingress warning")
+            raise SystemExit(0)
+        raise SystemExit(1)
+
+raise SystemExit(1)
 PY
 }
 
@@ -483,9 +416,10 @@ if run_check_quiet_failure "verify" "${VERIFY_CMD}"; then
   verify_code="0"
 else
   verify_code="$?"
-  if verify_is_allowed_warning "${RUN_DIR}/logs/verify.log"; then
+  verify_warning=""
+  if verify_warning="$(verify_allowed_warning_label "${RUN_DIR}/logs/verify.log")"; then
     verify_code="0"
-    log "verify completed with $(verify_warning_label "${RUN_DIR}/logs/verify.log"); log: ${RUN_DIR}/logs/verify.log"
+    log "verify completed with ${verify_warning}; log: ${RUN_DIR}/logs/verify.log"
   else
     log "verify failed; log: ${RUN_DIR}/logs/verify.log"
   fi
@@ -535,14 +469,6 @@ if bool_true "${BUILDER_ENABLED}" && [[ -n "${BUILDER_API_CMD}" ]]; then
   fi
 fi
 
-if bool_true "${BUILDER_ENABLED}" && [[ -n "${BUILDER_SOURCE_CREDENTIALS_CMD}" ]]; then
-  if run_check "builder-source-credentials" "${BUILDER_SOURCE_CREDENTIALS_CMD}"; then
-    builder_source_credentials_code="0"
-  else
-    builder_source_credentials_code="$?"
-  fi
-fi
-
 if bool_true "${ARTIFACT_ENABLED}" && [[ -n "${ARTIFACT_READINESS_CMD}" ]]; then
   if run_check "artifact-readiness" "${ARTIFACT_READINESS_CMD}"; then
     artifact_readiness_code="0"
@@ -556,12 +482,6 @@ if bool_true "${DNS_ENABLED}" && [[ -n "${DNS_READINESS_CMD}" ]]; then
     dns_readiness_code="0"
   else
     dns_readiness_code="$?"
-  fi
-elif ! bool_true "${DNS_ENABLED}" && [[ -n "${DNS_ABSENCE_CMD}" ]]; then
-  if run_check "dns-absence" "${DNS_ABSENCE_CMD}"; then
-    dns_absence_code="0"
-  else
-    dns_absence_code="$?"
   fi
 fi
 
@@ -598,16 +518,10 @@ fi
 if [[ -n "${builder_api_code}" && "${builder_api_code}" != "0" ]]; then
   overall_failed="true"
 fi
-if [[ -n "${builder_source_credentials_code}" && "${builder_source_credentials_code}" != "0" ]]; then
-  overall_failed="true"
-fi
 if [[ -n "${artifact_readiness_code}" && "${artifact_readiness_code}" != "0" ]]; then
   overall_failed="true"
 fi
 if [[ -n "${dns_readiness_code}" && "${dns_readiness_code}" != "0" ]]; then
-  overall_failed="true"
-fi
-if [[ -n "${dns_absence_code}" && "${dns_absence_code}" != "0" ]]; then
   overall_failed="true"
 fi
 for code in "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}"; do
@@ -616,7 +530,7 @@ for code in "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_cod
   fi
 done
 
-final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${UI_HOME_CMD}" "${BUILDER_ENABLED}" "${BUILDER_API_CMD}" "${BUILDER_SOURCE_CREDENTIALS_CMD}" "${FAILURE_LOG_CMD}" "${ARGO_ENABLED}" "${ARGO_SKIP_REASON}" "${ARGO_NAMESPACES_CMD}" "${ARGO_CRDS_CMD}" "${ARGO_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${ui_home_code}" "${builder_api_code}" "${builder_source_credentials_code}" "${failure_log_code}" "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
+final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${UI_HOME_CMD}" "${BUILDER_ENABLED}" "${BUILDER_API_CMD}" "${FAILURE_LOG_CMD}" "${ARGO_ENABLED}" "${ARGO_NAMESPACES_CMD}" "${ARGO_CRDS_CMD}" "${ARGO_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${ui_home_code}" "${builder_api_code}" "${failure_log_code}" "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -633,10 +547,8 @@ import sys
     ui_home_cmd,
     builder_enabled,
     builder_api_cmd,
-    builder_source_credentials_cmd,
     failure_log_cmd,
     argo_enabled,
-    argo_skip_reason,
     argo_namespaces_cmd,
     argo_crds_cmd,
     argo_controller_cmd,
@@ -647,7 +559,6 @@ import sys
     smoke_test_code,
     ui_home_code,
     builder_api_code,
-    builder_source_credentials_code,
     failure_log_code,
     argo_namespaces_code,
     argo_crds_code,
@@ -656,7 +567,7 @@ import sys
     run_dir,
     allow_ingress_warning,
     allow_verify_schema_bug,
-) = sys.argv[1:35]
+) = sys.argv[1:32]
 
 run_dir_path = Path(run_dir)
 warnings = []
@@ -724,17 +635,11 @@ else:
     if int(verify_code) != 0:
         final_failed = True
 
-if argo_skip_reason:
-    warnings.append(argo_skip_reason)
-    known_issues.append("argo-verification-skipped-for-profile")
-
 if int(service_health_code) != 0 or int(app_version_code) != 0:
     final_failed = True
 if smoke_test_code and int(smoke_test_code) != 0:
     final_failed = True
 if builder_enabled == "true" and builder_api_cmd and builder_api_code and int(builder_api_code) != 0:
-    final_failed = True
-if builder_enabled == "true" and builder_source_credentials_cmd and builder_source_credentials_code and int(builder_source_credentials_code) != 0:
     final_failed = True
 if argo_enabled == "true":
     for code in (argo_namespaces_code, argo_crds_code, argo_controller_code):
@@ -796,16 +701,9 @@ if builder_enabled == "true":
             "log": str(run_dir_path / "logs" / "builder-api.log"),
         },
     }
-    if builder_source_credentials_cmd:
-        payload["checks"]["builder"]["sourceCredentials"] = {
-            "command": builder_source_credentials_cmd,
-            "exitCode": int(builder_source_credentials_code or 0),
-            "log": str(run_dir_path / "logs" / "builder-source-credentials.log"),
-        }
 
 payload["checks"]["argo"] = {
     "enabled": argo_enabled == "true",
-    "skipReason": argo_skip_reason or None,
 }
 
 if argo_enabled == "true":
@@ -857,12 +755,12 @@ payload.setdefault("checks", {})["artifact"] = {
 Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
 
-python3 - "${RUN_DIR}/metadata/verify.json" "${DNS_ENABLED}" "${DNS_READINESS_CMD}" "${dns_readiness_code}" "${DNS_ABSENCE_CMD}" "${dns_absence_code}" "${RUN_DIR}" <<'PY'
+python3 - "${RUN_DIR}/metadata/verify.json" "${DNS_ENABLED}" "${DNS_READINESS_CMD}" "${dns_readiness_code}" "${RUN_DIR}" <<'PY'
 import json
 from pathlib import Path
 import sys
 
-out_path, enabled, readiness_cmd, readiness_code, absence_cmd, absence_code, run_dir = sys.argv[1:8]
+out_path, enabled, readiness_cmd, readiness_code, run_dir = sys.argv[1:6]
 payload = json.loads(Path(out_path).read_text(encoding="utf-8"))
 dns = {
     "enabled": enabled == "true",
@@ -872,12 +770,6 @@ if enabled == "true":
         "command": readiness_cmd,
         "exitCode": int(readiness_code or 0) if readiness_cmd else None,
         "log": str(Path(run_dir) / "logs" / "dns-readiness.log"),
-    }
-else:
-    dns["absence"] = {
-        "command": absence_cmd,
-        "exitCode": int(absence_code or 0) if absence_cmd else None,
-        "log": str(Path(run_dir) / "logs" / "dns-absence.log"),
     }
 payload.setdefault("checks", {})["dns"] = dns
 Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")

@@ -332,19 +332,6 @@ export_container_image_archive() {
 BUNDLE_IMAGE_OS="${BUNDLE_IMAGE_OS:-linux}"
 BUNDLE_IMAGE_ARCH="${BUNDLE_IMAGE_ARCH:-amd64}"
 
-oci_image_repository() {
-  local ref="${1#docker://}"
-  if [[ "${ref}" == *@sha256:* ]]; then
-    printf '%s' "${ref%@sha256:*}"
-    return
-  fi
-  if [[ "${ref}" =~ ^(.+):([^:/]+)$ ]]; then
-    printf '%s' "${BASH_REMATCH[1]}"
-    return
-  fi
-  printf '%s' "${ref}"
-}
-
 # Strip optional @sha256:... from a bundle imageReference, leaving the local name
 # (e.g. registry.local/dev-build).
 oci_bundle_local_name() {

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
-from typing import Any, Optional
+from typing import Optional
 
 
 def read_json(path: Path) -> Optional[dict]:
@@ -26,11 +26,6 @@ def rel(path: Optional[str], run_dir: Path) -> Optional[str]:
         return str(Path(path).resolve().relative_to(run_dir.resolve()))
     except ValueError:
         return path
-
-
-def status_code_ok(check: dict) -> bool:
-    code = check.get("statusCode")
-    return isinstance(code, int) and code < 400
 
 
 def step_status(skipped: bool, metadata: Optional[dict], failed: Optional[bool] = None) -> str:
@@ -108,7 +103,7 @@ def summarize_target_verify(verify: Optional[dict], run_dir: Path, skipped: bool
     return out
 
 
-def summarize_client_verify(client: Optional[dict], run_dir: Path, skipped: bool) -> dict:
+def summarize_client_verify(client: Optional[dict], skipped: bool) -> dict:
     out = {"status": step_status(skipped, client)}
     if not client:
         return out
@@ -201,7 +196,7 @@ def write_markdown(path: Path, report: dict) -> None:
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def load_metadata(run_dir: Path, flow: dict, key: str) -> Optional[dict]:
+def load_metadata(flow: dict, key: str) -> Optional[dict]:
     metadata_files = flow.get("metadataFiles") if isinstance(flow.get("metadataFiles"), dict) else {}
     path = metadata_files.get(key)
     if not isinstance(path, str) or not path:
@@ -223,10 +218,10 @@ def main() -> int:
         raise ValueError(f"missing release flow metadata: {flow_path}")
 
     steps = flow.get("steps") if isinstance(flow.get("steps"), dict) else {}
-    build = load_metadata(run_dir, flow, "buildPublish")
-    install = load_metadata(run_dir, flow, "install")
-    target_verify = load_metadata(run_dir, flow, "targetVerify")
-    client_verify = load_metadata(run_dir, flow, "clientVerify")
+    build = load_metadata(flow, "buildPublish")
+    install = load_metadata(flow, "install")
+    target_verify = load_metadata(flow, "targetVerify")
+    client_verify = load_metadata(flow, "clientVerify")
     report = {
         "configPath": flow.get("configPath"),
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -242,9 +237,7 @@ def main() -> int:
             "targetVerify": summarize_target_verify(
                 target_verify, run_dir, bool(steps.get("targetVerifySkipped"))
             ),
-            "clientVerify": summarize_client_verify(
-                client_verify, run_dir, bool(steps.get("clientVerifySkipped"))
-            ),
+            "clientVerify": summarize_client_verify(client_verify, bool(steps.get("clientVerifySkipped"))),
         },
     }
     statuses = [step.get("status") for step in report["steps"].values()]
