@@ -11,11 +11,11 @@ usage: install-on-target.sh [options]
 
 Install a published appliance release on the configured target host.
 
-For bundle_store.mode=static_http or appliance_files the target downloads the package
-over HTTP(S) from bundle_store.base_url. In appliance_files mode this is the
-appliance-managed authenticated file API path, typically
-https://<artifact-fqdn>/api/v1/files. The Mac only orchestrates SSH; published
-artifact reachability is checked from the target (LAN DNS), not the Mac.
+For bundle_store.mode=static_http the target downloads from bundle_store.base_url.
+For appliance_files, the URL is derived as https://$DEV_REGISTRY$files_path
+(default files_path=/api/v1/files) with token/TLS from DEV_REGISTRY_TOKEN and
+DEV_REGISTRY_TLS_VERIFY. The Mac only orchestrates SSH; published artifact
+reachability is checked from the target (LAN DNS), not the Mac.
 
 Options:
   --config PATH              YAML or JSON config file. Optional if
@@ -109,7 +109,7 @@ if [[ -z "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
 fi
 BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
-BASE_URL="$(bundle_store_get_optional "${CONFIG_PATH}" "base_url" || true)"
+BASE_URL=""
 PATH_PREFIX="$(bundle_store_get_optional "${CONFIG_PATH}" "release_path_prefix" || true)"
 [[ -n "${PATH_PREFIX}" ]] || fail "bundle_store.release_path_prefix is required in config"
 STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || true)"
@@ -174,15 +174,17 @@ ensure_release_run_dirs "${RUN_DIR}" "artifacts"
 [[ -n "${RELEASE_VERSION}" ]] || fail "--release-version is required for automated install"
 
 # static_http and appliance_files both fetch over HTTP(S). appliance_files uses
-# the appliance-managed authenticated file API path.
+# the appliance-managed authenticated file API path derived from DEV_REGISTRY*.
 case "${BUNDLE_STORE_MODE}" in
   static_http|appliance_files)
-    [[ -n "${BASE_URL}" ]] || fail "bundle_store.mode=${BUNDLE_STORE_MODE} requires bundle_store.base_url"
     bundle_store_bearer_token=""
     if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
-      require_appliance_files_base_url "${BASE_URL}"
+      BASE_URL="$(resolve_appliance_files_base_url "${CONFIG_PATH}")"
       bundle_store_bearer_token="$(resolve_appliance_files_bearer_token "${CONFIG_PATH}" "${BASE_URL}")"
       bundle_store_fill_curl_tls_args "${CONFIG_PATH}"
+    else
+      BASE_URL="$(bundle_store_get_optional "${CONFIG_PATH}" "base_url" || true)"
+      [[ -n "${BASE_URL}" ]] || fail "bundle_store.mode=static_http requires bundle_store.base_url"
     fi
     helper_url="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-http-release.sh"
     remote_release_dir="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}"
@@ -214,7 +216,7 @@ resolved=\$(getent ahostsv4 \"\${host}\" 2>/dev/null | awk '{print \$1; exit}' |
 my_ips=\$(hostname -I 2>/dev/null || true)
 for ip in \${my_ips}; do
   if [[ -n \"\${resolved}\" && \"\${resolved}\" == \"\${ip}\" ]]; then
-    echo \"bundle_store host \${host} resolves to this target (\${resolved}) via local name resolution (often /etc/hosts from a prior zonctl install). install.appliance_name must be distinct from the distributor FQDN in bundle_store.base_url; remove the '# BEGIN zon-appliance-dns' … '# END zon-appliance-dns' block from /etc/hosts on this host, set a unique appliance_name, then retry.\" >&2
+    echo \"bundle_store host \${host} resolves to this target (\${resolved}) via local name resolution (often /etc/hosts from a prior zonctl install). install.appliance_name must be distinct from the distributor FQDN in the resolved bundle_store URL; remove the '# BEGIN zon-appliance-dns' … '# END zon-appliance-dns' block from /etc/hosts on this host, set a unique appliance_name, then retry.\" >&2
     exit 1
   fi
 done"

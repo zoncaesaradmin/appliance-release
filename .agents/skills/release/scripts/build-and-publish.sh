@@ -234,25 +234,25 @@ APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}")"
 VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
 [[ -n "${VERIFY_ARGO_ENABLED}" ]] || fail "verification.argo.enabled is required in config (true|false)"
 BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
-PUBLISH_PUBLIC_BASE_URL="$(bundle_store_get_optional "${CONFIG_PATH}" "base_url" || true)"
 PUBLISH_PATH_PREFIX="$(bundle_store_get_optional "${CONFIG_PATH}" "release_path_prefix" || true)"
 PUBLISH_LATEST_ALIAS="$(config_get_optional "${CONFIG_PATH}" "release.publish_latest_alias" || true)"
 PUBLISH_SERVER="$(bundle_store_get_optional "${CONFIG_PATH}" "publish_server_alias" || true)"
 PUBLISH_REMOTE_ROOT="$(bundle_store_get_optional "${CONFIG_PATH}" "publish_remote_root" || true)"
 [[ -n "${PUBLISH_PATH_PREFIX}" ]] || fail "bundle_store.release_path_prefix is required in config"
 [[ -n "${PUBLISH_LATEST_ALIAS}" ]] || fail "release.publish_latest_alias is required in config (true|false)"
+PUBLISH_PUBLIC_BASE_URL=""
 case "${BUNDLE_STORE_MODE}" in
-  static_http|appliance_files)
-    [[ -n "${PUBLISH_PUBLIC_BASE_URL}" ]] || fail "bundle_store.mode=${BUNDLE_STORE_MODE} requires bundle_store.base_url"
+  static_http)
+    PUBLISH_PUBLIC_BASE_URL="$(bundle_store_get_optional "${CONFIG_PATH}" "base_url" || true)"
+    [[ -n "${PUBLISH_PUBLIC_BASE_URL}" ]] || fail "bundle_store.mode=static_http requires bundle_store.base_url"
+    [[ -n "${PUBLISH_SERVER}" ]] || fail "bundle_store.mode=static_http requires bundle_store.publish_server_alias"
+    [[ -n "${PUBLISH_REMOTE_ROOT}" ]] || fail "bundle_store.mode=static_http requires bundle_store.publish_remote_root"
+    ;;
+  appliance_files)
+    # Host/token/TLS come from DEV_REGISTRY* (or registry_env/token_env/tls_verify_env).
+    PUBLISH_PUBLIC_BASE_URL="$(resolve_appliance_files_base_url "${CONFIG_PATH}")"
     ;;
 esac
-if [[ "${BUNDLE_STORE_MODE}" == "static_http" ]]; then
-  [[ -n "${PUBLISH_SERVER}" ]] || fail "bundle_store.mode=static_http requires bundle_store.publish_server_alias"
-  [[ -n "${PUBLISH_REMOTE_ROOT}" ]] || fail "bundle_store.mode=static_http requires bundle_store.publish_remote_root"
-fi
-if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
-  require_appliance_files_base_url "${PUBLISH_PUBLIC_BASE_URL}"
-fi
 ensure_release_run_dirs "${RUN_DIR}" "artifacts"
 
 log "running local live-build repo preflight against release=${REMOTE_REPO_REF}, appliance-code=${CODE_REPO_REF}, appliance-ctl=${CTL_REPO_REF}"

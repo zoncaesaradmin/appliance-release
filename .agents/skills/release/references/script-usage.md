@@ -56,12 +56,14 @@ Notes:
   - `static_http` — publish/install via an external static HTTP server (`base_url`,
     `publish_server_alias`, `publish_remote_root`, `release_path_prefix`)
   - `appliance_files` — publish/install via the appliance-managed authenticated
-    file API. `base_url` must be `https://<distributor-fqdn>/api/v1/files`
-    (Traefik `/files` was removed). Set `bundle_store.access_token` to a
-    long-lived API token from the distributor Dashboard → API tokens (prefer
-    “Artifact files only” scopes). Set `bundle_store.tls_insecure` or
-    `bundle_store.cacert_path` explicitly (no silent `-k`). Requires an
-    already-installed artifact-capable distributor appliance (day-2 path).
+    file API. Host/token/TLS come from env (defaults): `DEV_REGISTRY`,
+    `DEV_REGISTRY_TOKEN`, `DEV_REGISTRY_TLS_VERIFY`. Base URL is
+    `https://$DEV_REGISTRY$files_path` with optional `files_path`
+    (default `/api/v1/files`). Optional env-name keys: `registry_env`,
+    `token_env`, `tls_verify_env`. Optional overrides only: `base_url`,
+    `access_token`, `tls_insecure`, `cacert_path`. Traefik `/files` was
+    removed. Requires an already-installed artifact-capable distributor
+    appliance (day-2 path).
 - For advanced extra SANs beyond the derived FQDN, use
   `install.additional_tls_sans_csv` in the config.
 - For the `builder` profile, set `install.build_catalog_path` or pass
@@ -187,8 +189,8 @@ This script:
 - preflights published helper/bundle/checksum URLs from the **target** (LAN DNS),
   not the Mac
 - downloads the published package on the target with HTTP `curl` against
-  `bundle_store.base_url` (Mac only orchestrates SSH)
-- fails closed if `bundle_store.base_url`'s host resolves to the target itself
+  the resolved bundle-store base URL (Mac only orchestrates SSH)
+- fails closed if that URL's host resolves to the target itself
   (usually `/etc/hosts` from a prior install that reused the distributor name)
 - verifies checksums
 - extracts the bundle on the target host

@@ -46,20 +46,116 @@ require_appliance_files_base_url 'https://host.example/api/v1/files'
         proc = run_bash(script)
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
-    def test_tls_args_require_explicit_insecure(self) -> None:
+    def test_resolve_base_url_from_dev_registry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / "cfg.yaml"
             cfg.write_text("bundle_store:\n  mode: appliance_files\n", encoding="utf-8")
             script = f"""
 set -euo pipefail
 source {COMMON.as_posix()!r}
+export DEV_REGISTRY='artifact-dns-1.appliance.internal'
+resolve_appliance_files_base_url {cfg.as_posix()!r}
+"""
+            proc = run_bash(script)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(
+                proc.stdout.strip(),
+                "https://artifact-dns-1.appliance.internal/api/v1/files",
+            )
+
+    def test_resolve_base_url_strips_scheme_from_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "cfg.yaml"
+            cfg.write_text("bundle_store:\n  mode: appliance_files\n", encoding="utf-8")
+            script = f"""
+set -euo pipefail
+source {COMMON.as_posix()!r}
+export DEV_REGISTRY='https://artifact.example/'
+resolve_appliance_files_base_url {cfg.as_posix()!r}
+"""
+            proc = run_bash(script)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "https://artifact.example/api/v1/files")
+
+    def test_resolve_base_url_custom_files_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "cfg.yaml"
+            cfg.write_text(
+                "bundle_store:\n  mode: appliance_files\n  files_path: /custom/files\n",
+                encoding="utf-8",
+            )
+            script = f"""
+set -euo pipefail
+source {COMMON.as_posix()!r}
+export DEV_REGISTRY='host.example'
+resolve_appliance_files_base_url {cfg.as_posix()!r}
+"""
+            proc = run_bash(script)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "https://host.example/custom/files")
+
+    def test_resolve_base_url_legacy_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "cfg.yaml"
+            cfg.write_text(
+                "bundle_store:\n  mode: appliance_files\n  base_url: https://legacy.example/api/v1/files\n",
+                encoding="utf-8",
+            )
+            script = f"""
+set -euo pipefail
+source {COMMON.as_posix()!r}
+unset DEV_REGISTRY || true
+resolve_appliance_files_base_url {cfg.as_posix()!r}
+"""
+            proc = run_bash(script)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "https://legacy.example/api/v1/files")
+
+    def test_tls_args_require_env_or_insecure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "cfg.yaml"
+            cfg.write_text("bundle_store:\n  mode: appliance_files\n", encoding="utf-8")
+            script = f"""
+set -euo pipefail
+source {COMMON.as_posix()!r}
+unset DEV_REGISTRY_TLS_VERIFY || true
 bundle_store_fill_curl_tls_args {cfg.as_posix()!r}
 """
             proc = run_bash(script)
             self.assertNotEqual(proc.returncode, 0)
-            self.assertIn("tls_insecure", proc.stderr)
+            self.assertIn("DEV_REGISTRY_TLS_VERIFY", proc.stderr)
 
-    def test_tls_args_insecure_true(self) -> None:
+    def test_tls_args_from_verify_env_false(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "cfg.yaml"
+            cfg.write_text("bundle_store:\n  mode: appliance_files\n", encoding="utf-8")
+            script = f"""
+set -euo pipefail
+source {COMMON.as_posix()!r}
+export DEV_REGISTRY_TLS_VERIFY=false
+bundle_store_fill_curl_tls_args {cfg.as_posix()!r}
+printf '%s\\n' "${{BUNDLE_STORE_CURL_TLS_ARGS[*]}}"
+"""
+            proc = run_bash(script)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "-k")
+
+    def test_tls_args_from_verify_env_true(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "cfg.yaml"
+            cfg.write_text("bundle_store:\n  mode: appliance_files\n", encoding="utf-8")
+            script = f"""
+set -euo pipefail
+source {COMMON.as_posix()!r}
+export DEV_REGISTRY_TLS_VERIFY=true
+bundle_store_fill_curl_tls_args {cfg.as_posix()!r}
+printf '%s\\n' "${{BUNDLE_STORE_CURL_TLS_ARGS[*]:-}}"
+"""
+            proc = run_bash(script)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "")
+
+    def test_tls_args_insecure_override(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / "cfg.yaml"
             cfg.write_text(
@@ -69,6 +165,7 @@ bundle_store_fill_curl_tls_args {cfg.as_posix()!r}
             script = f"""
 set -euo pipefail
 source {COMMON.as_posix()!r}
+unset DEV_REGISTRY_TLS_VERIFY || true
 bundle_store_fill_curl_tls_args {cfg.as_posix()!r}
 printf '%s\\n' "${{BUNDLE_STORE_CURL_TLS_ARGS[*]}}"
 """
@@ -82,7 +179,7 @@ printf '%s\\n' "${{BUNDLE_STORE_CURL_TLS_ARGS[*]}}"
             ca = Path(tmp) / "ca.pem"
             ca.write_text("dummy-ca\n", encoding="utf-8")
             cfg.write_text(
-                f"bundle_store:\n  cacert_path: {ca.as_posix()}\n  tls_insecure: false\n",
+                f"bundle_store:\n  cacert_path: {ca.as_posix()}\n",
                 encoding="utf-8",
             )
             script = f"""
@@ -116,11 +213,29 @@ printf '%s\\n' "${{BUNDLE_STORE_CURL_TLS_ARGS[1]}}"
             script = f"""
 set -euo pipefail
 source {COMMON.as_posix()!r}
+unset DEV_REGISTRY_TOKEN || true
 resolve_appliance_files_bearer_token {cfg.as_posix()!r} 'https://host.example/api/v1/files'
 """
             proc = run_bash(script)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual(proc.stdout.strip(), "apt_config.token")
+
+    def test_resolve_bearer_falls_back_to_dev_registry_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "cfg.yaml"
+            cfg.write_text(
+                "bundle_store:\n  mode: appliance_files\n  base_url: https://host.example/api/v1/files\n",
+                encoding="utf-8",
+            )
+            script = f"""
+set -euo pipefail
+source {COMMON.as_posix()!r}
+export DEV_REGISTRY_TOKEN='apt_env.token'
+resolve_appliance_files_bearer_token {cfg.as_posix()!r} 'https://host.example/api/v1/files'
+"""
+            proc = run_bash(script)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "apt_env.token")
 
     def test_resolve_bearer_requires_access_token(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -132,11 +247,12 @@ resolve_appliance_files_bearer_token {cfg.as_posix()!r} 'https://host.example/ap
             script = f"""
 set -euo pipefail
 source {COMMON.as_posix()!r}
+unset DEV_REGISTRY_TOKEN || true
 resolve_appliance_files_bearer_token {cfg.as_posix()!r} 'https://host.example/api/v1/files'
 """
             proc = run_bash(script)
             self.assertNotEqual(proc.returncode, 0)
-            self.assertIn("access_token", proc.stderr)
+            self.assertIn("DEV_REGISTRY_TOKEN", proc.stderr)
 
 
 class TestRemoteCurlArrayInit(unittest.TestCase):

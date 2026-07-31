@@ -18,7 +18,7 @@
 # =============================================================================
 
 build_host:
-  alias: zonsys@192.168.1.102
+  alias: zonsys@192.168.1.152
 
 release_workspace:
   remote_repo_path: /home/zonsys/ws/appliance-release
@@ -35,14 +35,20 @@ bundle_store:
   # static_http | appliance_files
   mode: static_http
   release_path_prefix: appliance
-  base_url: http://192.168.1.105:28081
-  publish_server_alias: zonsys@192.168.1.105
+  base_url: http://192.168.1.155:28081
+  publish_server_alias: zonsys@192.168.1.155
   publish_remote_root: /home/zonsys/releases
   # --- appliance_files (day-2 distributor) ---
-  # base_url: https://artifact-dns-1.appliance.internal/api/v1/files
-  # access_token: apt_….…
-  # tls_insecure: true
-  # cacert_path: /abs/path/to/ca.pem
+  # Connection derives from the same DEV_REGISTRY* env vars as image pull:
+  #   https://$DEV_REGISTRY$files_path
+  #   bearer: $DEV_REGISTRY_TOKEN
+  #   TLS: $DEV_REGISTRY_TLS_VERIFY (false → curl -k)
+  # Optional env name overrides (defaults shown):
+  # registry_env: DEV_REGISTRY
+  # token_env: DEV_REGISTRY_TOKEN
+  # tls_verify_env: DEV_REGISTRY_TLS_VERIFY
+  # files_path: /api/v1/files
+  # Optional overrides only: base_url, access_token, tls_insecure, cacert_path
 
 build_flow:
   # Pull/login the development-container used as build tooling.
@@ -71,11 +77,11 @@ build_flow:
 # =============================================================================
 
 target_host:
-  alias: zonsys@192.168.1.101
+  alias: zonsys@192.168.1.153
   state_dir: /var/lib/zon/state
 
 install:
-  appliance_name: test-device-1
+  appliance_name: artifact-dns-1
   # core | builder | storage | landns | storage-landns | builder-landns | builder-storage-landns
   appliance_profile: storage-landns
   dns_zone: appliance.internal
@@ -105,7 +111,7 @@ verification:
   smoke_test_retry_delay_seconds: 3
   allow_ingress_warning: true
   allow_verify_schema_bug: false
-  ui_home_command: 'body="$(curl -kfsS https://192.168.1.101/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
+  ui_home_command: 'body="$(curl -kfsS https://192.168.1.153/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
   argo:
     enabled: false
   builder:
@@ -118,7 +124,7 @@ verification:
     readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/dns-server --timeout=120s && dig +short @127.0.0.1 -p 53 SOA appliance.internal
 
 client_verification:
-  base_url: https://192.168.1.101
+  base_url: https://192.168.1.153
   username: admin
   builder:
     enabled: false

@@ -33,17 +33,17 @@ model as other appliance APIs.
 
 Preferred: open the distributor appliance UI → **Dashboard → API tokens**, create a
 long-lived token (scopes “Artifact files only” for release publish, or all
-permissions), copy the `apt_…` secret once, and put it in your local release
-config:
+permissions), copy the `apt_…` secret once, and export it as
+`DEV_REGISTRY_TOKEN` (preferred). Optional config override:
 
 ```yaml
 bundle_store:
   mode: appliance_files
   base_url: https://artifact-dns-1.appliance.internal/api/v1/files
-  access_token: apt_….…
+  # access_token: apt_….…   # optional; prefer DEV_REGISTRY_TOKEN
 ```
 
-You can also mint a token with curl (then paste into `access_token`):
+You can also mint a token with curl (then `export DEV_REGISTRY_TOKEN=...`):
 
 ```bash
 APPLIANCE=https://artifact-dns-1.appliance.internal

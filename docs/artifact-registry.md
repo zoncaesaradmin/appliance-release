@@ -44,8 +44,9 @@ bundle_store:
 For `appliance_files`, the storage/artifact appliance stores bundle files under
 `/data/zon/files` but exposes them through the authenticated appliance API at
 `/api/v1/files/...`. Publish uses `POST`, pull uses `GET`, and both require an
-appliance bearer token with artifact file permissions. Put that long-lived API
-token in `bundle_store.access_token`. Operator curl examples are in
+appliance bearer token with artifact file permissions. Prefer exporting that
+long-lived API token as `DEV_REGISTRY_TOKEN` (optional override:
+`bundle_store.access_token`). Operator curl examples are in
 [file-api.md](file-api.md).
 
 `base_url` must end with `/api/v1/files`. Traefik `/files` (unauthenticated

@@ -64,12 +64,15 @@ For day-to-day use, set:
 - `APPLIANCE_FIRST_ADMIN_PASSWORD=...`
 
 Distribution modes (`bundle_store.mode`): `static_http` or `appliance_files`
-(appliance-managed authenticated file API). Both install with target `curl`
-against `bundle_store.base_url`. Mode, `release_path_prefix`, and `base_url`
-are required in config. For `appliance_files`, set `bundle_store.access_token`
-to a long-lived API token from the distributor Dashboard → API tokens, set
-`bundle_store.tls_insecure` (or `cacert_path`) explicitly, and require
-`base_url` to end in `/api/v1/files` (Traefik `/files` was removed).
+(appliance-managed authenticated file API). Mode and `release_path_prefix` are
+required. `static_http` also needs `base_url` / publish server fields.
+For `appliance_files`, connection derives from env (same as image pull):
+`https://$DEV_REGISTRY$files_path` (default `files_path: /api/v1/files`),
+bearer `$DEV_REGISTRY_TOKEN`, TLS from `$DEV_REGISTRY_TLS_VERIFY` (`false` →
+curl `-k`). Optional config: `registry_env` / `token_env` / `tls_verify_env` /
+`files_path`, plus overrides `base_url` / `access_token` / `tls_insecure` /
+`cacert_path`. Traefik `/files` was removed. Historical aliases: `http`/
+`http-static` → `static_http`, `fileserver` → `appliance_files`.
 
 Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `--config`.
 

@@ -529,26 +529,84 @@ resolve_bundle_store_mode() {
   normalize_bundle_store_mode "${mode}" || fail "bundle_store.mode must be static_http or appliance_files"
 }
 
+# Path suffix for the authenticated files API (default /api/v1/files).
+resolve_appliance_files_files_path() {
+  local config_path="$1"
+  local files_path=""
+  files_path="$(bundle_store_get_optional "${config_path}" "files_path" || true)"
+  files_path="$(printf '%s' "${files_path}" | tr -d '[:space:]')"
+  if [[ -z "${files_path}" ]]; then
+    files_path="/api/v1/files"
+  fi
+  case "${files_path}" in
+    /*) ;;
+    *) files_path="/${files_path}" ;;
+  esac
+  # Strip trailing slash for stable join/compare.
+  printf '%s' "${files_path%/}"
+}
+
 require_appliance_files_base_url() {
   local base_url="$1"
+  local files_path="${2:-/api/v1/files}"
+  files_path="$(printf '%s' "${files_path}" | tr -d '[:space:]')"
+  files_path="${files_path%/}"
   case "${base_url}" in
-    */api/v1/files|*/api/v1/files/)
+    *"${files_path}"|*"${files_path}/")
       return 0
       ;;
     *)
-      fail "bundle_store.mode=appliance_files requires bundle_store.base_url ending in /api/v1/files (authenticated API). Traefik /files was removed; do not use unauthenticated static nginx paths."
+      fail "bundle_store.mode=appliance_files requires base URL ending in ${files_path} (authenticated API). Traefik /files was removed; do not use unauthenticated static nginx paths."
       ;;
   esac
 }
 
+# Build https://<DEV_REGISTRY>/api/v1/files from env (preferred).
+# Optional override: bundle_store.base_url (legacy / tests).
+# Optional: bundle_store.registry_env (default DEV_REGISTRY), bundle_store.files_path.
+resolve_appliance_files_base_url() {
+  local config_path="$1"
+  local base_url=""
+  local files_path=""
+  local registry_env=""
+  local registry_host=""
+
+  files_path="$(resolve_appliance_files_files_path "${config_path}")"
+  base_url="$(bundle_store_get_optional "${config_path}" "base_url" || true)"
+  base_url="$(printf '%s' "${base_url}" | tr -d '[:space:]')"
+  if [[ -n "${base_url}" ]]; then
+    require_appliance_files_base_url "${base_url}" "${files_path}"
+    printf '%s' "${base_url%/}"
+    return 0
+  fi
+
+  registry_env="$(bundle_store_get_optional "${config_path}" "registry_env" || true)"
+  registry_env="$(printf '%s' "${registry_env}" | tr -d '[:space:]')"
+  if [[ -z "${registry_env}" ]]; then
+    registry_env="DEV_REGISTRY"
+  fi
+  registry_host="$(resolve_env_value "${registry_env}" "bundle_store registry env")"
+  registry_host="$(printf '%s' "${registry_host}" | tr -d '[:space:]')"
+  registry_host="${registry_host#https://}"
+  registry_host="${registry_host#http://}"
+  registry_host="${registry_host%/}"
+  [[ -n "${registry_host}" ]] || fail "bundle_store registry env ${registry_env} resolved empty"
+  base_url="https://${registry_host}${files_path}"
+  require_appliance_files_base_url "${base_url}" "${files_path}"
+  printf '%s' "${base_url}"
+}
+
 # Fill BUNDLE_STORE_CURL_TLS_ARGS for appliance_files HTTPS curls.
-# Prefer cacert_path when set; otherwise require explicit tls_insecure.
+# Prefer cacert_path when set; else optional tls_insecure override; else
+# invert tls_verify_env (default DEV_REGISTRY_TLS_VERIFY): false → -k.
 # Uses a global array because macOS ships bash 3.2 (no namerefs).
 BUNDLE_STORE_CURL_TLS_ARGS=()
 bundle_store_fill_curl_tls_args() {
   local config_path="$1"
   local cacert=""
   local insecure=""
+  local tls_verify_env=""
+  local tls_verify=""
   BUNDLE_STORE_CURL_TLS_ARGS=()
   cacert="$(bundle_store_get_optional "${config_path}" "cacert_path" || true)"
   insecure="$(bundle_store_get_optional "${config_path}" "tls_insecure" || true)"
@@ -557,8 +615,21 @@ bundle_store_fill_curl_tls_args() {
     BUNDLE_STORE_CURL_TLS_ARGS+=(--cacert "${cacert}")
     return 0
   fi
-  [[ -n "${insecure}" ]] || fail "bundle_store.tls_insecure is required in config when cacert_path is unset (true|false)"
-  if bool_true "${insecure}"; then
+  if [[ -n "${insecure}" ]]; then
+    if bool_true "${insecure}"; then
+      BUNDLE_STORE_CURL_TLS_ARGS+=(-k)
+    fi
+    return 0
+  fi
+  tls_verify_env="$(bundle_store_get_optional "${config_path}" "tls_verify_env" || true)"
+  tls_verify_env="$(printf '%s' "${tls_verify_env}" | tr -d '[:space:]')"
+  if [[ -z "${tls_verify_env}" ]]; then
+    tls_verify_env="DEV_REGISTRY_TLS_VERIFY"
+  fi
+  tls_verify="$(printf '%s' "${!tls_verify_env:-}" | tr -d '[:space:]')"
+  [[ -n "${tls_verify}" ]] || fail "bundle_store.mode=appliance_files requires ${tls_verify_env} (or optional bundle_store.tls_insecure / cacert_path)"
+  tls_verify="$(normalize_bool_value "${tls_verify}")"
+  if [[ "${tls_verify}" == "false" ]]; then
     BUNDLE_STORE_CURL_TLS_ARGS+=(-k)
   fi
 }
@@ -588,19 +659,34 @@ bundle_store_remote_curl_array_init() {
   printf '%s' "${init}"
 }
 
-# Resolve the bearer token for appliance_files publish/install from
-# bundle_store.access_token (long-lived API token created on the distributor
-# Dashboard). No environment-variable or auto-mint fallback.
+# Resolve the bearer token for appliance_files publish/install.
+# Prefer optional bundle_store.access_token; otherwise read token_env
+# (default DEV_REGISTRY_TOKEN — same long-lived distributor API token).
 resolve_appliance_files_bearer_token() {
   local config_path="$1"
-  local base_url="$2"
+  local base_url="${2:-}"
   local token=""
+  local token_env=""
+  local files_path=""
 
-  require_appliance_files_base_url "${base_url}"
+  if [[ -z "${base_url}" ]]; then
+    base_url="$(resolve_appliance_files_base_url "${config_path}")"
+  else
+    files_path="$(resolve_appliance_files_files_path "${config_path}")"
+    require_appliance_files_base_url "${base_url}" "${files_path}"
+  fi
   token="$(bundle_store_get_optional "${config_path}" "access_token" || true)"
   token="$(printf '%s' "${token}" | tr -d '[:space:]')"
   if [[ -z "${token}" ]]; then
-    fail "bundle_store.mode=appliance_files requires bundle_store.access_token (long-lived API token from the distributor Dashboard → API tokens)"
+    token_env="$(bundle_store_get_optional "${config_path}" "token_env" || true)"
+    token_env="$(printf '%s' "${token_env}" | tr -d '[:space:]')"
+    if [[ -z "${token_env}" ]]; then
+      token_env="DEV_REGISTRY_TOKEN"
+    fi
+    token="$(printf '%s' "${!token_env:-}" | tr -d '[:space:]')"
+    if [[ -z "${token}" ]]; then
+      fail "bundle_store.mode=appliance_files requires ${token_env} (or optional bundle_store.access_token) — long-lived API token from the distributor Dashboard → API tokens"
+    fi
   fi
   printf '%s' "${token}"
 }
