@@ -508,6 +508,43 @@ reject_placeholder_client_base_url() {
   return 0
 }
 
+derive_mdns_tls_san_from_hostname() {
+  local raw_hostname="${1:-}"
+  local short_hostname=""
+  if [[ -z "${raw_hostname}" ]]; then
+    return 1
+  fi
+  short_hostname="${raw_hostname%%.*}"
+  short_hostname="$(printf '%s' "${short_hostname}" | tr '[:upper:]' '[:lower:]')"
+  if [[ ! "${short_hostname}" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+    return 1
+  fi
+  printf '%s.local\n' "${short_hostname}"
+}
+
+# Rewrite https?://<any-host><path> → <client_base><path> inside a shell command.
+# Used so verification curls follow client_verification.base_url instead of a
+# stale hardcoded target IP left in config.
+rewrite_command_url_path_to_base() {
+  local command="$1"
+  local client_base="$2"
+  local api_path="$3"
+  python3 - "${command}" "${client_base}" "${api_path}" <<'PY'
+import re
+import sys
+
+command = sys.argv[1]
+client_base = sys.argv[2].rstrip("/")
+api_path = sys.argv[3]
+if not api_path.startswith("/"):
+    api_path = "/" + api_path
+pattern = re.compile(r"https?://[^/\s'\"\\]+" + re.escape(api_path))
+replacement = client_base + api_path
+print(pattern.sub(replacement, command), end="")
+PY
+}
+
+
 # Normalize bundle_store.mode to static_http|appliance_files. Empty is rejected.
 _BUNDLE_STORE_LIB="$(cd "${SCRIPT_DIR}/../../../.." && pwd)/scripts/publish/bundle-store-lib.sh"
 [[ -f "${_BUNDLE_STORE_LIB}" ]] || fail "missing shared bundle store library: ${_BUNDLE_STORE_LIB}"

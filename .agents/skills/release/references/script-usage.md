@@ -45,6 +45,10 @@ Notes:
   installer derives the FQDN as `<appliance_name>.<dns_zone>` for TLS,
   `canonicalOrigin`, and the registry realm. There is no separate `public_host`
   override.
+- Release-side install helpers also add the target host's current
+  `hostname.local` as an extra TLS SAN automatically, so the existing host
+  name can be used for mDNS-friendly lab access without changing
+  `install.appliance_name`.
 - Optional `install.image_pull_registry` teaches K3s/containerd to pull from a
   private LAN registry (`registries.yaml`). Bundle preload stays primary.
   Typical shape reuses the same env names as `dev_image_pull`:
@@ -64,8 +68,8 @@ Notes:
     `access_token`, `tls_insecure`, `cacert_path`. Traefik `/files` was
     removed. Requires an already-installed artifact-capable distributor
     appliance (day-2 path).
-- For advanced extra SANs beyond the derived FQDN, use
-  `install.additional_tls_sans_csv` in the config.
+- For advanced extra SANs beyond the derived FQDN and the automatic
+  `hostname.local` SAN, use `install.additional_tls_sans_csv` in the config.
 - For the `builder` profile, set `install.build_catalog_path` or pass
   `--build-catalog PATH` when the bundle does not already include a
   `config.buildCatalog` value with workspace profiles, HTTPS repo URLs, and a
@@ -75,6 +79,12 @@ Notes:
 - If the build catalog references a workspace provisioner image, ensure
   `build_flow.dev_image_pull` is configured so `registry.local/dev-build`
   is bundled and preloaded on the target.
+- If the target must advertise `hostname.local` over mDNS in an air-gapped
+  install, package the Ubuntu `.deb` payloads under
+  `build_flow.host_packages_dir_source` with an OS/version/arch layout such as
+  `ubuntu/24.04/amd64/*.deb` and `ubuntu/22.04/amd64/*.deb`. The bundle
+  flow copies that tree into signed `host-packages/`, and `zonctl`
+  installs it offline before enabling `avahi-daemon`.
 - Builder workflow repo URLs must use HTTPS.
 
 ## 1. Full Flow
@@ -199,7 +209,9 @@ This script:
 - automatically switches to `zonctl upgrade` when the target already has an owned appliance install
 - passes `--appliance-name` / `--dns-zone` so zonctl derives the FQDN used for
   TLS, canonical origin, and the registry realm
-- can include both DNS and IP certificate identities with repeatable
+- automatically includes the target host's current `hostname.local` as an
+  extra TLS SAN for mDNS-friendly access
+- can include more DNS and IP certificate identities with repeatable
   `--tls-san` flags or `install.additional_tls_sans_csv`
 - uses the first-admin password from env only for a fresh install bootstrap
 
@@ -230,9 +242,12 @@ default, unless you explicitly disable `verification.argo.enabled`:
 
 If `install.appliance_profile` is a build-capable profile (`builder`,
 `builder-landns`, `builder-storage-landns`), it also checks that
-`/api/v1/work-profiles` is not a 404 from the target. Override
-`verification.builder.enabled` or `verification.builder.api_command` only when
-you need custom reachability behavior.
+`/api/v1/work-profiles` is not a 404 from the target. When
+`client_verification.base_url` is set, a stale host in
+`verification.builder.api_command` is rewritten to that base URL (same idea as
+the localhost smoke-test rewrite). Override `verification.builder.enabled` or
+`verification.builder.api_command` only when you need custom reachability
+behavior.
 
 ## 5. Verify Client/API Only
 

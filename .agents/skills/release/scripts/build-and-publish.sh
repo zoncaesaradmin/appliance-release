@@ -99,6 +99,7 @@ CODE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.code_repo_ref"
 CTL_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.ctl_repo_ref" || true)"
 BUILD_K3S_BINARY_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.k3s_binary_source" || true)"
 BUILD_K3S_AIRGAP_IMAGES_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.k3s_airgap_images_source" || true)"
+BUILD_HOST_PACKAGES_DIR_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.host_packages_dir_source" || true)"
 if [[ -z "${BOOTSTRAP_CMD}" ]]; then
   BOOTSTRAP_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_command" || true)"
 fi
@@ -266,6 +267,7 @@ BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "EXPORT_DIR" "${REMOTE_EXPORT_DIR}" \
   "K3S_BINARY_SOURCE" "${BUILD_K3S_BINARY_SOURCE}" \
   "K3S_AIRGAP_IMAGES_SOURCE" "${BUILD_K3S_AIRGAP_IMAGES_SOURCE}" \
+  "HOST_PACKAGES_DIR_SOURCE" "${BUILD_HOST_PACKAGES_DIR_SOURCE}" \
   "CODE_REPO_REF" "${CODE_REPO_REF}" \
   "CTL_REPO_REF" "${CTL_REPO_REF}" \
   "ARGO_ENABLED" "${BUILD_ARGO_ENABLED}" \

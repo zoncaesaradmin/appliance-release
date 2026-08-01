@@ -69,6 +69,10 @@ build_flow:
   ctl_repo_ref: main
   k3s_binary_source: /home/zonsys/ci/inputs/k3s
   k3s_airgap_images_source: /home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst
+  # Optional offline host package payload copied into release-input as
+  # host-packages/. Layout should be OS/version/arch, for example
+  # ubuntu/24.04/amd64/*.deb and ubuntu/22.04/amd64/*.deb.
+  # host_packages_dir_source: /home/zonsys/ci/inputs/host-packages
   build_command: bash scripts/ci/build-full-bundle.sh
   publish_command: make publish-release
 
@@ -92,7 +96,9 @@ install:
   kubernetes_namespace: control
   control_plane_deployment: api-server
   # build_catalog_path: /Users/you/build-catalog.yaml   # required for builder*
-  # additional_tls_sans_csv: 192.168.1.101
+  # install-on-target.sh and install-http-release.sh automatically add the
+  # target host's current hostname.local as an mDNS-friendly TLS SAN.
+  # additional_tls_sans_csv: 192.168.1.101,artifact-dns-1.appliance.internal
   # Optional lab pulls (K3s registries.yaml); omit for preload-only:
   # image_pull_registry:
   #   registry_env: DEV_REGISTRY
@@ -111,7 +117,7 @@ verification:
   smoke_test_retry_delay_seconds: 3
   allow_ingress_warning: true
   allow_verify_schema_bug: false
-  ui_home_command: 'body="$(curl -kfsS https://192.168.1.153/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
+  ui_home_command: 'body="$(curl -kfsS https://artifact-dns-1.appliance.internal/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
   argo:
     enabled: false
   builder:
@@ -124,7 +130,9 @@ verification:
     readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/dns-server --timeout=120s && dig +short @127.0.0.1 -p 53 SOA appliance.internal
 
 client_verification:
-  base_url: https://192.168.1.153
+  # Prefer a name that matches the certificate, for example the derived
+  # appliance.internal name or the target host's current hostname.local name.
+  base_url: https://artifact-dns-1.appliance.internal
   username: admin
   builder:
     enabled: false

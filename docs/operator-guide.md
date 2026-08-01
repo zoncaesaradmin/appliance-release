@@ -32,6 +32,17 @@ host. Builder workspace data is separate and defaults to `/data/zon/workspaces`.
 Run `zonctl preflight --output json` for the authoritative report against the
 exact host being installed on.
 
+## Name-Based Access
+
+Prefer host names over raw appliance IPs for day-to-day access.
+
+- On a LAN where the host advertises mDNS, use the target host's current
+  `hostname.local` name, for example `https://appliance.local` or
+  `ssh <user>@appliance.local`.
+- When a DNS-bearing profile is in use and its A record has been published,
+  use the derived appliance name `<appliance_name>.<dns_zone>`, for example
+  `https://appliance.appliance.internal`.
+
 ## Defaults Used Below
 
 ```bash

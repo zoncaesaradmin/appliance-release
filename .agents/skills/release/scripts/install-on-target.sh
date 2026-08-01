@@ -29,7 +29,9 @@ Options:
                              canonicalOrigin, and registry realm.
   --dns-zone ZONE            Override install.dns_zone.
   --tls-san SAN              Additional TLS SAN to include on the appliance
-                             certificate. Repeatable.
+                             certificate. Repeatable. The current target
+                             hostname.local name is also added automatically
+                             when it is a valid DNS label.
   --preserve-failed-state    Pass zonctl's debug preserve-failed-state mode
                              through to install/upgrade on the target.
   --uninstall-first          Uninstall the previous appliance first.
@@ -320,6 +322,30 @@ chmod +x "${zonctl}"
 echo "[target 3/5] Bundle extracted to ${bundle_dir}."
 '
 remote_script+='
+tls_san_values=()
+append_unique_tls_san() {
+  local value="$1"
+  local existing=""
+  [[ -n "${value}" ]] || return 1
+  for existing in "${tls_san_values[@]}"; do
+    if [[ "${existing}" == "${value}" ]]; then
+      return 1
+    fi
+  done
+  tls_san_values+=("${value}")
+  return 0
+}
+derive_mdns_tls_san() {
+  local hostname_output=""
+  local short_hostname=""
+  hostname_output="$(hostname 2>/dev/null || true)"
+  [[ -n "${hostname_output}" ]] || return 0
+  short_hostname="${hostname_output%%.*}"
+  short_hostname="$(printf "%s" "${short_hostname}" | tr "[:upper:]" "[:lower:]")"
+  if [[ "${short_hostname}" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+    printf "%s.local\n" "${short_hostname}"
+  fi
+}
 lifecycle_args=(
   --bundle-dir "${bundle_dir}"
   --public-key "${public_key}"
@@ -362,10 +388,17 @@ fi
 if ((${#TLS_SANS[@]} > 0)); then
   for tls_san in "${TLS_SANS[@]}"; do
     remote_script+='
-lifecycle_args+=(--tls-san '"$(shell_quote "${tls_san}")"')'
+append_unique_tls_san '"$(shell_quote "${tls_san}")"' || true'
   done
 fi
 remote_script+='
+default_mdns_tls_san="$(derive_mdns_tls_san)"
+if append_unique_tls_san "${default_mdns_tls_san}"; then
+  echo "[target] Added default mDNS TLS SAN ${default_mdns_tls_san}."
+fi
+for tls_san in "${tls_san_values[@]}"; do
+  lifecycle_args+=(--tls-san "${tls_san}")
+done
 if [[ "${preserve_failed_state}" == "true" ]]; then
   lifecycle_args+=(--preserve-failed-state)
 fi

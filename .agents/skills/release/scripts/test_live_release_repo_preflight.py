@@ -111,6 +111,60 @@ def test_real_client_base_url_passes() -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_rewrite_command_url_path_to_base() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{COMMON_SH}"; '
+                "rewrite_command_url_path_to_base "
+                "'code=\"$(curl -ksS https://192.168.1.101/api/v1/work-profiles)\"' "
+                "'https://192.168.1.151' "
+                "'/api/v1/work-profiles'"
+            ),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == 'code="$(curl -ksS https://192.168.1.151/api/v1/work-profiles)"'
+
+
+def test_derive_mdns_tls_san_from_hostname() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{COMMON_SH}"; '
+                'san="$(derive_mdns_tls_san_from_hostname "Demo-Host.example.internal")"; '
+                '[[ "${san}" == "demo-host.local" ]]'
+            ),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    invalid = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{COMMON_SH}"; '
+                'derive_mdns_tls_san_from_hostname "_invalid_hostname"'
+            ),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert invalid.returncode != 0
+
+
 def test_profile_capability_helpers() -> None:
     result = subprocess.run(
         [
@@ -362,6 +416,8 @@ def main() -> None:
     test_dirty_docs_only_repo_warns_and_passes()
     test_placeholder_client_base_url_fails()
     test_real_client_base_url_passes()
+    test_rewrite_command_url_path_to_base()
+    test_derive_mdns_tls_san_from_hostname()
     test_profile_capability_helpers()
     test_require_builder_build_catalog_helper()
     test_csv_items_trimmed_and_workflow_guard_helpers()

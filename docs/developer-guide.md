@@ -62,6 +62,7 @@ CODE_REPO_SOURCE=https://git.example.invalid/zon/appliance-code.git \
 CTL_REPO_SOURCE=https://git.example.invalid/zon/appliance-ctl.git \
 K3S_BINARY_SOURCE=/ci/inputs/k3s \
 K3S_AIRGAP_IMAGES_SOURCE=/ci/inputs/k3s-airgap-images-amd64.tar.zst \
+HOST_PACKAGES_DIR_SOURCE=/ci/inputs/host-packages \
 bash ./scripts/ci/build-full-bundle.sh
 ```
 
@@ -79,6 +80,12 @@ Outputs:
 - `${WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-bundle`
 - `${WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-bundle.tar.gz`
 - `${WORK_ROOT}/export/release-signing.pub`
+
+If you want installer-owned offline host packages in the bundle, set
+`HOST_PACKAGES_DIR_SOURCE` to a directory laid out by host baseline, for
+example `ubuntu/24.04/amd64/*.deb` and `ubuntu/22.04/amd64/*.deb`.
+That tree is copied into signed `host-packages/` and consumed by
+`zonctl` during install or upgrade.
 
 ## One-Time Build Host Bootstrap
 

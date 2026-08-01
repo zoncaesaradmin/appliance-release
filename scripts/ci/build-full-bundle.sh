@@ -26,6 +26,7 @@ Configuration is taken from environment variables. The most common pattern is:
   CTL_REPO_SOURCE=https://git.example.invalid/zon/appliance-ctl.git \
   K3S_BINARY_SOURCE=/ci/inputs/k3s \
   K3S_AIRGAP_IMAGES_SOURCE=/ci/inputs/k3s-airgap-images-amd64.tar.zst \
+  HOST_PACKAGES_DIR_SOURCE=/ci/inputs/host-packages \
   bash ./scripts/ci/build-full-bundle.sh
 
 Argo Workflows is on by default (it is a mandatory component of the
@@ -46,6 +47,10 @@ Optional overrides:
   HELM_VERSION=v3.21.1
   HELM_BINARY=/abs/path/to/linux-amd64/helm
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
+  HOST_PACKAGES_DIR_SOURCE=/ci/inputs/host-packages
+  # Optional offline host package payload copied into release-input as
+  # host-packages/. Layout must be OS/version/arch, for example
+  # ubuntu/24.04/amd64/*.deb and ubuntu/22.04/amd64/*.deb.
   ARGO_ENABLED=0                    # opt out entirely (control-plane-only debug build)
   ARGO_CRDS_DIR_SOURCE=/ci/inputs/argo-crds   # use a local/offline CRD copy instead of fetching from GitHub
   ARGO_VERSION=v3.5.10                        # pin a different Argo version than the chart's appVersion
@@ -94,6 +99,7 @@ USER_CTL_REPO_SOURCE="${CTL_REPO_SOURCE-}"
 USER_CTL_REPO_REF="${CTL_REPO_REF-}"
 USER_K3S_BINARY_SOURCE="${K3S_BINARY_SOURCE-}"
 USER_K3S_AIRGAP_IMAGES_SOURCE="${K3S_AIRGAP_IMAGES_SOURCE-}"
+USER_HOST_PACKAGES_DIR_SOURCE="${HOST_PACKAGES_DIR_SOURCE-}"
 USER_HELM_BINARY="${HELM_BINARY-}"
 USER_HELM_VERSION="${HELM_VERSION-}"
 USER_VALUES_FILE_SOURCE="${VALUES_FILE_SOURCE-}"
@@ -137,6 +143,7 @@ CTL_REPO_SOURCE="${USER_CTL_REPO_SOURCE:-${CTL_REPO_SOURCE:-}}"
 CTL_REPO_REF="${USER_CTL_REPO_REF:-${CTL_REPO_REF:-main}}"
 K3S_BINARY_SOURCE="${USER_K3S_BINARY_SOURCE:-${K3S_BINARY_SOURCE:-}}"
 K3S_AIRGAP_IMAGES_SOURCE="${USER_K3S_AIRGAP_IMAGES_SOURCE:-${K3S_AIRGAP_IMAGES_SOURCE:-}}"
+HOST_PACKAGES_DIR_SOURCE="${USER_HOST_PACKAGES_DIR_SOURCE:-${HOST_PACKAGES_DIR_SOURCE:-}}"
 HELM_BINARY="${USER_HELM_BINARY:-${HELM_BINARY:-}}"
 HELM_VERSION="${USER_HELM_VERSION:-${HELM_VERSION:-}}"
 VALUES_FILE_SOURCE="${USER_VALUES_FILE_SOURCE:-${VALUES_FILE:-}}"
@@ -226,6 +233,15 @@ require_file() {
   local path="$1"
   local label="$2"
   if [[ ! -f "${path}" ]]; then
+    echo "build-full-bundle: missing ${label}: ${path}" >&2
+    exit 1
+  fi
+}
+
+require_dir() {
+  local path="$1"
+  local label="$2"
+  if [[ ! -d "${path}" ]]; then
     echo "build-full-bundle: missing ${label}: ${path}" >&2
     exit 1
   fi
@@ -789,6 +805,9 @@ require_file "${K3S_AIRGAP_IMAGES_SOURCE}" "k3s airgap images"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   require_file "${VALUES_FILE_SOURCE}" "values file"
 fi
+if [[ -n "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
+  require_dir "${HOST_PACKAGES_DIR_SOURCE}" "host packages directory"
+fi
 if [[ -n "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" ]]; then
   require_file "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" "Argo controller image archive"
 fi
@@ -899,6 +918,14 @@ mkdir -p "${CODE_REPO_DIR}/.run"
 ARGO_CRDS_DIR_FOR_DEV=""
 ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
 ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
+HOST_PACKAGES_DIR_FOR_DEV=""
+
+if [[ -n "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
+  HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
+  rm -rf "${CODE_REPO_DIR}/.run/host-packages"
+  mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
+  cp -R "${HOST_PACKAGES_DIR_SOURCE}/." "${CODE_REPO_DIR}/.run/host-packages/"
+fi
 
 if bool_true "${ARGO_ENABLED}"; then
   if [[ -n "${ARGO_CRDS_DIR_SOURCE}" ]]; then
@@ -1014,6 +1041,10 @@ make package-host-agent-image-archive \
   OUT_FILE="\${HOST_AGENT_IMAGE_OUT}" \
   REFERENCE_OUT_FILE="\${HOST_AGENT_IMAGE_REF_FILE}"
 HOST_AGENT_IMAGE_REF="\$(tr -d '\r\n' < "\${HOST_AGENT_IMAGE_REF_FILE}")"
+HOST_PACKAGES_ARGS=()
+if [[ -n $(shell_quote "${HOST_PACKAGES_DIR_FOR_DEV}") ]]; then
+  HOST_PACKAGES_ARGS+=(--host-packages-dir $(shell_quote "${HOST_PACKAGES_DIR_FOR_DEV}"))
+fi
 
 DNS_IMAGE_ARCHIVE_FOR_DEV=$(shell_quote "${DNS_IMAGE_ARCHIVE_FOR_DEV}")
 DNS_IMAGE_REF=$(shell_quote "${DNS_IMAGE_REF}")
@@ -1063,6 +1094,7 @@ bash ./scripts/package/archive-release-input.sh \
   --ui-image-reference "localhost/appliance-ui:\${CODE_VERSION}" \
   --host-agent-image "\${HOST_AGENT_IMAGE_OUT}" \
   --host-agent-image-reference "\${HOST_AGENT_IMAGE_REF}" \
+  "\${HOST_PACKAGES_ARGS[@]}" \
   --k3s-version $(shell_quote "${K3S_VERSION}") \
   --zot-version $(shell_quote "${ZOT_VERSION}") \
   --zot-image $(shell_quote "${ZOT_IMAGE_ARCHIVE_FOR_DEV}") \

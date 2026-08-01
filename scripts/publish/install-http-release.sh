@@ -48,7 +48,9 @@ Optional:
                                zonctl install/upgrade as control-plane config
   --node-name NAME             Optional zonctl --node-name override
   --tls-san SAN                Additional TLS SAN to include on the appliance
-                               certificate. Repeatable
+                               certificate. Repeatable. The helper also adds
+                               the current host's hostname.local name
+                               automatically when it is a valid DNS label.
   --dry-run                    Pass --dry-run to zonctl install/upgrade
   --output FORMAT              zonctl output format. Default: text
   --help                       Show this help
@@ -250,6 +252,31 @@ print_captured_failure() {
   print_captured_output "${stdout_file}" "${stderr_file}"
 }
 
+append_unique_tls_san() {
+  local value="$1"
+  local existing=""
+  [[ -n "${value}" ]] || return 1
+  for existing in "${TLS_SANS[@]}"; do
+    if [[ "${existing}" == "${value}" ]]; then
+      return 1
+    fi
+  done
+  TLS_SANS+=("${value}")
+  return 0
+}
+
+derive_mdns_tls_san() {
+  local hostname_output=""
+  local short_hostname=""
+  hostname_output="$(hostname 2>/dev/null || true)"
+  [[ -n "${hostname_output}" ]] || return 0
+  short_hostname="${hostname_output%%.*}"
+  short_hostname="$(printf '%s' "${short_hostname}" | tr '[:upper:]' '[:lower:]')"
+  if [[ "${short_hostname}" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+    printf '%s.local\n' "${short_hostname}"
+  fi
+}
+
 curl_download() {
   local out_file="$1"
   local url="$2"
@@ -352,6 +379,10 @@ if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
 fi
 if [[ -n "${NODE_NAME}" ]]; then
   lifecycle_args+=(--node-name "${NODE_NAME}")
+fi
+default_mdns_tls_san="$(derive_mdns_tls_san)"
+if append_unique_tls_san "${default_mdns_tls_san}"; then
+  echo "install-http-release: adding default mDNS TLS SAN ${default_mdns_tls_san}"
 fi
 if ((${#TLS_SANS[@]} > 0)); then
   for tls_san in "${TLS_SANS[@]}"; do

@@ -201,6 +201,13 @@ if [[ -n "${CLIENT_BASE_URL}" ]]; then
     SMOKE_TEST_CMD="${rewritten_smoke_test}"
     log "rewrote localhost smoke test to use client_verification.base_url: ${CLIENT_BASE_URL}"
   fi
+  if [[ -n "${BUILDER_API_CMD}" ]]; then
+    rewritten_builder_api="$(rewrite_command_url_path_to_base "${BUILDER_API_CMD}" "${CLIENT_BASE_URL}" "/api/v1/work-profiles")"
+    if [[ "${rewritten_builder_api}" != "${BUILDER_API_CMD}" ]]; then
+      BUILDER_API_CMD="${rewritten_builder_api}"
+      log "rewrote builder API check to use client_verification.base_url: ${CLIENT_BASE_URL}"
+    fi
+  fi
   [[ -n "${UI_HOME_CMD}" ]] || fail "verification.ui_home_command is required in config when client_verification.base_url is set"
 fi
 
