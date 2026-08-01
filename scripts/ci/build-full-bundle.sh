@@ -26,7 +26,6 @@ Configuration is taken from environment variables. The most common pattern is:
   CTL_REPO_SOURCE=https://git.example.invalid/zon/appliance-ctl.git \
   K3S_BINARY_SOURCE=/ci/inputs/k3s \
   K3S_AIRGAP_IMAGES_SOURCE=/ci/inputs/k3s-airgap-images-amd64.tar.zst \
-  HOST_PACKAGES_DIR_SOURCE=/ci/inputs/host-packages \
   bash ./scripts/ci/build-full-bundle.sh
 
 Argo Workflows is on by default (it is a mandatory component of the
@@ -47,8 +46,9 @@ Optional overrides:
   HELM_VERSION=v3.21.1
   HELM_BINARY=/abs/path/to/linux-amd64/helm
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
-  # Required offline host package payload copied into release-input as
-  # host-packages/. Layout must be OS/version/arch, for example
+  # Optional override for the repo-owned offline host package payload
+  # under appliance-code/scripts/package/host-packages. Layout must be
+  # OS/version/arch, for example
   HOST_PACKAGES_DIR_SOURCE=/ci/inputs/host-packages
   # ubuntu/24.04/amd64/*.deb and ubuntu/22.04/amd64/*.deb.
   ARGO_ENABLED=0                    # opt out entirely (control-plane-only debug build)
@@ -805,7 +805,6 @@ require_file "${K3S_AIRGAP_IMAGES_SOURCE}" "k3s airgap images"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   require_file "${VALUES_FILE_SOURCE}" "values file"
 fi
-require_dir "${HOST_PACKAGES_DIR_SOURCE}" "host packages directory"
 if [[ -n "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" ]]; then
   require_file "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" "Argo controller image archive"
 fi
@@ -882,6 +881,11 @@ mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}" "$
 
 clone_repo "${CODE_REPO_SOURCE}" "${CODE_REPO_REF}" "${CODE_REPO_DIR}"
 clone_repo "${CTL_REPO_SOURCE}" "${CTL_REPO_REF}" "${CTL_REPO_DIR}"
+
+if [[ -z "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
+  HOST_PACKAGES_DIR_SOURCE="${CODE_REPO_DIR}/scripts/package/host-packages"
+fi
+require_dir "${HOST_PACKAGES_DIR_SOURCE}" "host packages directory"
 
 ZOT_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-registry/Chart.yaml")"
 # Chart.yaml may use Helm/upstream form v2.1.8 while ZOT_VERSION is 2.1.8.

@@ -120,7 +120,6 @@ fi
 [[ -n "${PUBLISH_CMD}" ]] || fail "build_flow.publish_command is required in config"
 [[ -n "${BUILD_K3S_BINARY_SOURCE}" ]] || fail "build_flow.k3s_binary_source is required in config"
 [[ -n "${BUILD_K3S_AIRGAP_IMAGES_SOURCE}" ]] || fail "build_flow.k3s_airgap_images_source is required in config"
-[[ -n "${BUILD_HOST_PACKAGES_DIR_SOURCE}" ]] || fail "build_flow.host_packages_dir_source is required in config"
 [[ -n "${RELEASE_VERSION}" ]] || fail "release.version is required in config"
 [[ -n "${REMOTE_EXPORT_DIR}" ]] || fail "release_workspace.remote_export_dir is required in config"
 if [[ -n "$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_release_input_path" || true)" \

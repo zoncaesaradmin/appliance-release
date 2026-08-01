@@ -40,7 +40,6 @@ build_flow:
   ctl_repo_ref: main
   k3s_binary_source: /tmp/k3s
   k3s_airgap_images_source: /tmp/k3s-airgap-images.tar.zst
-  host_packages_dir_source: /tmp/host-packages
   dev_image_pull:
     registry_env: DEV_REGISTRY
     image_repo: example
@@ -97,7 +96,6 @@ build_flow:
   ctl_repo_ref: main
   k3s_binary_source: /tmp/k3s
   k3s_airgap_images_source: /tmp/k3s-airgap-images.tar.zst
-  host_packages_dir_source: /tmp/host-packages
   dev_image_pull:
     registry_env: DEV_REGISTRY
     image_repo_env: DEV_IMAGE_REPO

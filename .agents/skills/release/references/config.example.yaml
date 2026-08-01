@@ -69,10 +69,11 @@ build_flow:
   ctl_repo_ref: main
   k3s_binary_source: /home/zonsys/ci/inputs/k3s
   k3s_airgap_images_source: /home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst
-  # Required offline host package payload copied into release-input as
-  # host-packages/. Layout should be OS/version/arch, for example
+  # Optional override for the repo-owned offline host package payload in
+  # appliance-code/scripts/package/host-packages. Layout should be
+  # OS/version/arch, for example
   # ubuntu/24.04/amd64/*.deb and ubuntu/22.04/amd64/*.deb.
-  host_packages_dir_source: /home/zonsys/ci/inputs/host-packages
+  # host_packages_dir_source: /home/zonsys/ci/inputs/host-packages
   build_command: bash scripts/ci/build-full-bundle.sh
   publish_command: make publish-release
 
