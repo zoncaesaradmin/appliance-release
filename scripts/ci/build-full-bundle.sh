@@ -46,11 +46,11 @@ Optional overrides:
   HELM_VERSION=v3.21.1
   HELM_BINARY=/abs/path/to/linux-amd64/helm
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
-  # Optional override for the repo-owned offline host package payload
-  # under appliance-code/scripts/package/host-packages. Layout must be
-  # OS/version/arch, for example
+  # Optional override for a prebuilt offline host package payload.
+  # Layout must be OS/version/arch, for example
   HOST_PACKAGES_DIR_SOURCE=/ci/inputs/host-packages
-  # ubuntu/24.04/amd64/*.deb and ubuntu/22.04/amd64/*.deb.
+  # ubuntu/24.04/amd64/*.deb. When omitted, appliance-code exports the
+  # payload automatically for the selected OS_VERSION baseline.
   ARGO_ENABLED=0                    # opt out entirely (control-plane-only debug build)
   ARGO_CRDS_DIR_SOURCE=/ci/inputs/argo-crds   # use a local/offline CRD copy instead of fetching from GitHub
   ARGO_VERSION=v3.5.10                        # pin a different Argo version than the chart's appVersion
@@ -105,6 +105,7 @@ USER_HELM_VERSION="${HELM_VERSION-}"
 USER_VALUES_FILE_SOURCE="${VALUES_FILE_SOURCE-}"
 USER_WORK_ROOT="${WORK_ROOT-}"
 USER_EXPORT_DIR="${EXPORT_DIR-}"
+USER_OS_VERSION="${OS_VERSION-}"
 USER_K3S_VERSION_OVERRIDE="${K3S_VERSION_OVERRIDE-}"
 USER_ARGO_ENABLED="${ARGO_ENABLED-}"
 USER_ARGO_REQUIRED="${ARGO_REQUIRED-}"
@@ -149,6 +150,7 @@ HELM_VERSION="${USER_HELM_VERSION:-${HELM_VERSION:-}}"
 VALUES_FILE_SOURCE="${USER_VALUES_FILE_SOURCE:-${VALUES_FILE:-}}"
 WORK_ROOT="${USER_WORK_ROOT:-${WORKDIR:-${TMPDIR:-/tmp}/appliance-build}}"
 EXPORT_DIR="${USER_EXPORT_DIR:-${EXPORT_DIR:-${WORK_ROOT}/export}}"
+OS_VERSION="${USER_OS_VERSION:-${OS_VERSION:-24.04}}"
 K3S_VERSION_OVERRIDE="${USER_K3S_VERSION_OVERRIDE:-}"
 ARGO_ENABLED="${USER_ARGO_ENABLED:-${ARGO_ENABLED:-}}"
 ARGO_REQUIRED="${USER_ARGO_REQUIRED:-${ARGO_REQUIRED:-}}"
@@ -882,10 +884,9 @@ mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}" "$
 clone_repo "${CODE_REPO_SOURCE}" "${CODE_REPO_REF}" "${CODE_REPO_DIR}"
 clone_repo "${CTL_REPO_SOURCE}" "${CTL_REPO_REF}" "${CTL_REPO_DIR}"
 
-if [[ -z "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
-  HOST_PACKAGES_DIR_SOURCE="${CODE_REPO_DIR}/scripts/package/host-packages"
+if [[ -n "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
+  require_dir "${HOST_PACKAGES_DIR_SOURCE}" "host packages directory"
 fi
-require_dir "${HOST_PACKAGES_DIR_SOURCE}" "host packages directory"
 
 ZOT_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-registry/Chart.yaml")"
 # Chart.yaml may use Helm/upstream form v2.1.8 while ZOT_VERSION is 2.1.8.
@@ -920,10 +921,14 @@ mkdir -p "${CODE_REPO_DIR}/.run"
 ARGO_CRDS_DIR_FOR_DEV=""
 ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
 ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
+HOST_PACKAGES_OVERRIDE_SUPPLIED="false"
 HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
 rm -rf "${CODE_REPO_DIR}/.run/host-packages"
-mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
-cp -R "${HOST_PACKAGES_DIR_SOURCE}/." "${CODE_REPO_DIR}/.run/host-packages/"
+if [[ -n "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
+  HOST_PACKAGES_OVERRIDE_SUPPLIED="true"
+  mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
+  cp -R "${HOST_PACKAGES_DIR_SOURCE}/." "${CODE_REPO_DIR}/.run/host-packages/"
+fi
 
 if bool_true "${ARGO_ENABLED}"; then
   if [[ -n "${ARGO_CRDS_DIR_SOURCE}" ]]; then
@@ -1024,6 +1029,9 @@ HOST_AGENT_IMAGE_REF_FILE="/workspace/.run/appliance-host-agent-image.reference"
 ARGO_ARGS=()
 EXTRA_OCI_ARGS=()
 CODE_VERSION="\${CODE_VERSION:-\$(git describe --tags --always --dirty 2>/dev/null | sed 's/[^A-Za-z0-9_.-]/-/g')}"
+HOST_PACKAGES_DIR_FOR_DEV=$(shell_quote "${HOST_PACKAGES_DIR_FOR_DEV}")
+HOST_PACKAGES_OS_VERSION=$(shell_quote "${OS_VERSION}")
+HOST_PACKAGES_OVERRIDE_SUPPLIED=$(shell_quote "${HOST_PACKAGES_OVERRIDE_SUPPLIED}")
 
 bool_true() {
   local value="\${1:-}"
@@ -1039,9 +1047,14 @@ make package-host-agent-image-archive \
   OUT_FILE="\${HOST_AGENT_IMAGE_OUT}" \
   REFERENCE_OUT_FILE="\${HOST_AGENT_IMAGE_REF_FILE}"
 HOST_AGENT_IMAGE_REF="\$(tr -d '\r\n' < "\${HOST_AGENT_IMAGE_REF_FILE}")"
-HOST_PACKAGES_ARGS=()
-if [[ -n $(shell_quote "${HOST_PACKAGES_DIR_FOR_DEV}") ]]; then
-  HOST_PACKAGES_ARGS+=(--host-packages-dir $(shell_quote "${HOST_PACKAGES_DIR_FOR_DEV}"))
+HOST_PACKAGES_ARGS=(
+  --host-packages-dir "\${HOST_PACKAGES_DIR_FOR_DEV}"
+  --host-packages-os-version "\${HOST_PACKAGES_OS_VERSION}"
+)
+if ! bool_true "\${HOST_PACKAGES_OVERRIDE_SUPPLIED}"; then
+  make package-host-packages \
+    OUT_DIR="\${HOST_PACKAGES_DIR_FOR_DEV}" \
+    OS_VERSION="\${HOST_PACKAGES_OS_VERSION}"
 fi
 
 DNS_IMAGE_ARCHIVE_FOR_DEV=$(shell_quote "${DNS_IMAGE_ARCHIVE_FOR_DEV}")
@@ -1118,6 +1131,7 @@ fi
 cp "${DEFAULTS_FILE}" "${CONFIG_OUT}"
 set_env_var "${CONFIG_OUT}" WORKDIR "${WORKSPACE}"
 set_env_var "${CONFIG_OUT}" PRODUCT_VERSION "${PRODUCT_VERSION}"
+set_env_var "${CONFIG_OUT}" OS_VERSION "${OS_VERSION}"
 set_env_var "${CONFIG_OUT}" K3S_VERSION "${K3S_VERSION}"
 set_env_var "${CONFIG_OUT}" RELEASE_INPUT_SOURCE "${RELEASE_INPUT_TAR}"
 set_env_var "${CONFIG_OUT}" RELEASE_INPUT_VERSION ""
