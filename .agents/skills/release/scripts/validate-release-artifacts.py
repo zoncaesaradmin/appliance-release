@@ -74,6 +74,13 @@ def require_bundle_entry(entries_by_path: dict[str, dict], path: str, label: str
     return entry
 
 
+def require_bundle_entry_prefix(entries_by_path: dict[str, dict], prefix: str, label: str) -> None:
+    for path in entries_by_path:
+        if path.startswith(prefix):
+            return
+    raise ValueError(f"bundle manifest is missing {label} entries under {prefix}")
+
+
 def require_image_reference(artifact: dict, label: str) -> str:
     image_ref = str(artifact.get("imageReference") or "").strip()
     if not image_ref:
@@ -562,6 +569,10 @@ def validate_required_artifacts(artifacts: dict, release_input_dir: Path, entrie
     for key in ("configurationSchema", "compatibility", "checksums"):
         require_file_artifact(artifacts, key, release_input_dir)
         checked.append(key)
+
+    require_dir_artifact(artifacts, "hostPackages", release_input_dir)
+    require_bundle_entry_prefix(entries_by_path, "host-packages/", "hostPackages")
+    checked.append("hostPackages")
 
     for key in ("sbom", "provenance", "notices", "tests"):
         require_dir_artifact(artifacts, key, release_input_dir)

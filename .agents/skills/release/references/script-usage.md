@@ -79,12 +79,11 @@ Notes:
 - If the build catalog references a workspace provisioner image, ensure
   `build_flow.dev_image_pull` is configured so `registry.local/dev-build`
   is bundled and preloaded on the target.
-- If the target must advertise `hostname.local` over mDNS in an air-gapped
-  install, package the Ubuntu `.deb` payloads under
-  `build_flow.host_packages_dir_source` with an OS/version/arch layout such as
-  `ubuntu/24.04/amd64/*.deb` and `ubuntu/22.04/amd64/*.deb`. The bundle
-  flow copies that tree into signed `host-packages/`, and `zonctl`
-  installs it offline before enabling `avahi-daemon`.
+- `build_flow.host_packages_dir_source` is required. Package the Ubuntu `.deb`
+  payloads there with an OS/version/arch layout such as
+  `ubuntu/24.04/amd64/*.deb` and `ubuntu/22.04/amd64/*.deb`. The bundle flow
+  copies that tree into signed `host-packages/`, and `zonctl` installs it
+  offline before enabling `avahi-daemon`.
 - Builder workflow repo URLs must use HTTPS.
 
 ## 1. Full Flow

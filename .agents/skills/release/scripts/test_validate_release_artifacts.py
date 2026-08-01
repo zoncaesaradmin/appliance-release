@@ -44,6 +44,7 @@ def populate_positive_case(tmp: Path) -> None:
     write(tmp / "release-input" / "schemas" / "configuration.schema.json", "{}")
     write(tmp / "release-input" / "compatibility.json", "{}")
     write(tmp / "release-input" / "checksums.txt", "checksums")
+    write(tmp / "release-input" / "host-packages" / "ubuntu" / "24.04" / "amd64" / "avahi-daemon.deb", "deb")
     write(tmp / "release-input" / "sbom" / "appliance.spdx.json", "{}")
     write(tmp / "release-input" / "provenance" / "appliance.provenance.json", "{}")
     write(tmp / "release-input" / "notices" / "THIRD-PARTY-NOTICES.txt", "notice")
@@ -103,6 +104,7 @@ ingress:
     "uiImage": {"path": "images/appliance-ui.tar", "digest": "sha256:ui", "sizeBytes": 2, "imageReference": "internal/appliance-ui:1.0.0"},
     "hostAgentImage": {"path": "images/appliance-host-agent.tar", "digest": "sha256:host-agent-archive", "sizeBytes": 256, "imageReference": "registry.local/appliance-host-agent@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
     "hostAgentBinary": {"path": "bin/appliance-host-agentd", "digest": "sha256:host-agentd", "sizeBytes": 11},
+    "hostPackages": {"path": "host-packages", "manifestDigest": "sha256:host-packages"},
     "applianceChart": {"path": "chart/appliance-chart-1.0.0.tgz", "digest": "sha256:appliance-chart", "sizeBytes": 15},
     "zotImage": {"path": "images/zot-image.tar", "digest": "sha256:zot-archive", "sizeBytes": 1024, "imageReference": "registry.local/zot@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
     "zotChart": {"path": "chart/appliance-registry-2.1.11.tgz", "digest": "sha256:zot-chart", "sizeBytes": 9},
@@ -137,6 +139,7 @@ ingress:
     {"targetPath": "oci-images/appliance-ui.tar", "digest": "sha256:ui", "sizeBytes": 2, "imageReference": "internal/appliance-ui:1.0.0"},
     {"targetPath": "oci-images/appliance-host-agent.tar", "digest": "sha256:host-agent-archive", "sizeBytes": 256, "imageReference": "registry.local/appliance-host-agent@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
     {"targetPath": "bin/appliance-host-agentd", "digest": "sha256:host-agentd", "sizeBytes": 11},
+    {"targetPath": "host-packages/ubuntu/24.04/amd64/avahi-daemon.deb", "digest": "sha256:host-package", "sizeBytes": 3},
     {"targetPath": "charts/appliance-chart-1.0.0.tgz", "digest": "sha256:appliance-chart", "sizeBytes": 15},
     {"targetPath": "oci-images/zot-image.tar", "digest": "sha256:zot-archive", "sizeBytes": 1024, "imageReference": "registry.local/zot@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
     {"targetPath": "charts/appliance-registry-2.1.11.tgz", "digest": "sha256:zot-chart", "sizeBytes": 9},
@@ -267,6 +270,25 @@ def test_rejects_missing_ui_bundle_entry() -> None:
         if result.returncode == 0:
             raise AssertionError("missing UI image bundle entry was accepted")
         if "uiImage" not in result.stderr:
+            raise AssertionError(result.stderr)
+
+
+def test_rejects_missing_host_packages_bundle_entry() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["entries"] = [
+            entry
+            for entry in manifest["entries"]
+            if not entry["targetPath"].startswith("host-packages/")
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = run_validator(tmp)
+        if result.returncode == 0:
+            raise AssertionError("missing host-packages bundle entries were accepted")
+        if "hostPackages" not in result.stderr:
             raise AssertionError(result.stderr)
 
 
@@ -490,6 +512,7 @@ def main() -> None:
     test_rejects_zot_annotation_and_version_mismatch()
     test_rejects_dns_annotation_and_version_mismatch()
     test_rejects_missing_ui_bundle_entry()
+    test_rejects_missing_host_packages_bundle_entry()
     test_rejects_mismatched_ui_bundle_image_reference()
     test_rejects_mismatched_ui_values_image_reference()
     print("validate-release-artifacts tests passed")

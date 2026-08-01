@@ -47,9 +47,9 @@ Optional overrides:
   HELM_VERSION=v3.21.1
   HELM_BINARY=/abs/path/to/linux-amd64/helm
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
-  HOST_PACKAGES_DIR_SOURCE=/ci/inputs/host-packages
-  # Optional offline host package payload copied into release-input as
+  # Required offline host package payload copied into release-input as
   # host-packages/. Layout must be OS/version/arch, for example
+  HOST_PACKAGES_DIR_SOURCE=/ci/inputs/host-packages
   # ubuntu/24.04/amd64/*.deb and ubuntu/22.04/amd64/*.deb.
   ARGO_ENABLED=0                    # opt out entirely (control-plane-only debug build)
   ARGO_CRDS_DIR_SOURCE=/ci/inputs/argo-crds   # use a local/offline CRD copy instead of fetching from GitHub
@@ -805,9 +805,7 @@ require_file "${K3S_AIRGAP_IMAGES_SOURCE}" "k3s airgap images"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   require_file "${VALUES_FILE_SOURCE}" "values file"
 fi
-if [[ -n "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
-  require_dir "${HOST_PACKAGES_DIR_SOURCE}" "host packages directory"
-fi
+require_dir "${HOST_PACKAGES_DIR_SOURCE}" "host packages directory"
 if [[ -n "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" ]]; then
   require_file "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" "Argo controller image archive"
 fi
@@ -918,14 +916,10 @@ mkdir -p "${CODE_REPO_DIR}/.run"
 ARGO_CRDS_DIR_FOR_DEV=""
 ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
 ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
-HOST_PACKAGES_DIR_FOR_DEV=""
-
-if [[ -n "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
-  HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
-  rm -rf "${CODE_REPO_DIR}/.run/host-packages"
-  mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
-  cp -R "${HOST_PACKAGES_DIR_SOURCE}/." "${CODE_REPO_DIR}/.run/host-packages/"
-fi
+HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
+rm -rf "${CODE_REPO_DIR}/.run/host-packages"
+mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
+cp -R "${HOST_PACKAGES_DIR_SOURCE}/." "${CODE_REPO_DIR}/.run/host-packages/"
 
 if bool_true "${ARGO_ENABLED}"; then
   if [[ -n "${ARGO_CRDS_DIR_SOURCE}" ]]; then
