@@ -49,8 +49,9 @@ Optional overrides:
   # Optional override for a prebuilt offline host package payload.
   # Layout must be OS/version/arch, for example
   HOST_PACKAGES_DIR_SOURCE=/ci/inputs/host-packages
-  # ubuntu/24.04/amd64/*.deb. When omitted, appliance-code exports the
-  # payload automatically for the selected OS_VERSION baseline.
+  # ubuntu/24.04/amd64/*.deb. When omitted, build-full-bundle exports the
+  # payload on the outer Linux build host for the selected OS_VERSION
+  # baseline before entering appliance-code's Debian-based dev container.
   ARGO_ENABLED=0                    # opt out entirely (control-plane-only debug build)
   ARGO_CRDS_DIR_SOURCE=/ci/inputs/argo-crds   # use a local/offline CRD copy instead of fetching from GitHub
   ARGO_VERSION=v3.5.10                        # pin a different Argo version than the chart's appVersion
@@ -921,13 +922,15 @@ mkdir -p "${CODE_REPO_DIR}/.run"
 ARGO_CRDS_DIR_FOR_DEV=""
 ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
 ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
-HOST_PACKAGES_OVERRIDE_SUPPLIED="false"
 HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
 rm -rf "${CODE_REPO_DIR}/.run/host-packages"
+mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
 if [[ -n "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
-  HOST_PACKAGES_OVERRIDE_SUPPLIED="true"
-  mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
   cp -R "${HOST_PACKAGES_DIR_SOURCE}/." "${CODE_REPO_DIR}/.run/host-packages/"
+else
+  bash "${CODE_REPO_DIR}/scripts/package/export-host-packages.sh" \
+    --out-dir "${CODE_REPO_DIR}/.run/host-packages" \
+    --os-version "${OS_VERSION}"
 fi
 
 if bool_true "${ARGO_ENABLED}"; then
@@ -1031,7 +1034,6 @@ EXTRA_OCI_ARGS=()
 CODE_VERSION="\${CODE_VERSION:-\$(git describe --tags --always --dirty 2>/dev/null | sed 's/[^A-Za-z0-9_.-]/-/g')}"
 HOST_PACKAGES_DIR_FOR_DEV=$(shell_quote "${HOST_PACKAGES_DIR_FOR_DEV}")
 HOST_PACKAGES_OS_VERSION=$(shell_quote "${OS_VERSION}")
-HOST_PACKAGES_OVERRIDE_SUPPLIED=$(shell_quote "${HOST_PACKAGES_OVERRIDE_SUPPLIED}")
 
 bool_true() {
   local value="\${1:-}"
@@ -1051,11 +1053,6 @@ HOST_PACKAGES_ARGS=(
   --host-packages-dir "\${HOST_PACKAGES_DIR_FOR_DEV}"
   --host-packages-os-version "\${HOST_PACKAGES_OS_VERSION}"
 )
-if ! bool_true "\${HOST_PACKAGES_OVERRIDE_SUPPLIED}"; then
-  make package-host-packages \
-    OUT_DIR="\${HOST_PACKAGES_DIR_FOR_DEV}" \
-    OS_VERSION="\${HOST_PACKAGES_OS_VERSION}"
-fi
 
 DNS_IMAGE_ARCHIVE_FOR_DEV=$(shell_quote "${DNS_IMAGE_ARCHIVE_FOR_DEV}")
 DNS_IMAGE_REF=$(shell_quote "${DNS_IMAGE_REF}")
