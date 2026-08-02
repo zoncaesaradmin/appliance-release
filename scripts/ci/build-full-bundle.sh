@@ -922,15 +922,18 @@ mkdir -p "${CODE_REPO_DIR}/.run"
 ARGO_CRDS_DIR_FOR_DEV=""
 ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
 ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
-HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
 rm -rf "${CODE_REPO_DIR}/.run/host-packages"
-mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
-if [[ -n "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
-  cp -R "${HOST_PACKAGES_DIR_SOURCE}/." "${CODE_REPO_DIR}/.run/host-packages/"
-else
-  bash "${CODE_REPO_DIR}/scripts/package/export-host-packages.sh" \
-    --out-dir "${CODE_REPO_DIR}/.run/host-packages" \
-    --os-version "${OS_VERSION}"
+HOST_PACKAGES_DIR_FOR_DEV=""
+if bool_true "${HOST_MDNS_ENABLED:-false}"; then
+  HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
+  mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
+  if [[ -n "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
+    cp -R "${HOST_PACKAGES_DIR_SOURCE}/." "${CODE_REPO_DIR}/.run/host-packages/"
+  else
+    bash "${CODE_REPO_DIR}/scripts/package/export-host-packages.sh" \
+      --out-dir "${CODE_REPO_DIR}/.run/host-packages" \
+      --os-version "${OS_VERSION}"
+  fi
 fi
 
 if bool_true "${ARGO_ENABLED}"; then
@@ -1032,6 +1035,7 @@ HOST_AGENT_IMAGE_REF_FILE="/workspace/.run/appliance-host-agent-image.reference"
 ARGO_ARGS=()
 EXTRA_OCI_ARGS=()
 CODE_VERSION="\${CODE_VERSION:-\$(git describe --tags --always --dirty 2>/dev/null | sed 's/[^A-Za-z0-9_.-]/-/g')}"
+HOST_MDNS_ENABLED_FOR_DEV=$(shell_quote "${HOST_MDNS_ENABLED:-false}")
 HOST_PACKAGES_DIR_FOR_DEV=$(shell_quote "${HOST_PACKAGES_DIR_FOR_DEV}")
 HOST_PACKAGES_OS_VERSION=$(shell_quote "${OS_VERSION}")
 
@@ -1049,10 +1053,13 @@ make package-host-agent-image-archive \
   OUT_FILE="\${HOST_AGENT_IMAGE_OUT}" \
   REFERENCE_OUT_FILE="\${HOST_AGENT_IMAGE_REF_FILE}"
 HOST_AGENT_IMAGE_REF="\$(tr -d '\r\n' < "\${HOST_AGENT_IMAGE_REF_FILE}")"
-HOST_PACKAGES_ARGS=(
-  --host-packages-dir "\${HOST_PACKAGES_DIR_FOR_DEV}"
-  --host-packages-os-version "\${HOST_PACKAGES_OS_VERSION}"
-)
+HOST_PACKAGES_ARGS=()
+if bool_true "\${HOST_MDNS_ENABLED_FOR_DEV}"; then
+  HOST_PACKAGES_ARGS=(
+    --host-packages-dir "\${HOST_PACKAGES_DIR_FOR_DEV}"
+    --host-packages-os-version "\${HOST_PACKAGES_OS_VERSION}"
+  )
+fi
 
 DNS_IMAGE_ARCHIVE_FOR_DEV=$(shell_quote "${DNS_IMAGE_ARCHIVE_FOR_DEV}")
 DNS_IMAGE_REF=$(shell_quote "${DNS_IMAGE_REF}")
@@ -1102,6 +1109,7 @@ bash ./scripts/package/archive-release-input.sh \
   --ui-image-reference "localhost/appliance-ui:\${CODE_VERSION}" \
   --host-agent-image "\${HOST_AGENT_IMAGE_OUT}" \
   --host-agent-image-reference "\${HOST_AGENT_IMAGE_REF}" \
+  --host-mdns-enabled "\${HOST_MDNS_ENABLED_FOR_DEV}" \
   "\${HOST_PACKAGES_ARGS[@]}" \
   --k3s-version $(shell_quote "${K3S_VERSION}") \
   --zot-version $(shell_quote "${ZOT_VERSION}") \

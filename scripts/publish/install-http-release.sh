@@ -37,6 +37,9 @@ Required (or stamped into the published helper at publish time):
                                FQDN becomes <name>.<dns-zone> for TLS,
                                canonicalOrigin, and registry realm.
   --dns-zone ZONE              LAN DNS zone (from install.dns_zone).
+  --host-mdns-enabled true|false
+                               Enable or disable host-level mDNS support.
+                               Defaults to false.
 
 Optional:
   --out-dir DIR                Local download/extract directory (from
@@ -48,9 +51,7 @@ Optional:
                                zonctl install/upgrade as control-plane config
   --node-name NAME             Optional zonctl --node-name override
   --tls-san SAN                Additional TLS SAN to include on the appliance
-                               certificate. Repeatable. The helper also adds
-                               the current host's hostname.local name
-                               automatically when it is a valid DNS label.
+                               certificate. Repeatable.
   --dry-run                    Pass --dry-run to zonctl install/upgrade
   --output FORMAT              zonctl output format. Default: text
   --help                       Show this help
@@ -94,6 +95,7 @@ BUILD_CATALOG_PATH=""
 NODE_NAME=""
 APPLIANCE_NAME=""
 DNS_ZONE=""
+HOST_MDNS_ENABLED="false"
 TLS_SANS=()
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
@@ -146,6 +148,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dns-zone)
       DNS_ZONE="${2:-}"
+      shift 2
+      ;;
+    --host-mdns-enabled)
+      HOST_MDNS_ENABLED="${2:-}"
       shift 2
       ;;
     --tls-san)
@@ -265,18 +271,6 @@ append_unique_tls_san() {
   return 0
 }
 
-derive_mdns_tls_san() {
-  local hostname_output=""
-  local short_hostname=""
-  hostname_output="$(hostname 2>/dev/null || true)"
-  [[ -n "${hostname_output}" ]] || return 0
-  short_hostname="${hostname_output%%.*}"
-  short_hostname="$(printf '%s' "${short_hostname}" | tr '[:upper:]' '[:lower:]')"
-  if [[ "${short_hostname}" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
-    printf '%s.local\n' "${short_hostname}"
-  fi
-}
-
 curl_download() {
   local out_file="$1"
   local url="$2"
@@ -373,16 +367,13 @@ lifecycle_args=(
   --appliance-profile "${APPLIANCE_PROFILE}"
   --appliance-name "${APPLIANCE_NAME}"
   --dns-zone "${DNS_ZONE}"
+  --host-mdns-enabled "${HOST_MDNS_ENABLED}"
 )
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   lifecycle_args+=(--build-catalog "${BUILD_CATALOG_PATH}")
 fi
 if [[ -n "${NODE_NAME}" ]]; then
   lifecycle_args+=(--node-name "${NODE_NAME}")
-fi
-default_mdns_tls_san="$(derive_mdns_tls_san)"
-if append_unique_tls_san "${default_mdns_tls_san}"; then
-  echo "install-http-release: adding default mDNS TLS SAN ${default_mdns_tls_san}"
 fi
 if ((${#TLS_SANS[@]} > 0)); then
   for tls_san in "${TLS_SANS[@]}"; do

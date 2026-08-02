@@ -7,9 +7,10 @@ Installers (`zonctl install` / `upgrade`) never write product DNS records.
 Records are added only through the DNS appliance API/UI, or through another
 appliance's base-capability publish API.
 
-This LAN DNS path is separate from host-level mDNS discovery. When Avahi or an
-equivalent responder is present on the target host, clients may also reach the
-appliance through the host's current `hostname.local` name.
+This LAN DNS path is separate from host-level mDNS discovery. When
+`install.host_mdns_enabled=true` and Avahi or an equivalent responder is
+present on the target host, clients may also reach the appliance through the
+host's current `hostname.local` name.
 
 ## What You Get
 

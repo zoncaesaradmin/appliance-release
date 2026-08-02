@@ -45,6 +45,7 @@ APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
 APPLIANCE_NAME=""
 DNS_ZONE=""
+HOST_MDNS_ENABLED=""
 TLS_SANS=()
 PRESERVE_FAILED_STATE="false"
 UNINSTALL_FIRST=""
@@ -118,6 +119,7 @@ STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || tru
 [[ -n "${STATE_DIR}" ]] || fail "target_host.state_dir is required in config"
 APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}" "${APPLIANCE_PROFILE}")"
 BUILD_CATALOG_PATH="$(resolve_build_catalog_path "${CONFIG_PATH}" "${BUILD_CATALOG_PATH}")"
+HOST_MDNS_ENABLED="$(resolve_host_mdns_enabled "${CONFIG_PATH}" "${HOST_MDNS_ENABLED}")"
 if [[ -z "${APPLIANCE_NAME}" ]]; then
   APPLIANCE_NAME="$(config_get_optional "${CONFIG_PATH}" "install.appliance_name" || true)"
 fi
@@ -335,17 +337,6 @@ append_unique_tls_san() {
   tls_san_values+=("${value}")
   return 0
 }
-derive_mdns_tls_san() {
-  local hostname_output=""
-  local short_hostname=""
-  hostname_output="$(hostname 2>/dev/null || true)"
-  [[ -n "${hostname_output}" ]] || return 0
-  short_hostname="${hostname_output%%.*}"
-  short_hostname="$(printf "%s" "${short_hostname}" | tr "[:upper:]" "[:lower:]")"
-  if [[ "${short_hostname}" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
-    printf "%s.local\n" "${short_hostname}"
-  fi
-}
 lifecycle_args=(
   --bundle-dir "${bundle_dir}"
   --public-key "${public_key}"
@@ -362,6 +353,9 @@ if [[ -n '"$(shell_quote "${APPLIANCE_NAME}")"' ]]; then
 fi
 if [[ -n '"$(shell_quote "${DNS_ZONE}")"' ]]; then
   lifecycle_args+=(--dns-zone '"$(shell_quote "${DNS_ZONE}")"')
+fi
+if [[ -n '"$(shell_quote "${HOST_MDNS_ENABLED}")"' ]]; then
+  lifecycle_args+=(--host-mdns-enabled '"$(shell_quote "${HOST_MDNS_ENABLED}")"')
 fi
 '
 if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
@@ -392,10 +386,6 @@ append_unique_tls_san '"$(shell_quote "${tls_san}")"' || true'
   done
 fi
 remote_script+='
-default_mdns_tls_san="$(derive_mdns_tls_san)"
-if append_unique_tls_san "${default_mdns_tls_san}"; then
-  echo "[target] Added default mDNS TLS SAN ${default_mdns_tls_san}."
-fi
 for tls_san in "${tls_san_values[@]}"; do
   lifecycle_args+=(--tls-san "${tls_san}")
 done

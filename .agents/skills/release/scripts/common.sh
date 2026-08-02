@@ -175,6 +175,31 @@ require_appliance_profile() {
   printf '%s\n' "${appliance_profile}"
 }
 
+resolve_host_mdns_enabled() {
+  local config_path="$1"
+  local host_mdns_enabled="${2:-}"
+  local normalized=""
+  if [[ -z "${host_mdns_enabled}" ]]; then
+    host_mdns_enabled="$(config_get_optional "${config_path}" "install.host_mdns_enabled" || true)"
+  fi
+  if [[ -z "${host_mdns_enabled}" ]]; then
+    printf 'false\n'
+    return 0
+  fi
+  normalized="$(printf '%s' "${host_mdns_enabled}" | tr '[:upper:]' '[:lower:]')"
+  case "${normalized}" in
+    1|true|yes|on)
+      printf 'true\n'
+      ;;
+    0|false|no|off)
+      printf 'false\n'
+      ;;
+    *)
+      fail "install.host_mdns_enabled must be true or false"
+      ;;
+  esac
+}
+
 resolve_build_catalog_path() {
   local config_path="$1"
   local build_catalog_path="${2:-}"
