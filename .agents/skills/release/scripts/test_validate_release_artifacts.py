@@ -17,6 +17,9 @@ def write(path: Path, text: str) -> None:
 
 
 def run_validator(tmp: Path, *extra_args: str) -> subprocess.CompletedProcess:
+    args = list(extra_args)
+    if "--host-mdns-enabled" not in args:
+        args = ["--host-mdns-enabled", "true", *args]
     return subprocess.run(
         [
             "python3",
@@ -25,7 +28,7 @@ def run_validator(tmp: Path, *extra_args: str) -> subprocess.CompletedProcess:
             str(tmp / "release-input"),
             "--bundle-root",
             str(tmp / "bundle"),
-            *extra_args,
+            *args,
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -34,7 +37,7 @@ def run_validator(tmp: Path, *extra_args: str) -> subprocess.CompletedProcess:
     )
 
 
-def populate_positive_case(tmp: Path) -> None:
+def populate_positive_case(tmp: Path, *, include_host_packages: bool = True) -> None:
     zot_digest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     dns_digest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     host_agent_digest = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
@@ -44,7 +47,8 @@ def populate_positive_case(tmp: Path) -> None:
     write(tmp / "release-input" / "schemas" / "configuration.schema.json", "{}")
     write(tmp / "release-input" / "compatibility.json", "{}")
     write(tmp / "release-input" / "checksums.txt", "checksums")
-    write(tmp / "release-input" / "host-packages" / "ubuntu" / "24.04" / "amd64" / "avahi-daemon.deb", "deb")
+    if include_host_packages:
+        write(tmp / "release-input" / "host-packages" / "ubuntu" / "24.04" / "amd64" / "avahi-daemon.deb", "deb")
     write(tmp / "release-input" / "sbom" / "appliance.spdx.json", "{}")
     write(tmp / "release-input" / "provenance" / "appliance.provenance.json", "{}")
     write(tmp / "release-input" / "notices" / "THIRD-PARTY-NOTICES.txt", "notice")
@@ -104,7 +108,6 @@ ingress:
     "uiImage": {"path": "images/appliance-ui.tar", "digest": "sha256:ui", "sizeBytes": 2, "imageReference": "internal/appliance-ui:1.0.0"},
     "hostAgentImage": {"path": "images/appliance-host-agent.tar", "digest": "sha256:host-agent-archive", "sizeBytes": 256, "imageReference": "registry.local/appliance-host-agent@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
     "hostAgentBinary": {"path": "bin/appliance-host-agentd", "digest": "sha256:host-agentd", "sizeBytes": 11},
-    "hostPackages": {"path": "host-packages", "manifestDigest": "sha256:host-packages"},
     "applianceChart": {"path": "chart/appliance-chart-1.0.0.tgz", "digest": "sha256:appliance-chart", "sizeBytes": 15},
     "zotImage": {"path": "images/zot-image.tar", "digest": "sha256:zot-archive", "sizeBytes": 1024, "imageReference": "registry.local/zot@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
     "zotChart": {"path": "chart/appliance-registry-2.1.11.tgz", "digest": "sha256:zot-chart", "sizeBytes": 9},
@@ -129,6 +132,14 @@ ingress:
 }
 """.lstrip(),
     )
+    if include_host_packages:
+        release_input_path = tmp / "release-input" / "release-input.json"
+        release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
+        release_input["artifacts"]["hostPackages"] = {
+            "path": "host-packages",
+            "manifestDigest": "sha256:host-packages",
+        }
+        release_input_path.write_text(json.dumps(release_input), encoding="utf-8")
     write(
         tmp / "bundle" / "release-manifest.json",
         """
@@ -139,7 +150,6 @@ ingress:
     {"targetPath": "oci-images/appliance-ui.tar", "digest": "sha256:ui", "sizeBytes": 2, "imageReference": "internal/appliance-ui:1.0.0"},
     {"targetPath": "oci-images/appliance-host-agent.tar", "digest": "sha256:host-agent-archive", "sizeBytes": 256, "imageReference": "registry.local/appliance-host-agent@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
     {"targetPath": "bin/appliance-host-agentd", "digest": "sha256:host-agentd", "sizeBytes": 11},
-    {"targetPath": "host-packages/ubuntu/24.04/amd64/avahi-daemon.deb", "digest": "sha256:host-package", "sizeBytes": 3},
     {"targetPath": "charts/appliance-chart-1.0.0.tgz", "digest": "sha256:appliance-chart", "sizeBytes": 15},
     {"targetPath": "oci-images/zot-image.tar", "digest": "sha256:zot-archive", "sizeBytes": 1024, "imageReference": "registry.local/zot@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
     {"targetPath": "charts/appliance-registry-2.1.11.tgz", "digest": "sha256:zot-chart", "sizeBytes": 9},
@@ -155,6 +165,18 @@ ingress:
 }
 """.lstrip(),
     )
+    if include_host_packages:
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["entries"].insert(
+            4,
+            {
+                "targetPath": "host-packages/ubuntu/24.04/amd64/avahi-daemon.deb",
+                "digest": "sha256:host-package",
+                "sizeBytes": 3,
+            },
+        )
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
 
 def populate_positive_case_with_nested_bundle(tmp: Path) -> None:
@@ -170,6 +192,15 @@ def test_positive_case() -> None:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp)
         result = run_validator(tmp, "--require-argo")
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+
+
+def test_positive_case_without_host_packages_when_mdns_disabled() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp, include_host_packages=False)
+        result = run_validator(tmp, "--host-mdns-enabled", "false", "--require-argo")
         if result.returncode != 0:
             raise AssertionError(result.stderr)
 
@@ -285,10 +316,21 @@ def test_rejects_missing_host_packages_bundle_entry() -> None:
             if not entry["targetPath"].startswith("host-packages/")
         ]
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        result = run_validator(tmp)
+        result = run_validator(tmp, "--host-mdns-enabled", "true")
         if result.returncode == 0:
             raise AssertionError("missing host-packages bundle entries were accepted")
         if "hostPackages" not in result.stderr:
+            raise AssertionError(result.stderr)
+
+
+def test_rejects_host_packages_when_mdns_disabled() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        result = run_validator(tmp, "--host-mdns-enabled", "false")
+        if result.returncode == 0:
+            raise AssertionError("host-packages were accepted when host mDNS is disabled")
+        if "host mDNS is disabled" not in result.stderr:
             raise AssertionError(result.stderr)
 
 
@@ -500,6 +542,7 @@ def test_rejects_dns_annotation_and_version_mismatch() -> None:
 
 def main() -> None:
     test_positive_case()
+    test_positive_case_without_host_packages_when_mdns_disabled()
     test_positive_case_with_nested_bundle_root()
     test_allows_empty_directory_artifacts()
     test_rejects_tag_only_extra_oci_image()
@@ -513,6 +556,7 @@ def main() -> None:
     test_rejects_dns_annotation_and_version_mismatch()
     test_rejects_missing_ui_bundle_entry()
     test_rejects_missing_host_packages_bundle_entry()
+    test_rejects_host_packages_when_mdns_disabled()
     test_rejects_mismatched_ui_bundle_image_reference()
     test_rejects_mismatched_ui_values_image_reference()
     print("validate-release-artifacts tests passed")

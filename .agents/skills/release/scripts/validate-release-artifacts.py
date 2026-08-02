@@ -218,6 +218,15 @@ def parse_csv(value: str) -> list:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def parse_bool_arg(value: str, label: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise ValueError(f"{label} must be true or false")
+
+
 def parse_yaml_scalar(raw: str):
     raw = raw.strip()
     if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {"'", '"'}:
@@ -549,7 +558,9 @@ def validate_host_agent(
     return ["hostAgentImage", "hostAgentBinary"]
 
 
-def validate_required_artifacts(artifacts: dict, release_input_dir: Path, entries_by_path: dict) -> list:
+def validate_required_artifacts(
+    artifacts: dict, release_input_dir: Path, entries_by_path: dict, *, host_mdns_enabled: bool
+) -> list:
     checked = []
     runtime_targets = {"applianceChart": "charts"}
     for key, target_dir in runtime_targets.items():
@@ -570,9 +581,17 @@ def validate_required_artifacts(artifacts: dict, release_input_dir: Path, entrie
         require_file_artifact(artifacts, key, release_input_dir)
         checked.append(key)
 
-    require_dir_artifact(artifacts, "hostPackages", release_input_dir)
-    require_bundle_entry_prefix(entries_by_path, "host-packages/", "hostPackages")
-    checked.append("hostPackages")
+    host_packages_present = isinstance(artifacts.get("hostPackages"), dict)
+    bundle_has_host_packages = any(path.startswith("host-packages/") for path in entries_by_path)
+    if host_mdns_enabled:
+        require_dir_artifact(artifacts, "hostPackages", release_input_dir)
+        require_bundle_entry_prefix(entries_by_path, "host-packages/", "hostPackages")
+        checked.append("hostPackages")
+    else:
+        if host_packages_present:
+            raise ValueError("release-input artifacts.hostPackages must be omitted when host mDNS is disabled")
+        if bundle_has_host_packages:
+            raise ValueError("bundle manifest host-packages entries must be omitted when host mDNS is disabled")
 
     for key in ("sbom", "provenance", "notices", "tests"):
         require_dir_artifact(artifacts, key, release_input_dir)
@@ -657,11 +676,17 @@ def main() -> int:
     parser.add_argument("--bundle-root", required=True)
     parser.add_argument("--require-argo", action="store_true")
     parser.add_argument(
+        "--host-mdns-enabled",
+        default="false",
+        help="Whether release-input is expected to include host-packages for host mDNS support.",
+    )
+    parser.add_argument(
         "--expected-extra-oci-image-refs",
         default="",
         help="Comma-separated digest-pinned extra OCI image references expected in release-input and bundle.",
     )
     args = parser.parse_args()
+    host_mdns_enabled = parse_bool_arg(args.host_mdns_enabled, "--host-mdns-enabled")
     expected_extra_refs = parse_csv(args.expected_extra_oci_image_refs)
 
     release_input_root = Path(args.release_input_root)
@@ -693,7 +718,7 @@ def main() -> int:
 
     checked = {
         "requiredArtifacts": validate_required_artifacts(
-            artifacts, release_input_path.parent, entries_by_path
+            artifacts, release_input_path.parent, entries_by_path, host_mdns_enabled=host_mdns_enabled
         ),
         "runtimeValues": validate_runtime_values(artifacts, bundle_values),
         "zot": validate_zot(
