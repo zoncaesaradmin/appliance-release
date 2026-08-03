@@ -119,7 +119,7 @@ verification:
   smoke_test_retry_delay_seconds: 3
   allow_ingress_warning: true
   allow_verify_schema_bug: false
-  ui_home_command: 'body="$(curl -kfsS https://artifact-dns-1.appliance.internal/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
+  ui_home_command: 'body="$(curl -kfsS https://artifact-dns-1.appliance.internal/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Appliance Control Plane UI|appliance-controlplane-ui|Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
   argo:
     enabled: false
   builder:

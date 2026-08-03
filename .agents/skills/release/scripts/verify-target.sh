@@ -209,6 +209,17 @@ if [[ -n "${CLIENT_BASE_URL}" ]]; then
     fi
   fi
   [[ -n "${UI_HOME_CMD}" ]] || fail "verification.ui_home_command is required in config when client_verification.base_url is set"
+  rewritten_ui_home="$(rewrite_command_url_path_to_base "${UI_HOME_CMD}" "${CLIENT_BASE_URL}" "/")"
+  if [[ "${rewritten_ui_home}" != "${UI_HOME_CMD}" ]]; then
+    UI_HOME_CMD="${rewritten_ui_home}"
+    log "rewrote UI home check to use client_verification.base_url: ${CLIENT_BASE_URL}"
+  fi
+fi
+
+expanded_ui_home_cmd="$(expand_legacy_ui_home_command_for_spa "${UI_HOME_CMD}")"
+if [[ "${expanded_ui_home_cmd}" != "${UI_HOME_CMD}" ]]; then
+  UI_HOME_CMD="${expanded_ui_home_cmd}"
+  log "expanded legacy UI home marker check for the React SPA"
 fi
 
 ensure_release_run_dirs "${RUN_DIR}"

@@ -132,6 +132,29 @@ def test_rewrite_command_url_path_to_base() -> None:
     assert result.stdout == 'code="$(curl -ksS https://192.168.1.151/api/v1/work-profiles)"'
 
 
+def test_expand_legacy_ui_home_command_for_spa() -> None:
+    legacy = (
+        'body="$(curl -kfsS https://192.168.1.151/)" && '
+        'printf "%s" "$body" | grep -Eiq "Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
+    )
+    result = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{COMMON_SH}"; '
+                f"expand_legacy_ui_home_command_for_spa {legacy!r}"
+            ),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Create first administrator|Appliance Control Plane UI" in result.stdout
+    assert "appliance-controlplane-ui" in result.stdout
+
+
 def test_derive_mdns_tls_san_from_hostname() -> None:
     result = subprocess.run(
         [

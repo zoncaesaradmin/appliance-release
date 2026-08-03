@@ -569,6 +569,16 @@ print(pattern.sub(replacement, command), end="")
 PY
 }
 
+expand_legacy_ui_home_command_for_spa() {
+  local command="$1"
+  local legacy_markers="Zon Appliance|Sign in to continue|Appliance status|Create first administrator"
+  local spa_markers="Appliance Control Plane UI|appliance-controlplane-ui|/src/main.tsx|/assets/index-"
+  if [[ "${command}" == *"${legacy_markers}"* ]]; then
+    command="${command//${legacy_markers}/${legacy_markers}|${spa_markers}}"
+  fi
+  printf '%s' "${command}"
+}
+
 
 # Normalize bundle_store.mode to static_http|appliance_files. Empty is rejected.
 _BUNDLE_STORE_LIB="$(cd "${SCRIPT_DIR}/../../../.." && pwd)/scripts/publish/bundle-store-lib.sh"
