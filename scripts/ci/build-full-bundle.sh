@@ -1034,7 +1034,9 @@ HOST_AGENT_IMAGE_OUT="/workspace/.run/appliance-host-agent-image.tar"
 HOST_AGENT_IMAGE_REF_FILE="/workspace/.run/appliance-host-agent-image.reference"
 ARGO_ARGS=()
 EXTRA_OCI_ARGS=()
-CODE_VERSION="\${CODE_VERSION:-\$(git describe --tags --always --dirty 2>/dev/null | sed 's/[^A-Za-z0-9_.-]/-/g')}"
+# Prefer the release/product version for image tags and the control-plane
+# /version payload. Commit SHA stays in the separate Commit build field.
+CODE_VERSION="\${CODE_VERSION:-$(shell_quote "${PRODUCT_VERSION}")}"
 HOST_MDNS_ENABLED_FOR_DEV=$(shell_quote "${HOST_MDNS_ENABLED:-false}")
 HOST_PACKAGES_DIR_FOR_DEV=$(shell_quote "${HOST_PACKAGES_DIR_FOR_DEV}")
 HOST_PACKAGES_OS_VERSION=$(shell_quote "${OS_VERSION}")
@@ -1047,11 +1049,12 @@ bool_true() {
   esac
 }
 
-make package-control-plane-image-archive OUT_FILE="\${CONTROL_PLANE_IMAGE_OUT}"
-make package-ui-image-archive OUT_FILE="\${UI_IMAGE_OUT}"
+make package-control-plane-image-archive OUT_FILE="\${CONTROL_PLANE_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}"
+make package-ui-image-archive OUT_FILE="\${UI_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}"
 make package-host-agent-image-archive \
   OUT_FILE="\${HOST_AGENT_IMAGE_OUT}" \
-  REFERENCE_OUT_FILE="\${HOST_AGENT_IMAGE_REF_FILE}"
+  REFERENCE_OUT_FILE="\${HOST_AGENT_IMAGE_REF_FILE}" \
+  IMAGE_TAG="\${CODE_VERSION}"
 HOST_AGENT_IMAGE_REF="\$(tr -d '\r\n' < "\${HOST_AGENT_IMAGE_REF_FILE}")"
 HOST_PACKAGES_ARGS=()
 if bool_true "\${HOST_MDNS_ENABLED_FOR_DEV}"; then
