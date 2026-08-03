@@ -221,7 +221,7 @@ verify-local-milestone:
 	fi; \
 	echo "verify-local-milestone stage: appliance-code control-plane chart passed"; \
 	echo "verify-local-milestone stage: appliance-code UI"; \
-	if ! (cd "$(APPLIANCE_CODE_DIR)/services/ui" && go test ./...) >"$(VERIFY_MILESTONE_CODE_UI_LOG)" 2>&1; then \
+	if ! $(MAKE) -C "$(APPLIANCE_CODE_DIR)/services/controlplane-ui" --no-print-directory verify >"$(VERIFY_MILESTONE_CODE_UI_LOG)" 2>&1; then \
 		echo "verify-local-milestone: appliance-code UI failed; inspect $(VERIFY_MILESTONE_CODE_UI_LOG)"; \
 		exit 1; \
 	fi; \
