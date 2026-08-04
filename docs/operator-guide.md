@@ -62,7 +62,12 @@ curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-releas
   | bash -s -- --base-url "${RELEASE_BASE_URL}"
 ```
 
-The default appliance profile is `core`. To install a different v1 profile:
+The default appliance profile is `core` when `--appliance-profile` is omitted.
+Installation does **not** ask for a license file and does not perform online
+entitlement checks. After first UI login, complete licensing setup (import an
+offline license or accept the base/free entitlement) from Admin / Licensing.
+
+To install a different v1 profile:
 
 ```bash
 curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-release.sh" \

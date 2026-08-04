@@ -298,6 +298,9 @@ if [[ -z "${PATH_PREFIX}" ]]; then
 fi
 require_var PATH_PREFIX
 require_var STATE_DIR
+if [[ -z "${APPLIANCE_PROFILE}" ]]; then
+  APPLIANCE_PROFILE="core"
+fi
 require_var APPLIANCE_PROFILE
 require_var APPLIANCE_NAME
 require_var DNS_ZONE

@@ -171,7 +171,10 @@ require_appliance_profile() {
   if [[ -z "${appliance_profile}" ]]; then
     appliance_profile="$(config_get_optional "${config_path}" "install.appliance_profile" || true)"
   fi
-  [[ -n "${appliance_profile}" ]] || fail "install.appliance_profile is required in config"
+  # Omit defaults to the built-in base profile (core). Licensing is post-install only.
+  if [[ -z "${appliance_profile}" ]]; then
+    appliance_profile="core"
+  fi
   printf '%s\n' "${appliance_profile}"
 }
 

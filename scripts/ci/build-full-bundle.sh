@@ -1077,6 +1077,8 @@ if [[ -z "\${DNS_IMAGE_REF}" ]]; then
   DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/coredns-image.reference)"
 fi
 
+METADATA_BUNDLE_ARCHIVE_FOR_DEV="\$(bash ./scripts/package/generate-metadata-bundle.sh --software-version "\${CODE_VERSION}" --out-dir "/workspace/.run/metadata-bundle")"
+
 if bool_true $(shell_quote "${ARGO_ENABLED}"); then
   ARGO_ARGS+=(--argo-version $(shell_quote "${ARGO_VERSION}"))
 
@@ -1121,6 +1123,7 @@ bash ./scripts/package/archive-release-input.sh \
   --dns-version $(shell_quote "${DNS_VERSION}") \
   --dns-image "\${DNS_IMAGE_ARCHIVE_FOR_DEV}" \
   --dns-image-reference "\${DNS_IMAGE_REF}" \
+  --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \
   "\${ARGO_ARGS[@]}" \
   "\${EXTRA_OCI_ARGS[@]}"
 EOF

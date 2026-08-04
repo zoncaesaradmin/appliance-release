@@ -600,6 +600,27 @@ def validate_required_artifacts(
     return checked
 
 
+def validate_metadata_bundle(
+    release_input: dict,
+    artifacts: dict,
+    release_input_dir: Path,
+    entries_by_path: dict[str, dict],
+) -> list:
+    artifact = require_artifact(artifacts, "metadataBundle")
+    if str(artifact.get("imageReference") or "").strip():
+        raise ValueError("release-input artifacts.metadataBundle must not set imageReference")
+    archive_path = require_file_artifact(artifacts, "metadataBundle", release_input_dir)
+    name = archive_path.name
+    if not name.startswith("appliance-metadata-bundle-") or not name.endswith(".tar.zst"):
+        raise ValueError(
+            "release-input artifacts.metadataBundle path must be named "
+            "appliance-metadata-bundle-X.Y.Z.N.tar.zst"
+        )
+    bundle_path = f"artifacts/{name}"
+    require_bundle_entry(entries_by_path, bundle_path, "metadataBundle")
+    return ["metadataBundle"]
+
+
 def validate_extra_oci_images(
     artifacts: dict, release_input_dir: Path, entries_by_path: dict, expected_refs: list
 ) -> list:
@@ -731,6 +752,12 @@ def main() -> int:
         "dns": validate_dns(
             release_input,
             bundle_manifest,
+            artifacts,
+            release_input_path.parent,
+            entries_by_path,
+        ),
+        "metadataBundle": validate_metadata_bundle(
+            release_input,
             artifacts,
             release_input_path.parent,
             entries_by_path,

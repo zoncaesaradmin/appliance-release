@@ -76,6 +76,7 @@ def populate_positive_case(tmp: Path, *, include_host_packages: bool = True) -> 
         host_agent_digest,
     )
     write(tmp / "release-input" / "bin" / "appliance-host-agentd", "host-agentd")
+    write(tmp / "release-input" / "artifacts" / "appliance-metadata-bundle-1.0.0.0.tar.zst", "policy")
     write(
         tmp / "bundle" / "configuration" / "values.yaml",
         """
@@ -113,6 +114,7 @@ ingress:
     "zotChart": {"path": "chart/appliance-registry-2.1.11.tgz", "digest": "sha256:zot-chart", "sizeBytes": 9},
     "dnsImage": {"path": "images/coredns-image.tar", "digest": "sha256:dns-archive", "sizeBytes": 512, "imageReference": "registry.local/coredns@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
     "dnsChart": {"path": "chart/appliance-dns-1.14.4.tgz", "digest": "sha256:dns-chart", "sizeBytes": 11},
+    "metadataBundle": {"path": "artifacts/appliance-metadata-bundle-1.0.0.0.tar.zst", "digest": "sha256:policy", "sizeBytes": 6},
     "configurationSchema": {"path": "schemas/configuration.schema.json", "digest": "sha256:configuration", "sizeBytes": 2},
     "compatibility": {"path": "compatibility.json", "digest": "sha256:compatibility", "sizeBytes": 2},
     "checksums": {"path": "checksums.txt", "digest": "sha256:checksums", "sizeBytes": 9},
@@ -155,6 +157,7 @@ ingress:
     {"targetPath": "charts/appliance-registry-2.1.11.tgz", "digest": "sha256:zot-chart", "sizeBytes": 9},
     {"targetPath": "oci-images/coredns-image.tar", "digest": "sha256:dns-archive", "sizeBytes": 512, "imageReference": "registry.local/coredns@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
     {"targetPath": "charts/appliance-dns-1.14.4.tgz", "digest": "sha256:dns-chart", "sizeBytes": 11},
+    {"targetPath": "artifacts/appliance-metadata-bundle-1.0.0.0.tar.zst", "digest": "sha256:policy", "sizeBytes": 6},
     {"targetPath": "configuration/values.yaml", "digest": "sha256:values", "sizeBytes": 200},
     {"targetPath": "charts/argo-workflows-1.0.0.tgz", "digest": "sha256:chart", "sizeBytes": 5},
     {"targetPath": "kubernetes/crds/crds/workflows.yaml", "digest": "sha256:crd", "sizeBytes": 3},

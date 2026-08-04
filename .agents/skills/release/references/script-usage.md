@@ -37,7 +37,8 @@ Notes:
   live in appliance-code `build/service-image.mk` (`SERVICE_IMAGE_*` /
   `DEV_REGISTRY`).
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used both for install and Mac-side API verification.
-- Set `install.appliance_profile` in the config (required).
+- Set `install.appliance_profile` in the config, or omit it to default to `core`.
+  Licensing is completed after first login; install never asks for a license.
 - A `run-release-flow.sh --appliance-profile` override is forwarded to install,
   target verification, and client verification so all phases use the same
   effective profile.

@@ -381,18 +381,21 @@ def test_require_appliance_profile_helper() -> None:
 
         missing_config = Path(tmp) / "missing-profile.yaml"
         missing_config.write_text("install: {}\n", encoding="utf-8")
-        fail_result = subprocess.run(
+        default_result = subprocess.run(
             [
                 "bash",
                 "-lc",
-                f'source "{COMMON_SH}"; require_appliance_profile "{missing_config}" ""',
+                (
+                    f'source "{COMMON_SH}"; '
+                    f'defaulted="$(require_appliance_profile "{missing_config}" "")"; '
+                    '[[ "${defaulted}" == "core" ]]'
+                ),
             ],
             check=False,
             text=True,
             capture_output=True,
         )
-        assert fail_result.returncode != 0
-        assert "install.appliance_profile is required in config" in fail_result.stderr
+        assert default_result.returncode == 0, default_result.stderr
 
 
 def test_resolve_build_catalog_path_helper() -> None:
