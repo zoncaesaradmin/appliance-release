@@ -57,6 +57,12 @@ For day-to-day use, set:
 - `DEV_IMAGE_REPO=...` / `DEV_IMAGE_NAME=...` (named by pull `image_repo_env` / `image_name_env` — development-container only)
 - `DEV_REGISTRY_USER=...` / `DEV_REGISTRY_TOKEN=...` (named by `dev_image_pull` username/token env keys; also optional LAN pull on install)
 - `DEV_REGISTRY_TLS_VERIFY=true|false` (named by `dev_image_pull.tls_verify_env`)
+- Optional `build_flow.build_image_mirror` — separate from `dev_image_pull` so the
+  DevContainer Artifact Server and a build-time OCI pull-through mirror can
+  differ later. For now use the same env names (`DEV_REGISTRY*`). When `enabled:
+  true`, builds try `<registry>/<repository_prefix>/<image>:<tag>` first with
+  `timeout_seconds`, then fall back to the public upstream, then best-effort
+  push to seed the mirror. Omit or `enabled: false` leaves internet-first pulls.
 - Optional `install.image_pull_registry` in config (`registry_env` + credential env names; no literal `registry`) so target K3s can pull from the LAN registry
 - Do not set `build_flow.product_publish` — that block is rejected; use `bundle_store` for signed-bundle publish
 - `APPLIANCE_BUILD_SUDO_PASSWORD=...`

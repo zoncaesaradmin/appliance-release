@@ -215,6 +215,48 @@ else
   OCI_COPY_SRC_TLS_VERIFY="false"
   DEV_REGISTRY_TLS_VERIFY="false"
 fi
+
+# Optional build-time OCI pull-through mirror (separate section from dev_image_pull).
+# When enabled, builds try the mirror first (short timeout), fall back to upstream,
+# then best-effort push into the mirror. Env *names* can match DEV_REGISTRY* today
+# while still allowing a different Artifact Server later.
+BUILD_IMAGE_MIRROR_ENABLED_CFG="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_image_mirror.enabled" || true)"
+if [[ -z "${BUILD_IMAGE_MIRROR_ENABLED_CFG}" ]]; then
+  BUILD_IMAGE_MIRROR_ENABLED_CFG="false"
+fi
+BUILD_IMAGE_MIRROR_ENABLED="false"
+BUILD_IMAGE_MIRROR_REGISTRY=""
+BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX="build-cache"
+BUILD_IMAGE_MIRROR_TIMEOUT_SECONDS="15"
+BUILD_IMAGE_MIRROR_TLS_VERIFY="true"
+BUILD_IMAGE_MIRROR_USER=""
+BUILD_IMAGE_MIRROR_TOKEN=""
+if bool_true "${BUILD_IMAGE_MIRROR_ENABLED_CFG}"; then
+  BUILD_IMAGE_MIRROR_ENABLED="true"
+  BUILD_IMAGE_MIRROR_REGISTRY_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_image_mirror.registry_env" || true)"
+  BUILD_IMAGE_MIRROR_USER_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_image_mirror.username_env" || true)"
+  BUILD_IMAGE_MIRROR_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_image_mirror.token_env" || true)"
+  BUILD_IMAGE_MIRROR_TLS_VERIFY_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_image_mirror.tls_verify_env" || true)"
+  BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_image_mirror.repository_prefix" || true)"
+  BUILD_IMAGE_MIRROR_TIMEOUT_SECONDS="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_image_mirror.timeout_seconds" || true)"
+  [[ -n "${BUILD_IMAGE_MIRROR_REGISTRY_ENV}" ]] || fail "build_flow.build_image_mirror.registry_env is required when build_image_mirror.enabled is true"
+  [[ -n "${BUILD_IMAGE_MIRROR_USER_ENV}" ]] || fail "build_flow.build_image_mirror.username_env is required when build_image_mirror.enabled is true"
+  [[ -n "${BUILD_IMAGE_MIRROR_TOKEN_ENV}" ]] || fail "build_flow.build_image_mirror.token_env is required when build_image_mirror.enabled is true"
+  [[ -n "${BUILD_IMAGE_MIRROR_TLS_VERIFY_ENV}" ]] || fail "build_flow.build_image_mirror.tls_verify_env is required when build_image_mirror.enabled is true"
+  [[ -n "${BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX}" ]] || fail "build_flow.build_image_mirror.repository_prefix is required when build_image_mirror.enabled is true"
+  [[ -n "${BUILD_IMAGE_MIRROR_TIMEOUT_SECONDS}" ]] || fail "build_flow.build_image_mirror.timeout_seconds is required when build_image_mirror.enabled is true"
+  if ! [[ "${BUILD_IMAGE_MIRROR_TIMEOUT_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
+    fail "build_flow.build_image_mirror.timeout_seconds must be a positive integer"
+  fi
+  BUILD_IMAGE_MIRROR_REGISTRY="$(resolve_env_value "${BUILD_IMAGE_MIRROR_REGISTRY_ENV}" "Build image mirror registry env")"
+  [[ -n "${BUILD_IMAGE_MIRROR_REGISTRY}" ]] || fail "empty value for env ${BUILD_IMAGE_MIRROR_REGISTRY_ENV} (named by build_flow.build_image_mirror.registry_env)"
+  BUILD_IMAGE_MIRROR_USER="$(resolve_secret "${BUILD_IMAGE_MIRROR_USER_ENV}" "Build image mirror username")"
+  [[ -n "${BUILD_IMAGE_MIRROR_USER}" ]] || fail "empty value for env ${BUILD_IMAGE_MIRROR_USER_ENV} (named by build_flow.build_image_mirror.username_env)"
+  BUILD_IMAGE_MIRROR_TOKEN="$(resolve_secret "${BUILD_IMAGE_MIRROR_TOKEN_ENV}" "Build image mirror token")"
+  [[ -n "${BUILD_IMAGE_MIRROR_TOKEN}" ]] || fail "empty value for env ${BUILD_IMAGE_MIRROR_TOKEN_ENV} (named by build_flow.build_image_mirror.token_env)"
+  BUILD_IMAGE_MIRROR_TLS_VERIFY="$(normalize_bool_value "$(resolve_env_value "${BUILD_IMAGE_MIRROR_TLS_VERIFY_ENV}" "Build image mirror TLS verify env")")"
+fi
+
 BUILD_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.enabled" || true)"
 BUILD_ARGO_REQUIRED="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.required" || true)"
 BUILD_ARGO_VERSION="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.version" || true)"
@@ -292,7 +334,12 @@ BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "DNS_IMAGE_ARCHIVE_SOURCE" "${BUILD_DNS_IMAGE_ARCHIVE_SOURCE}" \
   "EXTRA_OCI_IMAGE_REFS" "${BUILD_EXTRA_OCI_IMAGE_REFS}" \
   "EXTRA_OCI_IMAGE_PULL_REFS" "${IMAGE_REGISTRY_PULL_REF}" \
-  "OCI_COPY_SRC_TLS_VERIFY" "${OCI_COPY_SRC_TLS_VERIFY}")"
+  "OCI_COPY_SRC_TLS_VERIFY" "${OCI_COPY_SRC_TLS_VERIFY}" \
+  "BUILD_IMAGE_MIRROR_ENABLED" "${BUILD_IMAGE_MIRROR_ENABLED}" \
+  "BUILD_IMAGE_MIRROR_REGISTRY" "${BUILD_IMAGE_MIRROR_REGISTRY}" \
+  "BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX" "${BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX}" \
+  "BUILD_IMAGE_MIRROR_TIMEOUT_SECONDS" "${BUILD_IMAGE_MIRROR_TIMEOUT_SECONDS}" \
+  "BUILD_IMAGE_MIRROR_TLS_VERIFY" "${BUILD_IMAGE_MIRROR_TLS_VERIFY}")"
 # Point appliance-code at the pull image (DEV_*). Per-service image push
 # destination is owned by appliance-code build/service-image.mk.
 BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
@@ -303,6 +350,11 @@ BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "DEV_IMAGE_REPO" "${DEV_PULL_IMAGE_REPO}" \
   "DEV_IMAGE_NAME" "${DEV_PULL_IMAGE_NAME}" \
   "DEV_IMAGE_TAG" "${DEV_PULL_IMAGE_TAG}")"
+if bool_true "${BUILD_IMAGE_MIRROR_ENABLED}"; then
+  BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
+    "BUILD_IMAGE_MIRROR_USER" "${BUILD_IMAGE_MIRROR_USER}" \
+    "BUILD_IMAGE_MIRROR_TOKEN" "${BUILD_IMAGE_MIRROR_TOKEN}")"
+fi
 
 PUBLISH_ENV_PREFIX=""
 PUBLISH_ENV_PREFIX="$(append_env_assignments "${PUBLISH_ENV_PREFIX}" \

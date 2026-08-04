@@ -9,6 +9,7 @@
 # Secrets via env (not this file):
 #   DEV_REGISTRY / DEV_IMAGE_REPO / DEV_IMAGE_NAME
 #   DEV_REGISTRY_USER / DEV_REGISTRY_TOKEN / DEV_REGISTRY_TLS_VERIFY
+#   (dev_image_pull and optional build_image_mirror may share these env names)
 #   APPLIANCE_BUILD_SUDO_PASSWORD / APPLIANCE_TARGET_SUDO_PASSWORD
 #   APPLIANCE_FIRST_ADMIN_PASSWORD
 #   HOST_WIFI_AP_PSK (only when install.host_wifi_ap_enabled; named by
@@ -53,8 +54,11 @@ bundle_store:
   # Optional overrides only: base_url, access_token, tls_insecure, cacert_path
 
 build_flow:
-  # Pull/login the development-container used as build tooling.
-  # Bundled offline name is fixed: registry.local/dev-build
+  # ---------------------------------------------------------------------------
+  # DevContainer image pull (build tooling container only).
+  # Bundled offline name for the appliance is fixed: registry.local/dev-build
+  # This server can differ from build_image_mirror below.
+  # ---------------------------------------------------------------------------
   dev_image_pull:
     registry_env: DEV_REGISTRY
     image_repo_env: DEV_IMAGE_REPO
@@ -63,6 +67,28 @@ build_flow:
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
+
+  # ---------------------------------------------------------------------------
+  # Build-time OCI pull-through mirror = local LAN appliance Artifact Server.
+  # Separate section from dev_image_pull (DevContainer host can differ later).
+  # Same env names as dev_image_pull are fine for now (e.g. both on 153 Zot).
+  #
+  # Per-image flow when enabled:
+  #   1. Try LAN: <registry>/<repository_prefix>/<image>:<tag> (timeout_seconds)
+  #   2. If miss / timeout / unreachable → pull from internet/upstream
+  #   3. After a successful upstream fetch → push image into the LAN mirror
+  #      (best-effort; push failure does not fail the build)
+  # ---------------------------------------------------------------------------
+  build_image_mirror:
+    enabled: true
+    registry_env: DEV_REGISTRY
+    # Repositories under this prefix, e.g. <registry>/build-cache/<image>:<tag>
+    repository_prefix: build-cache
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
+    # Seconds to wait on mirror pull before falling back to the internet
+    timeout_seconds: 10
 
   bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
   bootstrap_needs_sudo: true

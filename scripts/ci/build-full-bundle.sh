@@ -69,6 +69,15 @@ Optional overrides:
   # EXTRA_OCI_IMAGE_ARCHIVE_SOURCES path. Digests in EXTRA_OCI_IMAGE_REFS are
   # optional advisory pins; the archived platform manifest digest always wins.
   # OCI_COPY_SRC_TLS_VERIFY=false  # for LAN registries with self-signed TLS
+  # Optional build-time OCI pull-through mirror (from build_flow.build_image_mirror):
+  #   BUILD_IMAGE_MIRROR_ENABLED=true
+  #   BUILD_IMAGE_MIRROR_REGISTRY=$DEV_REGISTRY   # LAN appliance Artifact Server; can differ later
+  #   BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX=build-cache
+  #   BUILD_IMAGE_MIRROR_TIMEOUT_SECONDS=15
+  #   BUILD_IMAGE_MIRROR_TLS_VERIFY=$DEV_REGISTRY_TLS_VERIFY
+  #   BUILD_IMAGE_MIRROR_USER / BUILD_IMAGE_MIRROR_TOKEN
+  # Flow (per skopeo-exported image):
+  #   try LAN Artifact Server → miss/timeout → public/upstream pull → best-effort push to LAN.
   ZOT_VERSION=2.1.8
   ZOT_IMAGE_PULL_REF=ghcr.io/project-zot/zot-linux-amd64:v2.1.8
   ZOT_IMAGE_ARCHIVE_SOURCE=/ci/inputs/zot.oci.tar
@@ -505,58 +514,322 @@ if ann and ann not in allowed and not (
 PY
 }
 
-skopeo_copy_oci_archive() {
+skopeo_tls_args_for() {
+  # prints space-separated skopeo flags for a side (src|dest); default verify on
+  local side="$1"
+  local verify_flag="$2"
+  case "$(printf '%s' "${verify_flag}" | tr '[:upper:]' '[:lower:]')" in
+    0|false|no|off)
+      if [[ "${side}" == "src" ]]; then
+        printf '%s' "--src-tls-verify=false"
+      else
+        printf '%s' "--dest-tls-verify=false"
+      fi
+      ;;
+  esac
+}
+
+# Map an upstream docker ref to the build mirror repository.
+# Example: ghcr.io/project-zot/zot-linux-amd64:v2.1.8
+#   →  ${BUILD_IMAGE_MIRROR_REGISTRY}/${BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX}/zot-linux-amd64:v2.1.8
+build_image_mirror_ref_for() {
   local source_ref="$1"
-  local output_path="$2"
-  local dest_name="$3"
+  local registry prefix bare name tag digest
+  registry="$(printf '%s' "${BUILD_IMAGE_MIRROR_REGISTRY:-}" | sed 's#/*$##')"
+  prefix="$(printf '%s' "${BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX:-build-cache}" | sed 's#^/*##; s#/*$##')"
+  if [[ -z "${registry}" || -z "${prefix}" ]]; then
+    return 1
+  fi
+  bare="${source_ref#docker://}"
+  if [[ "${bare}" == *@sha256:* ]]; then
+    name="${bare%@sha256:*}"
+    digest="${bare##*@}"
+    name="${name##*/}"
+    printf '%s/%s/%s@%s' "${registry}" "${prefix}" "${name}" "${digest}"
+    return 0
+  fi
+  if [[ "${bare}" == *:* ]]; then
+    name="${bare%:*}"
+    tag="${bare##*:}"
+    # ignore port ambiguity when tag has no / and host has :port
+    if [[ "${tag}" == */* ]]; then
+      name="${bare}"
+      tag="latest"
+    fi
+  else
+    name="${bare}"
+    tag="latest"
+  fi
+  name="${name##*/}"
+  printf '%s/%s/%s:%s' "${registry}" "${prefix}" "${name}" "${tag}"
+}
+
+build_image_mirror_enabled() {
+  case "$(printf '%s' "${BUILD_IMAGE_MIRROR_ENABLED:-false}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Low-level skopeo/podman-skopeo copy. Returns non-zero on failure (no exit).
+# Args: source_ref dest_spec timeout_secs src_tls dest_tls [src_user src_token] [dest_user dest_token]
+skopeo_try_copy() {
+  local source_ref="$1"
+  local dest_spec="$2" # oci-archive:path:name or docker://...
+  local timeout_secs="${3:-0}"
+  local src_tls_verify="${4:-true}"
+  local dest_tls_verify="${5:-true}"
+  local src_user="${6:-}"
+  local src_token="${7:-}"
+  local dest_user="${8:-}"
+  local dest_token="${9:-}"
   local skopeo_bin podman_bin auth_file skopeo_image
   local -a overrides=(--override-os "${BUNDLE_IMAGE_OS}" --override-arch "${BUNDLE_IMAGE_ARCH}")
   local -a tls_args=()
-  local -a copy_cmd
+  local -a cred_args=()
+  local -a copy_cmd=()
+  local -a wrapped=()
+  local src_flag dest_flag
 
-  case "$(printf '%s' "${OCI_COPY_SRC_TLS_VERIFY}" | tr '[:upper:]' '[:lower:]')" in
-    0|false|no|off)
-      tls_args+=(--src-tls-verify=false)
-      ;;
-  esac
-
-  mkdir -p "$(dirname "${output_path}")"
-  rm -f "${output_path}"
+  src_flag="$(skopeo_tls_args_for src "${src_tls_verify}")"
+  dest_flag="$(skopeo_tls_args_for dest "${dest_tls_verify}")"
+  [[ -n "${src_flag}" ]] && tls_args+=("${src_flag}")
+  [[ -n "${dest_flag}" ]] && tls_args+=("${dest_flag}")
+  if [[ -n "${src_user}" && -n "${src_token}" ]]; then
+    cred_args+=(--src-creds "${src_user}:${src_token}")
+  fi
+  if [[ -n "${dest_user}" && -n "${dest_token}" ]]; then
+    cred_args+=(--dest-creds "${dest_user}:${dest_token}")
+  fi
 
   skopeo_bin="$(command -v skopeo || true)"
   if [[ -n "${skopeo_bin}" ]]; then
-    copy_cmd=(sudo -n "${skopeo_bin}" copy "${overrides[@]}" "${tls_args[@]}" "docker://${source_ref#docker://}" "oci-archive:${output_path}:${dest_name}")
+    if [[ "${source_ref}" == oci-archive:* ]] || [[ "${source_ref}" == docker-archive:* ]]; then
+      copy_cmd=(sudo -n "${skopeo_bin}" copy "${overrides[@]}" "${tls_args[@]}" "${cred_args[@]}" "${source_ref}" "${dest_spec}")
+    else
+      copy_cmd=(sudo -n "${skopeo_bin}" copy "${overrides[@]}" "${tls_args[@]}" "${cred_args[@]}" "docker://${source_ref#docker://}" "${dest_spec}")
+    fi
   else
     podman_bin="$(command -v podman || true)"
     if [[ -z "${podman_bin}" ]]; then
-      cat >&2 <<EOF
-build-full-bundle: skopeo or podman is required to export ${dest_name} from ${source_ref}
-build-full-bundle: install skopeo on the build host, or supply a first-class offline archive env for this image when supported
-EOF
-      exit 1
+      return 127
     fi
     skopeo_image="quay.io/skopeo/stable:latest"
     auth_file="${HOME}/.config/containers/auth.json"
+    mkdir -p "$(dirname "${auth_file}")"
+    # Dest oci-archive: must stay under mounted /out when using containerized skopeo.
     copy_cmd=(
       sudo -n "${podman_bin}" run --rm
       -v "${auth_file}:/tmp/auth.json:ro,Z"
-      -v "$(dirname "${output_path}"):/out:Z"
-      "${skopeo_image}"
-      copy --authfile /tmp/auth.json
-      "${overrides[@]}"
-      "${tls_args[@]}"
-      "docker://${source_ref#docker://}"
-      "oci-archive:/out/$(basename "${output_path}"):${dest_name}"
     )
+    if [[ "${dest_spec}" == oci-archive:* ]]; then
+      local out_path out_dir out_base dest_name src_spec
+      out_path="${dest_spec#oci-archive:}"
+      dest_name="${out_path##*:}"
+      out_path="${out_path%:*}"
+      out_dir="$(dirname "${out_path}")"
+      out_base="$(basename "${out_path}")"
+      if [[ "${source_ref}" == oci-archive:* ]] || [[ "${source_ref}" == docker-archive:* ]]; then
+        src_spec="${source_ref}"
+      else
+        src_spec="docker://${source_ref#docker://}"
+      fi
+      copy_cmd+=(
+        -v "${out_dir}:/out:Z"
+        "${skopeo_image}"
+        copy --authfile /tmp/auth.json
+        "${overrides[@]}"
+        "${tls_args[@]}"
+        "${cred_args[@]}"
+        "${src_spec}"
+        "oci-archive:/out/${out_base}:${dest_name}"
+      )
+    else
+      local src_spec
+      if [[ "${source_ref}" == oci-archive:* ]] || [[ "${source_ref}" == docker-archive:* ]]; then
+        src_spec="${source_ref}"
+      else
+        src_spec="docker://${source_ref#docker://}"
+      fi
+      copy_cmd+=(
+        "${skopeo_image}"
+        copy --authfile /tmp/auth.json
+        "${overrides[@]}"
+        "${tls_args[@]}"
+        "${cred_args[@]}"
+        "${src_spec}"
+        "${dest_spec}"
+      )
+    fi
   fi
 
-  if ! "${copy_cmd[@]}" >/dev/null; then
+  if [[ "${timeout_secs}" =~ ^[1-9][0-9]*$ ]]; then
+    if command -v timeout >/dev/null 2>&1; then
+      wrapped=(timeout --signal=TERM "${timeout_secs}" "${copy_cmd[@]}")
+    else
+      wrapped=("${copy_cmd[@]}")
+    fi
+  else
+    wrapped=("${copy_cmd[@]}")
+  fi
+
+  if "${wrapped[@]}" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+ensure_build_image_mirror_login() {
+  local registry user token tls_verify podman_bin skopeo_bin
+  local -a login_tls=()
+  if ! build_image_mirror_enabled; then
+    return 0
+  fi
+  registry="$(printf '%s' "${BUILD_IMAGE_MIRROR_REGISTRY:-}" | sed 's#/*$##')"
+  user="${BUILD_IMAGE_MIRROR_USER:-}"
+  token="${BUILD_IMAGE_MIRROR_TOKEN:-}"
+  tls_verify="${BUILD_IMAGE_MIRROR_TLS_VERIFY:-true}"
+  if [[ -z "${registry}" ]]; then
+    echo "build-full-bundle: BUILD_IMAGE_MIRROR_ENABLED but BUILD_IMAGE_MIRROR_REGISTRY is empty" >&2
+    exit 2
+  fi
+  echo "build-full-bundle: build_image_mirror enabled registry=${registry} prefix=${BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX:-build-cache} timeout=${BUILD_IMAGE_MIRROR_TIMEOUT_SECONDS:-15}s" >&2
+  if [[ -z "${user}" || -z "${token}" ]]; then
+    echo "build-full-bundle: warning: build_image_mirror has no BUILD_IMAGE_MIRROR_USER/TOKEN; relying on existing registry auth" >&2
+    return 0
+  fi
+  case "$(printf '%s' "${tls_verify}" | tr '[:upper:]' '[:lower:]')" in
+    0|false|no|off) login_tls=(--tls-verify=false) ;;
+  esac
+  podman_bin="$(command -v podman || true)"
+  if [[ -n "${podman_bin}" ]]; then
+    if printf '%s\n' "${token}" | "${podman_bin}" login "${login_tls[@]}" --username "${user}" --password-stdin "${registry}" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  skopeo_bin="$(command -v skopeo || true)"
+  if [[ -n "${skopeo_bin}" ]]; then
+    if printf '%s\n' "${token}" | "${skopeo_bin}" login "${login_tls[@]}" --username "${user}" --password-stdin "${registry}" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  echo "build-full-bundle: warning: could not login to build_image_mirror ${registry}; pulls may rely on --src-creds" >&2
+}
+
+skopeo_copy_oci_archive() {
+  # Pull-through to local LAN appliance Artifact Server (build_image_mirror):
+  #   1) If enabled: try LAN mirror first (short timeout). Hit → done (no push).
+  #   2) Else (miss / timeout / unreachable / disabled): pull upstream
+  #      (internet or configured pull ref).
+  #   3) If (2) succeeded and mirror is enabled: best-effort push the just-fetched
+  #      archive to the LAN Artifact Server so the next build is a hit.
+  # Bundle output always lands in output_path; fail closed only if (2) fails.
+  local source_ref="$1"
+  local output_path="$2"
+  local dest_name="$3"
+  local mirror_ref=""
+  local mirror_timeout="${BUILD_IMAGE_MIRROR_TIMEOUT_SECONDS:-15}"
+  local upstream_tls="${OCI_COPY_SRC_TLS_VERIFY:-true}"
+  local mirror_tls="${BUILD_IMAGE_MIRROR_TLS_VERIFY:-true}"
+  local mirror_user="${BUILD_IMAGE_MIRROR_USER:-}"
+  local mirror_token="${BUILD_IMAGE_MIRROR_TOKEN:-}"
+  local dest_spec
+  local fetched_from_upstream=0
+
+  mkdir -p "$(dirname "${output_path}")"
+  rm -f "${output_path}"
+  dest_spec="oci-archive:${output_path}:${dest_name}"
+
+  if build_image_mirror_enabled; then
+    mirror_ref="$(build_image_mirror_ref_for "${source_ref}" || true)"
+    if [[ -z "${mirror_ref}" ]]; then
+      echo "build-full-bundle: build_image_mirror enabled but could not map ${source_ref} to a LAN mirror ref; fetching upstream" >&2
+    else
+      echo "build-full-bundle: LAN artifact mirror try ${mirror_ref} (timeout ${mirror_timeout}s) for ${dest_name}" >&2
+      if skopeo_try_copy "${mirror_ref}" "${dest_spec}" "${mirror_timeout}" "${mirror_tls}" "true" \
+        "${mirror_user}" "${mirror_token}" "" ""; then
+        if [[ -f "${output_path}" && -s "${output_path}" ]]; then
+          echo "build-full-bundle: LAN artifact mirror hit for ${dest_name} (${mirror_ref})" >&2
+          return 0
+        fi
+        echo "build-full-bundle: LAN artifact mirror returned empty archive for ${mirror_ref}; treating as miss" >&2
+        rm -f "${output_path}"
+      else
+        echo "build-full-bundle: LAN artifact mirror miss/timeout/unreachable for ${mirror_ref}" >&2
+        rm -f "${output_path}"
+      fi
+      echo "build-full-bundle: falling back to upstream (internet/pull-ref) ${source_ref}" >&2
+    fi
+  fi
+
+  if ! skopeo_try_copy "${source_ref}" "${dest_spec}" "0" "${upstream_tls}" "true"; then
     cat >&2 <<EOF
-build-full-bundle: failed to export ${dest_name} from ${source_ref}
+build-full-bundle: failed to export ${dest_name} from upstream ${source_ref}
 build-full-bundle: ensure the build host can pull the image (make dev-registry-login in appliance-code for the configured registry) or fix registry auth/TLS settings
 EOF
+    if ! command -v skopeo >/dev/null 2>&1 && ! command -v podman >/dev/null 2>&1; then
+      echo "build-full-bundle: skopeo or podman is required to export ${dest_name}" >&2
+    fi
     exit 1
   fi
+  if [[ ! -f "${output_path}" || ! -s "${output_path}" ]]; then
+    echo "build-full-bundle: upstream export for ${dest_name} produced empty archive at ${output_path}" >&2
+    exit 1
+  fi
+  fetched_from_upstream=1
+  echo "build-full-bundle: fetched ${dest_name} from upstream ${source_ref}" >&2
+
+  # Seed LAN Artifact Server only after a successful upstream fetch (not on mirror hit).
+  if [[ "${fetched_from_upstream}" -eq 1 ]] && build_image_mirror_enabled && [[ -n "${mirror_ref}" ]]; then
+    echo "build-full-bundle: seeding LAN artifact mirror ${mirror_ref} with ${dest_name}" >&2
+    if skopeo_push_oci_archive_to_mirror "${output_path}" "${dest_name}" "${mirror_ref}" "${mirror_tls}"; then
+      echo "build-full-bundle: seeded LAN artifact mirror ${mirror_ref}" >&2
+    else
+      echo "build-full-bundle: warning: failed to seed LAN artifact mirror ${mirror_ref} (build continues; next build may re-fetch upstream)" >&2
+    fi
+  fi
+}
+
+skopeo_push_oci_archive_to_mirror() {
+  local archive_path="$1"
+  local dest_name="$2"
+  local mirror_ref="$3"
+  local mirror_tls="$4"
+  local mirror_user="${BUILD_IMAGE_MIRROR_USER:-}"
+  local mirror_token="${BUILD_IMAGE_MIRROR_TOKEN:-}"
+  local skopeo_bin podman_bin auth_file skopeo_image
+  local -a overrides=(--override-os "${BUNDLE_IMAGE_OS}" --override-arch "${BUNDLE_IMAGE_ARCH}")
+  local -a dest_tls=()
+  local -a cred_args=()
+  local dest_flag
+
+  dest_flag="$(skopeo_tls_args_for dest "${mirror_tls}")"
+  [[ -n "${dest_flag}" ]] && dest_tls+=("${dest_flag}")
+  if [[ -n "${mirror_user}" && -n "${mirror_token}" ]]; then
+    cred_args+=(--dest-creds "${mirror_user}:${mirror_token}")
+  fi
+
+  skopeo_bin="$(command -v skopeo || true)"
+  if [[ -n "${skopeo_bin}" ]]; then
+    sudo -n "${skopeo_bin}" copy "${overrides[@]}" "${dest_tls[@]}" "${cred_args[@]}" \
+      "oci-archive:${archive_path}:${dest_name}" "docker://${mirror_ref#docker://}" >/dev/null 2>&1
+    return $?
+  fi
+  podman_bin="$(command -v podman || true)"
+  [[ -n "${podman_bin}" ]] || return 1
+  skopeo_image="quay.io/skopeo/stable:latest"
+  auth_file="${HOME}/.config/containers/auth.json"
+  mkdir -p "$(dirname "${auth_file}")"
+  sudo -n "${podman_bin}" run --rm \
+    -v "${auth_file}:/tmp/auth.json:ro,Z" \
+    -v "$(dirname "${archive_path}"):/out:Z" \
+    "${skopeo_image}" \
+    copy --authfile /tmp/auth.json \
+    "${overrides[@]}" \
+    "${dest_tls[@]}" \
+    "${cred_args[@]}" \
+    "oci-archive:/out/$(basename "${archive_path}"):${dest_name}" \
+    "docker://${mirror_ref#docker://}" >/dev/null 2>&1
 }
 
 # Finalize any OCI archive (online copy or pre-exported) so imageReference equals
@@ -980,6 +1253,8 @@ fi
 # install-time ctr import will fail RequireReference checks.
 PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES=()
 PACKAGED_EXTRA_OCI_IMAGE_REFS=()
+
+ensure_build_image_mirror_login
 
 ZOT_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/zot-image.tar"
 if [[ -n "${ZOT_IMAGE_ARCHIVE_SOURCE}" ]]; then

@@ -32,6 +32,13 @@ Notes:
   username/token/TLS env names). That block is only for pulling the
   development-container used as build tooling. The bundled offline name is
   fixed as `registry.local/dev-build`.
+- Optional `build_flow.build_image_mirror` is a **separate** Artifact Server
+  path for build-time OCI pulls (zot, workspace-provisioner, EXTRA_OCI /
+  dev-build archival copies, etc.). Keep the same `*_env` names as
+  `dev_image_pull` when both use the same host; leave `enabled: false` or
+  omit the block to skip the mirror. When enabled: try mirror first
+  (`timeout_seconds`, default 15), on miss/timeout pull the public upstream,
+  then best-effort push into `<registry>/<repository_prefix>/<image>:<tag>`.
 - Do **not** put a `build_flow.product_publish` block in config. Signed-bundle
   distribution is `bundle_store` + `publish_command`. Service image push defaults
   live in appliance-code `build/service-image.mk` (`SERVICE_IMAGE_*` /
