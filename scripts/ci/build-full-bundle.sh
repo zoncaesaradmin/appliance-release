@@ -924,15 +924,27 @@ ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
 ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
 rm -rf "${CODE_REPO_DIR}/.run/host-packages"
 HOST_PACKAGES_DIR_FOR_DEV=""
+HOST_CAPABILITIES=()
 if bool_true "${HOST_MDNS_ENABLED:-false}"; then
+  HOST_CAPABILITIES+=(mdns)
+fi
+if bool_true "${HOST_WIFI_AP_ENABLED:-false}"; then
+  HOST_CAPABILITIES+=(wifi-ap)
+fi
+if [[ ${#HOST_CAPABILITIES[@]} -gt 0 ]]; then
   HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
   mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
   if [[ -n "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
     cp -R "${HOST_PACKAGES_DIR_SOURCE}/." "${CODE_REPO_DIR}/.run/host-packages/"
   else
+    CAP_ARGS=()
+    for cap in "${HOST_CAPABILITIES[@]}"; do
+      CAP_ARGS+=(--capability "${cap}")
+    done
     bash "${CODE_REPO_DIR}/scripts/package/export-host-packages.sh" \
       --out-dir "${CODE_REPO_DIR}/.run/host-packages" \
-      --os-version "${OS_VERSION}"
+      --os-version "${OS_VERSION}" \
+      "${CAP_ARGS[@]}"
   fi
 fi
 
@@ -1038,6 +1050,7 @@ EXTRA_OCI_ARGS=()
 # /version payload. Commit SHA stays in the separate Commit build field.
 CODE_VERSION="\${CODE_VERSION:-$(shell_quote "${PRODUCT_VERSION}")}"
 HOST_MDNS_ENABLED_FOR_DEV=$(shell_quote "${HOST_MDNS_ENABLED:-false}")
+HOST_WIFI_AP_ENABLED_FOR_DEV=$(shell_quote "${HOST_WIFI_AP_ENABLED:-false}")
 HOST_PACKAGES_DIR_FOR_DEV=$(shell_quote "${HOST_PACKAGES_DIR_FOR_DEV}")
 HOST_PACKAGES_OS_VERSION=$(shell_quote "${OS_VERSION}")
 
@@ -1057,7 +1070,7 @@ make package-host-agent-image-archive \
   IMAGE_TAG="\${CODE_VERSION}"
 HOST_AGENT_IMAGE_REF="\$(tr -d '\r\n' < "\${HOST_AGENT_IMAGE_REF_FILE}")"
 HOST_PACKAGES_ARGS=()
-if bool_true "\${HOST_MDNS_ENABLED_FOR_DEV}"; then
+if bool_true "\${HOST_MDNS_ENABLED_FOR_DEV}" || bool_true "\${HOST_WIFI_AP_ENABLED_FOR_DEV}"; then
   HOST_PACKAGES_ARGS=(
     --host-packages-dir "\${HOST_PACKAGES_DIR_FOR_DEV}"
     --host-packages-os-version "\${HOST_PACKAGES_OS_VERSION}"
@@ -1115,6 +1128,7 @@ bash ./scripts/package/archive-release-input.sh \
   --host-agent-image "\${HOST_AGENT_IMAGE_OUT}" \
   --host-agent-image-reference "\${HOST_AGENT_IMAGE_REF}" \
   --host-mdns-enabled "\${HOST_MDNS_ENABLED_FOR_DEV}" \
+  --host-wifi-ap-enabled "\${HOST_WIFI_AP_ENABLED_FOR_DEV}" \
   "\${HOST_PACKAGES_ARGS[@]}" \
   --k3s-version $(shell_quote "${K3S_VERSION}") \
   --zot-version $(shell_quote "${ZOT_VERSION}") \

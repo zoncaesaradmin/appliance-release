@@ -233,6 +233,7 @@ BUILD_DNS_IMAGE_PULL_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns
 BUILD_DNS_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.image_archive_source" || true)"
 APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}")"
 HOST_MDNS_ENABLED="$(resolve_host_mdns_enabled "${CONFIG_PATH}")"
+HOST_WIFI_AP_ENABLED="$(resolve_host_wifi_ap_enabled "${CONFIG_PATH}")"
 VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
 [[ -n "${VERIFY_ARGO_ENABLED}" ]] || fail "verification.argo.enabled is required in config (true|false)"
 BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
@@ -266,6 +267,7 @@ BUILD_ENV_PREFIX=""
 BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "PRODUCT_VERSION" "${RELEASE_VERSION}" \
   "HOST_MDNS_ENABLED" "${HOST_MDNS_ENABLED}" \
+  "HOST_WIFI_AP_ENABLED" "${HOST_WIFI_AP_ENABLED}" \
   "EXPORT_DIR" "${REMOTE_EXPORT_DIR}" \
   "K3S_BINARY_SOURCE" "${BUILD_K3S_BINARY_SOURCE}" \
   "K3S_AIRGAP_IMAGES_SOURCE" "${BUILD_K3S_AIRGAP_IMAGES_SOURCE}" \
@@ -554,6 +556,7 @@ if bool_true "${BUILD_ARGO_ENABLED:-false}" || bool_true "${VERIFY_ARGO_ENABLED:
   VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--require-argo)
 fi
 VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--host-mdns-enabled "${HOST_MDNS_ENABLED}")
+VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--host-wifi-ap-enabled "${HOST_WIFI_AP_ENABLED}")
 EXPECTED_EXTRA_OCI_IMAGE_REFS="${BUILD_EXTRA_OCI_IMAGE_REFS}"
 if [[ "${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}" == *@sha256:* ]]; then
   if [[ -n "${EXPECTED_EXTRA_OCI_IMAGE_REFS}" ]]; then

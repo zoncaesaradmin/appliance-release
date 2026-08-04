@@ -46,6 +46,7 @@ BUILD_CATALOG_PATH=""
 APPLIANCE_NAME=""
 DNS_ZONE=""
 HOST_MDNS_ENABLED=""
+HOST_WIFI_AP_ENABLED=""
 TLS_SANS=()
 PRESERVE_FAILED_STATE="false"
 UNINSTALL_FIRST=""
@@ -120,6 +121,7 @@ STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || tru
 APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}" "${APPLIANCE_PROFILE}")"
 BUILD_CATALOG_PATH="$(resolve_build_catalog_path "${CONFIG_PATH}" "${BUILD_CATALOG_PATH}")"
 HOST_MDNS_ENABLED="$(resolve_host_mdns_enabled "${CONFIG_PATH}" "${HOST_MDNS_ENABLED}")"
+HOST_WIFI_AP_ENABLED="$(resolve_host_wifi_ap_enabled "${CONFIG_PATH}" "${HOST_WIFI_AP_ENABLED}")"
 if [[ -z "${APPLIANCE_NAME}" ]]; then
   APPLIANCE_NAME="$(config_get_optional "${CONFIG_PATH}" "install.appliance_name" || true)"
 fi
@@ -357,6 +359,10 @@ fi
 if [[ -n '"$(shell_quote "${HOST_MDNS_ENABLED}")"' ]]; then
   lifecycle_args+=(--host-mdns-enabled '"$(shell_quote "${HOST_MDNS_ENABLED}")"')
 fi
+if [[ -n '"$(shell_quote "${HOST_WIFI_AP_ENABLED}")"' ]]; then
+  lifecycle_args+=(--host-wifi-ap-enabled '"$(shell_quote "${HOST_WIFI_AP_ENABLED}")"')
+fi
+# HOST_WIFI_AP_PSK is forwarded via the remote install environment when set.
 '
 if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
   remote_script+='

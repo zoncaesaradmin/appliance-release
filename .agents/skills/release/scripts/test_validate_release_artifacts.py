@@ -332,8 +332,8 @@ def test_rejects_host_packages_when_mdns_disabled() -> None:
         populate_positive_case(tmp)
         result = run_validator(tmp, "--host-mdns-enabled", "false")
         if result.returncode == 0:
-            raise AssertionError("host-packages were accepted when host mDNS is disabled")
-        if "host mDNS is disabled" not in result.stderr:
+            raise AssertionError("host-packages were accepted when host package capabilities are disabled")
+        if "no host package capability is enabled" not in result.stderr:
             raise AssertionError(result.stderr)
 
 

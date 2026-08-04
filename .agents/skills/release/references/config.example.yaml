@@ -92,6 +92,8 @@ install:
   appliance_profile: storage-landns
   dns_zone: appliance.internal
   host_mdns_enabled: false
+  # Management WiFi AP (optional). PSK must come from env HOST_WIFI_AP_PSK.
+  host_wifi_ap_enabled: false
   uninstall_first: true
   # Keep in sync with release.version
   bundle_download_dir: /tmp/appliance-0.1.0
@@ -101,6 +103,7 @@ install:
   # build_catalog_path: /Users/you/build-catalog.yaml   # required for builder*
   # When host_mdns_enabled=true, zonctl adds the target host's current
   # hostname.local name as an mDNS-friendly TLS SAN.
+  # TLS SANs always include 10.42.0.1 for the management WiFi AP URL.
   # additional_tls_sans_csv: 192.168.1.101,artifact-dns-1.appliance.internal
   # Optional lab pulls (K3s registries.yaml); omit for preload-only:
   # image_pull_registry:

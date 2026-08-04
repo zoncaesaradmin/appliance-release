@@ -559,7 +559,7 @@ def validate_host_agent(
 
 
 def validate_required_artifacts(
-    artifacts: dict, release_input_dir: Path, entries_by_path: dict, *, host_mdns_enabled: bool
+    artifacts: dict, release_input_dir: Path, entries_by_path: dict, *, host_packages_required: bool
 ) -> list:
     checked = []
     runtime_targets = {"applianceChart": "charts"}
@@ -583,15 +583,15 @@ def validate_required_artifacts(
 
     host_packages_present = isinstance(artifacts.get("hostPackages"), dict)
     bundle_has_host_packages = any(path.startswith("host-packages/") for path in entries_by_path)
-    if host_mdns_enabled:
+    if host_packages_required:
         require_dir_artifact(artifacts, "hostPackages", release_input_dir)
         require_bundle_entry_prefix(entries_by_path, "host-packages/", "hostPackages")
         checked.append("hostPackages")
     else:
         if host_packages_present:
-            raise ValueError("release-input artifacts.hostPackages must be omitted when host mDNS is disabled")
+            raise ValueError("release-input artifacts.hostPackages must be omitted when no host package capability is enabled")
         if bundle_has_host_packages:
-            raise ValueError("bundle manifest host-packages entries must be omitted when host mDNS is disabled")
+            raise ValueError("bundle manifest host-packages entries must be omitted when no host package capability is enabled")
 
     for key in ("sbom", "provenance", "notices", "tests"):
         require_dir_artifact(artifacts, key, release_input_dir)
@@ -699,7 +699,12 @@ def main() -> int:
     parser.add_argument(
         "--host-mdns-enabled",
         default="false",
-        help="Whether release-input is expected to include host-packages for host mDNS support.",
+        help="Whether host mDNS capability is enabled (contributes to host-packages requirement).",
+    )
+    parser.add_argument(
+        "--host-wifi-ap-enabled",
+        default="false",
+        help="Whether management WiFi AP capability is enabled (contributes to host-packages requirement).",
     )
     parser.add_argument(
         "--expected-extra-oci-image-refs",
@@ -708,6 +713,8 @@ def main() -> int:
     )
     args = parser.parse_args()
     host_mdns_enabled = parse_bool_arg(args.host_mdns_enabled, "--host-mdns-enabled")
+    host_wifi_ap_enabled = parse_bool_arg(args.host_wifi_ap_enabled, "--host-wifi-ap-enabled")
+    host_packages_required = host_mdns_enabled or host_wifi_ap_enabled
     expected_extra_refs = parse_csv(args.expected_extra_oci_image_refs)
 
     release_input_root = Path(args.release_input_root)
@@ -739,7 +746,7 @@ def main() -> int:
 
     checked = {
         "requiredArtifacts": validate_required_artifacts(
-            artifacts, release_input_path.parent, entries_by_path, host_mdns_enabled=host_mdns_enabled
+            artifacts, release_input_path.parent, entries_by_path, host_packages_required=host_packages_required
         ),
         "runtimeValues": validate_runtime_values(artifacts, bundle_values),
         "zot": validate_zot(

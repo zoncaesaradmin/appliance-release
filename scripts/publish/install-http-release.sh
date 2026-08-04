@@ -39,6 +39,9 @@ Required (or stamped into the published helper at publish time):
   --dns-zone ZONE              LAN DNS zone (from install.dns_zone).
   --host-mdns-enabled true|false
                                Enable or disable host-level mDNS support.
+  --host-wifi-ap-enabled true|false
+                               Enable or disable host-level management WiFi AP.
+                               PSK must be provided via HOST_WIFI_AP_PSK.
                                Defaults to false.
 
 Optional:
@@ -96,6 +99,7 @@ NODE_NAME=""
 APPLIANCE_NAME=""
 DNS_ZONE=""
 HOST_MDNS_ENABLED="false"
+HOST_WIFI_AP_ENABLED="false"
 TLS_SANS=()
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
@@ -152,6 +156,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --host-mdns-enabled)
       HOST_MDNS_ENABLED="${2:-}"
+      shift 2
+      ;;
+    --host-wifi-ap-enabled)
+      HOST_WIFI_AP_ENABLED="${2:-}"
       shift 2
       ;;
     --tls-san)
@@ -371,6 +379,7 @@ lifecycle_args=(
   --appliance-name "${APPLIANCE_NAME}"
   --dns-zone "${DNS_ZONE}"
   --host-mdns-enabled "${HOST_MDNS_ENABLED}"
+  --host-wifi-ap-enabled "${HOST_WIFI_AP_ENABLED}"
 )
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   lifecycle_args+=(--build-catalog "${BUILD_CATALOG_PATH}")
