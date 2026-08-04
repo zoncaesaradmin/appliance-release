@@ -88,7 +88,6 @@ target_host:
 install:
   appliance_name: artifact-dns-1
   # core | builder | storage | landns | storage-landns | builder-landns | builder-storage-landns
-  # Omit to default to core. Licensing is configured after first login, not at install.
   appliance_profile: storage-landns
   dns_zone: appliance.internal
   host_mdns_enabled: false
