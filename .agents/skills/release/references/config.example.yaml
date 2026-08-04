@@ -11,6 +11,8 @@
 #   DEV_REGISTRY_USER / DEV_REGISTRY_TOKEN / DEV_REGISTRY_TLS_VERIFY
 #   APPLIANCE_BUILD_SUDO_PASSWORD / APPLIANCE_TARGET_SUDO_PASSWORD
 #   APPLIANCE_FIRST_ADMIN_PASSWORD
+#   HOST_WIFI_AP_PSK (only when install.host_wifi_ap_enabled; named by
+#     install.host_wifi_ap_psk_env)
 # Absolute remote paths only (no ~/...).
 
 # =============================================================================
@@ -91,8 +93,11 @@ install:
   appliance_profile: storage-landns
   dns_zone: appliance.internal
   host_mdns_enabled: false
-  # Management WiFi AP (optional). PSK must come from env HOST_WIFI_AP_PSK.
+  # Management WiFi AP (optional). Default off.
+  # When true, name the orchestrator env holding the WPA2 PSK (value never in yaml).
+  # install-on-target resolves that env and forwards it to target zonctl as HOST_WIFI_AP_PSK.
   host_wifi_ap_enabled: false
+  host_wifi_ap_psk_env: HOST_WIFI_AP_PSK
   uninstall_first: true
   # Keep in sync with release.version
   bundle_download_dir: /tmp/appliance-0.1.0

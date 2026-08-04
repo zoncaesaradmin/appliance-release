@@ -122,6 +122,9 @@ APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}" "${APPLIANCE_PRO
 BUILD_CATALOG_PATH="$(resolve_build_catalog_path "${CONFIG_PATH}" "${BUILD_CATALOG_PATH}")"
 HOST_MDNS_ENABLED="$(resolve_host_mdns_enabled "${CONFIG_PATH}" "${HOST_MDNS_ENABLED}")"
 HOST_WIFI_AP_ENABLED="$(resolve_host_wifi_ap_enabled "${CONFIG_PATH}" "${HOST_WIFI_AP_ENABLED}")"
+# PSK never lives in yaml. Config names the orchestrator env var; value is
+# forwarded to the target as HOST_WIFI_AP_PSK for zonctl.
+HOST_WIFI_AP_PSK="$(resolve_host_wifi_ap_psk "${CONFIG_PATH}" "${HOST_WIFI_AP_ENABLED}")"
 if [[ -z "${APPLIANCE_NAME}" ]]; then
   APPLIANCE_NAME="$(config_get_optional "${CONFIG_PATH}" "install.appliance_name" || true)"
 fi
@@ -163,6 +166,14 @@ if [[ -n "${IMAGE_PULL_REGISTRY_ENV}" ]]; then
   fi
 elif [[ -n "${IMAGE_PULL_USERNAME_ENV}" || -n "${IMAGE_PULL_TOKEN_ENV}" || -n "${IMAGE_PULL_TLS_VERIFY_ENV}" ]]; then
   fail "install.image_pull_registry.registry_env is required when username_env/token_env/tls_verify_env are set"
+fi
+# sudo drops the remote shell env unless preserved (same pattern as image-pull creds).
+if [[ -n "${HOST_WIFI_AP_PSK}" ]]; then
+  if [[ -n "${IMAGE_PULL_PRESERVE_ENV}" ]]; then
+    IMAGE_PULL_PRESERVE_ENV="${IMAGE_PULL_PRESERVE_ENV},HOST_WIFI_AP_PSK"
+  else
+    IMAGE_PULL_PRESERVE_ENV="--preserve-env=HOST_WIFI_AP_PSK"
+  fi
 fi
 require_builder_build_catalog_path "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}"
 if [[ -z "${UNINSTALL_FIRST}" ]]; then
@@ -362,8 +373,14 @@ fi
 if [[ -n '"$(shell_quote "${HOST_WIFI_AP_ENABLED}")"' ]]; then
   lifecycle_args+=(--host-wifi-ap-enabled '"$(shell_quote "${HOST_WIFI_AP_ENABLED}")"')
 fi
-# HOST_WIFI_AP_PSK is forwarded via the remote install environment when set.
 '
+if [[ -n "${HOST_WIFI_AP_PSK}" ]]; then
+  # Embed from orchestrator env into the remote shell; sudo --preserve-env keeps it for zonctl.
+  # Value is not echoed; install.log captures only remote command output.
+  remote_script+='
+export HOST_WIFI_AP_PSK='"$(shell_quote "${HOST_WIFI_AP_PSK}")"'
+'
+fi
 if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
   remote_script+='
 export '"$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")"'='"$(shell_quote "${IMAGE_PULL_USERNAME}")"'
