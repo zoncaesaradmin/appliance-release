@@ -4,9 +4,10 @@
 # Builds the full curl URL and auth flags on *this* machine (using config +
 # devhost DEV_* env), SSHs to the target, downloads install-http-release.sh,
 # patches stamped settings if needed, and runs:
-#   bash install-http-release.sh --appliance-name … --appliance-profile …
+#   install-http-release.sh --appliance-name … --appliance-profile …
 #
-# The target does not need any environment variables.
+# Target needs no permanent env. Sudo for zonctl is non-interactive: Mac
+# APPLIANCE_TARGET_SUDO_PASSWORD is injected for this SSH job only.
 set -euo pipefail
 set +H
 
@@ -22,6 +23,8 @@ usage: run-install-via-public-helper-on-target.sh \
   --install-config PATH
 
 Devhost builds curl + name/profile; target only fetches and runs the public helper.
+
+Export APPLIANCE_TARGET_SUDO_PASSWORD on the Mac (same as other install paths).
 EOF
 }
 
@@ -125,7 +128,10 @@ log "target-host=${TARGET_HOST}"
 log "helper-url=${HELPER_URL}"
 log "appliance-name=${APPLIANCE_NAME} profile=${APPLIANCE_PROFILE}"
 
-# Fully concrete remote command: no target env required.
+target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
+quoted_sudo_password="$(shell_quote "${target_sudo_password}")"
+
+# Fully concrete remote command: no permanent target env; sudo auth from this job only.
 curl_extra=""
 if [[ -n "${BEARER_TOKEN}" ]]; then
   curl_extra+=" -H $(shell_quote "Authorization: Bearer ${BEARER_TOKEN}")"
@@ -134,6 +140,9 @@ if [[ "${TLS_INSECURE}" == "1" ]]; then
   curl_extra+=" -k"
 fi
 
+# Run the public helper under a single non-interactive sudo so its nested
+# `sudo zonctl …` calls do not wait on a TTY password (timestamp cache alone
+# can expire during a long download).
 remote_cmd="set -euo pipefail
 helper_url=$(shell_quote "${HELPER_URL}")
 script_path=$(shell_quote "${SCRIPT_PATH}")
@@ -176,8 +185,8 @@ text = set_assign(text, \"TLS_INSECURE\", tls_insecure)
 Path(path).write_text(text, encoding=\"utf-8\")
 PY
 
-echo \"running install-http-release.sh --appliance-name \${name} --appliance-profile \${profile}\"
-bash \"\${script_path}\" --appliance-name \"\${name}\" --appliance-profile \"\${profile}\"
+echo \"running install-http-release.sh --appliance-name \${name} --appliance-profile \${profile} (via non-interactive sudo)\"
+printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' bash \"\${script_path}\" --appliance-name \"\${name}\" --appliance-profile \"\${profile}\"
 "
 
 log "running public install helper on ${TARGET_HOST}"

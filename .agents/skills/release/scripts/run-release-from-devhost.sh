@@ -19,7 +19,8 @@ usage: run-release-from-devhost.sh \
   [--build-publish-config PATH] \
   [--install-config PATH]
 
-Export DEV_* and APPLIANCE_BUILD_SUDO_PASSWORD on this Mac first.
+Export DEV_*, APPLIANCE_BUILD_SUDO_PASSWORD, and (for install)
+APPLIANCE_TARGET_SUDO_PASSWORD on this Mac first.
 
   --build-publish-config  → run build/publish
   --install-config        → run install (requires --build-publish-config for
