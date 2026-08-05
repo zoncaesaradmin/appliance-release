@@ -1,65 +1,88 @@
 # Appliance release skill config (single file for now).
 # Copy locally (e.g. ~/appliance-release.config.yaml); do not commit secrets.
 #
-# run-release-flow.sh stages:
-#   1) build/publish  (build_host + build_flow + bundle_store)
-#   2) install/verify (target_host + install + verification + client_verification)
+# Pipeline order for run-release-flow.sh / day-to-day use:
+#   STEP 1 — BUILD     produce the signed offline super-set bundle on the build host
+#   STEP 2 — PUBLISH   place that bundle where install can download it
+#   STEP 3 — INSTALL   install (and optionally bootstrap/verify) on the target
 #
-# Scripts fail closed when a required key is missing — only list what is used.
-# Packaging always produces the complete product super-set (all OCI images, Argo,
-# host-packages for mdns + wifi-ap, builder dev-build). Profile only selects
-# install-time modules. Host mDNS and Wi-Fi AP enablement are day-2 Admin UI/API only.
-# Secrets via env (not this file):
-#   DEV_REGISTRY / DEV_IMAGE_REPO / DEV_IMAGE_NAME
-#   DEV_REGISTRY_USER / DEV_REGISTRY_TOKEN / DEV_REGISTRY_TLS_VERIFY
-#   (dev_image_pull and optional build_image_mirror may share these env names)
-#   APPLIANCE_BUILD_SUDO_PASSWORD / APPLIANCE_TARGET_SUDO_PASSWORD
-#   APPLIANCE_FIRST_ADMIN_PASSWORD
-# Absolute remote paths only (no ~/...).
-
-# =============================================================================
-# 1) BUILD / PUBLISH
-# =============================================================================
+# This file stays one YAML document until we split configs. Blocks are ordered
+# by that pipeline so each step’s required keys and env vars are obvious.
+# Key names below are what the scripts already read (no renames yet).
+#
+# Rules:
+# - Scripts fail closed: every required key must appear (lab fixed values OK).
+# - Absolute remote paths only (no ~/... on build/target hosts).
+# - Secrets never live in this file — only env *names* are listed under *_env keys.
+# - Packaging always produces the complete product super-set (Argo, Zot, DNS,
+#   host-packages mdns+wifi-ap, builder dev-build). install.appliance_profile
+#   only selects what the target turns on.
+# - Host mDNS / Wi-Fi AP enablement is day-2 Admin UI/API only.
+#
+# Optional run-release-flow CLI (not config keys):
+#   --bootstrap-admin           create first admin + Mac client verify
+#   --enable-default-license    accept base/free entitlement on target
+#   --skip-build / --skip-install
+#
+# ============================================================================
+# STEP 1 — BUILD
+# Script: build-and-publish.sh → remote bootstrap + build_command
+# Purpose: clone/reset release checkout, build signed bundle under EXPORT_DIR.
+#
+# Prerequisites for this step only:
+#   - SSH reachability to build_host.alias
+#   - release_workspace paths exist or can be cloned on the build host
+#   - K3s inputs present at k3s_*_source on the build host
+#   - network (or build_image_mirror) for OCI pulls during the build
+#
+# Required secrets / shell env for STEP 1 (export before running):
+#   APPLIANCE_BUILD_SUDO_PASSWORD
+#     used when bootstrap_needs_sudo / build_needs_sudo are true
+#   Values named by build_flow.dev_image_pull.*_env (examples below):
+#     DEV_REGISTRY, DEV_IMAGE_REPO, DEV_IMAGE_NAME,
+#     DEV_REGISTRY_USER, DEV_REGISTRY_TOKEN, DEV_REGISTRY_TLS_VERIFY
+#   If build_image_mirror.enabled is true, also set the mirror’s named
+#   env vars (often the same DEV_REGISTRY* names).
+#
+# Shared with later steps (set once here, referenced by publish + install):
+#   release.version  — PRODUCT_VERSION for the build; install download path uses it
+# ============================================================================
 
 build_host:
+  # SSH user@host (or ssh-config alias) of the machine that compiles the bundle.
   alias: zonsys@192.168.1.152
 
 release_workspace:
+  # Skill-managed git checkout on the build host (clone if missing, hard-reset
+  # to remote_repo_ref each run; do not hand-edit files on the build host).
   remote_repo_path: /home/zonsys/ws/appliance-release
-  remote_export_dir: /home/zonsys/appliance-build/export
   remote_repo_source: https://github.com/zoncaesaradmin/appliance-release.git
   remote_repo_ref: main
+  # Injected as EXPORT_DIR for build_command (and publish_command in STEP 2).
+  remote_export_dir: /home/zonsys/appliance-build/export
 
 release:
+  # STEP 1 BUILD and STEP 2 PUBLISH both need this. STEP 3 INSTALL downloads
+  # appliance-<version>-… using the same string.
   version: 0.1.0
+  # STEP 2 only: whether publish writes/updates a “latest” alias (see publish).
   publish_latest_alias: false
 
-# Signed-bundle distribution (not a container image push).
-bundle_store:
-  # static_http | appliance_files
-  mode: static_http
-  release_path_prefix: appliance
-  base_url: http://192.168.1.155:28081
-  publish_server_alias: zonsys@192.168.1.155
-  publish_remote_root: /home/zonsys/releases
-  # --- appliance_files (day-2 distributor) ---
-  # Connection derives from the same DEV_REGISTRY* env vars as image pull:
-  #   https://$DEV_REGISTRY$files_path
-  #   bearer: $DEV_REGISTRY_TOKEN
-  #   TLS: $DEV_REGISTRY_TLS_VERIFY (false → curl -k)
-  # Optional env name overrides (defaults shown):
-  # registry_env: DEV_REGISTRY
-  # token_env: DEV_REGISTRY_TOKEN
-  # tls_verify_env: DEV_REGISTRY_TLS_VERIFY
-  # files_path: /api/v1/files
-  # Optional overrides only: base_url, access_token, tls_insecure, cacert_path
-
 build_flow:
-  # ---------------------------------------------------------------------------
-  # DevContainer image pull (build tooling container only).
+  # --- STEP 1 BUILD: source pins and host inputs (required) ---
+  code_repo_ref: main
+  ctl_repo_ref: main
+  k3s_binary_source: /home/zonsys/ci/inputs/k3s
+  k3s_airgap_images_source: /home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst
+
+  # --- STEP 1 BUILD: optional one-time bootstrap on the build host ---
+  bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
+  bootstrap_needs_sudo: true
+  build_needs_sudo: true
+
+  # --- STEP 1 BUILD: Development-container pull (build tooling image only) ---
   # Bundled offline name for the appliance is fixed: registry.local/dev-build
-  # This server can differ from build_image_mirror below.
-  # ---------------------------------------------------------------------------
+  # These keys name env vars; values are NOT secrets in YAML.
   dev_image_pull:
     registry_env: DEV_REGISTRY
     image_repo_env: DEV_IMAGE_REPO
@@ -69,71 +92,162 @@ build_flow:
     token_env: DEV_REGISTRY_TOKEN
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 
-  # ---------------------------------------------------------------------------
-  # Build-time OCI pull-through mirror = local LAN appliance Artifact Server.
-  # Separate section from dev_image_pull (DevContainer host can differ later).
-  # Same env names as dev_image_pull are fine for now (e.g. both on 153 Zot).
-  #
-  # Per-image flow when enabled:
-  #   1. Try LAN: <registry>/<repository_prefix>/<image>:<tag> (timeout_seconds)
-  #   2. If miss / timeout / unreachable → pull from internet/upstream
-  #   3. After a successful upstream fetch → push image into the LAN mirror
-  #      (best-effort; push failure does not fail the build)
-  # ---------------------------------------------------------------------------
+  # --- STEP 1 BUILD: optional LAN OCI pull-through mirror (Artifact Server) ---
+  # Separate from dev_image_pull so the DevContainer host and mirror host can
+  # differ later. Same env names as dev_image_pull are fine today.
+  # Per image when enabled:
+  #   1) try <registry>/<repository_prefix>/<image>:<tag> (timeout_seconds)
+  #   2) on miss/timeout → public/upstream pull
+  #   3) best-effort push into the mirror (push failure does not fail the build)
   build_image_mirror:
     enabled: true
     registry_env: DEV_REGISTRY
-    # Repositories under this prefix, e.g. <registry>/build-cache/<image>:<tag>
     repository_prefix: build-cache
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
-    # Seconds to wait on mirror pull before falling back to the internet
     timeout_seconds: 10
 
-  bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
-  bootstrap_needs_sudo: true
-  build_needs_sudo: true
-  code_repo_ref: main
-  ctl_repo_ref: main
-  k3s_binary_source: /home/zonsys/ci/inputs/k3s
-  k3s_airgap_images_source: /home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst
+  # --- STEP 1 BUILD: remote command (required) ---
+  # PRODUCT_VERSION and EXPORT_DIR are injected by the skill from release.version
+  # and release_workspace.remote_export_dir. Run under remote_repo_path.
   build_command: bash scripts/ci/build-full-bundle.sh
+
+  # --- STEP 2 PUBLISH: remote command (key path stays build_flow.publish_command) ---
+  # Runs after a successful build on the same build host. Needs bundle_store
+  # (below) plus publish env for the chosen mode. Do not put product image
+  # “push registry” here — signed-bundle distribution is only bundle_store.
   publish_command: make publish-release
 
-# =============================================================================
-# 2) INSTALL / VERIFY
-# =============================================================================
+# ============================================================================
+# STEP 2 — PUBLISH
+# Script: build-and-publish.sh → publish_command (after build)
+# Purpose: copy the signed bundle to a download location for STEP 3.
+#
+# Prerequisites for this step:
+#   - STEP 1 build finished (EXPORT_DIR has the release artifacts)
+#   - bundle_store.mode and mode-specific keys below
+#   - for static_http: publish SSH host + remote root + public base_url
+#   - for appliance_files: an already-running distributor appliance reachable
+#     as https://$DEV_REGISTRY…/api/v1/files (day-2 path)
+#
+# Required secrets / shell env for STEP 2:
+#   static_http:
+#     usually none beyond SSH keys; publish_command may use
+#     publish_server_alias over SSH from the build host
+#   appliance_files (defaults; override names via keys commented below):
+#     DEV_REGISTRY, DEV_REGISTRY_TOKEN, DEV_REGISTRY_TLS_VERIFY
+#     (same names often already set for STEP 1 image pull)
+#
+# Keys also consumed later by STEP 3 INSTALL:
+#   mode, release_path_prefix, and either base_url (static_http) or the
+#   appliance_files env-derived download URL — so install can fetch the
+#   same published release without a second copy of those URLs in install.*
+# ============================================================================
+
+bundle_store:
+  # Required. static_http | appliance_files
+  # (aliases: http / http-static → static_http; fileserver → appliance_files)
+  mode: static_http
+
+  # URL path segment after base: .../<release_path_prefix>/<version>/...
+  # Required for both modes. Used by publish and by install download.
+  release_path_prefix: appliance
+
+  # --- mode: static_http (this example) ---
+  # Public HTTP(S) base of the static file server (no trailing slash required).
+  base_url: http://192.168.1.155:28081
+  # Where the build host publishes via SSH in publish_command.
+  publish_server_alias: zonsys@192.168.1.155
+  publish_remote_root: /home/zonsys/releases
+
+  # --- mode: appliance_files (alternative; comment static_http fields when using) ---
+  # Download/publish base: https://$DEV_REGISTRY$files_path  (default files_path)
+  # Bearer: $DEV_REGISTRY_TOKEN
+  # TLS: $DEV_REGISTRY_TLS_VERIFY (false → curl -k)
+  # Optional env-name overrides (defaults shown in comments):
+  # registry_env: DEV_REGISTRY
+  # token_env: DEV_REGISTRY_TOKEN
+  # tls_verify_env: DEV_REGISTRY_TLS_VERIFY
+  # files_path: /api/v1/files
+  # Optional overrides only (prefer env): base_url, access_token, tls_insecure, cacert_path
+  # Traefik unauthenticated /files was removed; path must be the authenticated API.
+
+# ============================================================================
+# STEP 3 — INSTALL (+ post-install verify)
+# Scripts (in order when using run-release-flow.sh):
+#   install-on-target.sh
+#   [optional] bootstrap-admin-on-target.sh          (--bootstrap-admin)
+#   [optional] bootstrap-default-license-on-target.sh (--enable-default-license)
+#   verify-target.sh
+#   [optional] verify-client-access.sh               (with --bootstrap-admin)
+#
+# Purpose: pull the published bundle onto the target, run zonctl install/upgrade,
+# then health checks (and optional first-admin / base license / client API checks).
+#
+# Prerequisites for this step:
+#   - STEP 2 published this release.version under bundle_store
+#   - target_host SSH + sudo; K3s ownership rules satisfied on the target
+#   - install.* identity and paths below
+#
+# Consumes from earlier steps (do not re-enter under different names yet):
+#   release.version
+#   bundle_store.mode / release_path_prefix / base_url (or appliance_files env)
+#   When appliance_profile is builder*: build_catalog_path and a catalog that
+#   matches what STEP 1 bundled (workspace provisioner / registry.local/dev-build)
+#
+# Required secrets / shell env for STEP 3:
+#   APPLIANCE_TARGET_SUDO_PASSWORD          # always for install/verify on target
+#   For bundle_store.mode=appliance_files download from target:
+#     same DEV_REGISTRY / DEV_REGISTRY_TOKEN / DEV_REGISTRY_TLS_VERIFY as publish
+#   Only if you pass --bootstrap-admin:
+#     APPLIANCE_FIRST_ADMIN_PASSWORD
+#     install.bootstrap_admin_username (below)
+# ============================================================================
 
 target_host:
   alias: zonsys@192.168.1.153
+  # Must match zonctl --state-dir (product default if you always use that path).
   state_dir: /var/lib/zon/state
 
 install:
+  # --- Identity (required) — FQDN becomes <appliance_name>.<dns_zone> ---
   appliance_name: artifact-dns-1
-  # core | builder | storage | landns | storage-landns | builder-landns | builder-storage-landns
-  appliance_profile: storage-landns
   dns_zone: appliance.internal
-  # Host mDNS and management Wi-Fi AP are not selected at install. Offline
-  # packages are staged from the super-set bundle; admins enable those features
-  # after first login via the control-plane UI/API (Admin → Host).
-  uninstall_first: true
-  # Keep in sync with release.version
+  # core | builder | storage | landns | storage-landns | builder-landns | builder-storage-landns
+  # Install-time module selection only; does not change what STEP 1 packaged.
+  appliance_profile: storage-landns
+
+  # --- Bundle fetch / install layout (required) ---
+  # Keep in sync with release.version (same release STEP 1/2 produced).
   bundle_download_dir: /tmp/appliance-0.1.0
+  uninstall_first: true
+
+  # --- Optional post-install automation (used only when CLI flags are set) ---
+  # --bootstrap-admin reads this username + APPLIANCE_FIRST_ADMIN_PASSWORD.
   bootstrap_admin_username: admin
   kubernetes_namespace: control
   control_plane_deployment: api-server
-  # build_catalog_path: /Users/you/build-catalog.yaml   # required for builder*
-  # TLS SANs always include manage.ap, 10.42.0.1, and hostname.local so day-2
-  # mDNS / Wi-Fi AP enablement works with the install certificate.
+
+  # Host mDNS / Wi-Fi AP: always staged from the super-set bundle when present;
+  # not enabled here. Day-2 Admin → Host enables them.
+  #
+  # builder* profiles: catalog with workspace profiles + HTTPS repo URLs.
+  # build_catalog_path: /Users/you/build-catalog.yaml
+  #
+  # TLS SANs always include manage.ap, 10.42.0.1, and hostname.local for day-2
+  # mDNS / AP. Extra SANs (CSV), if needed:
   # additional_tls_sans_csv: 192.168.1.101,artifact-dns-1.appliance.internal
-  # Optional lab pulls (K3s registries.yaml); omit for preload-only:
+  #
+  # Optional lab image-pull registries.yaml (preload remains primary).
+  # Env names often match STEP 1 pull; omit block for preload-only.
   # image_pull_registry:
   #   registry_env: DEV_REGISTRY
   #   username_env: DEV_REGISTRY_USER
   #   token_env: DEV_REGISTRY_TOKEN
   #   tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 
+# --- STEP 3: checks on the target after install (verify-target.sh) ---
 verification:
   status_command: sudo zonctl status --output json
   verify_command: sudo zonctl verify --output json
@@ -157,10 +271,11 @@ verification:
     enabled: true
     readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/dns-server --timeout=120s && dig +short @127.0.0.1 -p 53 SOA appliance.internal
 
+# --- STEP 3: checks from the Mac (verify-client-access.sh; needs --bootstrap-admin) ---
 client_verification:
-  # Prefer a name that matches the certificate, for example the derived
-  # appliance.internal name or the target host's current hostname.local name.
+  # Prefer a name that matches the install certificate (FQDN or hostname.local).
   base_url: https://artifact-dns-1.appliance.internal
+  # Login user; password is APPLIANCE_FIRST_ADMIN_PASSWORD when bootstrap-admin ran.
   username: admin
   builder:
     enabled: false

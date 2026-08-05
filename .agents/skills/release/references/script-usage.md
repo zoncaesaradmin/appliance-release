@@ -14,10 +14,11 @@ export APPLIANCE_FIRST_ADMIN_PASSWORD='ins3965!'
 Notes:
 
 - `APPLIANCE_RELEASE_CONFIG` is the main common input for all scripts.
-- Start from `references/config.example.yaml`: one file with **BUILD / PUBLISH**
-  then **INSTALL / VERIFY** sections. Scripts do **not** invent operational
-  defaults — every required key must be present in the config (fixed lab values
-  are fine in YAML). See the example for `release_path_prefix`,
+- Start from `references/config.example.yaml`: one file ordered as
+  **STEP 1 BUILD → STEP 2 PUBLISH → STEP 3 INSTALL**, with env and
+  cross-step dependencies documented in comments. Scripts do **not** invent
+  operational defaults — every required key must be present in the config
+  (fixed lab values are fine in YAML). See the example for `release_path_prefix`,
   `build_command` / `publish_command`, `bundle_download_dir`, verification
   commands, and capability flags.
 - If `APPLIANCE_RELEASE_CONFIG` is set, you usually do not need `--config`.
