@@ -47,6 +47,10 @@ Important rules:
 - keep machine-specific values in the config, not in the skill
 - put every required operational value in the config (scripts fail closed when a
   key is missing; fixed lab defaults belong in YAML, not hardcoded in scripts)
+- packaging always builds the **complete product super-set** (Argo, Zot, DNS,
+  host-packages for mdns+wifi-ap, workspace-provisioner, `registry.local/dev-build`).
+  `install.appliance_profile` only selects modules at install; host mDNS / Wi-Fi AP
+  enablement is day-2 Admin UI/API only (packages always staged, services off)
 
 Runtime secrets such as remote `sudo` passwords and first-admin credentials must be supplied at runtime, not written into the skill. Prefer environment variables or an interactive prompt.
 

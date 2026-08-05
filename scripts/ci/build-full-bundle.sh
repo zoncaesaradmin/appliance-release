@@ -49,10 +49,12 @@ Optional overrides:
   # Optional override for a prebuilt offline host package payload.
   # Layout must be OS/version/arch, for example
   HOST_PACKAGES_DIR_SOURCE=/ci/inputs/host-packages
-  # ubuntu/24.04/amd64/*.deb. When omitted, build-full-bundle exports the
-  # payload on the outer Linux build host for the selected OS_VERSION
-  # baseline before entering appliance-code's Debian-based dev container.
-  ARGO_ENABLED=0                    # opt out entirely (control-plane-only debug build)
+  # ubuntu/24.04/amd64/*.deb. When omitted, build-full-bundle always exports the
+  # complete host capability set (mdns + wifi-ap) for OS_VERSION.
+  # Install stages those packages offline; enablement is day-2 Admin UI/API only.
+  # BUILD_COMPLETE_PRODUCT=false  # developer slim path only; default true requires Argo + dev-build
+  # COMPONENT_CACHE_DIR=/var/cache/appliance-build/components  # optional dirty-only rebuild cache
+  ARGO_ENABLED=true                 # complete product always packages Argo (set BUILD_COMPLETE_PRODUCT=false to allow opt-out)
   ARGO_CRDS_DIR_SOURCE=/ci/inputs/argo-crds   # use a local/offline CRD copy instead of fetching from GitHub
   ARGO_VERSION=v3.5.10                        # pin a different Argo version than the chart's appVersion
   ARGO_CONTROLLER_IMAGE_REF=localhost/appliance-argo-controller:v3.5.10
@@ -65,9 +67,9 @@ Optional overrides:
   # platform manifest digest> from the archive contents (never from skopeo inspect).
   EXTRA_OCI_IMAGE_REFS=registry.local/dev-build
   EXTRA_OCI_IMAGE_PULL_REFS=ghcr.io/org/development-container/dev-build:v0.1.0
-  # Pull extra OCI images from a registry only (GHCR or LAN). There is no
-  # EXTRA_OCI_IMAGE_ARCHIVE_SOURCES path. Digests in EXTRA_OCI_IMAGE_REFS are
-  # optional advisory pins; the archived platform manifest digest always wins.
+  # Complete product always packages registry.local/dev-build (builder task image).
+  # Skill/release config should set EXTRA_OCI_*; bare CI must not omit them unless
+  # BUILD_COMPLETE_PRODUCT=false.
   # OCI_COPY_SRC_TLS_VERIFY=false  # for LAN registries with self-signed TLS
   # Optional build-time OCI pull-through mirror (from build_flow.build_image_mirror):
   #   BUILD_IMAGE_MIRROR_ENABLED=true
@@ -189,12 +191,10 @@ EXTRA_OCI_IMAGE_REFS="${USER_EXTRA_OCI_IMAGE_REFS:-${EXTRA_OCI_IMAGE_REFS:-}}"
 EXTRA_OCI_IMAGE_PULL_REFS="${USER_EXTRA_OCI_IMAGE_PULL_REFS:-${EXTRA_OCI_IMAGE_PULL_REFS:-}}"
 OCI_COPY_SRC_TLS_VERIFY="${USER_OCI_COPY_SRC_TLS_VERIFY:-${OCI_COPY_SRC_TLS_VERIFY:-true}}"
 
-# Argo Workflows is a mandatory component of the complete v1 appliance
-# (ADR 0011 in appliance-code), so it is on by default. ARGO_VERSION is
-# derived later from appliance-code's own deploy/charts/argo-workflows/
-# Chart.yaml (the chart's pinned appVersion is the single source of
-# truth), once that repo is cloned. The appliance-owned controller
-# wrapper image reference is then derived from that version.
+# Argo Workflows is a mandatory component of the complete product super-set
+# (ADR 0011). BUILD_COMPLETE_PRODUCT defaults true and forces ARGO_ENABLED.
+# ARGO_VERSION is derived later from appliance-code's Chart.yaml once checked out.
+BUILD_COMPLETE_PRODUCT="${BUILD_COMPLETE_PRODUCT:-true}"
 if [[ -z "${ARGO_ENABLED}" ]]; then
   ARGO_ENABLED="true"
 fi
@@ -202,6 +202,11 @@ fi
 if [[ -n "${K3S_VERSION_OVERRIDE}" ]]; then
   K3S_VERSION="${K3S_VERSION_OVERRIDE}"
 fi
+
+# Optional per-component cache for incremental rebuilds (Phase C).
+COMPONENT_CACHE_DIR="${COMPONENT_CACHE_DIR:-}"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/component-cache.sh"
 
 REPOS_DIR="${WORK_ROOT}/repos"
 ARTIFACTS_DIR="${WORK_ROOT}/artifacts"
@@ -227,6 +232,11 @@ bool_true() {
     *) return 1 ;;
   esac
 }
+
+if bool_true "${BUILD_COMPLETE_PRODUCT}" && ! bool_true "${ARGO_ENABLED}"; then
+  echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires ARGO_ENABLED=true (developer slim builds: BUILD_COMPLETE_PRODUCT=false)" >&2
+  exit 2
+fi
 
 shell_quote() {
   printf '%q' "${1:-}"
@@ -1214,6 +1224,24 @@ EXTRA_OCI_IMAGE_REF_LIST=()
 EXTRA_OCI_IMAGE_PULL_REF_LIST=()
 split_csv "${EXTRA_OCI_IMAGE_REFS}" EXTRA_OCI_IMAGE_REF_LIST
 split_csv "${EXTRA_OCI_IMAGE_PULL_REFS}" EXTRA_OCI_IMAGE_PULL_REF_LIST
+if bool_true "${BUILD_COMPLETE_PRODUCT}"; then
+  # Complete product always packages workspace builder image as registry.local/dev-build.
+  has_dev_build=0
+  for ref in "${EXTRA_OCI_IMAGE_REF_LIST[@]+"${EXTRA_OCI_IMAGE_REF_LIST[@]}"}"; do
+    if [[ "$(oci_bundle_local_name "${ref}")" == registry.local/dev-build ]]; then
+      has_dev_build=1
+      break
+    fi
+  done
+  if [[ "${has_dev_build}" -eq 0 ]]; then
+    if [[ -n "${EXTRA_OCI_IMAGE_PULL_REFS:-}" || -n "${EXTRA_OCI_IMAGE_REFS:-}" ]]; then
+      echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires EXTRA_OCI to include registry.local/dev-build (and its pull ref)" >&2
+      exit 2
+    fi
+    echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires EXTRA_OCI_IMAGE_REFS=registry.local/dev-build and EXTRA_OCI_IMAGE_PULL_REFS=<upstream>" >&2
+    exit 2
+  fi
+fi
 if [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -eq 0 ]]; then
   if [[ ${#EXTRA_OCI_IMAGE_REF_LIST[@]} -gt 0 ]]; then
     echo "build-full-bundle: EXTRA_OCI_IMAGE_REFS is set without EXTRA_OCI_IMAGE_PULL_REFS" >&2
@@ -1287,17 +1315,16 @@ ARGO_CRDS_DIR_FOR_DEV=""
 ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
 ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
 rm -rf "${CODE_REPO_DIR}/.run/host-packages"
-HOST_PACKAGES_DIR_FOR_DEV=""
-HOST_CAPABILITIES=()
-if bool_true "${HOST_MDNS_ENABLED:-false}"; then
-  HOST_CAPABILITIES+=(mdns)
+# Complete product super-set always packages both host capability closures.
+HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
+HOST_CAPABILITIES=(mdns wifi-ap)
+mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
+host_packages_input="${HOST_PACKAGES_DIR_SOURCE:-}"
+host_packages_fingerprint_inputs=("${OS_VERSION}" "mdns" "wifi-ap")
+if [[ -n "${host_packages_input}" ]]; then
+  host_packages_fingerprint_inputs+=("${host_packages_input}")
 fi
-if bool_true "${HOST_WIFI_AP_ENABLED:-false}"; then
-  HOST_CAPABILITIES+=(wifi-ap)
-fi
-if [[ ${#HOST_CAPABILITIES[@]} -gt 0 ]]; then
-  HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
-  mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
+if ! component_cache_try_restore "host-packages" "${CODE_REPO_DIR}/.run/host-packages" "${host_packages_fingerprint_inputs[@]}"; then
   if [[ -n "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
     cp -R "${HOST_PACKAGES_DIR_SOURCE}/." "${CODE_REPO_DIR}/.run/host-packages/"
   else
@@ -1310,6 +1337,7 @@ if [[ ${#HOST_CAPABILITIES[@]} -gt 0 ]]; then
       --os-version "${OS_VERSION}" \
       "${CAP_ARGS[@]}"
   fi
+  component_cache_store "host-packages" "${CODE_REPO_DIR}/.run/host-packages" "${host_packages_fingerprint_inputs[@]}"
 fi
 
 if bool_true "${ARGO_ENABLED}"; then
@@ -1415,8 +1443,6 @@ EXTRA_OCI_ARGS=()
 # Prefer the release/product version for image tags and the control-plane
 # /version payload. Commit SHA stays in the separate Commit build field.
 CODE_VERSION="\${CODE_VERSION:-$(shell_quote "${PRODUCT_VERSION}")}"
-HOST_MDNS_ENABLED_FOR_DEV=$(shell_quote "${HOST_MDNS_ENABLED:-false}")
-HOST_WIFI_AP_ENABLED_FOR_DEV=$(shell_quote "${HOST_WIFI_AP_ENABLED:-false}")
 HOST_PACKAGES_DIR_FOR_DEV=$(shell_quote "${HOST_PACKAGES_DIR_FOR_DEV}")
 HOST_PACKAGES_OS_VERSION=$(shell_quote "${OS_VERSION}")
 
@@ -1435,13 +1461,11 @@ make package-host-agent-image-archive \
   REFERENCE_OUT_FILE="\${HOST_AGENT_IMAGE_REF_FILE}" \
   IMAGE_TAG="\${CODE_VERSION}"
 HOST_AGENT_IMAGE_REF="\$(tr -d '\r\n' < "\${HOST_AGENT_IMAGE_REF_FILE}")"
-HOST_PACKAGES_ARGS=()
-if bool_true "\${HOST_MDNS_ENABLED_FOR_DEV}" || bool_true "\${HOST_WIFI_AP_ENABLED_FOR_DEV}"; then
-  HOST_PACKAGES_ARGS=(
-    --host-packages-dir "\${HOST_PACKAGES_DIR_FOR_DEV}"
-    --host-packages-os-version "\${HOST_PACKAGES_OS_VERSION}"
-  )
-fi
+# Super-set: always pass host-packages (packages staged at install; services off).
+HOST_PACKAGES_ARGS=(
+  --host-packages-dir "\${HOST_PACKAGES_DIR_FOR_DEV}"
+  --host-packages-os-version "\${HOST_PACKAGES_OS_VERSION}"
+)
 
 DNS_IMAGE_ARCHIVE_FOR_DEV=$(shell_quote "${DNS_IMAGE_ARCHIVE_FOR_DEV}")
 DNS_IMAGE_REF=$(shell_quote "${DNS_IMAGE_REF}")
@@ -1493,8 +1517,6 @@ bash ./scripts/package/archive-release-input.sh \
   --ui-image-reference "localhost/appliance-ui:\${CODE_VERSION}" \
   --host-agent-image "\${HOST_AGENT_IMAGE_OUT}" \
   --host-agent-image-reference "\${HOST_AGENT_IMAGE_REF}" \
-  --host-mdns-enabled "\${HOST_MDNS_ENABLED_FOR_DEV}" \
-  --host-wifi-ap-enabled "\${HOST_WIFI_AP_ENABLED_FOR_DEV}" \
   "\${HOST_PACKAGES_ARGS[@]}" \
   --k3s-version $(shell_quote "${K3S_VERSION}") \
   --zot-version $(shell_quote "${ZOT_VERSION}") \

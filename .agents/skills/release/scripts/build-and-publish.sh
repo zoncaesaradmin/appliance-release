@@ -274,8 +274,6 @@ BUILD_DNS_VERSION="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.versio
 BUILD_DNS_IMAGE_PULL_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.image_pull_ref" || true)"
 BUILD_DNS_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.image_archive_source" || true)"
 APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}")"
-HOST_MDNS_ENABLED="$(resolve_host_mdns_enabled "${CONFIG_PATH}")"
-HOST_WIFI_AP_ENABLED="$(resolve_host_wifi_ap_enabled "${CONFIG_PATH}")"
 VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
 [[ -n "${VERIFY_ARGO_ENABLED}" ]] || fail "verification.argo.enabled is required in config (true|false)"
 BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
@@ -305,11 +303,21 @@ preflight_live_release_inputs "${SKILL_RELEASE_REPO_ROOT}" "${REMOTE_REPO_REF}" 
 
 require_profile_supports_workflows "${VERIFY_ARGO_ENABLED}" "${APPLIANCE_PROFILE}" "verification.argo.enabled"
 
+# Complete product super-set: package always includes Argo, host-packages (mdns+wifi-ap),
+# and registry.local/dev-build. Install.profile / host_* flags only affect target enablement.
+BUILD_COMPLETE_PRODUCT=true
+if [[ -z "${BUILD_ARGO_ENABLED}" ]]; then
+  BUILD_ARGO_ENABLED=true
+fi
+if ! bool_true "${BUILD_ARGO_ENABLED}"; then
+  fail "build_flow.argo.enabled must be true for complete product packaging (install profile selects runtime modules, not package contents)"
+fi
+# BUILD_EXTRA_OCI_IMAGE_REFS is fixed to registry.local/dev-build above.
+
 BUILD_ENV_PREFIX=""
 BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "PRODUCT_VERSION" "${RELEASE_VERSION}" \
-  "HOST_MDNS_ENABLED" "${HOST_MDNS_ENABLED}" \
-  "HOST_WIFI_AP_ENABLED" "${HOST_WIFI_AP_ENABLED}" \
+  "BUILD_COMPLETE_PRODUCT" "${BUILD_COMPLETE_PRODUCT}" \
   "EXPORT_DIR" "${REMOTE_EXPORT_DIR}" \
   "K3S_BINARY_SOURCE" "${BUILD_K3S_BINARY_SOURCE}" \
   "K3S_AIRGAP_IMAGES_SOURCE" "${BUILD_K3S_AIRGAP_IMAGES_SOURCE}" \
@@ -603,12 +611,8 @@ elif [[ -n "${REMOTE_BUNDLE_DIR}" ]]; then
   copy_remote_path "${REMOTE_BUNDLE_DIR}" "${RUN_DIR}/artifacts/bundle"
 fi
 
-VALIDATE_RELEASE_ARTIFACTS_ARGS=()
-if bool_true "${BUILD_ARGO_ENABLED:-false}" || bool_true "${VERIFY_ARGO_ENABLED:-false}"; then
-  VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--require-argo)
-fi
-VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--host-mdns-enabled "${HOST_MDNS_ENABLED}")
-VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--host-wifi-ap-enabled "${HOST_WIFI_AP_ENABLED}")
+VALIDATE_RELEASE_ARTIFACTS_ARGS=(--require-argo)
+# Host mDNS / Wi-Fi AP enablement is day-2 (Admin UI); package always has host-packages.
 EXPECTED_EXTRA_OCI_IMAGE_REFS="${BUILD_EXTRA_OCI_IMAGE_REFS}"
 if [[ "${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}" == *@sha256:* ]]; then
   if [[ -n "${EXPECTED_EXTRA_OCI_IMAGE_REFS}" ]]; then

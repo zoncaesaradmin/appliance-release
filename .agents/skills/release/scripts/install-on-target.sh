@@ -45,8 +45,6 @@ APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
 APPLIANCE_NAME=""
 DNS_ZONE=""
-HOST_MDNS_ENABLED=""
-HOST_WIFI_AP_ENABLED=""
 TLS_SANS=()
 PRESERVE_FAILED_STATE="false"
 UNINSTALL_FIRST=""
@@ -120,11 +118,6 @@ STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || tru
 [[ -n "${STATE_DIR}" ]] || fail "target_host.state_dir is required in config"
 APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}" "${APPLIANCE_PROFILE}")"
 BUILD_CATALOG_PATH="$(resolve_build_catalog_path "${CONFIG_PATH}" "${BUILD_CATALOG_PATH}")"
-HOST_MDNS_ENABLED="$(resolve_host_mdns_enabled "${CONFIG_PATH}" "${HOST_MDNS_ENABLED}")"
-HOST_WIFI_AP_ENABLED="$(resolve_host_wifi_ap_enabled "${CONFIG_PATH}" "${HOST_WIFI_AP_ENABLED}")"
-# PSK never lives in yaml. Config names the orchestrator env var; value is
-# forwarded to the target as HOST_WIFI_AP_PSK for zonctl.
-HOST_WIFI_AP_PSK="$(resolve_host_wifi_ap_psk "${CONFIG_PATH}" "${HOST_WIFI_AP_ENABLED}")"
 if [[ -z "${APPLIANCE_NAME}" ]]; then
   APPLIANCE_NAME="$(config_get_optional "${CONFIG_PATH}" "install.appliance_name" || true)"
 fi
@@ -168,13 +161,6 @@ elif [[ -n "${IMAGE_PULL_USERNAME_ENV}" || -n "${IMAGE_PULL_TOKEN_ENV}" || -n "$
   fail "install.image_pull_registry.registry_env is required when username_env/token_env/tls_verify_env are set"
 fi
 # sudo drops the remote shell env unless preserved (same pattern as image-pull creds).
-if [[ -n "${HOST_WIFI_AP_PSK}" ]]; then
-  if [[ -n "${IMAGE_PULL_PRESERVE_ENV}" ]]; then
-    IMAGE_PULL_PRESERVE_ENV="${IMAGE_PULL_PRESERVE_ENV},HOST_WIFI_AP_PSK"
-  else
-    IMAGE_PULL_PRESERVE_ENV="--preserve-env=HOST_WIFI_AP_PSK"
-  fi
-fi
 require_builder_build_catalog_path "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}"
 if [[ -z "${UNINSTALL_FIRST}" ]]; then
   UNINSTALL_FIRST="$(config_get_optional "${CONFIG_PATH}" "install.uninstall_first" || true)"
@@ -367,20 +353,7 @@ fi
 if [[ -n '"$(shell_quote "${DNS_ZONE}")"' ]]; then
   lifecycle_args+=(--dns-zone '"$(shell_quote "${DNS_ZONE}")"')
 fi
-if [[ -n '"$(shell_quote "${HOST_MDNS_ENABLED}")"' ]]; then
-  lifecycle_args+=(--host-mdns-enabled '"$(shell_quote "${HOST_MDNS_ENABLED}")"')
-fi
-if [[ -n '"$(shell_quote "${HOST_WIFI_AP_ENABLED}")"' ]]; then
-  lifecycle_args+=(--host-wifi-ap-enabled '"$(shell_quote "${HOST_WIFI_AP_ENABLED}")"')
-fi
 '
-if [[ -n "${HOST_WIFI_AP_PSK}" ]]; then
-  # Embed from orchestrator env into the remote shell; sudo --preserve-env keeps it for zonctl.
-  # Value is not echoed; install.log captures only remote command output.
-  remote_script+='
-export HOST_WIFI_AP_PSK='"$(shell_quote "${HOST_WIFI_AP_PSK}")"'
-'
-fi
 if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
   remote_script+='
 export '"$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")"'='"$(shell_quote "${IMAGE_PULL_USERNAME}")"'

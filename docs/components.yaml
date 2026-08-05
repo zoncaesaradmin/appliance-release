@@ -1,0 +1,163 @@
+# Complete product component catalog
+#
+# Every production package (BUILD_COMPLETE_PRODUCT=true) must materialize every
+# component below. Install profile / host flags never drop rows from this list.
+#
+# fingerprint_inputs are conceptual; Phase C cache keys combine them with tree
+# or pin hashes. Recipes are relative to the owning repo when packaged.
+
+version: 1
+product: appliance-super-set
+
+components:
+  - id: host-packages
+    owner: appliance-code
+    recipe: scripts/package/export-host-packages.sh
+    inputs:
+      - OS_VERSION
+      - capabilities: [mdns, wifi-ap]
+      - optional: HOST_PACKAGES_DIR_SOURCE
+    outputs:
+      - path: host-packages/ubuntu/<OS_VERSION>/amd64/*.deb
+      - release_input: artifacts.hostPackages
+    depends_on: []
+
+  - id: control-plane-image
+    owner: appliance-code
+    recipe: make package-control-plane-image-archive
+    outputs:
+      - path: oci-images/control-plane (archive name varies)
+      - release_input: artifacts.controlPlaneImage
+    depends_on: []
+
+  - id: ui-image
+    owner: appliance-code
+    recipe: make package-ui-image-archive
+    outputs:
+      - release_input: artifacts.uiImage
+    depends_on: []
+
+  - id: host-agent-image
+    owner: appliance-code
+    recipe: make package-host-agent-image-archive
+    outputs:
+      - release_input: artifacts.hostAgentImage
+      - reference: registry.local/appliance-host-agent@sha256:...
+    depends_on: []
+
+  - id: host-agent-binary
+    owner: appliance-code
+    recipe: make -C services/hostagent build
+    outputs:
+      - release_input: artifacts.hostAgentBinary
+    depends_on: []
+
+  - id: control-plane-chart
+    owner: appliance-code
+    recipe: archive-release-input (bundled chart)
+    outputs:
+      - release_input: artifacts.applianceChart
+    depends_on: []
+
+  - id: zot-image
+    owner: appliance-code / appliance-release
+    recipe: scripts/package/export-zot-image-archive.sh
+    outputs:
+      - release_input: artifacts.zotImage
+      - reference: registry.local/zot@sha256:...
+    depends_on: []
+
+  - id: registry-chart
+    owner: appliance-code
+    recipe: archive-release-input
+    outputs:
+      - release_input: artifacts.zotChart
+    depends_on: [zot-image]
+
+  - id: coredns-image
+    owner: appliance-code / appliance-release
+    recipe: scripts/package/export-coredns-image-archive.sh
+    outputs:
+      - release_input: artifacts.dnsImage
+      - reference: registry.local/coredns@sha256:...
+    depends_on: []
+
+  - id: dns-chart
+    owner: appliance-code
+    recipe: archive-release-input
+    outputs:
+      - release_input: artifacts.dnsChart / compatibility.dnsVersion
+    depends_on: [coredns-image]
+
+  - id: argo-workflows
+    owner: appliance-code / appliance-release
+    recipe: chart package + fetch CRDs + controller/executor OCI export
+    required_for: BUILD_COMPLETE_PRODUCT
+    outputs:
+      - argo chart + CRDs
+      - compatibility.argoVersion
+      - controller + executor image archives
+    depends_on: []
+
+  - id: workspace-provisioner
+    owner: appliance-release
+    recipe: export_bundled_extra_oci_image_archive (alpine/git → registry.local/workspace-provisioner)
+    outputs:
+      - EXTRA_OCI / imageReference digest pin
+    depends_on: []
+
+  - id: dev-build
+    owner: appliance-release
+    recipe: EXTRA_OCI_IMAGE_PULL_REFS → registry.local/dev-build@sha256:...
+    required_for: BUILD_COMPLETE_PRODUCT
+    inputs:
+      - EXTRA_OCI_IMAGE_PULL_REFS / build_flow.dev_image_pull
+    outputs:
+      - EXTRA_OCI imageReference digest pin
+    depends_on: []
+
+  - id: metadata-bundle
+    owner: appliance-code
+    recipe: package-metadata-bundle
+    outputs:
+      - sbom, provenance, notices, tests stubs as required
+    depends_on: []
+
+  - id: release-input-archive
+    owner: appliance-code
+    recipe: scripts/package/archive-release-input.sh
+    depends_on:
+      - host-packages
+      - control-plane-image
+      - ui-image
+      - host-agent-image
+      - host-agent-binary
+      - control-plane-chart
+      - zot-image
+      - registry-chart
+      - coredns-image
+      - dns-chart
+      - argo-workflows
+      - workspace-provisioner
+      - dev-build
+      - metadata-bundle
+    always_rebuild: true
+    outputs:
+      - release-input-*.tar.gz
+
+  - id: k3s-airgap
+    owner: appliance-release / inputs
+    recipe: package from K3S_* sources at assemble
+    outputs:
+      - k3s binary + airgap images in final bundle
+    depends_on: []
+
+  - id: assemble-and-sign
+    owner: appliance-ctl releasebundle.Assemble + appliance-release sign
+    always_rebuild: true
+    depends_on:
+      - release-input-archive
+      - k3s-airgap
+    outputs:
+      - appliance-<version>-bundle.tar.gz
+      - release-signing.pub

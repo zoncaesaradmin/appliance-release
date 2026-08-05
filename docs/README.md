@@ -18,6 +18,9 @@ Use this index to find the one canonical document for your task.
   [security-model.md](security-model.md)
 - Understanding repository scope and release architecture:
   [architecture-and-boundaries.md](architecture-and-boundaries.md)
+- Complete product component super-set and build stages:
+  [component-catalog.md](component-catalog.md)
+  ([components.yaml](components.yaml))
 - Running the lower-level manual bundle assembly path:
   [manual-bundle-assembly.md](manual-bundle-assembly.md)
 

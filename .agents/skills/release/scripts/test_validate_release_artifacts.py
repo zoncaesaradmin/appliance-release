@@ -18,8 +18,6 @@ def write(path: Path, text: str) -> None:
 
 def run_validator(tmp: Path, *extra_args: str) -> subprocess.CompletedProcess:
     args = list(extra_args)
-    if "--host-mdns-enabled" not in args:
-        args = ["--host-mdns-enabled", "true", *args]
     return subprocess.run(
         [
             "python3",
@@ -199,12 +197,15 @@ def test_positive_case() -> None:
             raise AssertionError(result.stderr)
 
 
-def test_positive_case_without_host_packages_when_mdns_disabled() -> None:
+def test_rejects_missing_host_packages_when_flags_false() -> None:
+    """Complete product always requires host-packages regardless of install flags."""
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp, include_host_packages=False)
-        result = run_validator(tmp, "--host-mdns-enabled", "false", "--require-argo")
-        if result.returncode != 0:
+        result = run_validator(tmp, "--require-argo")
+        if result.returncode == 0:
+            raise AssertionError("missing host-packages were accepted when install flags are false")
+        if "hostPackages" not in result.stderr and "host-packages" not in result.stderr.lower():
             raise AssertionError(result.stderr)
 
 
@@ -319,21 +320,20 @@ def test_rejects_missing_host_packages_bundle_entry() -> None:
             if not entry["targetPath"].startswith("host-packages/")
         ]
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        result = run_validator(tmp, "--host-mdns-enabled", "true")
+        result = run_validator(tmp)
         if result.returncode == 0:
             raise AssertionError("missing host-packages bundle entries were accepted")
         if "hostPackages" not in result.stderr:
             raise AssertionError(result.stderr)
 
 
-def test_rejects_host_packages_when_mdns_disabled() -> None:
+def test_accepts_host_packages_when_install_host_flags_false() -> None:
+    """Install host flags do not affect package layout validation."""
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
-        populate_positive_case(tmp)
-        result = run_validator(tmp, "--host-mdns-enabled", "false")
-        if result.returncode == 0:
-            raise AssertionError("host-packages were accepted when host package capabilities are disabled")
-        if "no host package capability is enabled" not in result.stderr:
+        populate_positive_case(tmp, include_host_packages=True)
+        result = run_validator(tmp, "--require-argo")
+        if result.returncode != 0:
             raise AssertionError(result.stderr)
 
 
@@ -545,7 +545,7 @@ def test_rejects_dns_annotation_and_version_mismatch() -> None:
 
 def main() -> None:
     test_positive_case()
-    test_positive_case_without_host_packages_when_mdns_disabled()
+    test_rejects_missing_host_packages_when_flags_false()
     test_positive_case_with_nested_bundle_root()
     test_allows_empty_directory_artifacts()
     test_rejects_tag_only_extra_oci_image()
@@ -559,7 +559,7 @@ def main() -> None:
     test_rejects_dns_annotation_and_version_mismatch()
     test_rejects_missing_ui_bundle_entry()
     test_rejects_missing_host_packages_bundle_entry()
-    test_rejects_host_packages_when_mdns_disabled()
+    test_accepts_host_packages_when_install_host_flags_false()
     test_rejects_mismatched_ui_bundle_image_reference()
     test_rejects_mismatched_ui_values_image_reference()
     print("validate-release-artifacts tests passed")

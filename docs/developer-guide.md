@@ -81,13 +81,15 @@ Outputs:
 - `${WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-bundle.tar.gz`
 - `${WORK_ROOT}/export/release-signing.pub`
 
-When `install.host_mdns_enabled=true`, the build defaults to the repo-owned
-host package payload under `appliance-code/scripts/package/host-packages`,
-laid out by host baseline, for example `ubuntu/24.04/amd64/*.deb` and
-`ubuntu/22.04/amd64/*.deb`. That tree is copied into signed `host-packages/`
-and consumed by `zonctl` during install or upgrade. Use
-`HOST_PACKAGES_DIR_SOURCE` only as an override for unusual packaging
-workflows.
+Product packaging always exports the complete host package super-set
+(`mdns` + `wifi-ap`) for the selected `OS_VERSION` baseline under
+`ubuntu/<version>/amd64/*.deb`. That tree is copied into signed
+`host-packages/`. Install stages the .deb payload offline but leaves mDNS and
+Wi-Fi AP services off; admins enable them day-2 via Admin UI / control-plane
+host APIs (with PSK supplied at enable time for Wi-Fi AP). Use
+`HOST_PACKAGES_DIR_SOURCE` only as an override for unusual offline workflows.
+Optional `COMPONENT_CACHE_DIR` enables fingerprint-based reuse of component
+outputs (Phase C); assemble and sign always re-run.
 
 ## One-Time Build Host Bootstrap
 

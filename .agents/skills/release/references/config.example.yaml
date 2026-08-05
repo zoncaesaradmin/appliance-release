@@ -6,14 +6,15 @@
 #   2) install/verify (target_host + install + verification + client_verification)
 #
 # Scripts fail closed when a required key is missing — only list what is used.
+# Packaging always produces the complete product super-set (all OCI images, Argo,
+# host-packages for mdns + wifi-ap, builder dev-build). Profile only selects
+# install-time modules. Host mDNS and Wi-Fi AP enablement are day-2 Admin UI/API only.
 # Secrets via env (not this file):
 #   DEV_REGISTRY / DEV_IMAGE_REPO / DEV_IMAGE_NAME
 #   DEV_REGISTRY_USER / DEV_REGISTRY_TOKEN / DEV_REGISTRY_TLS_VERIFY
 #   (dev_image_pull and optional build_image_mirror may share these env names)
 #   APPLIANCE_BUILD_SUDO_PASSWORD / APPLIANCE_TARGET_SUDO_PASSWORD
 #   APPLIANCE_FIRST_ADMIN_PASSWORD
-#   HOST_WIFI_AP_PSK (only when install.host_wifi_ap_enabled; named by
-#     install.host_wifi_ap_psk_env)
 # Absolute remote paths only (no ~/...).
 
 # =============================================================================
@@ -97,10 +98,11 @@ build_flow:
   ctl_repo_ref: main
   k3s_binary_source: /home/zonsys/ci/inputs/k3s
   k3s_airgap_images_source: /home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst
-  # Optional override for the repo-owned offline host package payload in
-  # appliance-code/scripts/package/host-packages. Layout should be
-  # OS/version/arch, for example
-  # ubuntu/24.04/amd64/*.deb and ubuntu/22.04/amd64/*.deb.
+  # Optional override for the offline host package payload source.
+  # When unset, build-full-bundle always exports the complete capability set
+  # (mdns + wifi-ap) for the selected OS_VERSION. Layout is OS/version/arch,
+  # for example ubuntu/24.04/amd64/*.deb. Install host flags do not affect
+  # which capabilities are packaged.
   # host_packages_dir_source: /home/zonsys/ci/inputs/host-packages
   build_command: bash scripts/ci/build-full-bundle.sh
   publish_command: make publish-release
@@ -118,12 +120,9 @@ install:
   # core | builder | storage | landns | storage-landns | builder-landns | builder-storage-landns
   appliance_profile: storage-landns
   dns_zone: appliance.internal
-  host_mdns_enabled: false
-  # Management WiFi AP (optional). Default off.
-  # When true, name the orchestrator env holding the WPA2 PSK (value never in yaml).
-  # install-on-target resolves that env and forwards it to target zonctl as HOST_WIFI_AP_PSK.
-  host_wifi_ap_enabled: false
-  host_wifi_ap_psk_env: HOST_WIFI_AP_PSK
+  # Host mDNS and management Wi-Fi AP are not selected at install. Offline
+  # packages are staged from the super-set bundle; admins enable those features
+  # after first login via the control-plane UI/API (Admin → Host).
   uninstall_first: true
   # Keep in sync with release.version
   bundle_download_dir: /tmp/appliance-0.1.0
@@ -131,9 +130,8 @@ install:
   kubernetes_namespace: control
   control_plane_deployment: api-server
   # build_catalog_path: /Users/you/build-catalog.yaml   # required for builder*
-  # When host_mdns_enabled=true, zonctl adds the target host's current
-  # hostname.local name as an mDNS-friendly TLS SAN.
-  # TLS SANs always include 10.42.0.1 for the management WiFi AP URL.
+  # TLS SANs always include manage.ap, 10.42.0.1, and hostname.local so day-2
+  # mDNS / Wi-Fi AP enablement works with the install certificate.
   # additional_tls_sans_csv: 192.168.1.101,artifact-dns-1.appliance.internal
   # Optional lab pulls (K3s registries.yaml); omit for preload-only:
   # image_pull_registry:

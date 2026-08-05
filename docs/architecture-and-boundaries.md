@@ -39,6 +39,12 @@ The release pipeline may reject a product input but cannot patch it.
 
 ## Release Shape
 
+Production packaging always assembles the **complete product super-set** (all
+first-class OCI images, Argo, host packages for mdns + wifi-ap, workspace
+provisioner + builder `dev-build`). Profile and host-service flags are
+install-time only. Component inventory and named stages:
+[component-catalog.md](component-catalog.md).
+
 The bundle contains:
 
 - the `zonctl` appliance CLI

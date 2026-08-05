@@ -45,10 +45,16 @@ Notes:
   `DEV_REGISTRY`).
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used both for install and Mac-side API verification.
 - Set `install.appliance_profile` in the config, or omit it to default to `core`.
+  Profile is **install-time only**: it selects which modules are activated on
+  the target. Packaging always produces the complete product super-set (Argo,
+  Zot, DNS, host-packages for mdns+wifi-ap, workspace-provisioner, dev-build).
   Licensing is completed after first login; install never asks for a license.
 - A `run-release-flow.sh --appliance-profile` override is forwarded to install,
   target verification, and client verification so all phases use the same
   effective profile.
+- Host mDNS and Wi-Fi AP packages are always in the signed bundle and staged
+  at install; enable them day-2 via Admin UI/API after first admin login (not
+  via install config flags).
 - Set `install.appliance_name` and `install.dns_zone` (both required). The
   installer derives the FQDN as `<appliance_name>.<dns_zone>` for TLS,
   `canonicalOrigin`, and the registry realm. There is no separate `public_host`
@@ -87,13 +93,12 @@ Notes:
 - If the build catalog references a workspace provisioner image, ensure
   `build_flow.dev_image_pull` is configured so `registry.local/dev-build`
   is bundled and preloaded on the target.
-- The bundle flow uses the repo-owned host package payload in
-  `appliance-code/scripts/package/host-packages` by default. Keep Ubuntu `.deb`
-  payloads there with an OS/version/arch layout such as
-  `ubuntu/24.04/amd64/*.deb` and `ubuntu/22.04/amd64/*.deb`. Use
-  `build_flow.host_packages_dir_source` only to override that source. The
-  bundle flow copies the tree into signed `host-packages/`, and `zonctl`
-  installs it offline before enabling `avahi-daemon`.
+- The bundle flow always packages the complete offline host package super-set
+  (`mdns` + `wifi-ap` capabilities) for the selected OS baseline. When
+  `build_flow.host_packages_dir_source` is unset, `build-full-bundle` exports
+  that payload on the build host. Layout is OS/version/arch such as
+  `ubuntu/24.04/amd64/*.deb`. The signed tree becomes `host-packages/`;
+  zonctl stages packages at install; enable mDNS / Wi-Fi AP day-2 via Admin UI/API.
 - Builder workflow repo URLs must use HTTPS.
 
 ## 1. Full Flow
