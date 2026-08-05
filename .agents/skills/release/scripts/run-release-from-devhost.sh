@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# run-release-from-devhost.sh — minimal Mac/devhost end-to-end driver.
+# run-release-from-devhost.sh — minimal Mac/devhost driver.
 #
-#   1) scp build-publish config; SSH build host with env exported from *this* shell
-#   2) SSH target: curl helper URL (built on Mac) + bash with name/profile only
-#
-# Secrets: only on this machine. Target never receives profile env exports.
+# CLI path presence decides work (no skip flags):
+#   --build-publish-config  → build/publish on build host (env from this shell)
+#   --install-config        → install on target (also needs --build-publish-config
+#                             for release.version / bundle_store URL)
 set -euo pipefail
 set +H
 
@@ -16,16 +16,18 @@ usage() {
   cat <<'EOF'
 usage: run-release-from-devhost.sh \
   --config PATH \
-  --build-publish-config PATH \
-  --install-config PATH
+  [--build-publish-config PATH] \
+  [--install-config PATH]
 
-One command from the Mac. Export DEV_* and APPLIANCE_BUILD_SUDO_PASSWORD here first.
+Export DEV_* and APPLIANCE_BUILD_SUDO_PASSWORD on this Mac first.
 
-  1) Build host — scp config, inject your env, run build-and-publish-on-host.sh
-  2) Target — curl install-http-release.sh (URL/auth from this machine), then
-     bash install-http-release.sh --appliance-name … --appliance-profile …
+  --build-publish-config  → run build/publish
+  --install-config        → run install (requires --build-publish-config for
+                            version / download URL; no install.skip / build_flow.skip)
 
-Skips: build_flow.skip / install.skip in the role YAMLs.
+Examples:
+  full e2e:   … --config … --build-publish-config … --install-config …
+  build only: … --config … --build-publish-config …
 EOF
 }
 
@@ -58,12 +60,20 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "${DEVHOST_CONFIG}" ]] || fail "requires --config PATH"
-[[ -n "${BUILD_PUBLISH_CONFIG}" ]] || fail "requires --build-publish-config PATH"
-[[ -n "${INSTALL_CONFIG}" ]] || fail "requires --install-config PATH"
+if [[ -z "${BUILD_PUBLISH_CONFIG}" && -z "${INSTALL_CONFIG}" ]]; then
+  fail "pass at least one of --build-publish-config or --install-config"
+fi
+if [[ -n "${INSTALL_CONFIG}" && -z "${BUILD_PUBLISH_CONFIG}" ]]; then
+  fail "install requires --build-publish-config (release.version and bundle_store URL)"
+fi
 
 DEVHOST_CONFIG="$(require_config_path "${DEVHOST_CONFIG}")"
-BUILD_PUBLISH_CONFIG="$(require_config_path "${BUILD_PUBLISH_CONFIG}")"
-INSTALL_CONFIG="$(require_config_path "${INSTALL_CONFIG}")"
+if [[ -n "${BUILD_PUBLISH_CONFIG}" ]]; then
+  BUILD_PUBLISH_CONFIG="$(require_config_path "${BUILD_PUBLISH_CONFIG}")"
+fi
+if [[ -n "${INSTALL_CONFIG}" ]]; then
+  INSTALL_CONFIG="$(require_config_path "${INSTALL_CONFIG}")"
+fi
 
 RUN_DIR="$(config_get_optional "${DEVHOST_CONFIG}" "report.run_dir" || true)"
 if [[ -z "${RUN_DIR}" ]]; then
@@ -72,34 +82,21 @@ fi
 ensure_release_run_dirs "${RUN_DIR}"
 log "run-dir=${RUN_DIR}"
 
-SKIP_BUILD="$(config_get_optional "${BUILD_PUBLISH_CONFIG}" "build_flow.skip" || true)"
-if [[ -z "${SKIP_BUILD}" ]]; then
-  SKIP_BUILD="false"
-fi
-SKIP_INSTALL="$(config_get_optional "${INSTALL_CONFIG}" "install.skip" || true)"
-if [[ -z "${SKIP_INSTALL}" ]]; then
-  SKIP_INSTALL="false"
-fi
-
-if ! bool_true "${SKIP_BUILD}"; then
+if [[ -n "${BUILD_PUBLISH_CONFIG}" ]]; then
   log "── buildPublish"
   bash "${SCRIPT_DIR}/run-build-and-publish-on-build-host.sh" \
     --config "${DEVHOST_CONFIG}" \
     --build-publish-config "${BUILD_PUBLISH_CONFIG}" \
     --run-dir "${RUN_DIR}"
-else
-  log "── buildPublish: skipped (build_flow.skip=true)"
 fi
 
-if ! bool_true "${SKIP_INSTALL}"; then
+if [[ -n "${INSTALL_CONFIG}" ]]; then
   log "── install (public helper on target)"
   bash "${SCRIPT_DIR}/run-install-via-public-helper-on-target.sh" \
     --config "${DEVHOST_CONFIG}" \
     --build-publish-config "${BUILD_PUBLISH_CONFIG}" \
     --install-config "${INSTALL_CONFIG}" \
     --run-dir "${RUN_DIR}"
-else
-  log "── install: skipped (install.skip=true)"
 fi
 
 log "done"
