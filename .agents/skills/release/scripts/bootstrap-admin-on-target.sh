@@ -143,10 +143,16 @@ set +e
 if bool_true "${LOCAL_MODE}"; then
   run_local_logged "${bootstrap_log}" "${remote_script}"
 else
-  run_ssh_logged "${TARGET_HOST}" "${bootstrap_log}" "${remote_script}"
+  # -T (captured): short kubectl bootstrap. Do not use run_ssh_logged (-tt);
+  # after kubectl exec finishes, -tt often leaves Mac-side ssh stuck so e2e never
+  # reaches license/verify. Sudo here uses -S with a piped password (no TTY ticket).
+  run_ssh_captured "${TARGET_HOST}" "${bootstrap_log}" "${remote_script}"
 fi
 bootstrap_status=$?
 set -e
+if [[ -f "${bootstrap_log}" ]]; then
+  cat "${bootstrap_log}"
+fi
 if [[ "${bootstrap_status}" -ne 0 ]]; then
   if [[ -f "${bootstrap_log}" ]] && grep -Eq 'bootstrap: created administrator|already initialized' "${bootstrap_log}"; then
     log "bootstrap-admin command returned non-zero after a successful target-side result; accepting based on ${bootstrap_log}"

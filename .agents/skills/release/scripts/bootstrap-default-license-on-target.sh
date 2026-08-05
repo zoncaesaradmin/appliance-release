@@ -128,10 +128,14 @@ set +e
 if bool_true "${LOCAL_MODE}"; then
   run_local_logged "${license_log}" "${remote_script}"
 else
-  run_ssh_logged "${TARGET_HOST}" "${license_log}" "${remote_script}"
+  # Same as bootstrap-admin: short kubectl -T; avoid post-exec hang with -tt.
+  run_ssh_captured "${TARGET_HOST}" "${license_log}" "${remote_script}"
 fi
 license_status=$?
 set -e
+if [[ -f "${license_log}" ]]; then
+  cat "${license_log}"
+fi
 if [[ "${license_status}" -ne 0 ]]; then
   if [[ -f "${license_log}" ]] && grep -Eq 'licensing: accepted base entitlement|licensing: already resolved' "${license_log}"; then
     log "bootstrap-default-license command returned non-zero after a successful target-side result; accepting based on ${license_log}"
