@@ -113,13 +113,25 @@ fi
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 first_admin_password="$(resolve_secret "APPLIANCE_FIRST_ADMIN_PASSWORD" "First administrator password")"
 
+# Pass the password into the pod without `kubectl exec -i`. Piping stdin via
+# -i often leaves the Mac-side ssh session stuck after bootstrap already
+# printed success, so the release flow never reaches license/verify.
+password_b64="$(printf '%s' "${first_admin_password}" | base64 | tr -d '\n\r')"
+pod_bootstrap_cmd="$(cat <<EOF
+set -euo pipefail
+printf '%s' $(shell_quote "${password_b64}") | base64 -d >/tmp/zon-first-admin-pw
+trap 'rm -f /tmp/zon-first-admin-pw' EXIT
+/appliance-server bootstrap init --admin-username $(shell_quote "${ADMIN_USERNAME}") --admin-password-file /tmp/zon-first-admin-pw
+EOF
+)"
 remote_script='set -euo pipefail
 printf "%s\n" '"$(shell_quote "${target_sudo_password}")"' | sudo -S -p "" -v >/dev/null
 echo "[target bootstrap] Waiting for control-plane rollout..."
 sudo -n kubectl -n '"$(shell_quote "${NAMESPACE}")"' rollout status deploy/'"$(shell_quote "${DEPLOYMENT}")"' --timeout=180s >/dev/null
 stdout_file="$(mktemp)"
 stderr_file="$(mktemp)"
-if printf "%s" '"$(shell_quote "${first_admin_password}")"' | sudo -n kubectl -n '"$(shell_quote "${NAMESPACE}")"' exec -i deploy/'"$(shell_quote "${DEPLOYMENT}")"' -- /appliance-server bootstrap init --admin-username '"$(shell_quote "${ADMIN_USERNAME}")"' --admin-password-file /dev/stdin >"${stdout_file}" 2>"${stderr_file}"; then
+# timeout: belt-and-suspenders if kubectl ever sticks after the process exits.
+if sudo -n timeout 120 kubectl -n '"$(shell_quote "${NAMESPACE}")"' exec deploy/'"$(shell_quote "${DEPLOYMENT}")"' -- /bin/sh -c '"$(shell_quote "${pod_bootstrap_cmd}")"' >"${stdout_file}" 2>"${stderr_file}"; then
   cat "${stdout_file}"
   rm -f "${stdout_file}" "${stderr_file}"
   exit 0
@@ -146,7 +158,8 @@ else
   # -T (captured): short kubectl bootstrap. Do not use run_ssh_logged (-tt);
   # after kubectl exec finishes, -tt often leaves Mac-side ssh stuck so e2e never
   # reaches license/verify. Sudo here uses -S with a piped password (no TTY ticket).
-  run_ssh_captured "${TARGET_HOST}" "${bootstrap_log}" "${remote_script}"
+  RUN_SSH_CAPTURED_TIMEOUT_SEC="${RUN_SSH_CAPTURED_TIMEOUT_SEC:-300}" \
+    run_ssh_captured "${TARGET_HOST}" "${bootstrap_log}" "${remote_script}"
 fi
 bootstrap_status=$?
 set -e

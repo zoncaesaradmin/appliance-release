@@ -108,7 +108,7 @@ echo "[target license] Waiting for control-plane rollout..."
 sudo -n kubectl -n '"$(shell_quote "${NAMESPACE}")"' rollout status deploy/'"$(shell_quote "${DEPLOYMENT}")"' --timeout=180s >/dev/null
 stdout_file="$(mktemp)"
 stderr_file="$(mktemp)"
-if sudo -n kubectl -n '"$(shell_quote "${NAMESPACE}")"' exec deploy/'"$(shell_quote "${DEPLOYMENT}")"' -- /appliance-server licensing accept-base >"${stdout_file}" 2>"${stderr_file}"; then
+if sudo -n timeout 120 kubectl -n '"$(shell_quote "${NAMESPACE}")"' exec deploy/'"$(shell_quote "${DEPLOYMENT}")"' -- /appliance-server licensing accept-base >"${stdout_file}" 2>"${stderr_file}"; then
   cat "${stdout_file}"
   rm -f "${stdout_file}" "${stderr_file}"
   exit 0
@@ -129,7 +129,8 @@ if bool_true "${LOCAL_MODE}"; then
   run_local_logged "${license_log}" "${remote_script}"
 else
   # Same as bootstrap-admin: short kubectl -T; avoid post-exec hang with -tt.
-  run_ssh_captured "${TARGET_HOST}" "${license_log}" "${remote_script}"
+  RUN_SSH_CAPTURED_TIMEOUT_SEC="${RUN_SSH_CAPTURED_TIMEOUT_SEC:-300}" \
+    run_ssh_captured "${TARGET_HOST}" "${license_log}" "${remote_script}"
 fi
 license_status=$?
 set -e

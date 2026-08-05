@@ -376,12 +376,59 @@ run_ssh_captured() {
   local log_file="$2"
   local remote_command="$3"
   local quoted_remote_command=""
+  # Optional hard cap (seconds). Default 0 = no extra timeout beyond OpenSSH.
+  # Used for short post-install kubectl stages so a stuck attach cannot stall e2e forever.
+  local timeout_sec="${RUN_SSH_CAPTURED_TIMEOUT_SEC:-0}"
 
   ensure_dir "$(dirname "${log_file}")"
   quoted_remote_command="$(shell_quote "${remote_command}")"
   set +e
-  ssh -q -T "${host}" "env -u BASH_ENV bash -lc ${quoted_remote_command}" >"${log_file}" 2>&1
-  local cmd_status="$?"
+  if [[ "${timeout_sec}" =~ ^[1-9][0-9]*$ ]]; then
+    # portable timeout (macOS has no GNU timeout by default)
+    python3 - "${timeout_sec}" "${host}" "${log_file}" "env -u BASH_ENV bash -lc ${quoted_remote_command}" <<'PY'
+import subprocess
+import sys
+
+timeout_sec = int(sys.argv[1])
+host = sys.argv[2]
+log_file = sys.argv[3]
+remote = sys.argv[4]
+with open(log_file, "wb") as handle:
+    try:
+        completed = subprocess.run(
+            [
+                "ssh",
+                "-q",
+                "-T",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ServerAliveInterval=15",
+                "-o",
+                "ServerAliveCountMax=4",
+                host,
+                remote,
+            ],
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            timeout=timeout_sec,
+        )
+    except subprocess.TimeoutExpired:
+        handle.write(
+            f"\nrun_ssh_captured: timed out after {timeout_sec}s\n".encode()
+        )
+        sys.exit(124)
+    sys.exit(completed.returncode)
+PY
+    local cmd_status="$?"
+  else
+    ssh -q -T \
+      -o BatchMode=yes \
+      -o ServerAliveInterval=15 \
+      -o ServerAliveCountMax=4 \
+      "${host}" "env -u BASH_ENV bash -lc ${quoted_remote_command}" >"${log_file}" 2>&1
+    local cmd_status="$?"
+  fi
   set -e
   return "${cmd_status}"
 }
