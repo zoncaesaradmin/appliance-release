@@ -90,6 +90,9 @@ verification:
 # ============================================================================
 
 client_verification:
+  # Preferred: landns product FQDN. Mac-side DNS is not required when the
+  # orchestrator has target_host.alias as user@IPv4 (curl --resolve is applied).
+  # Optional override: connect_ip: 192.168.1.151
   base_url: https://artifact-dns-1.appliance.internal
   username: admin
   builder:

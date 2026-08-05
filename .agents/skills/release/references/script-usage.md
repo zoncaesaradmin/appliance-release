@@ -312,6 +312,13 @@ Use this from the Mac if the appliance is already installed and reachable.
   --run-dir /abs/path/to/run-dir
 ```
 
+This script checks API access from the Mac against `client_verification.base_url`
+(typically `https://<appliance_name>.<dns_zone>` for landns). The Mac usually
+does **not** use the appliance as a recursive DNS server, so when
+`run-release-from-devhost.sh` provides `target_host.alias` as `user@IPv4`,
+client verify maps the FQDN with `curl --resolve` / a forced connect IP. You can
+also set `client_verification.connect_ip` or pass `--connect-ip`.
+
 This script checks:
 
 - `POST /api/v1/auth/login`

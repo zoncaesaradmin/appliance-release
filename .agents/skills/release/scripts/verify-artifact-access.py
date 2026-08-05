@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import argparse
 import base64
+import http.client
 import json
 import os
 from pathlib import Path
+import socket
 import ssl
 import subprocess
 import sys
@@ -16,7 +18,51 @@ import urllib.parse
 import urllib.request
 
 
-def request(url: str, *, method: str = "GET", token: str = "", basic: tuple[str, str] | None = None, body=None):
+class _ForcedIPHTTPSConnection(http.client.HTTPSConnection):
+    """Connect to an IP while presenting the original hostname for SNI/TLS."""
+
+    def __init__(self, connect_ip: str, host: str, port: int | None = None, **kwargs):
+        self._connect_ip = connect_ip
+        super().__init__(host, port, **kwargs)
+
+    def connect(self) -> None:
+        sock = socket.create_connection((self._connect_ip, self.port), self.timeout)
+        if self._tunnel_host:
+            self.sock = sock
+            self._tunnel()
+        context = self._context
+        if context is None:
+            context = ssl._create_unverified_context()
+        self.sock = context.wrap_socket(sock, server_hostname=self.host)
+
+
+def _build_opener(connect_ip: str = "") -> urllib.request.OpenerDirector:
+    if not connect_ip:
+        return urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=ssl._create_unverified_context())
+        )
+
+    class ForcedIPHTTPSHandler(urllib.request.HTTPSHandler):
+        def https_open(self, req: urllib.request.Request):  # type: ignore[no-untyped-def]
+            def http_class(host, **kwargs):  # type: ignore[no-untyped-def]
+                return _ForcedIPHTTPSConnection(connect_ip, host, **kwargs)
+
+            return self.do_open(http_class, req)
+
+    return urllib.request.build_opener(
+        ForcedIPHTTPSHandler(context=ssl._create_unverified_context())
+    )
+
+
+def request(
+    url: str,
+    *,
+    method: str = "GET",
+    token: str = "",
+    basic: tuple[str, str] | None = None,
+    body=None,
+    opener: urllib.request.OpenerDirector | None = None,
+):
     headers = {}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -28,11 +74,14 @@ def request(url: str, *, method: str = "GET", token: str = "", basic: tuple[str,
         data = json.dumps(body, separators=(",", ":")).encode()
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    use_opener = opener or _build_opener()
     try:
-        with urllib.request.urlopen(req, context=ssl._create_unverified_context()) as response:
+        with use_opener.open(req) as response:
             return response.status, dict(response.headers), response.read()
     except urllib.error.HTTPError as exc:
         return exc.code, dict(exc.headers), exc.read()
+    except urllib.error.URLError as exc:
+        raise ValueError(f"request to {url} failed: {exc}") from exc
 
 
 def looks_like_html(body: bytes, headers: dict[str, str]) -> bool:
@@ -94,6 +143,7 @@ def main() -> int:
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--username", required=True)
     parser.add_argument("--run-dir", required=True)
+    parser.add_argument("--connect-ip", default="", help="IPv4 to open TCP against when base-url host is a landns FQDN")
     parser.add_argument("--enabled", action="store_true")
     parser.add_argument("--expect-denied-scope", action="store_true")
     parser.add_argument("--oci-smoke-command", default="")
@@ -104,18 +154,25 @@ def main() -> int:
     if not access_token:
         raise ValueError("APPLIANCE_ACCESS_TOKEN is required")
     base = args.base_url.rstrip("/")
+    opener = _build_opener((args.connect_ip or "").strip())
     logs = Path(args.run_dir) / "logs"
     logs.mkdir(parents=True, exist_ok=True)
     evidence: dict = {"enabled": args.enabled}
+    if args.connect_ip:
+        evidence["connectIp"] = args.connect_ip.strip()
     output = Path(args.run_dir) / "metadata" / "artifact-client-verify.json"
     output.parent.mkdir(parents=True, exist_ok=True)
 
     catalog_status, _, catalog_body = request(
-        f"{base}/api/v1/registry/repositories", token=access_token
+        f"{base}/api/v1/registry/repositories", token=access_token, opener=opener
     )
-    anonymous_catalog_status, _, _ = request(f"{base}/api/v1/registry/repositories")
-    challenge_status, challenge_headers, challenge_body = request(f"{base}/v2/")
-    malformed_status, malformed_headers, malformed_body = request(f"{base}/v2/", token="malformed")
+    anonymous_catalog_status, _, _ = request(
+        f"{base}/api/v1/registry/repositories", opener=opener
+    )
+    challenge_status, challenge_headers, challenge_body = request(f"{base}/v2/", opener=opener)
+    malformed_status, malformed_headers, malformed_body = request(
+        f"{base}/v2/", token="malformed", opener=opener
+    )
     evidence.update(
         {
             "catalogStatusCode": catalog_status,
@@ -163,6 +220,7 @@ def main() -> int:
         method="POST",
         token=access_token,
         body={"name": "release-artifact-smoke", "lifetimeSeconds": 3600},
+        opener=opener,
     )
     if create_status != 201:
         raise ValueError(f"API-token creation returned HTTP {create_status}")
@@ -176,7 +234,9 @@ def main() -> int:
             {"service": "zot", "scope": "repository:release-smoke:pull,push"}
         )
         token_status, _, token_body = request(
-            f"{base}/api/v1/registry/token?{query}", basic=(args.username, api_token)
+            f"{base}/api/v1/registry/token?{query}",
+            basic=(args.username, api_token),
+            opener=opener,
         )
         if token_status >= 400:
             raise ValueError(f"registry token issuance returned HTTP {token_status}")
@@ -190,7 +250,9 @@ def main() -> int:
             {"service": "zot", "scope": "repository:denied/release-smoke:pull,push"}
         )
         denied_status, _, denied_body = request(
-            f"{base}/api/v1/registry/token?{denied_query}", basic=(args.username, api_token)
+            f"{base}/api/v1/registry/token?{denied_query}",
+            basic=(args.username, api_token),
+            opener=opener,
         )
         evidence["deniedScopeEnforced"] = args.expect_denied_scope
         evidence["deniedScopeStatusCode"] = denied_status
@@ -230,10 +292,13 @@ def main() -> int:
             f"{base}/api/v1/tokens/{urllib.parse.quote(token_id)}",
             method="DELETE",
             token=access_token,
+            opener=opener,
         )
         evidence["tokenRevokeStatusCode"] = revoke_status
         revoked_status, _, _ = request(
-            f"{base}/api/v1/registry/token?{query}", basic=(args.username, api_token)
+            f"{base}/api/v1/registry/token?{query}",
+            basic=(args.username, api_token),
+            opener=opener,
         )
         evidence["revokedCredentialStatusCode"] = revoked_status
         evidence["revokedTokenChecked"] = revoke_status < 300 and revoked_status in (401, 403)

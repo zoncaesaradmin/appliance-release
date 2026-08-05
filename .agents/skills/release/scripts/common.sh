@@ -782,10 +782,121 @@ reject_placeholder_client_base_url() {
       return 0
       ;;
     *target-ip-or-dns*|*example.invalid*|*example.com*|*replace-me*|*changeme*)
-      fail "${source_label} is still an example placeholder (${1}); set it to the real appliance URL (for example https://192.168.1.103), or omit it so target-side smoke checks keep using https://127.0.0.1"
+      fail "${source_label} is still an example placeholder (${1}); set it to the real appliance URL (for example https://192.168.1.103 or https://name.appliance.internal with target_host IP for --resolve), or omit it so target-side smoke checks keep using https://127.0.0.1"
       ;;
   esac
   return 0
+}
+
+# Extract IPv4 from SSH targets like "user@192.168.1.151" or bare IPs.
+# Returns 1 when the alias is a hostname without a literal IPv4 (e.g. ssh config Host).
+ssh_target_ipv4() {
+  local alias="$1"
+  local host=""
+  alias="$(printf '%s' "${alias}" | tr -d '[:space:]')"
+  [[ -n "${alias}" ]] || return 1
+  host="${alias##*@}"
+  if [[ "${host}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    printf '%s\n' "${host}"
+    return 0
+  fi
+  return 1
+}
+
+# Print host and port for a URL (default ports 443/80). Used for curl --resolve.
+client_url_host_port() {
+  local base_url="$1"
+  python3 - "${base_url}" <<'PY'
+import sys
+from urllib.parse import urlparse
+
+raw = sys.argv[1].strip()
+parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+host = parsed.hostname or ""
+if not host:
+    raise SystemExit(f"client URL has no host: {raw!r}")
+if parsed.port:
+    port = parsed.port
+elif (parsed.scheme or "https").lower() == "http":
+    port = 80
+else:
+    port = 443
+print(f"{host}\n{port}")
+PY
+}
+
+# True when the name is a literal IPv4.
+is_ipv4_literal() {
+  [[ "${1:-}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
+}
+
+# Map FQDN client URLs to a connect IP for Mac-side curls/python when the
+# landns name is not in the Mac's global resolver (normal lab case).
+# Sets CLIENT_CURL_EXTRA (array of curl args) and CLIENT_CONNECT_IP / HOST / PORT.
+CLIENT_CURL_EXTRA=()
+CLIENT_CONNECT_IP=""
+CLIENT_RESOLVE_HOST=""
+CLIENT_RESOLVE_PORT=""
+setup_client_connect_resolve() {
+  local base_url="$1"
+  local connect_ip="${2:-}"
+  local host=""
+  local port=""
+  local hp=""
+
+  CLIENT_CURL_EXTRA=()
+  CLIENT_CONNECT_IP=""
+  CLIENT_RESOLVE_HOST=""
+  CLIENT_RESOLVE_PORT=""
+
+  hp="$(client_url_host_port "${base_url}")"
+  host="$(printf '%s\n' "${hp}" | sed -n '1p')"
+  port="$(printf '%s\n' "${hp}" | sed -n '2p')"
+  CLIENT_RESOLVE_HOST="${host}"
+  CLIENT_RESOLVE_PORT="${port}"
+
+  if is_ipv4_literal "${host}"; then
+    CLIENT_CONNECT_IP="${host}"
+    return 0
+  fi
+
+  connect_ip="$(printf '%s' "${connect_ip}" | tr -d '[:space:]')"
+  if [[ -z "${connect_ip}" ]]; then
+    # Try OS resolver first (operator already pointed DNS at landns).
+    if getent hosts "${host}" >/dev/null 2>&1 \
+      || host "${host}" >/dev/null 2>&1 \
+      || dig +short "${host}" A 2>/dev/null | grep -Eq '^[0-9.]+$'; then
+      return 0
+    fi
+    fail "client_verification base URL host ${host} does not resolve on this machine. For landns profiles the Mac usually is not using the appliance as DNS. Pass --connect-ip <target-ip> (or use run-release-from-devhost with target_host.alias user@IP), or set client_verification.connect_ip. Optionally point Mac DNS at the appliance landns."
+  fi
+  if ! is_ipv4_literal "${connect_ip}"; then
+    fail "client connect IP must be an IPv4 address (got: ${connect_ip})"
+  fi
+  CLIENT_CONNECT_IP="${connect_ip}"
+  CLIENT_CURL_EXTRA=(--resolve "${host}:${port}:${connect_ip}")
+  # Also map default https when base_url used a non-default port for odd tests.
+  if [[ "${port}" != "443" ]]; then
+    CLIENT_CURL_EXTRA+=(--resolve "${host}:443:${connect_ip}")
+  fi
+  if [[ "${port}" != "80" ]]; then
+    CLIENT_CURL_EXTRA+=(--resolve "${host}:80:${connect_ip}")
+  fi
+}
+
+derive_client_base_url_from_install() {
+  local install_config="$1"
+  local name=""
+  local zone=""
+  name="$(config_get_optional "${install_config}" "install.appliance_name" || true)"
+  zone="$(config_get_optional "${install_config}" "install.dns_zone" || true)"
+  name="$(printf '%s' "${name}" | tr -d '[:space:]')"
+  zone="$(printf '%s' "${zone}" | tr -d '[:space:]')"
+  if [[ -n "${name}" && -n "${zone}" ]]; then
+    printf 'https://%s.%s\n' "${name}" "${zone}"
+    return 0
+  fi
+  return 1
 }
 
 derive_mdns_tls_san_from_hostname() {

@@ -159,6 +159,7 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
     log "── clientVerify (install.bootstrap_admin=true)"
     bash "${SCRIPT_DIR}/verify-client-access.sh" \
       --install-config "${INSTALL_CONFIG}" \
+      --devhost-config "${DEVHOST_CONFIG}" \
       --run-dir "${RUN_DIR}" \
       --appliance-profile "${APPLIANCE_PROFILE}"
   else

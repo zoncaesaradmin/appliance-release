@@ -14,6 +14,8 @@ storing tokens in logs or metadata.
 
 Options:
   --install-config PATH    Install role file (client_verification.*, install.appliance_profile)
+  --devhost-config PATH    Optional Mac orchestrator config (target_host.alias → connect IP).
+  --connect-ip IP          Force IPv4 for curl --resolve when base_url is a landns FQDN.
   --appliance-profile NAME Effective installed appliance profile.
   --run-dir DIR            Local run directory.
   --final-ok               Print ok when all checks pass.
@@ -21,6 +23,8 @@ EOF
 }
 
 INSTALL_CONFIG=""
+DEVHOST_CONFIG=""
+CONNECT_IP=""
 APPLIANCE_PROFILE=""
 RUN_DIR=""
 FINAL_OK="false"
@@ -29,6 +33,14 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --install-config|--config)
       INSTALL_CONFIG="${2:-}"
+      shift 2
+      ;;
+    --devhost-config)
+      DEVHOST_CONFIG="${2:-}"
+      shift 2
+      ;;
+    --connect-ip)
+      CONNECT_IP="${2:-}"
       shift 2
       ;;
     --appliance-profile)
@@ -63,10 +75,45 @@ if [[ -z "${RUN_DIR}" ]]; then
 fi
 BASE_URL="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.base_url" || true)"
 USERNAME="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.username" || true)"
-BASE_URL="${BASE_URL:-https://192.168.1.101}"
+if [[ -z "${BASE_URL}" ]]; then
+  if BASE_URL="$(derive_client_base_url_from_install "${INSTALL_CONFIG}" 2>/dev/null)"; then
+    log "derived client_verification.base_url from install.appliance_name + install.dns_zone: ${BASE_URL}"
+  else
+    BASE_URL="https://192.168.1.101"
+  fi
+fi
 reject_placeholder_client_base_url "${BASE_URL}" "client_verification.base_url"
 USERNAME="${USERNAME:-admin}"
 PASSWORD="$(resolve_secret "APPLIANCE_FIRST_ADMIN_PASSWORD" "Appliance first-admin password")"
+
+if [[ -z "${CONNECT_IP}" ]]; then
+  CONNECT_IP="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.connect_ip" || true)"
+fi
+if [[ -z "${CONNECT_IP}" && -n "${DEVHOST_CONFIG}" ]]; then
+  DEVHOST_CONFIG="$(require_config_path "${DEVHOST_CONFIG}")"
+  if TARGET_ALIAS="$(config_get_optional "${DEVHOST_CONFIG}" "target_host.alias" || true)" \
+    && TARGET_ALIAS="$(printf '%s' "${TARGET_ALIAS}" | tr -d '[:space:]')" \
+    && [[ -n "${TARGET_ALIAS}" ]]; then
+    if CONNECT_IP="$(ssh_target_ipv4 "${TARGET_ALIAS}" 2>/dev/null)"; then
+      :
+    else
+      CONNECT_IP=""
+    fi
+  fi
+fi
+
+setup_client_connect_resolve "${BASE_URL}" "${CONNECT_IP}"
+if [[ ${#CLIENT_CURL_EXTRA[@]} -gt 0 ]]; then
+  log "client verify: mapping ${CLIENT_RESOLVE_HOST} → ${CLIENT_CONNECT_IP} via curl --resolve (Mac may not use appliance landns)"
+fi
+client_curl() {
+  # bash 3.2 + set -u: empty "${arr[@]}" is unbound.
+  if [[ ${#CLIENT_CURL_EXTRA[@]} -gt 0 ]]; then
+    curl -skS "${CLIENT_CURL_EXTRA[@]}" "$@"
+  else
+    curl -skS "$@"
+  fi
+}
 
 ensure_release_run_dirs "${RUN_DIR}"
 
@@ -273,7 +320,7 @@ Path(payload_path).write_text(json.dumps({"username": username, "password": pass
 PY
 
 log "running client login check against ${BASE_URL}"
-curl -skS \
+client_curl \
   -H 'Content-Type: application/json' \
   --data-binary "@${LOGIN_PAYLOAD_FILE}" \
   -o "${LOGIN_BODY_FILE}" \
@@ -312,7 +359,7 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
 
 log "running client session check"
-curl -skS \
+client_curl \
   -H "Authorization: Bearer ${TOKEN}" \
   -o "${SESSION_BODY_FILE}" \
   -D "${SESSION_META_FILE}" \
@@ -337,7 +384,7 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
 
 log "running client users check"
-curl -skS \
+client_curl \
   -H "Authorization: Bearer ${TOKEN}" \
   -o "${USERS_BODY_FILE}" \
   -D "${USERS_META_FILE}" \
@@ -360,7 +407,7 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
 
   log "running disabled build route check"
-  curl -skS \
+  client_curl \
     -H "Authorization: Bearer ${TOKEN}" \
     -o "${DISABLED_BUILD_PROFILES_BODY_FILE}" \
     -D "${DISABLED_BUILD_PROFILES_META_FILE}" \
@@ -395,7 +442,7 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
 
   log "running disabled build MCP initialize check"
-  curl -skS \
+  client_curl \
     -H "Authorization: Bearer ${TOKEN}" \
     -H 'Content-Type: application/json' \
     -d '{"jsonrpc":"2.0","id":"disabled-1","method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"appliance-release-verify","version":"1.0"}}}' \
@@ -439,7 +486,7 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
 
   log "running disabled build MCP tools/list check"
-  curl -skS \
+  client_curl \
     -H "Authorization: Bearer ${TOKEN}" \
     -H "Mcp-Session-Id: ${DISABLED_MCP_SESSION_ID}" \
     -H 'Content-Type: application/json' \
@@ -475,7 +522,7 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
 
   log "running disabled build MCP direct tools/call check"
-  curl -skS \
+  client_curl \
     -H "Authorization: Bearer ${TOKEN}" \
     -H "Mcp-Session-Id: ${DISABLED_MCP_SESSION_ID}" \
     -H 'Content-Type: application/json' \
@@ -502,7 +549,7 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
 
   log "running client builder work-profiles check"
-  curl -skS \
+  client_curl \
     -H "Authorization: Bearer ${TOKEN}" \
     -o "${BUILDER_PROFILES_BODY_FILE}" \
     -D "${BUILDER_PROFILES_META_FILE}" \
@@ -536,7 +583,7 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
 
   log "running client MCP initialize check"
-  curl -skS \
+  client_curl \
     -H "Authorization: Bearer ${TOKEN}" \
     -H 'Content-Type: application/json' \
     -d '{"jsonrpc":"2.0","id":"1","method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"appliance-release-verify","version":"1.0"}}}' \
@@ -579,7 +626,7 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
 
   log "running client MCP tools/list check"
-  curl -skS \
+  client_curl \
     -H "Authorization: Bearer ${TOKEN}" \
     -H "Mcp-Session-Id: ${MCP_SESSION_ID}" \
     -H 'Content-Type: application/json' \
@@ -615,7 +662,7 @@ Path(payload_path).write_text(json.dumps(body, separators=(",", ":")) + "\n", en
 PY
 
     log "running builder workflow workspace creation"
-    curl -skS \
+    client_curl \
       -H "Authorization: Bearer ${TOKEN}" \
       -H 'Content-Type: application/json' \
       --data-binary "@${WORKFLOW_CREATE_WORKSPACE_PAYLOAD_FILE}" \
@@ -651,7 +698,7 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
 
     log "running builder workflow build-target listing"
-    curl -skS \
+    client_curl \
       -H "Authorization: Bearer ${TOKEN}" \
       -o "${WORKFLOW_TARGETS_BODY_FILE}" \
       -D "${WORKFLOW_TARGETS_META_FILE}" \
@@ -703,7 +750,7 @@ Path(payload_path).write_text(json.dumps(body, separators=(",", ":")) + "\n", en
 PY
 
     log "submitting builder workflow build target ${BUILDER_WORKFLOW_TARGET}"
-    curl -skS \
+    client_curl \
       -H "Authorization: Bearer ${TOKEN}" \
       -H 'Content-Type: application/json' \
       -H "Idempotency-Key: ${idempotency_key}" \
@@ -742,7 +789,7 @@ PY
     : > "${WORKFLOW_JOB_POLL_FILE}"
     for ((attempt = 1; attempt <= BUILDER_WORKFLOW_POLL_ATTEMPTS; attempt++)); do
       log "polling builder workflow job ${WORKFLOW_JOB_ID} (${attempt}/${BUILDER_WORKFLOW_POLL_ATTEMPTS})"
-      curl -skS \
+      client_curl \
         -H "Authorization: Bearer ${TOKEN}" \
         -o "${WORKFLOW_JOB_BODY_FILE}" \
         -D "${WORKFLOW_JOB_META_FILE}" \
@@ -790,7 +837,7 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
 
     log "fetching builder workflow job steps"
-    curl -skS \
+    client_curl \
       -H "Authorization: Bearer ${TOKEN}" \
       -o "${WORKFLOW_STEPS_BODY_FILE}" \
       -D "${WORKFLOW_STEPS_META_FILE}" \
@@ -811,7 +858,7 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
 
     log "fetching builder workflow job logs"
-    curl -skS \
+    client_curl \
       -H "Authorization: Bearer ${TOKEN}" \
       -o "${WORKFLOW_LOGS_BODY_FILE}" \
       -D "${WORKFLOW_LOGS_META_FILE}" \
@@ -832,7 +879,7 @@ payload = {
 Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
       log "deleting successful builder workflow workspace ${WORKFLOW_WORKSPACE_ID}"
-      curl -skS \
+      client_curl \
         -X DELETE \
         -H "Authorization: Bearer ${TOKEN}" \
         -o "${WORKFLOW_DELETE_WORKSPACE_BODY_FILE}" \
@@ -1256,6 +1303,9 @@ artifact_args=(
   --oras-smoke-command "${ARTIFACT_ORAS_SMOKE_CMD}"
   --offline-smoke-command "${ARTIFACT_OFFLINE_SMOKE_CMD}"
 )
+if [[ -n "${CLIENT_CONNECT_IP}" ]] && ! is_ipv4_literal "${CLIENT_RESOLVE_HOST}"; then
+  artifact_args+=(--connect-ip "${CLIENT_CONNECT_IP}")
+fi
 if bool_true "${ARTIFACT_ENABLED}"; then
   artifact_args+=(--enabled)
 fi
