@@ -9,35 +9,37 @@ usage() {
   cat <<'EOF'
 usage: install-on-target.sh [options]
 
-Install a published appliance release on the configured target host.
+Install a published appliance release on the target.
+
+Default: orchestrate over SSH from a Mac/devhost (needs target_host.alias).
+With --local: run download + zonctl install *on this host* (target machine).
+Use --local via install-on-target-host.sh when APPLIANCE_TARGET_SUDO_PASSWORD
+and DEV_REGISTRY* are already exported on the target.
 
 For bundle_store.mode=static_http the target downloads from bundle_store.base_url.
 For appliance_files, the URL is derived as https://$DEV_REGISTRY$files_path
 (default files_path=/api/v1/files) with token/TLS from DEV_REGISTRY_TOKEN and
-DEV_REGISTRY_TLS_VERIFY. The Mac only orchestrates SSH; published artifact
-reachability is checked from the target (LAN DNS), not the Mac.
+DEV_REGISTRY_TLS_VERIFY. Reachability is always evaluated from the target.
 
 Options:
-  --config PATH              YAML or JSON config file (or a local appliance-release.config.yaml).
+  --config PATH              Merged work config (install + release + bundle_store
+                             + target_host.state_dir) or equivalent.
+  --install-config PATH      Alias for --config (install-role merge output).
+  --local                    Run all steps on this host (no SSH).
   --release-version VERSION  Release version to install. Defaults to release.version.
   --appliance-profile NAME   Override install.appliance_profile.
   --build-catalog PATH       Local build catalog JSON/YAML passed to zonctl.
   --appliance-name NAME      Product LAN instance label (single DNS label).
-                             FQDN becomes <name>.<dns-zone> for TLS,
-                             canonicalOrigin, and registry realm.
   --dns-zone ZONE            Override install.dns_zone.
-  --tls-san SAN              Additional TLS SAN to include on the appliance
-                             certificate. Repeatable. The current target
-                             hostname.local name is also added automatically
-                             when it is a valid DNS label.
-  --preserve-failed-state    Pass zonctl's debug preserve-failed-state mode
-                             through to install/upgrade on the target.
+  --tls-san SAN              Additional TLS SAN (repeatable).
+  --preserve-failed-state    Pass zonctl preserve-failed-state mode.
   --uninstall-first          Uninstall the previous appliance first.
-  --run-dir DIR              Local run directory.
+  --run-dir DIR              Run directory for logs/metadata.
 EOF
 }
 
 CONFIG_PATH=""
+LOCAL_MODE="false"
 RELEASE_VERSION=""
 APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
@@ -50,9 +52,13 @@ RUN_DIR=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config)
+    --config|--install-config)
       CONFIG_PATH="${2:-}"
       shift 2
+      ;;
+    --local)
+      LOCAL_MODE="true"
+      shift
       ;;
     --release-version)
       RELEASE_VERSION="${2:-}"
@@ -161,14 +167,32 @@ fi
 # sudo drops the remote shell env unless preserved (same pattern as image-pull creds).
 require_builder_build_catalog_path "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}"
 if [[ -z "${UNINSTALL_FIRST}" ]]; then
-  UNINSTALL_FIRST="false"
+  if [[ -n "$(config_get_optional "${CONFIG_PATH}" "install.uninstall_first" || true)" ]]; then
+    UNINSTALL_FIRST="$(config_require_bool "${CONFIG_PATH}" "install.uninstall_first")"
+  else
+    UNINSTALL_FIRST="false"
+  fi
+fi
+if [[ "${PRESERVE_FAILED_STATE}" == "false" ]]; then
+  if [[ -n "$(config_get_optional "${CONFIG_PATH}" "install.preserve_failed_state" || true)" ]]; then
+    PRESERVE_FAILED_STATE="$(config_require_bool "${CONFIG_PATH}" "install.preserve_failed_state")"
+  fi
 fi
 [[ -n "${RELEASE_VERSION}" ]] || fail "release.version is required in config (or pass --release-version)"
 OUT_DIR="$(config_get_optional "${CONFIG_PATH}" "install.bundle_download_dir" || true)"
 [[ -n "${OUT_DIR}" ]] || fail "install.bundle_download_dir is required in config"
 OUTPUT_FORMAT="text"
 
-TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
+TARGET_HOST=""
+if bool_true "${LOCAL_MODE}"; then
+  TARGET_HOST="$(config_get_optional "${CONFIG_PATH}" "target_host.alias" || true)"
+  if [[ -z "${TARGET_HOST}" ]]; then
+    TARGET_HOST="local@$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo target-host)"
+  fi
+  log "local mode: download + zonctl install run on this host (${TARGET_HOST})"
+else
+  TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
+fi
 ensure_release_run_dirs "${RUN_DIR}" "artifacts"
 
 [[ -n "${RELEASE_VERSION}" ]] || fail "--release-version is required for automated install"
@@ -227,13 +251,24 @@ curl \"\${curl_args[@]}\" -H $(shell_quote "${auth_header}") \"\${url}\" >/dev/n
         remote_cmd+="
 curl \"\${curl_args[@]}\" \"\${url}\" >/dev/null"
       fi
-      if ! run_ssh_captured "${TARGET_HOST}" "${step_log}" "${remote_cmd}"; then
-        output="$(cat "${step_log}" 2>/dev/null || true)"
-        {
-          echo "=== ${label} ${url} ==="
-          printf '%s\n' "${output}"
-        } >>"${preflight_log}"
-        fail "published ${label} is not reachable from target ${TARGET_HOST} at ${url}. The Mac does not need to resolve LAN DNS; the target must. Check distributor uptime, LAN DNS, TLS (-k/cacert), and that install.appliance_name is not the distributor FQDN. curl output: ${output}"
+      if bool_true "${LOCAL_MODE}"; then
+        if ! run_local_logged "${step_log}" "${remote_cmd}"; then
+          output="$(cat "${step_log}" 2>/dev/null || true)"
+          {
+            echo "=== ${label} ${url} ==="
+            printf '%s\n' "${output}"
+          } >>"${preflight_log}"
+          fail "published ${label} is not reachable from this host at ${url}. Check distributor uptime, LAN DNS, TLS (-k/cacert), and that install.appliance_name is not the distributor FQDN. curl output: ${output}"
+        fi
+      else
+        if ! run_ssh_captured "${TARGET_HOST}" "${step_log}" "${remote_cmd}"; then
+          output="$(cat "${step_log}" 2>/dev/null || true)"
+          {
+            echo "=== ${label} ${url} ==="
+            printf '%s\n' "${output}"
+          } >>"${preflight_log}"
+          fail "published ${label} is not reachable from target ${TARGET_HOST} at ${url}. The Mac does not need to resolve LAN DNS; the target must. Check distributor uptime, LAN DNS, TLS (-k/cacert), and that install.appliance_name is not the distributor FQDN. curl output: ${output}"
+        fi
       fi
       {
         echo "=== ${label} ${url} ==="
@@ -241,7 +276,11 @@ curl \"\${curl_args[@]}\" \"\${url}\" >/dev/null"
       } >>"${preflight_log}"
     }
 
-    log "preflight: checking published artifacts from target ${TARGET_HOST}"
+    if bool_true "${LOCAL_MODE}"; then
+      log "preflight: checking published artifacts from this host"
+    else
+      log "preflight: checking published artifacts from target ${TARGET_HOST}"
+    fi
     preflight_public_url_on_target "${helper_url}" "install helper"
     preflight_public_url_on_target "${bundle_url}" "bundle archive"
     preflight_public_url_on_target "${checksums_url}" "checksum file"
@@ -485,9 +524,17 @@ fi
 echo "zonctl is now available at /usr/local/bin/zonctl on the target host."'
 
 install_log="${RUN_DIR}/logs/install.log"
-log "installing release on ${TARGET_HOST} using ${INSTALL_SOURCE_LABEL} (mode=${BUNDLE_STORE_MODE})"
+if bool_true "${LOCAL_MODE}"; then
+  log "installing release on this host using ${INSTALL_SOURCE_LABEL} (mode=${BUNDLE_STORE_MODE})"
+else
+  log "installing release on ${TARGET_HOST} using ${INSTALL_SOURCE_LABEL} (mode=${BUNDLE_STORE_MODE})"
+fi
 set +e
-run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"
+if bool_true "${LOCAL_MODE}"; then
+  run_local_logged "${install_log}" "${remote_script}"
+else
+  run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_script}"
+fi
 install_exit_code=$?
 set -e
 

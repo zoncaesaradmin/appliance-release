@@ -14,6 +14,8 @@ initialized, the bootstrap is skipped successfully.
 
 Options:
   --config PATH              YAML or JSON config file (or a local appliance-release.config.yaml).
+  --local                    Run on this host (no SSH). Use when first-admin
+                             password env is already exported on the target.
   --run-dir DIR              Local run directory.
   --admin-username NAME      Override install.bootstrap_admin_username.
   --namespace NAME           Override install.kubernetes_namespace.
@@ -23,6 +25,7 @@ EOF
 }
 
 CONFIG_PATH=""
+LOCAL_MODE="false"
 RUN_DIR=""
 ADMIN_USERNAME=""
 NAMESPACE=""
@@ -33,6 +36,10 @@ while [[ $# -gt 0 ]]; do
     --config)
       CONFIG_PATH="${2:-}"
       shift 2
+      ;;
+    --local)
+      LOCAL_MODE="true"
+      shift
       ;;
     --run-dir)
       RUN_DIR="${2:-}"
@@ -80,7 +87,15 @@ if [[ -z "${DEPLOYMENT}" ]]; then
 fi
 [[ -n "${DEPLOYMENT}" ]] || fail "install.control_plane_deployment is required in config"
 
-TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
+TARGET_HOST=""
+if bool_true "${LOCAL_MODE}"; then
+  TARGET_HOST="$(config_get_optional "${CONFIG_PATH}" "target_host.alias" || true)"
+  if [[ -z "${TARGET_HOST}" ]]; then
+    TARGET_HOST="local@$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo target-host)"
+  fi
+else
+  TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
+fi
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 first_admin_password="$(resolve_secret "APPLIANCE_FIRST_ADMIN_PASSWORD" "First administrator password")"
 
@@ -105,8 +120,20 @@ printf "%s\n" "${combined}" >&2
 exit 1'
 
 bootstrap_log="${RUN_DIR}/logs/bootstrap-admin.log"
-log "bootstrapping first administrator on ${TARGET_HOST}"
-if ! run_ssh_logged "${TARGET_HOST}" "${bootstrap_log}" "${remote_script}"; then
+if bool_true "${LOCAL_MODE}"; then
+  log "bootstrapping first administrator on this host"
+else
+  log "bootstrapping first administrator on ${TARGET_HOST}"
+fi
+set +e
+if bool_true "${LOCAL_MODE}"; then
+  run_local_logged "${bootstrap_log}" "${remote_script}"
+else
+  run_ssh_logged "${TARGET_HOST}" "${bootstrap_log}" "${remote_script}"
+fi
+bootstrap_status=$?
+set -e
+if [[ "${bootstrap_status}" -ne 0 ]]; then
   if [[ -f "${bootstrap_log}" ]] && grep -Eq 'bootstrap: created administrator|already initialized' "${bootstrap_log}"; then
     log "bootstrap-admin command returned non-zero after a successful target-side result; accepting based on ${bootstrap_log}"
   else

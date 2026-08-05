@@ -17,6 +17,7 @@ run-release-flow.sh invokes this only when install.enable_default_license is tru
 
 Options:
   --config PATH              YAML or JSON config file (or a local appliance-release.config.yaml).
+  --local                    Run on this host (no SSH).
   --run-dir DIR              Local run directory.
   --namespace NAME           Override install.kubernetes_namespace.
   --deployment NAME          Control-plane deployment name.
@@ -25,6 +26,7 @@ EOF
 }
 
 CONFIG_PATH=""
+LOCAL_MODE="false"
 RUN_DIR=""
 NAMESPACE=""
 DEPLOYMENT=""
@@ -34,6 +36,10 @@ while [[ $# -gt 0 ]]; do
     --config)
       CONFIG_PATH="${2:-}"
       shift 2
+      ;;
+    --local)
+      LOCAL_MODE="true"
+      shift
       ;;
     --run-dir)
       RUN_DIR="${2:-}"
@@ -73,7 +79,15 @@ if [[ -z "${DEPLOYMENT}" ]]; then
 fi
 [[ -n "${DEPLOYMENT}" ]] || fail "install.control_plane_deployment is required in config"
 
-TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
+TARGET_HOST=""
+if bool_true "${LOCAL_MODE}"; then
+  TARGET_HOST="$(config_get_optional "${CONFIG_PATH}" "target_host.alias" || true)"
+  if [[ -z "${TARGET_HOST}" ]]; then
+    TARGET_HOST="local@$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo target-host)"
+  fi
+else
+  TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
+fi
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 
 remote_script='set -euo pipefail
@@ -93,8 +107,20 @@ printf "%s\n" "${combined}" >&2
 exit 1'
 
 license_log="${RUN_DIR}/logs/bootstrap-default-license.log"
-log "accepting default (base) license on ${TARGET_HOST}"
-if ! run_ssh_logged "${TARGET_HOST}" "${license_log}" "${remote_script}"; then
+if bool_true "${LOCAL_MODE}"; then
+  log "accepting default (base) license on this host"
+else
+  log "accepting default (base) license on ${TARGET_HOST}"
+fi
+set +e
+if bool_true "${LOCAL_MODE}"; then
+  run_local_logged "${license_log}" "${remote_script}"
+else
+  run_ssh_logged "${TARGET_HOST}" "${license_log}" "${remote_script}"
+fi
+license_status=$?
+set -e
+if [[ "${license_status}" -ne 0 ]]; then
   if [[ -f "${license_log}" ]] && grep -Eq 'licensing: accepted base entitlement|licensing: already resolved' "${license_log}"; then
     log "bootstrap-default-license command returned non-zero after a successful target-side result; accepting based on ${license_log}"
   else

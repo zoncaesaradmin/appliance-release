@@ -7,22 +7,35 @@
 #   release.version
 #   bundle_store.mode / release_path_prefix / download base (base_url or appliance_files env)
 #
-# Example:
+# Example (full flow from Mac):
 #   bash .agents/skills/release/scripts/run-release-flow.sh \
 #     --config ~/lab-devhost.yaml \
 #     --build-publish-config ~/lab-build-publish.yaml \
 #     --install-config ~/lab-install.yaml
+#
+# Example (build+publish only; secrets live on the build host):
+#   # From Mac/devhost — copies this YAML and runs on-host worker over SSH:
+#   bash .agents/skills/release/scripts/run-build-and-publish-on-build-host.sh \
+#     --config ~/lab-devhost.yaml \
+#     --build-publish-config ~/lab-build-publish.yaml
+#   # Or already on the build host with DEV_* exported:
+#   bash …/build-and-publish-on-host.sh \
+#     --build-publish-config ~/.config/appliance-release/build-publish.yaml
 #
 # Rules:
 # - Only top-level keys: release_workspace, release, build_flow, bundle_store.
 # - Absolute paths on the build host only (no ~/...).
 # - Secrets never live here — only env *names* under *_env keys.
 #
-# Runtime secrets (export on the Mac before running):
-#   APPLIANCE_BUILD_SUDO_PASSWORD
+# Runtime secrets:
+#   Full flow from Mac: export DEV_* / APPLIANCE_BUILD_SUDO_PASSWORD on the Mac
+#     (then SSH injects them into remote steps).
+#   Build-host worker path: export the same vars on the *build* host only
+#     (e.g. ~/.bashrc).
 #   Values named by build_flow.dev_image_pull.*_env (and optional mirror):
 #     DEV_REGISTRY, DEV_IMAGE_REPO, DEV_IMAGE_NAME,
 #     DEV_REGISTRY_USER, DEV_REGISTRY_TOKEN, DEV_REGISTRY_TLS_VERIFY
+#   Plus APPLIANCE_BUILD_SUDO_PASSWORD when bootstrap_needs_sudo / build_needs_sudo.
 
 # ============================================================================
 # Release workspace on the build host

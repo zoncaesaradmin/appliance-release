@@ -366,6 +366,19 @@ run_ssh_captured() {
   return "${cmd_status}"
 }
 
+# Run a command on this host, teeing stdout/stderr into log_file.
+run_local_logged() {
+  local log_file="$1"
+  local command="$2"
+
+  ensure_dir "$(dirname "${log_file}")"
+  set +e
+  bash -c "${command}" 2>&1 | tee "${log_file}"
+  local cmd_status="${PIPESTATUS[0]}"
+  set -e
+  return "${cmd_status}"
+}
+
 skill_release_repo_root() {
   local script_dir="$1"
   (cd "${script_dir}/../../../.." && pwd)

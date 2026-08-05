@@ -12,22 +12,30 @@ usage() {
   cat <<'EOF'
 usage: build-and-publish.sh [options]
 
-Run explicit build and publish commands on the remote build host, stop on the
-first failure, and pull back export metadata for reporting.
+Run explicit build and publish commands on the remote build host (default),
+or on this machine with --local (for build-host login shells where DEV_*
+and APPLIANCE_BUILD_SUDO_PASSWORD are already exported).
 
 Options:
-  --config PATH              YAML or JSON config file (or a local appliance-release.config.yaml).
-  --bootstrap-cmd CMD           Optional remote bootstrap command.
-  --build-cmd CMD               Remote build command. Defaults to build_flow.build_command.
-  --publish-cmd CMD             Remote publish command. Defaults to build_flow.publish_command.
-  --remote-cwd PATH             Remote working directory. Defaults to release_workspace.remote_repo_path.
-  --remote-export-dir PATH      Optional remote export directory to rsync back locally.
-  --release-version VERSION     Optional release version for metadata and filenames.
-  --run-dir DIR                 Local run directory.
+  --config PATH                 Merged config (devhost-orchestrated flows) or
+                                a build-publish-only document with --local.
+  --build-publish-config PATH   Alias for --config (build-publish role file).
+  --local                       Run bootstrap/build/publish on this host
+                                (no SSH). Use from the build machine, or via
+                                run-build-and-publish-on-build-host.sh.
+  --bootstrap-cmd CMD           Optional bootstrap command.
+  --build-cmd CMD               Build command. Defaults to build_flow.build_command.
+  --publish-cmd CMD             Publish command. Defaults to build_flow.publish_command.
+  --remote-cwd PATH             Working directory on the build host.
+                                Defaults to release_workspace.remote_repo_path.
+  --remote-export-dir PATH      Export directory to collect after build.
+  --release-version VERSION     Release version for metadata and filenames.
+  --run-dir DIR                 Run directory for logs/metadata/artifacts.
 EOF
 }
 
 CONFIG_PATH=""
+LOCAL_MODE="false"
 BOOTSTRAP_CMD=""
 BUILD_CMD=""
 PUBLISH_CMD=""
@@ -40,9 +48,13 @@ RUN_DIR=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config)
+    --config|--build-publish-config)
       CONFIG_PATH="${2:-}"
       shift 2
+      ;;
+    --local)
+      LOCAL_MODE="true"
+      shift
       ;;
     --bootstrap-cmd)
       BOOTSTRAP_CMD="${2:-}"
@@ -137,11 +149,24 @@ fi
 [[ -n "${CODE_REPO_REF}" ]] || fail "build_flow.code_repo_ref is required in config"
 [[ -n "${CTL_REPO_REF}" ]] || fail "build_flow.ctl_repo_ref is required in config"
 
-require_cmd rsync
-require_cmd ssh
 require_cmd python3
+require_cmd rsync
+if ! bool_true "${LOCAL_MODE}"; then
+  require_cmd ssh
+fi
 
-BUILD_HOST="$(config_get "${CONFIG_PATH}" "build_host.alias")"
+BUILD_HOST=""
+if bool_true "${LOCAL_MODE}"; then
+  # build-publish role configs do not carry build_host (that lives on the
+  # devhost file). Record a local marker for metadata only.
+  BUILD_HOST="$(config_get_optional "${CONFIG_PATH}" "build_host.alias" || true)"
+  if [[ -z "${BUILD_HOST}" ]]; then
+    BUILD_HOST="local@$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo build-host)"
+  fi
+  log "local mode: bootstrap/build/publish run on this host (${BUILD_HOST}); expecting registry/sudo env already exported"
+else
+  BUILD_HOST="$(config_get "${CONFIG_PATH}" "build_host.alias")"
+fi
 BOOTSTRAP_NEEDS_SUDO="$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_needs_sudo" || true)"
 BUILD_NEEDS_SUDO="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_needs_sudo" || true)"
 [[ -n "${BOOTSTRAP_NEEDS_SUDO}" ]] || fail "build_flow.bootstrap_needs_sudo is required in config (true|false)"
@@ -275,7 +300,16 @@ BUILD_DNS_VERSION="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.versio
 BUILD_DNS_IMAGE_PULL_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.image_pull_ref" || true)"
 APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}")"
 VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
-[[ -n "${VERIFY_ARGO_ENABLED}" ]] || fail "verification.argo.enabled is required in config (true|false)"
+if [[ -z "${VERIFY_ARGO_ENABLED}" ]]; then
+  if bool_true "${LOCAL_MODE}"; then
+    # Build-publish-only configs do not include verification.*; packaging is
+    # always the complete product super-set, so default Argo packing checks on.
+    VERIFY_ARGO_ENABLED="true"
+    log "local mode: verification.argo.enabled not in config; defaulting to true for complete-product packaging"
+  else
+    fail "verification.argo.enabled is required in config (true|false)"
+  fi
+fi
 BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
 PUBLISH_PATH_PREFIX="$(bundle_store_get_optional "${CONFIG_PATH}" "release_path_prefix" || true)"
 PUBLISH_LATEST_ALIAS="$(config_get_optional "${CONFIG_PATH}" "release.publish_latest_alias" || true)"
@@ -298,8 +332,12 @@ case "${BUNDLE_STORE_MODE}" in
 esac
 ensure_release_run_dirs "${RUN_DIR}" "artifacts"
 
-log "running local live-build repo preflight against release=${REMOTE_REPO_REF}, appliance-code=${CODE_REPO_REF}, appliance-ctl=${CTL_REPO_REF}"
-preflight_live_release_inputs "${SKILL_RELEASE_REPO_ROOT}" "${REMOTE_REPO_REF}" "${CODE_REPO_REF}" "${CTL_REPO_REF}"
+if bool_true "${LOCAL_MODE}"; then
+  log "local mode: skipping Mac/devhost live-repo preflight (release checkout is managed on this host)"
+else
+  log "running local live-build repo preflight against release=${REMOTE_REPO_REF}, appliance-code=${CODE_REPO_REF}, appliance-ctl=${CTL_REPO_REF}"
+  preflight_live_release_inputs "${SKILL_RELEASE_REPO_ROOT}" "${REMOTE_REPO_REF}" "${CODE_REPO_REF}" "${CTL_REPO_REF}"
+fi
 
 require_profile_supports_workflows "${VERIFY_ARGO_ENABLED}" "${APPLIANCE_PROFILE}" "verification.argo.enabled"
 
@@ -426,9 +464,26 @@ bootstrap_log="${RUN_DIR}/logs/bootstrap.log"
 build_log="${RUN_DIR}/logs/build.log"
 publish_log="${RUN_DIR}/logs/publish.log"
 
+run_build_step_logged() {
+  local label="$1"
+  local log_file="$2"
+  local command="$3"
+  if bool_true "${LOCAL_MODE}"; then
+    log "running ${label} on this host"
+    run_local_logged "${log_file}" "${command}"
+  else
+    log "running remote ${label} on ${BUILD_HOST}"
+    run_ssh_logged "${BUILD_HOST}" "${log_file}" "${command}"
+  fi
+}
+
 if [[ -n "${release_repo_sync_remote_cmd}" ]]; then
-  log "ensuring remote appliance-release checkout on ${BUILD_HOST} (${REMOTE_CWD})"
-  run_ssh_logged "${BUILD_HOST}" "${release_repo_sync_log}" "${release_repo_sync_remote_cmd}"
+  if bool_true "${LOCAL_MODE}"; then
+    log "ensuring appliance-release checkout at ${REMOTE_CWD}"
+  else
+    log "ensuring remote appliance-release checkout on ${BUILD_HOST} (${REMOTE_CWD})"
+  fi
+  run_build_step_logged "release-repo-sync" "${release_repo_sync_log}" "${release_repo_sync_remote_cmd}"
 fi
 
 if bool_true "${BOOTSTRAP_NEEDS_SUDO:-false}" || bool_true "${BUILD_NEEDS_SUDO:-false}"; then
@@ -449,19 +504,15 @@ if [[ -n "${bootstrap_remote_cmd}" ]]; then
   if bool_true "${BOOTSTRAP_NEEDS_SUDO:-false}"; then
     bootstrap_remote_cmd="$(wrap_remote_cmd_with_sudo "${bootstrap_remote_cmd}" "${build_sudo_password}")"
   fi
-  log "running remote bootstrap on ${BUILD_HOST}"
-  run_ssh_logged "${BUILD_HOST}" "${bootstrap_log}" "${bootstrap_remote_cmd}"
+  run_build_step_logged "bootstrap" "${bootstrap_log}" "${bootstrap_remote_cmd}"
 fi
 
 if bool_true "${BUILD_NEEDS_SUDO:-false}"; then
   build_remote_cmd="$(wrap_remote_cmd_with_sudo "${build_remote_cmd}" "${build_sudo_password}")"
 fi
 
-log "running remote build on ${BUILD_HOST}"
-run_ssh_logged "${BUILD_HOST}" "${build_log}" "${build_remote_cmd}"
-
-log "running remote publish on ${BUILD_HOST}"
-run_ssh_logged "${BUILD_HOST}" "${publish_log}" "${publish_remote_cmd}"
+run_build_step_logged "build" "${build_log}" "${build_remote_cmd}"
+run_build_step_logged "publish" "${publish_log}" "${publish_remote_cmd}"
 
 eval "$(
   python3 - "${build_log}" <<'PY'
@@ -530,6 +581,21 @@ copy_remote_path() {
   local remote_path="$1"
   local local_path="$2"
   [[ -n "${remote_path}" ]] || return 0
+
+  if bool_true "${LOCAL_MODE}"; then
+    if [[ -d "${remote_path}" ]]; then
+      ensure_dir "${local_path}"
+      rsync -az "${remote_path}/" "${local_path}/"
+      return 0
+    fi
+    if [[ -e "${remote_path}" ]]; then
+      ensure_dir "${local_path}"
+      rsync -az "${remote_path}" "${local_path}/"
+      return 0
+    fi
+    log "warning: path not found for local collection: ${remote_path}"
+    return 0
+  fi
 
   if ssh "${BUILD_HOST}" "test -d $(shell_quote "${remote_path}")"; then
     ensure_dir "${local_path}"
@@ -628,8 +694,13 @@ elif [[ ${#VALIDATE_RELEASE_ARTIFACTS_ARGS[@]} -gt 0 ]]; then
   fail "Argo validation requested but copied release-input or bundle metadata is missing"
 fi
 
-remote_release_commit_cmd="cd $(shell_quote "${REMOTE_CWD}") && git rev-parse HEAD"
-remote_release_commit="$(ssh "${BUILD_HOST}" "bash -lc $(shell_quote "${remote_release_commit_cmd}")" 2>/dev/null || true)"
+remote_release_commit=""
+if bool_true "${LOCAL_MODE}"; then
+  remote_release_commit="$(git -C "${REMOTE_CWD}" rev-parse HEAD 2>/dev/null || true)"
+else
+  remote_release_commit_cmd="cd $(shell_quote "${REMOTE_CWD}") && git rev-parse HEAD"
+  remote_release_commit="$(ssh "${BUILD_HOST}" "bash -lc $(shell_quote "${remote_release_commit_cmd}")" 2>/dev/null || true)"
+fi
 
 python3 - "${RUN_DIR}" "${CONFIG_PATH}" "${BUILD_HOST}" "${REMOTE_CWD}" "${RELEASE_VERSION}" "${BOOTSTRAP_CMD}" "${BUILD_CMD}" "${PUBLISH_CMD}" "${remote_release_commit}" "${REMOTE_REPO_SOURCE}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" <<'PY'
 import json
