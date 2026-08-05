@@ -8,24 +8,25 @@ usage() {
   cat <<'EOF'
 usage: bootstrap-default-license-on-target.sh [options]
 
-Accept the base/free (default) entitlement on the configured target host as an
-explicit post-install step. Use this for simple installations so operators do
-not need to complete licensing after first UI login. Safe to rerun: if
-licensing is already resolved, acceptance is skipped successfully.
+Accept the base/free entitlement on the configured target host.
+Safe to rerun when licensing is already resolved.
 
-run-release-flow.sh invokes this only when install.enable_default_license is true.
+Required:
+  --install-config PATH    install.kubernetes_namespace, control_plane_deployment
+
+When not using --local:
+  --config PATH            Devhost config (target_host.alias)
 
 Options:
-  --config PATH              YAML or JSON config file (or a local appliance-release.config.yaml).
-  --local                    Run on this host (no SSH).
-  --run-dir DIR              Local run directory.
-  --namespace NAME           Override install.kubernetes_namespace.
-  --deployment NAME          Control-plane deployment name.
-                             Override install.control_plane_deployment.
+  --local
+  --run-dir DIR
+  --namespace NAME
+  --deployment NAME
 EOF
 }
 
-CONFIG_PATH=""
+DEVHOST_CONFIG=""
+INSTALL_CONFIG=""
 LOCAL_MODE="false"
 RUN_DIR=""
 NAMESPACE=""
@@ -34,7 +35,11 @@ DEPLOYMENT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)
-      CONFIG_PATH="${2:-}"
+      DEVHOST_CONFIG="${2:-}"
+      shift 2
+      ;;
+    --install-config)
+      INSTALL_CONFIG="${2:-}"
       shift 2
       ;;
     --local)
@@ -63,7 +68,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
+[[ -n "${INSTALL_CONFIG}" ]] || fail "requires --install-config PATH"
+INSTALL_CONFIG="$(require_config_path "${INSTALL_CONFIG}")"
+if ! bool_true "${LOCAL_MODE}"; then
+  [[ -n "${DEVHOST_CONFIG}" ]] || fail "requires --config PATH (devhost) unless --local"
+  DEVHOST_CONFIG="$(require_config_path "${DEVHOST_CONFIG}")"
+fi
 
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"
@@ -71,22 +81,24 @@ fi
 ensure_release_run_dirs "${RUN_DIR}"
 
 if [[ -z "${NAMESPACE}" ]]; then
-  NAMESPACE="$(config_get_optional "${CONFIG_PATH}" "install.kubernetes_namespace" || true)"
+  NAMESPACE="$(config_get_optional "${INSTALL_CONFIG}" "install.kubernetes_namespace" || true)"
 fi
-[[ -n "${NAMESPACE}" ]] || fail "install.kubernetes_namespace is required in config"
+[[ -n "${NAMESPACE}" ]] || fail "install.kubernetes_namespace is required in install config"
 if [[ -z "${DEPLOYMENT}" ]]; then
-  DEPLOYMENT="$(config_get_optional "${CONFIG_PATH}" "install.control_plane_deployment" || true)"
+  DEPLOYMENT="$(config_get_optional "${INSTALL_CONFIG}" "install.control_plane_deployment" || true)"
 fi
-[[ -n "${DEPLOYMENT}" ]] || fail "install.control_plane_deployment is required in config"
+[[ -n "${DEPLOYMENT}" ]] || fail "install.control_plane_deployment is required in install config"
 
 TARGET_HOST=""
 if bool_true "${LOCAL_MODE}"; then
-  TARGET_HOST="$(config_get_optional "${CONFIG_PATH}" "target_host.alias" || true)"
+  if [[ -n "${DEVHOST_CONFIG}" ]]; then
+    TARGET_HOST="$(config_get_optional "${DEVHOST_CONFIG}" "target_host.alias" || true)"
+  fi
   if [[ -z "${TARGET_HOST}" ]]; then
     TARGET_HOST="local@$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo target-host)"
   fi
 else
-  TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
+  TARGET_HOST="$(config_get "${DEVHOST_CONFIG}" "target_host.alias")"
 fi
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 
@@ -128,26 +140,33 @@ if [[ "${license_status}" -ne 0 ]]; then
   fi
 fi
 
-python3 - "${RUN_DIR}/metadata/bootstrap-default-license.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${NAMESPACE}" "${DEPLOYMENT}" "${license_log}" <<'PY'
+python3 - "${RUN_DIR}/metadata/bootstrap-default-license.json" \
+  "${INSTALL_CONFIG}" \
+  "${DEVHOST_CONFIG:-}" \
+  "${TARGET_HOST}" \
+  "${NAMESPACE}" \
+  "${DEPLOYMENT}" \
+  "${license_log}" <<'PY'
 import json
 import sys
 
 (
     out_path,
-    config_path,
+    install_config,
+    devhost_config,
     target_host,
     namespace,
     deployment,
     license_log,
-) = sys.argv[1:7]
+) = sys.argv[1:8]
 
 payload = {
-    "configPath": config_path,
+    "installConfigPath": install_config,
+    "devhostConfigPath": devhost_config or None,
     "targetHost": target_host,
     "namespace": namespace,
     "deployment": deployment,
     "log": license_log,
-    "action": "accept-base",
 }
 
 with open(out_path, "w", encoding="utf-8") as handle:

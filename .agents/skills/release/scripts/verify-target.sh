@@ -11,8 +11,12 @@ usage: verify-target.sh [options]
 Run post-install verification on the configured target host. The script captures
 logs for each check and, on failure, runs an optional failure-log command.
 
-Options:
-  --config PATH              YAML or JSON config file (or a local appliance-release.config.yaml).
+Required:
+  --config PATH                  Devhost config (target_host.alias)
+  --install-config PATH          Install + verification + client_verification keys
+
+Optional:
+  --build-publish-config PATH    release.version for default commands
   --status-cmd CMD               Override verification.status_command.
   --verify-cmd CMD               Override verification.verify_command.
   --service-health-cmd CMD       Override verification.service_health_command.
@@ -31,7 +35,9 @@ Options:
 EOF
 }
 
-CONFIG_PATH=""
+DEVHOST_CONFIG=""
+INSTALL_CONFIG=""
+BUILD_PUBLISH_CONFIG=""
 STATUS_CMD=""
 VERIFY_CMD=""
 SERVICE_HEALTH_CMD=""
@@ -51,7 +57,15 @@ RUN_DIR=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)
-      CONFIG_PATH="${2:-}"
+      DEVHOST_CONFIG="${2:-}"
+      shift 2
+      ;;
+    --install-config)
+      INSTALL_CONFIG="${2:-}"
+      shift 2
+      ;;
+    --build-publish-config)
+      BUILD_PUBLISH_CONFIG="${2:-}"
       shift 2
       ;;
     --status-cmd)
@@ -124,38 +138,44 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
+[[ -n "${DEVHOST_CONFIG}" ]] || fail "requires --config PATH (devhost)"
+[[ -n "${INSTALL_CONFIG}" ]] || fail "requires --install-config PATH"
+DEVHOST_CONFIG="$(require_config_path "${DEVHOST_CONFIG}")"
+INSTALL_CONFIG="$(require_config_path "${INSTALL_CONFIG}")"
+if [[ -n "${BUILD_PUBLISH_CONFIG}" ]]; then
+  BUILD_PUBLISH_CONFIG="$(require_config_path "${BUILD_PUBLISH_CONFIG}")"
+fi
 
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"
 fi
 
-TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
-TARGET_STATE_DIR="$(config_get_optional "${CONFIG_PATH}" "target_host.state_dir" || true)"
-STATUS_CMD="${STATUS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.status_command" || true)}"
-VERIFY_CMD="${VERIFY_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.verify_command" || true)}"
-SERVICE_HEALTH_CMD="${SERVICE_HEALTH_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.service_health_command" || true)}"
-APP_VERSION_CMD="${APP_VERSION_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.app_version_command" || true)}"
-SMOKE_TEST_CMD="${SMOKE_TEST_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_command" || true)}"
-UI_HOME_CMD="${UI_HOME_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.ui_home_command" || true)}"
-BUILDER_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.builder.enabled" || true)"
-BUILDER_API_CMD="${BUILDER_API_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.builder.api_command" || true)}"
-ARTIFACT_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.artifact.enabled" || true)"
-ARTIFACT_READINESS_CMD="${ARTIFACT_READINESS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.artifact.readiness_command" || true)}"
-DNS_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.dns.enabled" || true)"
-DNS_READINESS_CMD="${DNS_READINESS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.dns.readiness_command" || true)}"
-FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.failure_log_command" || true)}"
-SMOKE_TEST_RETRIES="${SMOKE_TEST_RETRIES:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_retries" || true)}"
-SMOKE_TEST_RETRY_DELAY_SECONDS="${SMOKE_TEST_RETRY_DELAY_SECONDS:-$(config_get_optional "${CONFIG_PATH}" "verification.smoke_test_retry_delay_seconds" || true)}"
-ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
-ARGO_NAMESPACES_CMD="${ARGO_NAMESPACES_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.argo.namespaces_command" || true)}"
-ARGO_CRDS_CMD="${ARGO_CRDS_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.argo.crds_command" || true)}"
-ARGO_CONTROLLER_CMD="${ARGO_CONTROLLER_CMD:-$(config_get_optional "${CONFIG_PATH}" "verification.argo.controller_command" || true)}"
-ALLOW_INGRESS_WARNING="$(config_get_optional "${CONFIG_PATH}" "verification.allow_ingress_warning" || true)"
-ALLOW_VERIFY_SCHEMA_BUG="$(config_get_optional "${CONFIG_PATH}" "verification.allow_verify_schema_bug" || true)"
-CLIENT_BASE_URL="$(config_get_optional "${CONFIG_PATH}" "client_verification.base_url" || true)"
+TARGET_HOST="$(config_get "${DEVHOST_CONFIG}" "target_host.alias")"
+TARGET_STATE_DIR="$(default_appliance_state_dir)"
+STATUS_CMD="${STATUS_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.status_command" || true)}"
+VERIFY_CMD="${VERIFY_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.verify_command" || true)}"
+SERVICE_HEALTH_CMD="${SERVICE_HEALTH_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.service_health_command" || true)}"
+APP_VERSION_CMD="${APP_VERSION_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.app_version_command" || true)}"
+SMOKE_TEST_CMD="${SMOKE_TEST_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.smoke_test_command" || true)}"
+UI_HOME_CMD="${UI_HOME_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.ui_home_command" || true)}"
+BUILDER_ENABLED="$(config_get_optional "${INSTALL_CONFIG}" "verification.builder.enabled" || true)"
+BUILDER_API_CMD="${BUILDER_API_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.builder.api_command" || true)}"
+ARTIFACT_ENABLED="$(config_get_optional "${INSTALL_CONFIG}" "verification.artifact.enabled" || true)"
+ARTIFACT_READINESS_CMD="${ARTIFACT_READINESS_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.artifact.readiness_command" || true)}"
+DNS_ENABLED="$(config_get_optional "${INSTALL_CONFIG}" "verification.dns.enabled" || true)"
+DNS_READINESS_CMD="${DNS_READINESS_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.dns.readiness_command" || true)}"
+FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.failure_log_command" || true)}"
+SMOKE_TEST_RETRIES="${SMOKE_TEST_RETRIES:-$(config_get_optional "${INSTALL_CONFIG}" "verification.smoke_test_retries" || true)}"
+SMOKE_TEST_RETRY_DELAY_SECONDS="${SMOKE_TEST_RETRY_DELAY_SECONDS:-$(config_get_optional "${INSTALL_CONFIG}" "verification.smoke_test_retry_delay_seconds" || true)}"
+ARGO_ENABLED="$(config_get_optional "${INSTALL_CONFIG}" "verification.argo.enabled" || true)"
+ARGO_NAMESPACES_CMD="${ARGO_NAMESPACES_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.argo.namespaces_command" || true)}"
+ARGO_CRDS_CMD="${ARGO_CRDS_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.argo.crds_command" || true)}"
+ARGO_CONTROLLER_CMD="${ARGO_CONTROLLER_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.argo.controller_command" || true)}"
+ALLOW_INGRESS_WARNING="$(config_get_optional "${INSTALL_CONFIG}" "verification.allow_ingress_warning" || true)"
+ALLOW_VERIFY_SCHEMA_BUG="$(config_get_optional "${INSTALL_CONFIG}" "verification.allow_verify_schema_bug" || true)"
+CLIENT_BASE_URL="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.base_url" || true)"
 reject_placeholder_client_base_url "${CLIENT_BASE_URL}" "client_verification.base_url"
-APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}" "${APPLIANCE_PROFILE}")"
+APPLIANCE_PROFILE="$(require_appliance_profile "${INSTALL_CONFIG}" "${APPLIANCE_PROFILE}")"
 [[ -n "${STATUS_CMD}" ]] || fail "verification.status_command is required in config"
 [[ -n "${VERIFY_CMD}" ]] || fail "verification.verify_command is required in config"
 [[ -n "${SERVICE_HEALTH_CMD}" ]] || fail "verification.service_health_command is required in config"
@@ -165,7 +185,6 @@ APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}" "${APPLIANCE_PRO
 [[ -n "${SMOKE_TEST_RETRY_DELAY_SECONDS}" ]] || fail "verification.smoke_test_retry_delay_seconds is required in config"
 [[ -n "${ALLOW_INGRESS_WARNING}" ]] || fail "verification.allow_ingress_warning is required in config (true|false)"
 [[ -n "${ALLOW_VERIFY_SCHEMA_BUG}" ]] || fail "verification.allow_verify_schema_bug is required in config (true|false)"
-[[ -n "${TARGET_STATE_DIR}" ]] || fail "target_host.state_dir is required in config"
 [[ -n "${SMOKE_TEST_CMD}" ]] || fail "verification.smoke_test_command is required in config"
 
 [[ -n "${ARGO_ENABLED}" ]] || fail "verification.argo.enabled is required in config (true|false)"
@@ -177,7 +196,7 @@ if bool_true "${ARTIFACT_ENABLED}"; then
 fi
 if bool_true "${DNS_ENABLED}"; then
   if [[ -z "${DNS_ZONE}" ]]; then
-    DNS_ZONE="$(config_get_optional "${CONFIG_PATH}" "install.dns_zone" || true)"
+    DNS_ZONE="$(config_get_optional "${INSTALL_CONFIG}" "install.dns_zone" || true)"
   fi
   [[ -n "${DNS_ZONE}" ]] || fail "install.dns_zone is required in config when verification.dns.enabled=true"
   [[ -n "${DNS_READINESS_CMD}" ]] || fail "verification.dns.readiness_command is required when verification.dns.enabled=true"
@@ -249,11 +268,13 @@ BUNDLE_DIR=""
 BUNDLE_BIN_DIR=""
 TARGET_SUDO_PASSWORD="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 DEFAULT_TARGET_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
+RELEASE_VERSION=""
+if [[ -n "${BUILD_PUBLISH_CONFIG}" ]]; then
+  RELEASE_VERSION="$(config_get_optional "${BUILD_PUBLISH_CONFIG}" "release.version" || true)"
+fi
 
 if [[ -f "${INSTALL_METADATA_PATH}" ]]; then
   BUNDLE_DIR="$(read_install_metadata_value "${INSTALL_METADATA_PATH}" "bundleDir" || true)"
-  TARGET_STATE_DIR="${TARGET_STATE_DIR:-$(read_install_metadata_value "${INSTALL_METADATA_PATH}" "stateDir" || true)}"
   if [[ -n "${BUNDLE_DIR}" ]]; then
     BUNDLE_BIN_DIR="${BUNDLE_DIR}/bin"
   fi
@@ -261,9 +282,6 @@ fi
 if [[ -z "${BUNDLE_DIR}" && -n "${RELEASE_VERSION}" ]]; then
   BUNDLE_DIR="/tmp/appliance-${RELEASE_VERSION}/appliance-${RELEASE_VERSION}-bundle"
   BUNDLE_BIN_DIR="${BUNDLE_DIR}/bin"
-fi
-if [[ -z "${TARGET_STATE_DIR}" ]]; then
-  fail "target_host.state_dir is required in config"
 fi
 
 rewrite_default_command_with_bundle_path() {
@@ -546,14 +564,15 @@ for code in "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_cod
   fi
 done
 
-final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${UI_HOME_CMD}" "${BUILDER_ENABLED}" "${BUILDER_API_CMD}" "${FAILURE_LOG_CMD}" "${ARGO_ENABLED}" "${ARGO_NAMESPACES_CMD}" "${ARGO_CRDS_CMD}" "${ARGO_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${ui_home_code}" "${builder_api_code}" "${failure_log_code}" "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
+final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${INSTALL_CONFIG}" "${DEVHOST_CONFIG}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${UI_HOME_CMD}" "${BUILDER_ENABLED}" "${BUILDER_API_CMD}" "${FAILURE_LOG_CMD}" "${ARGO_ENABLED}" "${ARGO_NAMESPACES_CMD}" "${ARGO_CRDS_CMD}" "${ARGO_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${ui_home_code}" "${builder_api_code}" "${failure_log_code}" "${argo_namespaces_code}" "${argo_crds_code}" "${argo_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
 import json
 from pathlib import Path
 import sys
 
 (
     out_path,
-    config_path,
+    install_config_path,
+    devhost_config_path,
     target_host,
     status_cmd,
     verify_cmd,
@@ -583,7 +602,7 @@ import sys
     run_dir,
     allow_ingress_warning,
     allow_verify_schema_bug,
-) = sys.argv[1:32]
+) = sys.argv[1:33]
 
 run_dir_path = Path(run_dir)
 warnings = []
@@ -663,7 +682,8 @@ if argo_enabled == "true":
             final_failed = True
 
 payload = {
-    "configPath": config_path,
+    "installConfigPath": install_config_path,
+    "devhostConfigPath": devhost_config_path,
     "targetHost": target_host,
     "failed": final_failed,
     "warnings": warnings,

@@ -17,9 +17,8 @@ or on this machine with --local (for build-host login shells where DEV_*
 and APPLIANCE_BUILD_SUDO_PASSWORD are already exported).
 
 Options:
-  --config PATH                 Merged config (devhost-orchestrated flows) or
-                                a build-publish-only document with --local.
-  --build-publish-config PATH   Alias for --config (build-publish role file).
+  --config PATH                 Alias for --build-publish-config.
+  --build-publish-config PATH   Build-publish role file.
   --local                       Run bootstrap/build/publish on this host
                                 (no SSH). Use from the build machine, or via
                                 run-build-and-publish-on-build-host.sh.

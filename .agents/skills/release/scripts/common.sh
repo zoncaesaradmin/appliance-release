@@ -86,6 +86,13 @@ print(shlex.quote(sys.argv[1]))
 PY
 }
 
+# Fixed product appliance state directory (matches zonctl default and
+# scripts/publish/install-http-release.sh STATE_DIR). Not release config —
+# operators override only by editing that product install script after download.
+default_appliance_state_dir() {
+  printf '%s\n' "/var/lib/zon/state"
+}
+
 config_get() {
   local config_path="$1"
   local query="$2"
@@ -572,7 +579,7 @@ assert_local_repo_clean_for_remote_ref() {
       done <<< "${status_lines}"
 
       if ((${#build_affecting_dirty[@]} > 0)); then
-        fail "live release preflight: ${label} at ${repo_path} has uncommitted build-affecting changes (branch ${branch:-detached}, HEAD ${short_head:-unknown}); the remote build clones ${remote_ref} and will ignore local edits. Dirty paths: ${build_affecting_dirty[*]}. Commit/push or stash these, set APPLIANCE_RELEASE_ALLOW_DIRTY=1 to override, or run make verify-local-milestone for non-live cross-repo validation."
+        fail "live release preflight: ${label} at ${repo_path} has uncommitted build-affecting changes (branch ${branch:-detached}, HEAD ${short_head:-unknown}); the remote build clones ${remote_ref} and will ignore local edits. Dirty paths: ${build_affecting_dirty[*]}. Commit/push or stash these, or set APPLIANCE_RELEASE_ALLOW_DIRTY=1 to override."
       fi
       if ((${#local_only_dirty[@]} > 0)); then
         log "live release preflight: ${label} has local-only uncommitted changes that do not affect the remote ${remote_ref} build (e.g. docs/.cursor/.run); continuing. Paths: ${local_only_dirty[*]}"
@@ -591,7 +598,7 @@ assert_local_repo_clean_for_remote_ref() {
     return 0
   fi
 
-  fail "live release preflight: ${label} at ${repo_path} is ahead of ${remote_tracking} by ${ahead_count} commit(s) (branch ${branch:-detached}, HEAD ${short_head:-unknown}); the remote build uses ${remote_tracking}, so those local commits will not be included. Push them before rerunning the live release flow, or use make verify-local-milestone for non-live validation."
+  fail "live release preflight: ${label} at ${repo_path} is ahead of ${remote_tracking} by ${ahead_count} commit(s) (branch ${branch:-detached}, HEAD ${short_head:-unknown}); the remote build uses ${remote_tracking}, so those local commits will not be included. Push them before rerunning the live release flow."
 }
 
 preflight_live_release_inputs() {
@@ -799,7 +806,7 @@ bundle_store_fill_curl_tls_args() {
 }
 
 # Build a remote bash assignment like: curl_args=(-fsSIL -k)
-# Mac-local --cacert paths are rewritten to -k (same as install-on-target).
+# Mac-local --cacert paths are rewritten to -k for remote curl.
 bundle_store_remote_curl_array_init() {
   local array_name="$1"
   shift

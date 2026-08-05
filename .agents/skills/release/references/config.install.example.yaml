@@ -1,14 +1,14 @@
-# Install (+ post-install verify) config (run-release-flow.sh --install-config).
+# Install (+ post-install verify) config (run-release-from-devhost.sh --install-config).
 #
 # All keys needed to install a previously published release on the target and
 # run post-install checks. Build host / Mac report settings live elsewhere.
 #
-# Must agree with build-publish on:
-#   release.version (for paths / report) — resolved after configs are merged
-#   bundle_store download base (from build-publish file)
+# Must agree with build-publish on values (roles are never merged):
+#   release.version (install/verify read version from the build-publish file)
+#   bundle_store download base (from the build-publish file)
 #
 # Example:
-#   bash .agents/skills/release/scripts/run-release-flow.sh \
+#   bash .agents/skills/release/scripts/run-release-from-devhost.sh \
 #     --config ~/lab-devhost.yaml \
 #     --build-publish-config ~/lab-build-publish.yaml \
 #     --install-config ~/lab-install.yaml
@@ -28,9 +28,6 @@
 # ============================================================================
 
 install:
-  skip: false
-  uninstall_first: false
-  preserve_failed_state: false
   bootstrap_admin: false
   enable_default_license: false
 

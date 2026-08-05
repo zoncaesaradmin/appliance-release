@@ -13,22 +13,22 @@ Run macOS-side client/API checks against the installed appliance without
 storing tokens in logs or metadata.
 
 Options:
-  --config PATH              YAML or JSON config file (or a local appliance-release.config.yaml).
+  --install-config PATH    Install role file (client_verification.*, install.appliance_profile)
   --appliance-profile NAME Effective installed appliance profile.
   --run-dir DIR            Local run directory.
   --final-ok               Print ok when all checks pass.
 EOF
 }
 
-CONFIG_PATH=""
+INSTALL_CONFIG=""
 APPLIANCE_PROFILE=""
 RUN_DIR=""
 FINAL_OK="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config)
-      CONFIG_PATH="${2:-}"
+    --install-config|--config)
+      INSTALL_CONFIG="${2:-}"
       shift 2
       ;;
     --appliance-profile)
@@ -53,15 +53,16 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
+[[ -n "${INSTALL_CONFIG}" ]] || fail "requires --install-config PATH"
+INSTALL_CONFIG="$(require_config_path "${INSTALL_CONFIG}")"
 require_cmd curl
 require_cmd python3
 
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"
 fi
-BASE_URL="$(config_get_optional "${CONFIG_PATH}" "client_verification.base_url" || true)"
-USERNAME="$(config_get_optional "${CONFIG_PATH}" "client_verification.username" || true)"
+BASE_URL="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.base_url" || true)"
+USERNAME="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.username" || true)"
 BASE_URL="${BASE_URL:-https://192.168.1.101}"
 reject_placeholder_client_base_url "${BASE_URL}" "client_verification.base_url"
 USERNAME="${USERNAME:-admin}"
@@ -120,17 +121,17 @@ SESSION_REQUEST_FILE="${RUN_DIR}/logs/client-session-request.json"
 USERS_BODY_FILE="${RUN_DIR}/logs/client-users-body.json"
 USERS_META_FILE="${RUN_DIR}/logs/client-users-meta.txt"
 USERS_REQUEST_FILE="${RUN_DIR}/logs/client-users-request.json"
-BUILDER_ENABLED="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.enabled" || true)"
-BUILDER_EXPECT_DISABLED="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.expect_disabled" || true)"
-ARTIFACT_ENABLED="$(config_get_optional "${CONFIG_PATH}" "client_verification.artifact.enabled" || true)"
-ARTIFACT_EXPECT_DENIED_SCOPE="$(config_get_optional "${CONFIG_PATH}" "client_verification.artifact.expect_denied_scope" || true)"
-ARTIFACT_OCI_SMOKE_CMD="$(config_get_optional "${CONFIG_PATH}" "client_verification.artifact.oci_smoke_command" || true)"
-ARTIFACT_ORAS_SMOKE_CMD="$(config_get_optional "${CONFIG_PATH}" "client_verification.artifact.oras_smoke_command" || true)"
-ARTIFACT_OFFLINE_SMOKE_CMD="$(config_get_optional "${CONFIG_PATH}" "client_verification.artifact.offline_smoke_command" || true)"
+BUILDER_ENABLED="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.enabled" || true)"
+BUILDER_EXPECT_DISABLED="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.expect_disabled" || true)"
+ARTIFACT_ENABLED="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.artifact.enabled" || true)"
+ARTIFACT_EXPECT_DENIED_SCOPE="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.artifact.expect_denied_scope" || true)"
+ARTIFACT_OCI_SMOKE_CMD="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.artifact.oci_smoke_command" || true)"
+ARTIFACT_ORAS_SMOKE_CMD="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.artifact.oras_smoke_command" || true)"
+ARTIFACT_OFFLINE_SMOKE_CMD="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.artifact.offline_smoke_command" || true)"
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
-  APPLIANCE_PROFILE="$(config_get_optional "${CONFIG_PATH}" "install.appliance_profile" || true)"
+  APPLIANCE_PROFILE="$(config_get_optional "${INSTALL_CONFIG}" "install.appliance_profile" || true)"
 fi
-APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}" "${APPLIANCE_PROFILE}")"
+APPLIANCE_PROFILE="$(require_appliance_profile "${INSTALL_CONFIG}" "${APPLIANCE_PROFILE}")"
 if [[ -z "${BUILDER_ENABLED}" ]]; then
   if profile_supports_builder "${APPLIANCE_PROFILE}"; then
     BUILDER_ENABLED="true"
@@ -159,17 +160,17 @@ if [[ -z "${BUILDER_EXPECT_DISABLED}" ]]; then
     BUILDER_EXPECT_DISABLED="true"
   fi
 fi
-BUILDER_WORKFLOW_ENABLED="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.workflow.enabled" || true)"
-BUILDER_WORKFLOW_NAME="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.workflow.workspace_name" || true)"
-BUILDER_WORKFLOW_PROFILE="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.workflow.work_profile" || true)"
-BUILDER_WORKFLOW_REPO="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.workflow.repo" || true)"
-BUILDER_WORKFLOW_SOURCE_REF="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.workflow.source_ref" || true)"
-BUILDER_WORKFLOW_TARGET="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.workflow.target_name" || true)"
-BUILDER_WORKFLOW_IMAGE_TAG="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.workflow.image_tag" || true)"
-BUILDER_WORKFLOW_POLL_ATTEMPTS="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.workflow.poll_attempts" || true)"
-BUILDER_WORKFLOW_POLL_DELAY_SECONDS="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.workflow.poll_delay_seconds" || true)"
-BUILDER_WORKFLOW_EXPECT_SUCCESS="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.workflow.expect_success" || true)"
-BUILDER_WORKFLOW_DELETE_WORKSPACE="$(config_get_optional "${CONFIG_PATH}" "client_verification.builder.workflow.delete_workspace_on_success" || true)"
+BUILDER_WORKFLOW_ENABLED="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.workflow.enabled" || true)"
+BUILDER_WORKFLOW_NAME="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.workflow.workspace_name" || true)"
+BUILDER_WORKFLOW_PROFILE="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.workflow.work_profile" || true)"
+BUILDER_WORKFLOW_REPO="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.workflow.repo" || true)"
+BUILDER_WORKFLOW_SOURCE_REF="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.workflow.source_ref" || true)"
+BUILDER_WORKFLOW_TARGET="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.workflow.target_name" || true)"
+BUILDER_WORKFLOW_IMAGE_TAG="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.workflow.image_tag" || true)"
+BUILDER_WORKFLOW_POLL_ATTEMPTS="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.workflow.poll_attempts" || true)"
+BUILDER_WORKFLOW_POLL_DELAY_SECONDS="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.workflow.poll_delay_seconds" || true)"
+BUILDER_WORKFLOW_EXPECT_SUCCESS="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.workflow.expect_success" || true)"
+BUILDER_WORKFLOW_DELETE_WORKSPACE="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.workflow.delete_workspace_on_success" || true)"
 if [[ -z "${BUILDER_WORKFLOW_ENABLED}" ]]; then
   BUILDER_WORKFLOW_ENABLED="false"
 fi
@@ -841,7 +842,7 @@ PY
   fi
 fi
 
-python3 - "${RUN_DIR}/metadata/client-verify.json" "${SCRIPT_DIR}" "${CONFIG_PATH}" "${BASE_URL}" "${USERNAME}" "${BUILDER_ENABLED}" "${BUILDER_EXPECT_DISABLED}" "${BUILDER_WORKFLOW_ENABLED}" "${BUILDER_WORKFLOW_EXPECT_SUCCESS}" "${WORKFLOW_WORKSPACE_ID}" "${WORKFLOW_JOB_ID}" "${WORKFLOW_FINAL_STATUS}" "${LOGIN_BODY_FILE}" "${LOGIN_META_FILE}" "${LOGIN_REQUEST_FILE}" "${SESSION_BODY_FILE}" "${SESSION_META_FILE}" "${SESSION_REQUEST_FILE}" "${USERS_BODY_FILE}" "${USERS_META_FILE}" "${USERS_REQUEST_FILE}" "${DISABLED_BUILD_PROFILES_BODY_FILE}" "${DISABLED_BUILD_PROFILES_META_FILE}" "${DISABLED_BUILD_PROFILES_REQUEST_FILE}" "${DISABLED_MCP_INITIALIZE_BODY_FILE}" "${DISABLED_MCP_INITIALIZE_META_FILE}" "${DISABLED_MCP_INITIALIZE_REQUEST_FILE}" "${DISABLED_MCP_TOOLS_BODY_FILE}" "${DISABLED_MCP_TOOLS_META_FILE}" "${DISABLED_MCP_TOOLS_REQUEST_FILE}" "${DISABLED_MCP_CALL_BODY_FILE}" "${DISABLED_MCP_CALL_META_FILE}" "${DISABLED_MCP_CALL_REQUEST_FILE}" "${BUILDER_PROFILES_BODY_FILE}" "${BUILDER_PROFILES_META_FILE}" "${BUILDER_PROFILES_REQUEST_FILE}" "${MCP_INITIALIZE_BODY_FILE}" "${MCP_INITIALIZE_META_FILE}" "${MCP_INITIALIZE_REQUEST_FILE}" "${MCP_TOOLS_BODY_FILE}" "${MCP_TOOLS_META_FILE}" "${MCP_TOOLS_REQUEST_FILE}" "${WORKFLOW_CREATE_WORKSPACE_BODY_FILE}" "${WORKFLOW_CREATE_WORKSPACE_META_FILE}" "${WORKFLOW_CREATE_WORKSPACE_REQUEST_FILE}" "${WORKFLOW_TARGETS_BODY_FILE}" "${WORKFLOW_TARGETS_META_FILE}" "${WORKFLOW_TARGETS_REQUEST_FILE}" "${WORKFLOW_SUBMIT_BODY_FILE}" "${WORKFLOW_SUBMIT_META_FILE}" "${WORKFLOW_SUBMIT_REQUEST_FILE}" "${WORKFLOW_JOB_BODY_FILE}" "${WORKFLOW_JOB_META_FILE}" "${WORKFLOW_JOB_REQUEST_FILE}" "${WORKFLOW_JOB_POLL_FILE}" "${WORKFLOW_STEPS_BODY_FILE}" "${WORKFLOW_STEPS_META_FILE}" "${WORKFLOW_STEPS_REQUEST_FILE}" "${WORKFLOW_LOGS_BODY_FILE}" "${WORKFLOW_LOGS_META_FILE}" "${WORKFLOW_LOGS_REQUEST_FILE}" "${WORKFLOW_DELETE_WORKSPACE_BODY_FILE}" "${WORKFLOW_DELETE_WORKSPACE_META_FILE}" "${WORKFLOW_DELETE_WORKSPACE_REQUEST_FILE}" <<'PY'
+python3 - "${RUN_DIR}/metadata/client-verify.json" "${SCRIPT_DIR}" "${INSTALL_CONFIG}" "${BASE_URL}" "${USERNAME}" "${BUILDER_ENABLED}" "${BUILDER_EXPECT_DISABLED}" "${BUILDER_WORKFLOW_ENABLED}" "${BUILDER_WORKFLOW_EXPECT_SUCCESS}" "${WORKFLOW_WORKSPACE_ID}" "${WORKFLOW_JOB_ID}" "${WORKFLOW_FINAL_STATUS}" "${LOGIN_BODY_FILE}" "${LOGIN_META_FILE}" "${LOGIN_REQUEST_FILE}" "${SESSION_BODY_FILE}" "${SESSION_META_FILE}" "${SESSION_REQUEST_FILE}" "${USERS_BODY_FILE}" "${USERS_META_FILE}" "${USERS_REQUEST_FILE}" "${DISABLED_BUILD_PROFILES_BODY_FILE}" "${DISABLED_BUILD_PROFILES_META_FILE}" "${DISABLED_BUILD_PROFILES_REQUEST_FILE}" "${DISABLED_MCP_INITIALIZE_BODY_FILE}" "${DISABLED_MCP_INITIALIZE_META_FILE}" "${DISABLED_MCP_INITIALIZE_REQUEST_FILE}" "${DISABLED_MCP_TOOLS_BODY_FILE}" "${DISABLED_MCP_TOOLS_META_FILE}" "${DISABLED_MCP_TOOLS_REQUEST_FILE}" "${DISABLED_MCP_CALL_BODY_FILE}" "${DISABLED_MCP_CALL_META_FILE}" "${DISABLED_MCP_CALL_REQUEST_FILE}" "${BUILDER_PROFILES_BODY_FILE}" "${BUILDER_PROFILES_META_FILE}" "${BUILDER_PROFILES_REQUEST_FILE}" "${MCP_INITIALIZE_BODY_FILE}" "${MCP_INITIALIZE_META_FILE}" "${MCP_INITIALIZE_REQUEST_FILE}" "${MCP_TOOLS_BODY_FILE}" "${MCP_TOOLS_META_FILE}" "${MCP_TOOLS_REQUEST_FILE}" "${WORKFLOW_CREATE_WORKSPACE_BODY_FILE}" "${WORKFLOW_CREATE_WORKSPACE_META_FILE}" "${WORKFLOW_CREATE_WORKSPACE_REQUEST_FILE}" "${WORKFLOW_TARGETS_BODY_FILE}" "${WORKFLOW_TARGETS_META_FILE}" "${WORKFLOW_TARGETS_REQUEST_FILE}" "${WORKFLOW_SUBMIT_BODY_FILE}" "${WORKFLOW_SUBMIT_META_FILE}" "${WORKFLOW_SUBMIT_REQUEST_FILE}" "${WORKFLOW_JOB_BODY_FILE}" "${WORKFLOW_JOB_META_FILE}" "${WORKFLOW_JOB_REQUEST_FILE}" "${WORKFLOW_JOB_POLL_FILE}" "${WORKFLOW_STEPS_BODY_FILE}" "${WORKFLOW_STEPS_META_FILE}" "${WORKFLOW_STEPS_REQUEST_FILE}" "${WORKFLOW_LOGS_BODY_FILE}" "${WORKFLOW_LOGS_META_FILE}" "${WORKFLOW_LOGS_REQUEST_FILE}" "${WORKFLOW_DELETE_WORKSPACE_BODY_FILE}" "${WORKFLOW_DELETE_WORKSPACE_META_FILE}" "${WORKFLOW_DELETE_WORKSPACE_REQUEST_FILE}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -992,7 +993,7 @@ def scan_for_private_key_markers(paths):
     return findings
 
 payload = {
-    "configPath": config_path,
+    "installConfigPath": config_path,
     "baseUrl": base_url,
     "username": username,
     "checks": {

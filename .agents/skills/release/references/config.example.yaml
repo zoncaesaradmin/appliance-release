@@ -1,8 +1,8 @@
 # Appliance release skill configs — three host/role scoped files.
 #
-# run-release-flow.sh requires all three paths:
+# Day-to-day e2e:
 #
-#   bash .agents/skills/release/scripts/run-release-flow.sh \
+#   bash .agents/skills/release/scripts/run-release-from-devhost.sh \
 #     --config              references/config.devhost.example.yaml \
 #     --build-publish-config references/config.build-publish.example.yaml \
 #     --install-config       references/config.install.example.yaml
@@ -13,10 +13,8 @@
 # | [config.build-publish.example.yaml](config.build-publish.example.yaml) | Build host workspace + build + publish | release_workspace, release, build_flow, bundle_store |
 # | [config.install.example.yaml](config.install.example.yaml) | Target install + verify | install, verification, client_verification |
 #
-# The orchestrator merges the three into one temporary JSON document (same key
-# paths stage scripts already read). Keys must not overlap across files.
-#
-# Cross-step contract (set in build-publish, used by install after merge):
+# Each stage script reads only the role file(s) it needs (no merge).
+# Cross-step contract is still shared by value agreement across roles:
 #   release.version
 #   bundle_store.mode / release_path_prefix / download base
 #
@@ -26,4 +24,5 @@
 # - Secrets never live in these files — only env *names* under *_env keys.
 # - Packaging always produces the complete product super-set; install.appliance_profile
 #   only selects what the target turns on.
+# - Appliance state dir is product-fixed /var/lib/zon/state (not config).
 # - Host mDNS / Wi-Fi AP enablement is day-2 Admin UI/API only.

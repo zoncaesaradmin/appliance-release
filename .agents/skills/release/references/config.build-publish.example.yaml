@@ -1,4 +1,4 @@
-# Build + publish config (run-release-flow.sh --build-publish-config).
+# Build + publish config (run-release-from-devhost.sh --build-publish-config).
 #
 # All keys needed to produce and place the signed offline super-set bundle.
 # Does not contain Mac SSH target identity or install.module selection.
@@ -8,14 +8,13 @@
 #   bundle_store.mode / release_path_prefix / download base (base_url or appliance_files env)
 #
 # Example (full flow from Mac):
-#   bash .agents/skills/release/scripts/run-release-flow.sh \
+#   bash .agents/skills/release/scripts/run-release-from-devhost.sh \
 #     --config ~/lab-devhost.yaml \
 #     --build-publish-config ~/lab-build-publish.yaml \
 #     --install-config ~/lab-install.yaml
 #
-# Example (build+publish only; secrets live on the build host):
-#   # From Mac/devhost — copies this YAML and runs on-host worker over SSH:
-#   bash .agents/skills/release/scripts/run-build-and-publish-on-build-host.sh \
+# Example (build+publish only):
+#   bash .agents/skills/release/scripts/run-release-from-devhost.sh \
 #     --config ~/lab-devhost.yaml \
 #     --build-publish-config ~/lab-build-publish.yaml
 #   # Or already on the build host with DEV_* exported:
@@ -65,9 +64,6 @@ release:
 # ============================================================================
 
 build_flow:
-  # When true, run-release-flow.sh skips build and publish together.
-  skip: false
-
   code_repo_ref: main
   ctl_repo_ref: main
   k3s_binary_source: /home/zonsys/ci/inputs/k3s

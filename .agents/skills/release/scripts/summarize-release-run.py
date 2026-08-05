@@ -209,39 +209,76 @@ def main() -> int:
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--output-json")
     parser.add_argument("--output-md")
+    parser.add_argument(
+        "--exit-code",
+        type=int,
+        default=0,
+        help="Wrapper exit code (non-zero marks overallStatus failed).",
+    )
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir)
-    flow_path = run_dir / "metadata" / "run-release-flow.json"
-    flow = read_json(flow_path)
-    if flow is None:
-        raise ValueError(f"missing release flow metadata: {flow_path}")
+    metadata_dir = run_dir / "metadata"
 
-    steps = flow.get("steps") if isinstance(flow.get("steps"), dict) else {}
-    build = load_metadata(flow, "buildPublish")
-    install = load_metadata(flow, "install")
-    target_verify = load_metadata(flow, "targetVerify")
-    client_verify = load_metadata(flow, "clientVerify")
+    # Prefer explicit orchestrator index if present; else fixed metadata paths
+    # written by run-release-from-devhost stages.
+    flow = read_json(metadata_dir / "run-orchestrator.json") or read_json(
+        metadata_dir / "run-release-flow.json"
+    )
+    if flow is not None:
+        steps = flow.get("steps") if isinstance(flow.get("steps"), dict) else {}
+        build = load_metadata(flow, "buildPublish")
+        install = load_metadata(flow, "install")
+        target_verify = load_metadata(flow, "targetVerify")
+        client_verify = load_metadata(flow, "clientVerify")
+        build_skipped = bool(steps.get("buildPublishSkipped"))
+        install_skipped = bool(steps.get("installSkipped"))
+        target_skipped = bool(steps.get("targetVerifySkipped"))
+        client_skipped = bool(steps.get("clientVerifySkipped"))
+        release_version = flow.get("releaseVersion")
+        appliance_profile = flow.get("applianceProfile")
+        build_catalog = flow.get("buildCatalogPath")
+        config_path = flow.get("configPath")
+        wrapper_status = flow.get("status")
+        wrapper_exit = flow.get("exitCode")
+        if wrapper_exit is None:
+            wrapper_exit = args.exit_code
+    else:
+        build = read_json(metadata_dir / "build-publish.json")
+        install = read_json(metadata_dir / "install.json")
+        target_verify = read_json(metadata_dir / "verify.json")
+        client_verify = read_json(metadata_dir / "client-verify.json")
+        # Absent file → skipped (that stage was not part of this CLI run).
+        build_skipped = build is None
+        install_skipped = install is None
+        target_skipped = target_verify is None
+        client_skipped = client_verify is None
+        release_version = (build or {}).get("releaseVersion") or (install or {}).get("releaseVersion")
+        appliance_profile = (install or {}).get("applianceProfile")
+        build_catalog = (install or {}).get("buildCatalogPath")
+        config_path = None
+        wrapper_status = "passed" if args.exit_code == 0 else "failed"
+        wrapper_exit = args.exit_code
+
     report = {
-        "configPath": flow.get("configPath"),
+        "configPath": config_path,
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "runDir": str(run_dir),
-        "releaseVersion": flow.get("releaseVersion"),
-        "applianceProfile": flow.get("applianceProfile"),
-        "buildCatalogPath": flow.get("buildCatalogPath"),
-        "wrapperStatus": flow.get("status"),
-        "wrapperExitCode": flow.get("exitCode"),
+        "releaseVersion": release_version,
+        "applianceProfile": appliance_profile or "default/core",
+        "buildCatalogPath": build_catalog,
+        "wrapperStatus": wrapper_status,
+        "wrapperExitCode": wrapper_exit,
         "steps": {
-            "buildPublish": summarize_build(build, run_dir, bool(steps.get("buildPublishSkipped"))),
-            "install": summarize_install(install, run_dir, bool(steps.get("installSkipped"))),
-            "targetVerify": summarize_target_verify(
-                target_verify, run_dir, bool(steps.get("targetVerifySkipped"))
-            ),
-            "clientVerify": summarize_client_verify(client_verify, bool(steps.get("clientVerifySkipped"))),
+            "buildPublish": summarize_build(build, run_dir, build_skipped),
+            "install": summarize_install(install, run_dir, install_skipped),
+            "targetVerify": summarize_target_verify(target_verify, run_dir, target_skipped),
+            "clientVerify": summarize_client_verify(client_verify, client_skipped),
         },
     }
     statuses = [step.get("status") for step in report["steps"].values()]
     wrapper_failed = report.get("wrapperExitCode") not in (None, 0) or report.get("wrapperStatus") == "failed"
+    # "missing" only fails overall when the stage was expected (not skipped).
     report["overallStatus"] = (
         "failed"
         if wrapper_failed or any(status in {"failed", "missing"} for status in statuses)

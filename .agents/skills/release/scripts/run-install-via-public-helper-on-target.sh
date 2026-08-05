@@ -193,4 +193,58 @@ log "running public install helper on ${TARGET_HOST}"
 if ! run_ssh_logged "${TARGET_HOST}" "${install_log}" "${remote_cmd}"; then
   fail "target public install failed; see ${install_log}"
 fi
+
+python3 - "${RUN_DIR}/metadata/install.json" \
+  "${DEVHOST_CONFIG}" \
+  "${TARGET_HOST}" \
+  "${HELPER_URL}" \
+  "${RELEASE_VERSION}" \
+  "${BUNDLE_MODE}" \
+  "${BASE_URL}" \
+  "${PATH_PREFIX}" \
+  "$(default_appliance_state_dir)" \
+  "${APPLIANCE_PROFILE}" \
+  "${APPLIANCE_NAME}" \
+  "${install_log}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+(
+    out_path,
+    config_path,
+    target_host,
+    helper_url,
+    release_version,
+    distribution_mode,
+    base_url,
+    path_prefix,
+    state_dir,
+    appliance_profile,
+    appliance_name,
+    install_log,
+) = sys.argv[1:13]
+
+payload = {
+    "configPath": config_path,
+    "targetHost": target_host,
+    "helperUrl": helper_url,
+    "releaseVersion": release_version,
+    "distributionMode": distribution_mode,
+    "baseUrl": base_url or None,
+    "pathPrefix": path_prefix,
+    "stateDir": state_dir,
+    "outDir": f"/tmp/appliance-{release_version}",
+    "bundleDir": f"/tmp/appliance-{release_version}/appliance-{release_version}-bundle",
+    "applianceProfile": appliance_profile,
+    "applianceName": appliance_name,
+    "installMode": "public-helper",
+    "log": install_log,
+    "status": "passed",
+    "exitCode": 0,
+}
+Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+
 log "target public install finished; log: ${install_log}"

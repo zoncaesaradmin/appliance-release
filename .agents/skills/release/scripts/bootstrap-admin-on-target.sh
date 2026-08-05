@@ -9,22 +9,25 @@ usage() {
 usage: bootstrap-admin-on-target.sh [options]
 
 Create the first appliance administrator on the configured target host as an
-explicit post-install step. This is safe to rerun: if the appliance is already
-initialized, the bootstrap is skipped successfully.
+explicit post-install step. Safe to rerun: if already initialized, skip OK.
+
+Required:
+  --install-config PATH    install.bootstrap_admin_username, kubernetes, deployment
+
+When not using --local:
+  --config PATH            Devhost config (target_host.alias)
 
 Options:
-  --config PATH              YAML or JSON config file (or a local appliance-release.config.yaml).
-  --local                    Run on this host (no SSH). Use when first-admin
-                             password env is already exported on the target.
-  --run-dir DIR              Local run directory.
-  --admin-username NAME      Override install.bootstrap_admin_username.
-  --namespace NAME           Override install.kubernetes_namespace.
-  --deployment NAME          Control-plane deployment name.
-                             Override install.control_plane_deployment.
+  --local                  Run on this host (no SSH).
+  --run-dir DIR
+  --admin-username NAME    Override install.bootstrap_admin_username
+  --namespace NAME         Override install.kubernetes_namespace
+  --deployment NAME        Override install.control_plane_deployment
 EOF
 }
 
-CONFIG_PATH=""
+DEVHOST_CONFIG=""
+INSTALL_CONFIG=""
 LOCAL_MODE="false"
 RUN_DIR=""
 ADMIN_USERNAME=""
@@ -34,7 +37,11 @@ DEPLOYMENT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)
-      CONFIG_PATH="${2:-}"
+      DEVHOST_CONFIG="${2:-}"
+      shift 2
+      ;;
+    --install-config)
+      INSTALL_CONFIG="${2:-}"
       shift 2
       ;;
     --local)
@@ -67,7 +74,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
+[[ -n "${INSTALL_CONFIG}" ]] || fail "requires --install-config PATH"
+INSTALL_CONFIG="$(require_config_path "${INSTALL_CONFIG}")"
+if ! bool_true "${LOCAL_MODE}"; then
+  [[ -n "${DEVHOST_CONFIG}" ]] || fail "requires --config PATH (devhost) unless --local"
+  DEVHOST_CONFIG="$(require_config_path "${DEVHOST_CONFIG}")"
+fi
 
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"
@@ -75,26 +87,28 @@ fi
 ensure_release_run_dirs "${RUN_DIR}"
 
 if [[ -z "${ADMIN_USERNAME}" ]]; then
-  ADMIN_USERNAME="$(config_get_optional "${CONFIG_PATH}" "install.bootstrap_admin_username" || true)"
+  ADMIN_USERNAME="$(config_get_optional "${INSTALL_CONFIG}" "install.bootstrap_admin_username" || true)"
 fi
-[[ -n "${ADMIN_USERNAME}" ]] || fail "install.bootstrap_admin_username is required in config"
+[[ -n "${ADMIN_USERNAME}" ]] || fail "install.bootstrap_admin_username is required in install config"
 if [[ -z "${NAMESPACE}" ]]; then
-  NAMESPACE="$(config_get_optional "${CONFIG_PATH}" "install.kubernetes_namespace" || true)"
+  NAMESPACE="$(config_get_optional "${INSTALL_CONFIG}" "install.kubernetes_namespace" || true)"
 fi
-[[ -n "${NAMESPACE}" ]] || fail "install.kubernetes_namespace is required in config"
+[[ -n "${NAMESPACE}" ]] || fail "install.kubernetes_namespace is required in install config"
 if [[ -z "${DEPLOYMENT}" ]]; then
-  DEPLOYMENT="$(config_get_optional "${CONFIG_PATH}" "install.control_plane_deployment" || true)"
+  DEPLOYMENT="$(config_get_optional "${INSTALL_CONFIG}" "install.control_plane_deployment" || true)"
 fi
-[[ -n "${DEPLOYMENT}" ]] || fail "install.control_plane_deployment is required in config"
+[[ -n "${DEPLOYMENT}" ]] || fail "install.control_plane_deployment is required in install config"
 
 TARGET_HOST=""
 if bool_true "${LOCAL_MODE}"; then
-  TARGET_HOST="$(config_get_optional "${CONFIG_PATH}" "target_host.alias" || true)"
+  if [[ -n "${DEVHOST_CONFIG}" ]]; then
+    TARGET_HOST="$(config_get_optional "${DEVHOST_CONFIG}" "target_host.alias" || true)"
+  fi
   if [[ -z "${TARGET_HOST}" ]]; then
     TARGET_HOST="local@$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo target-host)"
   fi
 else
-  TARGET_HOST="$(config_get "${CONFIG_PATH}" "target_host.alias")"
+  TARGET_HOST="$(config_get "${DEVHOST_CONFIG}" "target_host.alias")"
 fi
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 first_admin_password="$(resolve_secret "APPLIANCE_FIRST_ADMIN_PASSWORD" "First administrator password")"
@@ -141,22 +155,31 @@ if [[ "${bootstrap_status}" -ne 0 ]]; then
   fi
 fi
 
-python3 - "${RUN_DIR}/metadata/bootstrap-admin.json" "${CONFIG_PATH}" "${TARGET_HOST}" "${ADMIN_USERNAME}" "${NAMESPACE}" "${DEPLOYMENT}" "${bootstrap_log}" <<'PY'
+python3 - "${RUN_DIR}/metadata/bootstrap-admin.json" \
+  "${INSTALL_CONFIG}" \
+  "${DEVHOST_CONFIG:-}" \
+  "${TARGET_HOST}" \
+  "${ADMIN_USERNAME}" \
+  "${NAMESPACE}" \
+  "${DEPLOYMENT}" \
+  "${bootstrap_log}" <<'PY'
 import json
 import sys
 
 (
     out_path,
-    config_path,
+    install_config,
+    devhost_config,
     target_host,
     admin_username,
     namespace,
     deployment,
     bootstrap_log,
-) = sys.argv[1:8]
+) = sys.argv[1:9]
 
 payload = {
-    "configPath": config_path,
+    "installConfigPath": install_config,
+    "devhostConfigPath": devhost_config or None,
     "targetHost": target_host,
     "adminUsername": admin_username,
     "namespace": namespace,

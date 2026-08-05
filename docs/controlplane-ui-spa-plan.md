@@ -39,8 +39,8 @@ Current implementation status:
   caching, and security headers.
 - The UI image build accepts configurable Node, Go, and runtime base images so
   release jobs can inject mirrored or digest-pinned references.
-- `appliance-release` local milestone verification calls the UI service's
-  full verify gate.
+- UI regression is covered by `make verify` in
+  `appliance-code/services/controlplane-ui`.
 - `development-container` now includes pinned Node.js and npm for UI builds.
 - `appliance-ctl` does not require code changes while the released
   image/archive contract remains `appliance-ui`.
@@ -49,7 +49,6 @@ Validated local gates:
 
 - `make verify` in `appliance-code`
 - `make verify` in `appliance-release`
-- `make verify-local-milestone` in `appliance-release`
 - `make verify` in `appliance-ctl`
 
 Still external or future-backend dependent:

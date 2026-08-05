@@ -62,9 +62,11 @@ Notes:
   Profile is **install-time only**: it selects which modules are activated on
   the target. Packaging always produces the complete product super-set (Argo,
   Zot, DNS, host-packages for mdns+wifi-ap, workspace-provisioner, dev-build).
-- `run-release-flow.sh` accepts only `--config`, `--build-publish-config`, and
-  `--install-config`. Stage switches (`build_flow.skip`, `install.*`, `report.*`)
-  live in those role files.
+- Day-to-day entry is `run-release-from-devhost.sh` with only
+  `--config`, `--build-publish-config`, and `--install-config`. Stage selection
+  is by which paths you pass (no `build_flow.skip` / `install.skip`). After
+  public install, `install.bootstrap_admin` / `install.enable_default_license`
+  and verify stages run; `report.final_ok` prints `OK run`.
 - Host mDNS and Wi-Fi AP packages are always in the signed bundle and staged
   at install; enable them day-2 via Admin UI/API after first admin login (not
   via install config flags).
@@ -119,7 +121,7 @@ Use this for the normal end-to-end workflow. CLI options are the three config
 paths only; stage switches sit next to the stage they control.
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-flow.sh \
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-from-devhost.sh \
   --config /abs/path/to/lab-devhost.yaml \
   --build-publish-config /abs/path/to/lab-build-publish.yaml \
   --install-config /abs/path/to/lab-install.yaml
@@ -130,7 +132,7 @@ Minimal lab day-to-day switches (spread across the three files):
 ```yaml
 # lab-devhost.yaml
 build_host: { alias: zonsys@… }
-target_host: { alias: zonsys@…, state_dir: /var/lib/zon/state }
+target_host: { alias: zonsys@… }
 report:
   final_ok: true
 
@@ -221,7 +223,7 @@ OCI archive. The validation log is written to
 Use this when the release is already published and you want only the install step.
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/install-on-target.sh \
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-install-via-public-helper-on-target.sh \
   --release-version 0.1.0 \
   --appliance-profile builder \
   --build-catalog /Users/zoncaesar/ws/appliance-release/build-catalog.yaml \
@@ -235,7 +237,7 @@ Use this when the release is already published and you want only the install ste
 If you want to keep the current install and test without uninstalling first:
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/install-on-target.sh \
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-install-via-public-helper-on-target.sh \
   --release-version 0.1.0
 ```
 
@@ -265,7 +267,11 @@ This script:
 Use this after install if you want only target-side verification.
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/verify-target.sh
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/verify-target.sh \
+  --config /abs/path/to/lab-devhost.yaml \
+  --install-config /abs/path/to/lab-install.yaml \
+  --build-publish-config /abs/path/to/lab-build-publish.yaml \
+  --run-dir /abs/path/to/run-dir
 ```
 
 This script checks:
@@ -299,7 +305,9 @@ behavior.
 Use this from the Mac if the appliance is already installed and reachable.
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/verify-client-access.sh
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/verify-client-access.sh \
+  --install-config /abs/path/to/lab-install.yaml \
+  --run-dir /abs/path/to/run-dir
 ```
 
 This script checks:
@@ -373,7 +381,7 @@ repo-local skill path: `.agents/skills/release/scripts`.
 
 ## 7. Live Release Local Repo Preflight
 
-`build-and-publish.sh` / `run-release-flow.sh` refuse to start a **live** remote
+`build-and-publish.sh` / `run-release-from-devhost.sh` refuse to start a **live** remote
 build when a sibling checkout has uncommitted changes that could affect what
 the remote git clone builds (repo `scripts/`, product code, Makefiles, schemas,
 charts, etc.). The remote build clones `origin/<ref>` and hard-resets, so those
@@ -387,7 +395,7 @@ remote will still ignore them):
 
 ```bash
 APPLIANCE_RELEASE_ALLOW_DIRTY=1 \
-  .agents/skills/release/scripts/run-release-flow.sh \
+  .agents/skills/release/scripts/run-release-from-devhost.sh \
   --config /abs/path/to/devhost.yaml \
   --build-publish-config /abs/path/to/build-publish.yaml \
   --install-config /abs/path/to/install.yaml
@@ -395,49 +403,7 @@ APPLIANCE_RELEASE_ALLOW_DIRTY=1 \
 
 Unpushed commits ahead of `origin/<ref>` still fail closed; push those first.
 
-## 8. Local Milestone Verification
-
-Before using the real build server or target host, run the non-live cross-repo
-milestone gate from the release repo:
-
-```bash
-make verify-local-milestone
-```
-
-This runs the local release checks, appliance-code control-plane tests,
-appliance-code control-plane chart tests, appliance-code UI tests,
-appliance-code local e2e/profile-gating checks, and appliance-ctl tests. It
-does not contact the real build server, publish server, or target host.
-On success it writes a durable non-live evidence summary to
-`.run/appliance-release/local-milestone-report.json`, including each checked
-repo's git branch, HEAD commit, and dirty-worktree status. It also writes the
-human-readable companion report
-`.run/appliance-release/local-milestone-report.md`.
-
-If your sibling repos are not next to `appliance-release`, override their
-paths:
-
-```bash
-make verify-local-milestone \
-  APPLIANCE_CODE_DIR=/abs/path/to/appliance-code \
-  APPLIANCE_CTL_DIR=/abs/path/to/appliance-ctl
-```
-
-## 9. Advanced Final Profile Matrix
-
-The main release workflow is still:
-
-- `run-release-flow.sh` for a normal end-to-end run
-- `make verify-local-milestone` for non-live cross-repo validation
-
-If you need the stricter final profile-matrix planning, checklist, audit, and
-readiness flow for final builder evidence, use the dedicated advanced guide:
-
-```text
-/Users/zoncaesar/ws/appliance-release/docs/internal/final-profile-matrix.md
-```
-
-## 10. Simplest Day-To-Day Usage
+## 8. Simplest Day-To-Day Usage
 
 Most days, this is enough:
 
@@ -448,16 +414,18 @@ export APPLIANCE_BUILD_SUDO_PASSWORD='caesar'
 export APPLIANCE_TARGET_SUDO_PASSWORD='caesar'
 export APPLIANCE_FIRST_ADMIN_PASSWORD='ins3965!'
 
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-flow.sh \
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-from-devhost.sh \
   --config /Users/you/lab-devhost.yaml \
   --build-publish-config /Users/you/lab-build-publish.yaml \
   --install-config /Users/you/lab-install.yaml
 ```
 
-Put stage options next to their stage (`install.uninstall_first`,
-`report.final_ok`, …). CLI options are only the three config paths.
-Before the remote build starts, the live wrapper now checks the local
+Secrets stay in the Mac shell; role YAMLs hold only non-secret settings.
+CLI options are only the three config paths. `report.final_ok: true` prints
+`OK run` after verification succeeds.
+
+Before the remote build starts, the live path checks the local
 `appliance-release`, `appliance-code`, and `appliance-ctl` repos and fails
 closed if any of them are dirty or ahead of the remote ref the build host will
 clone. This prevents a long live run from silently building stale remote `main`
-while your local cross-repo fixes are still only in the workspace.
+while local cross-repo fixes are only in the workspace.

@@ -3,9 +3,11 @@
 #
 # CLI path presence decides work (no skip flags):
 #   --build-publish-config  → build/publish on build host (env from this shell)
-#   --install-config        → public helper install on target, then optional
-#                             bootstrap_admin / enable_default_license from that
-#                             install YAML (SSH from this Mac; secrets from shell)
+#   --install-config        → public helper install, optional bootstrap, then
+#                             target (+ client) verification; "OK run" only after
+#                             those succeed when report.final_ok is true
+#
+# Every stage receives only the role config files it needs — no merge step.
 set -euo pipefail
 set +H
 
@@ -23,13 +25,13 @@ usage: run-release-from-devhost.sh \
 Export on this Mac as needed:
   DEV_*                          build/publish + bundle download URLs
   APPLIANCE_BUILD_SUDO_PASSWORD  build host
-  APPLIANCE_TARGET_SUDO_PASSWORD install + bootstrap on target
+  APPLIANCE_TARGET_SUDO_PASSWORD install + bootstrap + target verify
   APPLIANCE_FIRST_ADMIN_PASSWORD when install.bootstrap_admin is true
 
   --build-publish-config  → run build/publish
-  --install-config        → public install, then first-admin / default license
-                            when install.bootstrap_admin /
-                            install.enable_default_license are true
+  --install-config        → public install → bootstrap_admin / default license
+                            (when true) → targetVerify → clientVerify (if
+                            bootstrap_admin) → "OK run" if report.final_ok
                             (also requires --build-publish-config)
 
 Examples:
@@ -89,6 +91,11 @@ fi
 ensure_release_run_dirs "${RUN_DIR}"
 log "run-dir=${RUN_DIR}"
 
+FINAL_OK="false"
+if [[ -n "$(config_get_optional "${DEVHOST_CONFIG}" "report.final_ok" || true)" ]]; then
+  FINAL_OK="$(config_require_bool "${DEVHOST_CONFIG}" "report.final_ok")"
+fi
+
 if [[ -n "${BUILD_PUBLISH_CONFIG}" ]]; then
   log "── buildPublish"
   bash "${SCRIPT_DIR}/run-build-and-publish-on-build-host.sh" \
@@ -105,28 +112,24 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
     --install-config "${INSTALL_CONFIG}" \
     --run-dir "${RUN_DIR}"
 
-  # Public helper only runs zonctl install. Post-install bootstrap is
-  # orchestrator-owned (same as run-release-flow.sh stages).
-  MERGED_CONFIG_PATH="${RUN_DIR}/metadata/merged-release-config.json"
-  python3 "${SCRIPT_DIR}/merge-release-configs.py" \
-    --devhost-config "${DEVHOST_CONFIG}" \
-    --build-publish-config "${BUILD_PUBLISH_CONFIG}" \
-    --install-config "${INSTALL_CONFIG}" \
-    --output "${MERGED_CONFIG_PATH}" >/dev/null
-
   BOOTSTRAP_ADMIN="false"
   ENABLE_DEFAULT_LICENSE="false"
-  if [[ -n "$(config_get_optional "${MERGED_CONFIG_PATH}" "install.bootstrap_admin" || true)" ]]; then
-    BOOTSTRAP_ADMIN="$(config_require_bool "${MERGED_CONFIG_PATH}" "install.bootstrap_admin")"
+  if [[ -n "$(config_get_optional "${INSTALL_CONFIG}" "install.bootstrap_admin" || true)" ]]; then
+    BOOTSTRAP_ADMIN="$(config_require_bool "${INSTALL_CONFIG}" "install.bootstrap_admin")"
   fi
-  if [[ -n "$(config_get_optional "${MERGED_CONFIG_PATH}" "install.enable_default_license" || true)" ]]; then
-    ENABLE_DEFAULT_LICENSE="$(config_require_bool "${MERGED_CONFIG_PATH}" "install.enable_default_license")"
+  if [[ -n "$(config_get_optional "${INSTALL_CONFIG}" "install.enable_default_license" || true)" ]]; then
+    ENABLE_DEFAULT_LICENSE="$(config_require_bool "${INSTALL_CONFIG}" "install.enable_default_license")"
+  fi
+  APPLIANCE_PROFILE="$(config_get_optional "${INSTALL_CONFIG}" "install.appliance_profile" || true)"
+  if [[ -z "${APPLIANCE_PROFILE}" ]]; then
+    APPLIANCE_PROFILE="core"
   fi
 
   if bool_true "${BOOTSTRAP_ADMIN}"; then
     log "── bootstrapAdmin (install.bootstrap_admin=true)"
     bash "${SCRIPT_DIR}/bootstrap-admin-on-target.sh" \
-      --config "${MERGED_CONFIG_PATH}" \
+      --config "${DEVHOST_CONFIG}" \
+      --install-config "${INSTALL_CONFIG}" \
       --run-dir "${RUN_DIR}"
   else
     log "── bootstrapAdmin: skipped (install.bootstrap_admin not true)"
@@ -135,11 +138,41 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
   if bool_true "${ENABLE_DEFAULT_LICENSE}"; then
     log "── bootstrapDefaultLicense (install.enable_default_license=true)"
     bash "${SCRIPT_DIR}/bootstrap-default-license-on-target.sh" \
-      --config "${MERGED_CONFIG_PATH}" \
+      --config "${DEVHOST_CONFIG}" \
+      --install-config "${INSTALL_CONFIG}" \
       --run-dir "${RUN_DIR}"
   else
     log "── bootstrapDefaultLicense: skipped (install.enable_default_license not true)"
   fi
+
+  log "── targetVerify"
+  bash "${SCRIPT_DIR}/verify-target.sh" \
+    --config "${DEVHOST_CONFIG}" \
+    --install-config "${INSTALL_CONFIG}" \
+    --build-publish-config "${BUILD_PUBLISH_CONFIG}" \
+    --run-dir "${RUN_DIR}" \
+    --appliance-profile "${APPLIANCE_PROFILE}"
+
+  if bool_true "${BOOTSTRAP_ADMIN}"; then
+    log "── clientVerify (install.bootstrap_admin=true)"
+    bash "${SCRIPT_DIR}/verify-client-access.sh" \
+      --install-config "${INSTALL_CONFIG}" \
+      --run-dir "${RUN_DIR}" \
+      --appliance-profile "${APPLIANCE_PROFILE}"
+  else
+    log "── clientVerify: skipped (install.bootstrap_admin not true)"
+  fi
+
+  log "── report"
+  python3 "${SCRIPT_DIR}/summarize-release-run.py" \
+    --run-dir "${RUN_DIR}" \
+    --exit-code 0 \
+    >"${RUN_DIR}/logs/release-report.log" 2>&1 \
+    || fail "report failed; see ${RUN_DIR}/logs/release-report.log"
+  log "report → ${RUN_DIR}/release-report.md"
 fi
 
 log "done"
+if bool_true "${FINAL_OK}"; then
+  printf 'OK run\n'
+fi

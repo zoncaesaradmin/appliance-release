@@ -1,4 +1,4 @@
-# Devhost orchestration config (run-release-flow.sh --config).
+# Devhost orchestration config (run-release-from-devhost.sh --config).
 #
 # This file is for the developer machine that drives the pipeline: which build
 # host and target host to SSH to, and how the local run is reported. It
@@ -9,7 +9,7 @@
 #   --install-config        references/config.install.example.yaml
 #
 # Example:
-#   bash .agents/skills/release/scripts/run-release-flow.sh \
+#   bash .agents/skills/release/scripts/run-release-from-devhost.sh \
 #     --config ~/lab-devhost.yaml \
 #     --build-publish-config ~/lab-build-publish.yaml \
 #     --install-config ~/lab-install.yaml
@@ -33,8 +33,9 @@ build_host:
 
 target_host:
   alias: zonsys@192.168.1.153
-  # Must match zonctl --state-dir (product default if you always use that path).
-  state_dir: /var/lib/zon/state
+  # Appliance state dir is not config: fixed product path /var/lib/zon/state
+  # (install-http-release.sh STATE_DIR / zonctl default). Override only by
+  # editing the downloaded install script for special sites.
 
 # ============================================================================
 # Local report / run directory (devhost only)

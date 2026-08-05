@@ -47,8 +47,9 @@ Optional:
   --help, -h                   Show this help
 
 Rare site overrides (authenticated private store TLS, builder catalog path
-`BUILD_CATALOG_PATH`, alternate state dir) live as editable product-default
-variables near the top of the downloaded script — not as public CLI flags.
+`BUILD_CATALOG_PATH`, state dir) are product defaults near the top of this
+file after download — edit those variables if needed. Not public CLI flags
+and not release-orchestrator config.
 
 Does not create the first administrator or accept a license (UI or later).
 EOF
@@ -62,9 +63,12 @@ PATH_PREFIX_EMBEDDED=""
 BASE_URL_EMBEDDED=""
 
 # =============================================================================
-# Product defaults (operators usually leave alone; edit only for special sites)
+# Product defaults (operators usually leave alone)
+# Edit only on the *downloaded* script before running, if a special site needs
+# a non-default path. Not supplied via release YAML or installer CLI.
 # =============================================================================
 DNS_ZONE="appliance.internal"
+# Product/zonctl state directory (permissions and ownership assume this path).
 STATE_DIR="/var/lib/zon/state"
 # Leave empty to use stamp + /tmp/appliance-<version>
 PRODUCT_VERSION=""

@@ -26,8 +26,6 @@ Use this index to find the one canonical document for your task.
 
 ## Specialized / Internal
 
-- Strict final release qualification across profiles:
-  [internal/final-profile-matrix.md](internal/final-profile-matrix.md)
 - Historical full execution plan:
   [archive/release-plan.md](archive/release-plan.md)
 
