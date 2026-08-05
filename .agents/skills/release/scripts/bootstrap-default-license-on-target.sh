@@ -11,8 +11,12 @@ usage: bootstrap-default-license-on-target.sh [options]
 Accept the base/free entitlement on the configured target host.
 Safe to rerun when licensing is already resolved.
 
+Control-plane namespace/deployment are product-fixed (not install YAML):
+  namespace=control (zonctl defaultChartNamespace)
+  deployment=api-server (chart appliance-control-plane)
+
 Required:
-  --install-config PATH    install.kubernetes_namespace, control_plane_deployment
+  --install-config PATH    install config path (identity keys rejected if present)
 
 When not using --local:
   --config PATH            Devhost config (target_host.alias)
@@ -20,8 +24,6 @@ When not using --local:
 Options:
   --local
   --run-dir DIR
-  --namespace NAME
-  --deployment NAME
 EOF
 }
 
@@ -29,8 +31,6 @@ DEVHOST_CONFIG=""
 INSTALL_CONFIG=""
 LOCAL_MODE="false"
 RUN_DIR=""
-NAMESPACE=""
-DEPLOYMENT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -50,14 +50,6 @@ while [[ $# -gt 0 ]]; do
       RUN_DIR="${2:-}"
       shift 2
       ;;
-    --namespace)
-      NAMESPACE="${2:-}"
-      shift 2
-      ;;
-    --deployment)
-      DEPLOYMENT="${2:-}"
-      shift 2
-      ;;
     --help|-h)
       usage
       exit 0
@@ -70,6 +62,7 @@ done
 
 [[ -n "${INSTALL_CONFIG}" ]] || fail "requires --install-config PATH"
 INSTALL_CONFIG="$(require_config_path "${INSTALL_CONFIG}")"
+reject_removed_install_control_plane_identity_keys "${INSTALL_CONFIG}"
 if ! bool_true "${LOCAL_MODE}"; then
   [[ -n "${DEVHOST_CONFIG}" ]] || fail "requires --config PATH (devhost) unless --local"
   DEVHOST_CONFIG="$(require_config_path "${DEVHOST_CONFIG}")"
@@ -80,14 +73,8 @@ if [[ -z "${RUN_DIR}" ]]; then
 fi
 ensure_release_run_dirs "${RUN_DIR}"
 
-if [[ -z "${NAMESPACE}" ]]; then
-  NAMESPACE="$(config_get_optional "${INSTALL_CONFIG}" "install.kubernetes_namespace" || true)"
-fi
-[[ -n "${NAMESPACE}" ]] || fail "install.kubernetes_namespace is required in install config"
-if [[ -z "${DEPLOYMENT}" ]]; then
-  DEPLOYMENT="$(config_get_optional "${INSTALL_CONFIG}" "install.control_plane_deployment" || true)"
-fi
-[[ -n "${DEPLOYMENT}" ]] || fail "install.control_plane_deployment is required in install config"
+NAMESPACE="$(product_control_plane_namespace)"
+DEPLOYMENT="$(product_control_plane_deployment)"
 
 TARGET_HOST=""
 if bool_true "${LOCAL_MODE}"; then

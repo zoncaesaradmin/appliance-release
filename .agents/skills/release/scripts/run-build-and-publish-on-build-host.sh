@@ -94,7 +94,8 @@ if [[ -z "${RUN_DIR}" ]]; then
 fi
 ensure_release_run_dirs "${RUN_DIR}"
 
-REMOTE_REPO_PATH="$(config_get "${BUILD_PUBLISH_CONFIG}" "release_workspace.remote_repo_path")"
+REMOTE_BUILD_ROOT="$(resolve_build_publish_remote_build_root "${BUILD_PUBLISH_CONFIG}")"
+REMOTE_REPO_PATH="$(derive_remote_repo_path_from_build_root "${REMOTE_BUILD_ROOT}")"
 REMOTE_REPO_SOURCE="$(config_get_optional "${BUILD_PUBLISH_CONFIG}" "release_workspace.remote_repo_source" || true)"
 REMOTE_REPO_REF="$(config_get "${BUILD_PUBLISH_CONFIG}" "release_workspace.remote_repo_ref")"
 if [[ -z "${REMOTE_REPO_SOURCE}" ]]; then

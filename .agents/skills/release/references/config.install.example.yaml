@@ -44,8 +44,8 @@ install:
 
   # Used when install.bootstrap_admin is true
   bootstrap_admin_username: admin
-  kubernetes_namespace: control
-  control_plane_deployment: api-server
+  # kubernetes_namespace / control_plane_deployment are product-fixed
+  # (control / api-server; zonctl defaultChartNamespace + chart name) — do not set
 
   # builder* profiles:
   # build_catalog_path: /Users/you/build-catalog.yaml

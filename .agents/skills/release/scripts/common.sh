@@ -449,8 +449,109 @@ render_export_assignments_from_current_env() {
   printf '%s' "${fragment}"
 }
 
+# Product-fixed control-plane identity (not operator install YAML).
+# Namespace:  appliance-ctl cmd/zonctl/main.go defaultChartNamespace = "control"
+# Deployment: appliance-code deploy/charts/appliance-control-plane:
+#   templates/_helpers.tpl nameOverride|default "api-server"
+#   chart_test.go controlPlaneDeploymentName
+#   selectorLabels app.kubernetes.io/name (same basename)
+# zonctl install/upgrade always use defaultChartNamespace; bootstrap scripts
+# must match so kubectl exec targets the product workload, not skill invention.
+PRODUCT_CONTROL_PLANE_NAMESPACE="control"
+PRODUCT_CONTROL_PLANE_DEPLOYMENT="api-server"
+
+reject_removed_install_control_plane_identity_keys() {
+  local config_path="$1"
+  local removed=()
+  if [[ -n "$(config_get_optional "${config_path}" "install.kubernetes_namespace" || true)" ]]; then
+    removed+=("install.kubernetes_namespace")
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "install.control_plane_deployment" || true)" ]]; then
+    removed+=("install.control_plane_deployment")
+  fi
+  if ((${#removed[@]} > 0)); then
+    fail "removed install identity keys: ${removed[*]}. Control-plane namespace is product-fixed (${PRODUCT_CONTROL_PLANE_NAMESPACE}; zonctl defaultChartNamespace) and deployment is product-fixed (${PRODUCT_CONTROL_PLANE_DEPLOYMENT}; chart appliance-control-plane fullname). Remove them from install config."
+  fi
+}
+
+product_control_plane_namespace() {
+  printf '%s\n' "${PRODUCT_CONTROL_PLANE_NAMESPACE}"
+}
+
+product_control_plane_deployment() {
+  printf '%s\n' "${PRODUCT_CONTROL_PLANE_DEPLOYMENT}"
+}
+
 # Env names referenced by a build-publish config (dev_image_pull, mirror, bundle_store).
 # Deduped. Includes APPLIANCE_BUILD_SUDO_PASSWORD when bootstrap/build needs sudo.
+# Skill-fixed layout under release_workspace.remote_build_root (build host only).
+SKILL_REMOTE_BUILD_ROOT_CHECKOUT_SUBDIR="release"
+SKILL_REMOTE_BUILD_ROOT_EXPORT_SUBDIR="export"
+SKILL_REMOTE_BUILD_ROOT_K3S_BINARY_SUBPATH="inputs/k3s"
+SKILL_REMOTE_BUILD_ROOT_K3S_AIRGAP_SUBPATH="inputs/k3s-airgap-images-amd64.tar.zst"
+
+skill_remote_build_root_layout_message() {
+  cat <<'EOF'
+Skill-fixed layout under release_workspace.remote_build_root:
+  release/ — appliance-release git checkout (REMOTE_CWD)
+  export/ — bundle export output (EXPORT_DIR)
+  inputs/k3s — K3s binary directory
+  inputs/k3s-airgap-images-amd64.tar.zst — K3s airgap images archive
+EOF
+}
+
+join_remote_build_root_path() {
+  local root="$1"
+  local subpath="$2"
+  root="${root%/}"
+  printf '%s/%s\n' "${root}" "${subpath}"
+}
+
+reject_removed_build_publish_path_keys() {
+  local config_path="$1"
+  local removed=()
+  if [[ -n "$(config_get_optional "${config_path}" "release_workspace.remote_repo_path" || true)" ]]; then
+    removed+=("release_workspace.remote_repo_path")
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "release_workspace.remote_export_dir" || true)" ]]; then
+    removed+=("release_workspace.remote_export_dir")
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.k3s_binary_source" || true)" ]]; then
+    removed+=("build_flow.k3s_binary_source")
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.k3s_airgap_images_source" || true)" ]]; then
+    removed+=("build_flow.k3s_airgap_images_source")
+  fi
+  if ((${#removed[@]} > 0)); then
+    fail "removed build-publish path keys: ${removed[*]}. Set release_workspace.remote_build_root only. $(skill_remote_build_root_layout_message)"
+  fi
+}
+
+resolve_build_publish_remote_build_root() {
+  local config_path="$1"
+  local root=""
+  reject_removed_build_publish_path_keys "${config_path}"
+  root="$(config_get "${config_path}" "release_workspace.remote_build_root")"
+  [[ -n "${root}" ]] || fail "release_workspace.remote_build_root is required in config. $(skill_remote_build_root_layout_message)"
+  printf '%s\n' "${root}"
+}
+
+derive_remote_repo_path_from_build_root() {
+  join_remote_build_root_path "$1" "${SKILL_REMOTE_BUILD_ROOT_CHECKOUT_SUBDIR}"
+}
+
+derive_remote_export_dir_from_build_root() {
+  join_remote_build_root_path "$1" "${SKILL_REMOTE_BUILD_ROOT_EXPORT_SUBDIR}"
+}
+
+derive_k3s_binary_source_from_build_root() {
+  join_remote_build_root_path "$1" "${SKILL_REMOTE_BUILD_ROOT_K3S_BINARY_SUBPATH}"
+}
+
+derive_k3s_airgap_images_source_from_build_root() {
+  join_remote_build_root_path "$1" "${SKILL_REMOTE_BUILD_ROOT_K3S_AIRGAP_SUBPATH}"
+}
+
 collect_build_publish_env_names() {
   local config_path="$1"
   local names=()
@@ -475,11 +576,8 @@ collect_build_publish_env_names() {
       names+=("${candidate}")
     fi
   done
-  boot="$(config_get_optional "${config_path}" "build_flow.bootstrap_needs_sudo" || true)"
-  needs="$(config_get_optional "${config_path}" "build_flow.build_needs_sudo" || true)"
-  if { [[ -n "${boot}" ]] && bool_true "${boot}"; } || { [[ -n "${needs}" ]] && bool_true "${needs}"; }; then
-    names+=("APPLIANCE_BUILD_SUDO_PASSWORD")
-  fi
+  # Bootstrap/build always use sudo on the build host.
+  names+=("APPLIANCE_BUILD_SUDO_PASSWORD")
   for n in "${names[@]}"; do
     case "${seen}" in
       *"|${n}|"*) continue ;;

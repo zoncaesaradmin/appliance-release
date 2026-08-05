@@ -11,8 +11,12 @@ usage: bootstrap-admin-on-target.sh [options]
 Create the first appliance administrator on the configured target host as an
 explicit post-install step. Safe to rerun: if already initialized, skip OK.
 
+Control-plane namespace/deployment are product-fixed (not install YAML):
+  namespace=control (zonctl defaultChartNamespace)
+  deployment=api-server (chart appliance-control-plane)
+
 Required:
-  --install-config PATH    install.bootstrap_admin_username, kubernetes, deployment
+  --install-config PATH    install.bootstrap_admin_username
 
 When not using --local:
   --config PATH            Devhost config (target_host.alias)
@@ -21,8 +25,6 @@ Options:
   --local                  Run on this host (no SSH).
   --run-dir DIR
   --admin-username NAME    Override install.bootstrap_admin_username
-  --namespace NAME         Override install.kubernetes_namespace
-  --deployment NAME        Override install.control_plane_deployment
 EOF
 }
 
@@ -31,8 +33,6 @@ INSTALL_CONFIG=""
 LOCAL_MODE="false"
 RUN_DIR=""
 ADMIN_USERNAME=""
-NAMESPACE=""
-DEPLOYMENT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -56,14 +56,6 @@ while [[ $# -gt 0 ]]; do
       ADMIN_USERNAME="${2:-}"
       shift 2
       ;;
-    --namespace)
-      NAMESPACE="${2:-}"
-      shift 2
-      ;;
-    --deployment)
-      DEPLOYMENT="${2:-}"
-      shift 2
-      ;;
     --help|-h)
       usage
       exit 0
@@ -76,6 +68,7 @@ done
 
 [[ -n "${INSTALL_CONFIG}" ]] || fail "requires --install-config PATH"
 INSTALL_CONFIG="$(require_config_path "${INSTALL_CONFIG}")"
+reject_removed_install_control_plane_identity_keys "${INSTALL_CONFIG}"
 if ! bool_true "${LOCAL_MODE}"; then
   [[ -n "${DEVHOST_CONFIG}" ]] || fail "requires --config PATH (devhost) unless --local"
   DEVHOST_CONFIG="$(require_config_path "${DEVHOST_CONFIG}")"
@@ -90,14 +83,8 @@ if [[ -z "${ADMIN_USERNAME}" ]]; then
   ADMIN_USERNAME="$(config_get_optional "${INSTALL_CONFIG}" "install.bootstrap_admin_username" || true)"
 fi
 [[ -n "${ADMIN_USERNAME}" ]] || fail "install.bootstrap_admin_username is required in install config"
-if [[ -z "${NAMESPACE}" ]]; then
-  NAMESPACE="$(config_get_optional "${INSTALL_CONFIG}" "install.kubernetes_namespace" || true)"
-fi
-[[ -n "${NAMESPACE}" ]] || fail "install.kubernetes_namespace is required in install config"
-if [[ -z "${DEPLOYMENT}" ]]; then
-  DEPLOYMENT="$(config_get_optional "${INSTALL_CONFIG}" "install.control_plane_deployment" || true)"
-fi
-[[ -n "${DEPLOYMENT}" ]] || fail "install.control_plane_deployment is required in install config"
+NAMESPACE="$(product_control_plane_namespace)"
+DEPLOYMENT="$(product_control_plane_deployment)"
 
 TARGET_HOST=""
 if bool_true "${LOCAL_MODE}"; then

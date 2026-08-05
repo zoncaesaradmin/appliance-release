@@ -41,12 +41,18 @@ Notes:
 - Build packaging always pulls/packages from the network (or the mirror flow
   above). Local build-host path inputs such as `*_image_archive_source`,
   `argo.crds_dir_source`, and `host_packages_dir_source` are rejected.
-  Staging K3s binary/images under `k3s_*_source` remains (those are product
-  payload files, not alternate OCI fetch modes).
+  K3s binary/images are staged under
+  `$remote_build_root/inputs/k3s` and
+  `$remote_build_root/inputs/k3s-airgap-images-amd64.tar.zst` (skill-fixed;
+  set only `release_workspace.remote_build_root`).
 - Do **not** put a `build_flow.product_publish` block in config. Signed-bundle
-  distribution is `bundle_store` + `publish_command`. Service image push defaults
-  live in appliance-code `build/service-image.mk` (`SERVICE_IMAGE_*` /
-  `DEV_REGISTRY`).
+  distribution is `bundle_store` plus skill-fixed `make publish-release`. Service
+  image push defaults live in appliance-code `build/service-image.mk`
+  (`SERVICE_IMAGE_*` / `DEV_REGISTRY`).
+- Bootstrap/build/publish are skill-fixed (not config):
+  `bash scripts/ci/bootstrap-build-host.sh`,
+  `bash scripts/ci/build-full-bundle.sh`, then `make publish-release`.
+  Both bootstrap and build always use sudo (`APPLIANCE_BUILD_SUDO_PASSWORD`).
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used only when `install.bootstrap_admin` is
   true (first-admin bootstrap + Mac-side API verification).
 - First-admin bootstrap and client verify are **off by default** in the example
@@ -74,6 +80,12 @@ Notes:
   installer derives the FQDN as `<appliance_name>.<dns_zone>` for TLS,
   `canonicalOrigin`, and the registry realm. There is no separate `public_host`
   override.
+- Control-plane **namespace** and **deployment name** are product-fixed, not
+  install YAML: namespace `control` (`zonctl` `defaultChartNamespace`) and
+  deployment `api-server` (chart `appliance-control-plane` fullname /
+  `app.kubernetes.io/name`). Do not set `install.kubernetes_namespace` or
+  `install.control_plane_deployment` (rejected). Bootstrap scripts use the
+  same constants.
 - Release-side install helpers also add the target host's current
   `hostname.local` as an extra TLS SAN automatically, so the existing host
   name can be used for mDNS-friendly lab access without changing

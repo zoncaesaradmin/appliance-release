@@ -82,6 +82,8 @@ if [[ -n "${BUILD_PUBLISH_CONFIG}" ]]; then
 fi
 if [[ -n "${INSTALL_CONFIG}" ]]; then
   INSTALL_CONFIG="$(require_config_path "${INSTALL_CONFIG}")"
+  # Fail closed before install if operator still supplies product-fixed keys.
+  reject_removed_install_control_plane_identity_keys "${INSTALL_CONFIG}"
 fi
 
 RUN_DIR="$(config_get_optional "${DEVHOST_CONFIG}" "report.run_dir" || true)"

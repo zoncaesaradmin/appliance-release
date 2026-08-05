@@ -436,6 +436,61 @@ def test_resolve_build_catalog_path_helper() -> None:
         assert "required file not found" in fail_result.stderr
 
 
+def test_product_control_plane_identity_helpers() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{COMMON_SH}"; '
+                'product_control_plane_namespace; '
+                'product_control_plane_deployment'
+            ),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    assert lines == ["control", "api-server"], result.stdout
+
+    with tempfile.TemporaryDirectory(prefix="install-identity-") as tmp:
+        cfg = Path(tmp) / "install.yaml"
+        cfg.write_text(
+            "install:\n  kubernetes_namespace: other\n  control_plane_deployment: other\n",
+            encoding="utf-8",
+        )
+        reject = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                f'source "{COMMON_SH}"; reject_removed_install_control_plane_identity_keys "{cfg}"',
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert reject.returncode != 0
+        assert "install.kubernetes_namespace" in reject.stderr
+        assert "install.control_plane_deployment" in reject.stderr
+        assert "product-fixed" in reject.stderr
+
+        clean = Path(tmp) / "clean.yaml"
+        clean.write_text("install:\n  appliance_name: x\n", encoding="utf-8")
+        ok = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                f'source "{COMMON_SH}"; reject_removed_install_control_plane_identity_keys "{clean}"',
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert ok.returncode == 0, ok.stderr
+
+
 def main() -> None:
     test_clean_repo_passes()
     test_dirty_build_affecting_repo_fails()
@@ -452,6 +507,7 @@ def main() -> None:
     test_release_run_dir_helpers()
     test_require_appliance_profile_helper()
     test_resolve_build_catalog_path_helper()
+    test_product_control_plane_identity_helpers()
     print("live release repo preflight tests passed")
 
 

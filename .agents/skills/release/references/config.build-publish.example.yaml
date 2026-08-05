@@ -25,6 +25,7 @@
 # - Only top-level keys: release_workspace, release, build_flow, bundle_store.
 # - Absolute paths on the build host only (no ~/...).
 # - Secrets never live here — only env *names* under *_env keys.
+# - Path layout under remote_build_root is skill-fixed (see below).
 #
 # Runtime secrets:
 #   Full flow from Mac: export DEV_* / APPLIANCE_BUILD_SUDO_PASSWORD on the Mac
@@ -34,20 +35,21 @@
 #   Values named by build_flow.dev_image_pull.*_env (and optional mirror):
 #     DEV_REGISTRY, DEV_IMAGE_REPO, DEV_IMAGE_NAME,
 #     DEV_REGISTRY_USER, DEV_REGISTRY_TOKEN, DEV_REGISTRY_TLS_VERIFY
-#   Plus APPLIANCE_BUILD_SUDO_PASSWORD when bootstrap_needs_sudo / build_needs_sudo.
+#   Plus APPLIANCE_BUILD_SUDO_PASSWORD (bootstrap/build always use sudo).
 
 # ============================================================================
 # Release workspace on the build host
 # ============================================================================
 
 release_workspace:
-  # Skill-managed git checkout on the build host (clone if missing, hard-reset
-  # to remote_repo_ref each run; do not hand-edit files on the build host).
-  remote_repo_path: /home/zonsys/ws/appliance-release
+  # Single build-host root. Skill-managed layout under this path:
+  #   release/ — appliance-release git checkout (clone/reset each run)
+  #   export/ — bundle export output (EXPORT_DIR)
+  #   inputs/k3s — K3s binary directory
+  #   inputs/k3s-airgap-images-amd64.tar.zst — K3s airgap images archive
+  remote_build_root: /home/zonsys/appliance-build
   remote_repo_source: https://github.com/zoncaesaradmin/appliance-release.git
   remote_repo_ref: main
-  # Injected as EXPORT_DIR for build_command (and publish_command).
-  remote_export_dir: /home/zonsys/appliance-build/export
 
 # ============================================================================
 # Version + publish alias
@@ -66,12 +68,12 @@ release:
 build_flow:
   code_repo_ref: main
   ctl_repo_ref: main
-  k3s_binary_source: /home/zonsys/ci/inputs/k3s
-  k3s_airgap_images_source: /home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst
 
-  bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
-  bootstrap_needs_sudo: true
-  build_needs_sudo: true
+  # Bootstrap/build/publish commands and sudo are skill-fixed (not config):
+  #   bash scripts/ci/bootstrap-build-host.sh
+  #   bash scripts/ci/build-full-bundle.sh
+  #   make publish-release
+  # Always wrapped with sudo → APPLIANCE_BUILD_SUDO_PASSWORD.
 
   # Bundled offline name for the appliance is fixed: registry.local/dev-build
   dev_image_pull:
@@ -93,9 +95,6 @@ build_flow:
     timeout_seconds: 10
 
   # PRODUCT_VERSION and EXPORT_DIR injected by the skill.
-  build_command: bash scripts/ci/build-full-bundle.sh
-  # Skipped together with build when build_flow.skip is true.
-  publish_command: make publish-release
 
 # ============================================================================
 # Distribution (publish destination + install download source)

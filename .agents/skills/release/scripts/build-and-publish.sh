@@ -23,11 +23,12 @@ Options:
                                 (no SSH). Use from the build machine, or via
                                 run-build-and-publish-on-build-host.sh.
   --bootstrap-cmd CMD           Optional bootstrap command.
-  --build-cmd CMD               Build command. Defaults to build_flow.build_command.
-  --publish-cmd CMD             Publish command. Defaults to build_flow.publish_command.
+  --build-cmd CMD               Advanced override (default: skill-fixed build-full-bundle).
+  --publish-cmd CMD             Advanced override (default: skill-fixed make publish-release).
   --remote-cwd PATH             Working directory on the build host.
-                                Defaults to release_workspace.remote_repo_path.
+                                Defaults to \$remote_build_root/release.
   --remote-export-dir PATH      Export directory to collect after build.
+                                Defaults to \$remote_build_root/export.
   --release-version VERSION     Release version for metadata and filenames.
   --run-dir DIR                 Run directory for logs/metadata/artifacts.
 EOF
@@ -95,41 +96,52 @@ done
 
 CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
 
+# Fixed from the skill-managed release checkout (cwd = $remote_build_root/release).
+readonly DEFAULT_BOOTSTRAP_CMD="bash scripts/ci/bootstrap-build-host.sh"
+readonly DEFAULT_BUILD_CMD="bash scripts/ci/build-full-bundle.sh"
+readonly DEFAULT_PUBLISH_CMD="make publish-release"
+
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"
 fi
 
+REMOTE_BUILD_ROOT="$(resolve_build_publish_remote_build_root "${CONFIG_PATH}")"
 if [[ -z "${REMOTE_CWD}" ]]; then
-  REMOTE_CWD="$(config_get "${CONFIG_PATH}" "release_workspace.remote_repo_path")"
+  REMOTE_CWD="$(derive_remote_repo_path_from_build_root "${REMOTE_BUILD_ROOT}")"
 fi
 REMOTE_REPO_SOURCE="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_repo_source" || true)"
 REMOTE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_repo_ref" || true)"
 CODE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.code_repo_ref" || true)"
 CTL_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.ctl_repo_ref" || true)"
-BUILD_K3S_BINARY_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.k3s_binary_source" || true)"
-BUILD_K3S_AIRGAP_IMAGES_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.k3s_airgap_images_source" || true)"
+BUILD_K3S_BINARY_SOURCE="$(derive_k3s_binary_source_from_build_root "${REMOTE_BUILD_ROOT}")"
+BUILD_K3S_AIRGAP_IMAGES_SOURCE="$(derive_k3s_airgap_images_source_from_build_root "${REMOTE_BUILD_ROOT}")"
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_command" || true)" ]]; then
+  fail "build_flow.bootstrap_command was removed; skill always runs: ${DEFAULT_BOOTSTRAP_CMD}"
+fi
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.build_command" || true)" \
+  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.publish_command" || true)" ]]; then
+  fail "build_flow.build_command and build_flow.publish_command were removed; skill always runs: ${DEFAULT_BUILD_CMD} then ${DEFAULT_PUBLISH_CMD}"
+fi
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_needs_sudo" || true)" \
+  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.build_needs_sudo" || true)" ]]; then
+  fail "build_flow.bootstrap_needs_sudo and build_flow.build_needs_sudo were removed; skill always wraps bootstrap/build with sudo (APPLIANCE_BUILD_SUDO_PASSWORD)"
+fi
 if [[ -z "${BOOTSTRAP_CMD}" ]]; then
-  BOOTSTRAP_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_command" || true)"
+  BOOTSTRAP_CMD="${DEFAULT_BOOTSTRAP_CMD}"
 fi
 if [[ -z "${BUILD_CMD}" ]]; then
-  BUILD_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_command" || true)"
+  BUILD_CMD="${DEFAULT_BUILD_CMD}"
 fi
 if [[ -z "${PUBLISH_CMD}" ]]; then
-  PUBLISH_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.publish_command" || true)"
+  PUBLISH_CMD="${DEFAULT_PUBLISH_CMD}"
 fi
 if [[ -z "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
 fi
 if [[ -z "${REMOTE_EXPORT_DIR}" ]]; then
-  REMOTE_EXPORT_DIR="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_export_dir" || true)"
+  REMOTE_EXPORT_DIR="$(derive_remote_export_dir_from_build_root "${REMOTE_BUILD_ROOT}")"
 fi
-
-[[ -n "${BUILD_CMD}" ]] || fail "build_flow.build_command is required in config"
-[[ -n "${PUBLISH_CMD}" ]] || fail "build_flow.publish_command is required in config"
-[[ -n "${BUILD_K3S_BINARY_SOURCE}" ]] || fail "build_flow.k3s_binary_source is required in config"
-[[ -n "${BUILD_K3S_AIRGAP_IMAGES_SOURCE}" ]] || fail "build_flow.k3s_airgap_images_source is required in config"
 [[ -n "${RELEASE_VERSION}" ]] || fail "release.version is required in config"
-[[ -n "${REMOTE_EXPORT_DIR}" ]] || fail "release_workspace.remote_export_dir is required in config"
 if [[ -n "$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_release_input_path" || true)" \
   || -n "$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_bundle_dir" || true)" ]]; then
   fail "release_workspace.remote_release_input_path and remote_bundle_dir were removed; build-and-publish now auto-detects release-input and bundle paths from the build log"
@@ -166,13 +178,12 @@ if bool_true "${LOCAL_MODE}"; then
 else
   BUILD_HOST="$(config_get "${CONFIG_PATH}" "build_host.alias")"
 fi
-BOOTSTRAP_NEEDS_SUDO="$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_needs_sudo" || true)"
-BUILD_NEEDS_SUDO="$(config_get_optional "${CONFIG_PATH}" "build_flow.build_needs_sudo" || true)"
-[[ -n "${BOOTSTRAP_NEEDS_SUDO}" ]] || fail "build_flow.bootstrap_needs_sudo is required in config (true|false)"
-[[ -n "${BUILD_NEEDS_SUDO}" ]] || fail "build_flow.build_needs_sudo is required in config (true|false)"
+# Bootstrap and build always need root; sudo password is always required.
+BOOTSTRAP_NEEDS_SUDO="true"
+BUILD_NEEDS_SUDO="true"
 
 # Development-container pull/login only. Signed-bundle publish uses
-# bundle_store.* + publish_command. Per-service make image defaults live in
+# bundle_store.* + skill-fixed make publish-release. Per-service make image defaults live in
 # appliance-code build/service-image.mk — not this config.
 # Fail closed on removed nested registry blocks.
 if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.pull_ref" || true)" \
