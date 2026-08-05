@@ -1,161 +1,101 @@
 #!/usr/bin/env bash
+# install-http-release.sh — public target-host install / upgrade helper.
+#
+# Public path:
+#   1) curl -fsSL -o install-http-release.sh "<distributor>/…/install-http-release.sh"
+#   2) bash install-http-release.sh --appliance-name <unique-name> [--appliance-profile <profile>]
+#
+# Publish stamps PRODUCT_VERSION_EMBEDDED, PATH_PREFIX_EMBEDDED, BASE_URL_EMBEDDED.
+# Other paths and distributor options are product defaults below (rarely edit).
 set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: install-http-release.sh --base-url URL [options]
+usage: install-http-release.sh --appliance-name NAME [options]
+       install-http-release.sh --help
 
-Download a published release bundle from a plain HTTP/HTTPS location, verify
-checksums, extract it locally, run zonctl preflight, and then automatically
-choose the right appliance lifecycle action:
+Public install / upgrade:
 
-- fresh host: run `zonctl install`
-- existing owned appliance: switch to `zonctl upgrade`
+  1) Download this script for the release version you want (version is in the
+     URL; open static HTTP vs appliance_files differ only on this curl, e.g.
+     Authorization header if the store requires a token):
 
-For a fresh install, appliance setup now continues in a separate step after the
-platform is installed:
+       curl -fsSL -o install-http-release.sh \
+         "https://downloads.example/appliance/0.1.0/install-http-release.sh"
 
-- primary path: open the appliance UI and create the first administrator there
-- automation/headless path: run a separate explicit bootstrap step
+  2) Run with a stable unique appliance name (required — identity, TLS SAN /
+     FQDN, and registry realm all key off it):
+
+       bash install-http-release.sh --appliance-name my-appliance-1
+
+     Optional profile (default: core):
+
+       bash install-http-release.sh \
+         --appliance-name my-appliance-1 \
+         --appliance-profile storage-landns
 
 Required:
-  --base-url URL               Base URL that serves the appliance path, for
-                               example:
-                               http://downloads.example.internal/releases
-
-Required (or stamped into the published helper at publish time):
-  --product-version VERSION    Product version to install. Published helpers
-                               stamp this; otherwise pass explicitly.
-  --path-prefix PATH           Path under base URL (from
-                               bundle_store.release_path_prefix). Published
-                               helpers stamp this; otherwise pass explicitly.
-  --state-dir DIR              zonctl state directory (from
-                               target_host.state_dir).
-  --appliance-profile NAME     Appliance profile (from
-                               install.appliance_profile).
-  --appliance-name NAME        Product LAN instance label (single DNS label).
-                               FQDN becomes <name>.<dns-zone> for TLS,
-                               canonicalOrigin, and registry realm.
-  --dns-zone ZONE              LAN DNS zone (from install.dns_zone).
+  --appliance-name NAME        Single DNS label for this appliance instance.
+                               Stable for the life of the install; do not invent
+                               a new name on every re-run of the same device.
 
 Optional:
-  --out-dir DIR                Local download/extract directory (from
-                               install.bundle_download_dir when using the
-                               release skill).
-  --use-latest                 Fetch from <base-url>/<path-prefix>/latest/
-                               instead of the explicit version directory
-  --build-catalog PATH         Target-local build catalog YAML/JSON passed to
-                               zonctl install/upgrade as control-plane config
-  --node-name NAME             Optional zonctl --node-name override
-  --tls-san SAN                Additional TLS SAN to include on the appliance
-                               certificate. Repeatable.
-  --dry-run                    Pass --dry-run to zonctl install/upgrade
-  --output FORMAT              zonctl output format. Default: text
-  --help                       Show this help
+  --appliance-profile NAME     Install profile (default: core). Valid v1 values
+                               include core, builder, storage, landns,
+                               storage-landns, builder-landns,
+                               builder-storage-landns.
+  --help, -h                   Show this help
 
-Example (piped; version and path-prefix are stamped at publish; pass target flags):
-  curl -fsSL http://downloads.example.internal/releases/appliance/0.1.0/install-http-release.sh \
-    | bash -s -- --base-url http://downloads.example.internal/releases \
-      --out-dir /tmp/appliance-0.1.0 --state-dir /var/lib/zon/state \
-      --appliance-profile storage-landns --appliance-name storage-landns-1 \
-      --dns-zone appliance.internal
+Rare site overrides (authenticated private store TLS, builder catalog path
+`BUILD_CATALOG_PATH`, alternate state dir) live as editable product-default
+variables near the top of the downloaded script — not as public CLI flags.
 
-If the distribution endpoint requires appliance authentication, export:
-  ARTIFACT_BEARER_TOKEN=<appliance API token>
-
-The release skill sets this from bundle_store.access_token when installing.
-
-For HTTPS with a self-signed distributor cert, export:
-  APPLIANCE_RELEASE_TLS_INSECURE=1
-or set APPLIANCE_RELEASE_CACERT=/path/to/ca.pem
+Does not create the first administrator or accept a license (UI or later).
 EOF
 }
 
-# Substituted by publish-release.sh into the published copy of this script,
-# so the version travels with the file's content rather than relying on the
-# filename. That keeps the public helper URL stable as install-http-release.sh
-# under each versioned release directory and also works when the script is
-# piped straight into `bash` (curl ... | bash). Left empty in the tracked source copy;
-# publish-release.sh's sed substitution is the only thing that sets it.
+# ---------------------------------------------------------------------------
+# Publish-stamped fields (rewritten by publish-release.sh for published copy)
+# ---------------------------------------------------------------------------
 PRODUCT_VERSION_EMBEDDED=""
-# Stamped by publish-release.sh from bundle_store.release_path_prefix.
 PATH_PREFIX_EMBEDDED=""
+BASE_URL_EMBEDDED=""
 
-BASE_URL=""
+# =============================================================================
+# Product defaults (operators usually leave alone; edit only for special sites)
+# =============================================================================
+DNS_ZONE="appliance.internal"
+STATE_DIR="/var/lib/zon/state"
+# Leave empty to use stamp + /tmp/appliance-<version>
 PRODUCT_VERSION=""
-OUT_DIR=""
 PATH_PREFIX=""
+BASE_URL=""
+OUT_DIR=""
 USE_LATEST="0"
-STATE_DIR=""
-APPLIANCE_PROFILE=""
+
+# Authenticated distribution (appliance_files). Open static HTTP: leave empty.
+BEARER_TOKEN=""
+TLS_INSECURE="0"
+TLS_CACERT=""
+
 BUILD_CATALOG_PATH=""
 NODE_NAME=""
-APPLIANCE_NAME=""
-DNS_ZONE=""
-TLS_SANS=()
+EXTRA_TLS_SANS=""
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
-# The release skill injects ARTIFACT_BEARER_TOKEN from bundle_store.access_token.
-ARTIFACT_BEARER_TOKEN="${ARTIFACT_BEARER_TOKEN:-}"
-TLS_INSECURE="${APPLIANCE_RELEASE_TLS_INSECURE:-}"
-TLS_CACERT="${APPLIANCE_RELEASE_CACERT:-}"
+# =============================================================================
+
+APPLIANCE_NAME=""
+APPLIANCE_PROFILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --base-url)
-      BASE_URL="${2:-}"
-      shift 2
-      ;;
-    --product-version)
-      PRODUCT_VERSION="${2:-}"
-      shift 2
-      ;;
-    --out-dir)
-      OUT_DIR="${2:-}"
-      shift 2
-      ;;
-    --path-prefix)
-      PATH_PREFIX="${2:-}"
-      shift 2
-      ;;
-    --use-latest)
-      USE_LATEST="1"
-      shift 1
-      ;;
-    --state-dir)
-      STATE_DIR="${2:-}"
-      shift 2
-      ;;
-    --appliance-profile)
-      APPLIANCE_PROFILE="${2:-}"
-      shift 2
-      ;;
-    --build-catalog)
-      BUILD_CATALOG_PATH="${2:-}"
-      shift 2
-      ;;
-    --node-name)
-      NODE_NAME="${2:-}"
-      shift 2
-      ;;
     --appliance-name)
       APPLIANCE_NAME="${2:-}"
       shift 2
       ;;
-    --dns-zone)
-      DNS_ZONE="${2:-}"
-      shift 2
-      ;;
-    --tls-san)
-      TLS_SANS+=("${2:-}")
-      shift 2
-      ;;
-    --dry-run)
-      DRY_RUN="1"
-      shift 1
-      ;;
-    --output)
-      OUTPUT_FORMAT="${2:-}"
+    --appliance-profile)
+      APPLIANCE_PROFILE="${2:-}"
       shift 2
       ;;
     --help|-h)
@@ -164,20 +104,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "install-http-release: unknown argument: $1" >&2
-      usage >&2
+      echo "Only --appliance-name (required) and --appliance-profile (optional) are accepted." >&2
+      echo "See --help." >&2
       exit 2
       ;;
   esac
 done
-
-require_var() {
-  local name="$1"
-  if [[ -z "${!name:-}" ]]; then
-    echo "install-http-release: ${name} is required" >&2
-    usage >&2
-    exit 2
-  fi
-}
 
 trim_trailing_slashes() {
   local value="$1"
@@ -185,6 +117,15 @@ trim_trailing_slashes() {
     value="${value%/}"
   done
   printf '%s\n' "${value}"
+}
+
+require_nonempty() {
+  local name="$1"
+  local value="$2"
+  if [[ -z "${value}" ]]; then
+    echo "install-http-release: ${name} is required" >&2
+    exit 2
+  fi
 }
 
 print_captured_output() {
@@ -250,57 +191,88 @@ print_captured_failure() {
   print_captured_output "${stdout_file}" "${stderr_file}"
 }
 
-append_unique_tls_san() {
-  local value="$1"
-  local existing=""
-  [[ -n "${value}" ]] || return 1
-  for existing in "${TLS_SANS[@]}"; do
-    if [[ "${existing}" == "${value}" ]]; then
-      return 1
-    fi
-  done
-  TLS_SANS+=("${value}")
-  return 0
-}
+if [[ -z "${APPLIANCE_NAME}" ]]; then
+  echo "install-http-release: --appliance-name NAME is required (stable instance identity)." >&2
+  usage >&2
+  exit 2
+fi
+if [[ -z "${APPLIANCE_PROFILE}" ]]; then
+  APPLIANCE_PROFILE="core"
+fi
 
-curl_download() {
-  local out_file="$1"
-  local url="$2"
-  local -a curl_args=(-fLo "${out_file}")
-  if [[ -n "${TLS_CACERT}" ]]; then
-    curl_args+=(--cacert "${TLS_CACERT}")
-  elif [[ "${TLS_INSECURE}" == "1" ]] || [[ "${TLS_INSECURE}" == "true" ]]; then
-    curl_args+=(-k)
+# Optional soft env only when SETTINGS left empty (private store automation
+# on a machine that already has DEV_REGISTRY_*). Public static installs leave
+# both empty and need neither env nor bearer.
+if [[ -z "${BEARER_TOKEN}" ]]; then
+  if [[ -n "${ARTIFACT_BEARER_TOKEN:-}" ]]; then
+    BEARER_TOKEN="${ARTIFACT_BEARER_TOKEN}"
+  elif [[ -n "${DEV_REGISTRY_TOKEN:-}" ]]; then
+    BEARER_TOKEN="${DEV_REGISTRY_TOKEN}"
   fi
-  if [[ -n "${ARTIFACT_BEARER_TOKEN}" ]]; then
-    curl_args+=(-H "Authorization: Bearer ${ARTIFACT_BEARER_TOKEN}")
+fi
+if [[ "${TLS_INSECURE}" != "1" && "${TLS_INSECURE}" != "true" ]]; then
+  if [[ -n "${APPLIANCE_RELEASE_TLS_INSECURE:-}" ]]; then
+    TLS_INSECURE="${APPLIANCE_RELEASE_TLS_INSECURE}"
+  elif [[ -n "${DEV_REGISTRY_TLS_VERIFY:-}" ]]; then
+    case "$(printf '%s' "${DEV_REGISTRY_TLS_VERIFY}" | tr '[:upper:]' '[:lower:]')" in
+      0|false|no|off) TLS_INSECURE="1" ;;
+    esac
   fi
-  curl "${curl_args[@]}" "${url}"
-}
-
-require_var BASE_URL
+fi
 
 if [[ -z "${PRODUCT_VERSION}" ]]; then
   PRODUCT_VERSION="${PRODUCT_VERSION_EMBEDDED}"
 fi
-require_var PRODUCT_VERSION
-
 if [[ -z "${PATH_PREFIX}" ]]; then
   PATH_PREFIX="${PATH_PREFIX_EMBEDDED}"
 fi
-require_var PATH_PREFIX
-require_var STATE_DIR
-if [[ -z "${APPLIANCE_PROFILE}" ]]; then
-  APPLIANCE_PROFILE="core"
+if [[ -z "${BASE_URL}" ]]; then
+  BASE_URL="${BASE_URL_EMBEDDED}"
 fi
-require_var APPLIANCE_PROFILE
-require_var APPLIANCE_NAME
-require_var DNS_ZONE
-require_var OUT_DIR
+# If stamp missing and private registry env exists on this host (automation).
+if [[ -z "${BASE_URL}" && -n "${DEV_REGISTRY:-}" ]]; then
+  reg="${DEV_REGISTRY#https://}"
+  reg="${reg#http://}"
+  reg="${reg%/}"
+  BASE_URL="https://${reg}/api/v1/files"
+fi
+if [[ -z "${OUT_DIR}" && -n "${PRODUCT_VERSION}" ]]; then
+  OUT_DIR="/tmp/appliance-${PRODUCT_VERSION}"
+fi
+
+require_nonempty "PRODUCT_VERSION (publish stamp)" "${PRODUCT_VERSION}"
+require_nonempty "PATH_PREFIX (publish stamp)" "${PATH_PREFIX}"
+require_nonempty "BASE_URL (publish stamp)" "${BASE_URL}"
+require_nonempty "STATE_DIR" "${STATE_DIR}"
+require_nonempty "OUT_DIR" "${OUT_DIR}"
+require_nonempty "DNS_ZONE" "${DNS_ZONE}"
 
 BASE_URL="$(trim_trailing_slashes "${BASE_URL}")"
 PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"
 STATE_DIR="$(trim_trailing_slashes "${STATE_DIR}")"
+OUT_DIR="$(trim_trailing_slashes "${OUT_DIR}")"
+
+TLS_SANS=()
+if [[ -n "${EXTRA_TLS_SANS}" ]]; then
+  # shellcheck disable=SC2206
+  TLS_SANS=(${EXTRA_TLS_SANS})
+fi
+
+echo "install-http-release: using settings"
+echo "  appliance-name:    ${APPLIANCE_NAME}"
+echo "  appliance-profile: ${APPLIANCE_PROFILE}"
+echo "  dns-zone:          ${DNS_ZONE}"
+echo "  product-version:   ${PRODUCT_VERSION}"
+echo "  path-prefix:       ${PATH_PREFIX}"
+echo "  base-url:          ${BASE_URL}"
+echo "  state-dir:         ${STATE_DIR}"
+echo "  out-dir:           ${OUT_DIR}"
+echo "  use-latest:        ${USE_LATEST}"
+echo "  bearer-token:      $([[ -n "${BEARER_TOKEN}" ]] && echo set || echo empty)"
+echo "  tls-insecure:      ${TLS_INSECURE}"
+echo "  tls-cacert:        ${TLS_CACERT:-empty}"
+echo "  build-catalog:     ${BUILD_CATALOG_PATH:-empty}"
+
 mkdir -p "${OUT_DIR}"
 
 REMOTE_DIR="${BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}"
@@ -320,7 +292,22 @@ RELEASE_PAYLOAD_FILES=(
   "${CHECKSUM_FILE}"
 )
 
-echo "[1/5] Downloading release files..."
+curl_download() {
+  local out_file="$1"
+  local url="$2"
+  local -a curl_args=(-fLo "${out_file}")
+  if [[ -n "${TLS_CACERT}" ]]; then
+    curl_args+=(--cacert "${TLS_CACERT}")
+  elif [[ "${TLS_INSECURE}" == "1" || "${TLS_INSECURE}" == "true" ]]; then
+    curl_args+=(-k)
+  fi
+  if [[ -n "${BEARER_TOKEN}" ]]; then
+    curl_args+=(-H "Authorization: Bearer ${BEARER_TOKEN}")
+  fi
+  curl "${curl_args[@]}" "${url}"
+}
+
+echo "[1/5] Downloading release files from ${REMOTE_DIR} ..."
 for payload in "${RELEASE_PAYLOAD_FILES[@]}"; do
   curl_download "${OUT_DIR}/${payload}" "${REMOTE_DIR}/${payload}"
 done

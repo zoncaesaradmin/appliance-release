@@ -45,49 +45,60 @@ Prefer host names over raw appliance IPs for day-to-day access.
 
 ## Defaults Used Below
 
+Distributor base URL, version stamp, state dir, and other paths are product
+defaults inside the published helper (or stamped at publish). Operators pass
+only appliance identity on the CLI.
+
 ```bash
-export RELEASE_BASE_URL=http://192.168.1.103:28081
-export RELEASE_VERSION=0.1.0
-export STATE_DIR=/var/lib/zon/state
-export WORK_DIR=/tmp/appliance-${RELEASE_VERSION}
+# Open static HTTP example (adjust host/version for curl step only):
+RELEASE_BASE_URL=http://192.168.1.103:28081
+RELEASE_VERSION=0.1.0
 ```
 
 ## Normal Public Flow: Install Or Upgrade
 
-This is the one-command wrapped flow for both a fresh host and an existing
-owned Zon appliance install.
+Two steps. Version is chosen by the **download URL**. The run takes only a
+required appliance name and an optional profile (default `core`). It does not
+read operator env vars for the public path.
+
+### 1) Get the install script
+
+Open static publish:
 
 ```bash
-curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-release.sh" \
-  | bash -s -- --base-url "${RELEASE_BASE_URL}"
+curl -fsSL -o install-http-release.sh \
+  "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-release.sh"
 ```
 
-The default appliance profile is `core` when `--appliance-profile` is omitted.
+Authenticated appliance_files store (token only for this download curl):
+
+```bash
+curl -fsSL -o install-http-release.sh \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  "https://artifact.example.internal/api/v1/files/appliance/${RELEASE_VERSION}/install-http-release.sh"
+```
+
+### 2) Run with a stable appliance name
+
+`--appliance-name` is required and should stay stable for that device (FQDN,
+TLS, registry realm). Omit profile to install the base `core` profile.
+
+```bash
+bash install-http-release.sh --appliance-name my-appliance-1
+
+bash install-http-release.sh \
+  --appliance-name my-appliance-1 \
+  --appliance-profile storage-landns
+```
+
 Installation does **not** require a license file and does not perform online
 entitlement checks. By default, after first UI login, complete licensing setup
 (import an offline license or accept the base/free entitlement) from Admin /
-Licensing. For automated release runs, set `install.enable_default_license: true`
-so the base entitlement is accepted as a post-install step. Set
-`install.bootstrap_admin: true` when the run should also create the first
-administrator.
+Licensing.
 
-To install a different v1 profile:
-
-```bash
-curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-release.sh" \
-  | bash -s -- --base-url "${RELEASE_BASE_URL}" --appliance-profile builder
-```
-
-For the builder profile, pass a target-local build catalog unless the bundle's
-chart values already include one with workspace profiles and HTTPS repo URLs:
-
-```bash
-curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-release.sh" \
-  | bash -s -- \
-      --base-url "${RELEASE_BASE_URL}" \
-      --appliance-profile builder \
-      --build-catalog /etc/zon/build-catalog.yaml
-```
+Rare site overrides (authenticated private store TLS, builder catalog path,
+alternate state dir) live as editable product-default variables near the top
+of the downloaded script — not as public CLI flags.
 
 Valid v1 profiles:
 

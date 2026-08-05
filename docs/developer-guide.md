@@ -143,14 +143,10 @@ make publish-release \
   PUBLISH_PUBLIC_BASE_URL=http://downloads.example.internal/releases
 ```
 
-The published `install-http-release.sh` helper accepts install-time product
-configuration such as:
-
-- `--appliance-profile <core|builder|storage|landns|storage-landns|builder-landns|builder-storage-landns>`
-- `--build-catalog /target/local/build-catalog.yaml`
-
-Those choices affect install or upgrade only; they do not create a different
-bundle SKU.
+The published `install-http-release.sh` helper takes a required
+`--appliance-name` and optional `--appliance-profile` (default `core`). Other
+values are product defaults stamped at publish or set near the top of the
+script for rare overrides (including `BUILD_CATALOG_PATH` for builder).
 
 For the target-host runbook itself, see
 [operator-guide.md](operator-guide.md).

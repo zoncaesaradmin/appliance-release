@@ -230,10 +230,25 @@ fi
 
 stamp_helper() {
   local src="$1" dest="$2"
-  sed \
-    -e "s/^PRODUCT_VERSION_EMBEDDED=\"\"\$/PRODUCT_VERSION_EMBEDDED=\"${PRODUCT_VERSION}\"/" \
-    -e "s/^PATH_PREFIX_EMBEDDED=\"\"\$/PATH_PREFIX_EMBEDDED=\"${PATH_PREFIX}\"/" \
-    "${src}" > "${dest}"
+  # Stamp embedded fields without fragile sed delimiter fights on URLs.
+  python3 - "${src}" "${dest}" "${PRODUCT_VERSION}" "${PATH_PREFIX}" "${PUBLIC_BASE_URL}" <<'PY'
+from pathlib import Path
+import sys
+
+src, dest, version, path_prefix, base_url = sys.argv[1:6]
+text = Path(src).read_text(encoding="utf-8")
+
+def stamp(text: str, name: str, value: str) -> str:
+    needle = f'{name}=""'
+    if needle not in text:
+        raise SystemExit(f"publish-release: stamp target {name}=\"\" not found in helper")
+    return text.replace(needle, f'{name}="{value}"', 1)
+
+text = stamp(text, "PRODUCT_VERSION_EMBEDDED", version)
+text = stamp(text, "PATH_PREFIX_EMBEDDED", path_prefix)
+text = stamp(text, "BASE_URL_EMBEDDED", base_url)
+Path(dest).write_text(text, encoding="utf-8")
+PY
   chmod +x "${dest}"
   if ! grep -q "PRODUCT_VERSION_EMBEDDED=\"${PRODUCT_VERSION}\"" "${dest}"; then
     echo "publish-release: failed to stamp PRODUCT_VERSION_EMBEDDED into ${dest}" >&2
@@ -241,6 +256,10 @@ stamp_helper() {
   fi
   if ! grep -q "PATH_PREFIX_EMBEDDED=\"${PATH_PREFIX}\"" "${dest}"; then
     echo "publish-release: failed to stamp PATH_PREFIX_EMBEDDED into ${dest}" >&2
+    exit 1
+  fi
+  if ! grep -Fq "BASE_URL_EMBEDDED=\"${PUBLIC_BASE_URL}\"" "${dest}"; then
+    echo "publish-release: failed to stamp BASE_URL_EMBEDDED into ${dest}" >&2
     exit 1
   fi
 }

@@ -95,13 +95,14 @@ curl `-k`). Optional config: `registry_env` / `token_env` / `tls_verify_env` /
 ## Scripts
 
 - `scripts/run-release-from-devhost.sh`
-  Preferred split path: build host does build/publish, target does install+admin+license,
-  devhost only SSHs and then runs verification/report. Same three CLI configs as
-  `run-release-flow.sh`. Host secrets stay on the host machines.
+  Minimal e2e from Mac: (1) scp build-publish config + run on-host build worker;
+  (2) SSH target to curl `install-http-release.sh` and run with
+  `--appliance-name` / `--appliance-profile` only.
 - `scripts/run-build-and-publish-on-build-host.sh` / `build-and-publish-on-host.sh`
   Devhost scp + on-host build worker.
-- `scripts/run-install-on-target-host.sh` / `install-and-setup-on-target.sh`
-  Devhost merges+scp work config, target runs download/install/bootstrap locally.
+- `scripts/run-install-via-public-helper-on-target.sh`
+  Devhost SSH: curl published helper on target, then
+  `bash install-http-release.sh --appliance-name … [--appliance-profile …]`.
 - `scripts/run-release-flow.sh`
   Older end-to-end wrapper that still drives remote steps from the Mac via SSH
   into `build-and-publish.sh` / `install-on-target.sh` (non-`--local`).
@@ -111,7 +112,8 @@ curl `-k`). Optional config: `registry_env` / `token_env` / `tls_verify_env` /
 - `scripts/build-and-publish-on-host.sh`
   Thin build-host entrypoint: sources shell profile if present, then `build-and-publish.sh --local`.
 - `scripts/install-on-target.sh`
-  Optionally uninstall the previous appliance, then install the published release via HTTP `curl` against `base_url` / appliance_files. Use `--local` on the target (or via install-and-setup-on-target.sh).
+  Legacy skill SSH install (still used by older `run-release-flow.sh`).
+  Prefer the public `install-http-release.sh` path for real targets.
 - `scripts/bootstrap-admin-on-target.sh`
   Create the first administrator. Supports `--local` on the target
   when `install.bootstrap_admin` is true.

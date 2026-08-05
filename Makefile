@@ -43,7 +43,8 @@ verify-help:
 	@for script in $$(find "$(RELEASE_SKILL_SCRIPT_DIR)" -type f -name '*.sh' | LC_ALL=C sort); do \
 		bash "$$script" --help >/dev/null; \
 	done
-	@bash scripts/publish/install-http-release.sh --help | grep -q -- '--build-catalog'
+	@bash scripts/publish/install-http-release.sh --help | grep -q -- '--appliance-name'
+	@bash scripts/publish/install-http-release.sh --help | grep -q -- 'BUILD_CATALOG_PATH'
 	@bash scripts/publish/publish-release.sh --help | grep -q -- '--mode'
 	@bash scripts/publish/publish-release.sh --help | grep -q -- 'appliance_files'
 	@bash scripts/publish/bundle-store-lib.sh --help | grep -q -- 'appliance_files'
