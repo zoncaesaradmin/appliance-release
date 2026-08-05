@@ -367,7 +367,8 @@ run_ssh_logged() {
     | tee "${log_file}"
   # Capture status before any other command overwrites PIPESTATUS (incl. `local`).
   cmd_status=${PIPESTATUS[0]}
-  set -e
+  # Do not re-enable set -e here: a non-zero return would exit the *caller*
+  # under set -e before it can capture $? (e.g. bootstrap "already initialized").
   return "${cmd_status}"
 }
 
@@ -376,6 +377,7 @@ run_ssh_captured() {
   local log_file="$2"
   local remote_command="$3"
   local quoted_remote_command=""
+  local cmd_status=0
   # Optional hard cap (seconds). Default 0 = no extra timeout beyond OpenSSH.
   # Used for short post-install kubectl stages so a stuck attach cannot stall e2e forever.
   local timeout_sec="${RUN_SSH_CAPTURED_TIMEOUT_SEC:-0}"
@@ -420,16 +422,16 @@ with open(log_file, "wb") as handle:
         sys.exit(124)
     sys.exit(completed.returncode)
 PY
-    local cmd_status="$?"
+    cmd_status=$?
   else
     ssh -q -T \
       -o BatchMode=yes \
       -o ServerAliveInterval=15 \
       -o ServerAliveCountMax=4 \
       "${host}" "env -u BASH_ENV bash -lc ${quoted_remote_command}" >"${log_file}" 2>&1
-    local cmd_status="$?"
+    cmd_status=$?
   fi
-  set -e
+  # Leave set -e off (see run_ssh_logged). Caller decides whether non-zero is fatal.
   return "${cmd_status}"
 }
 

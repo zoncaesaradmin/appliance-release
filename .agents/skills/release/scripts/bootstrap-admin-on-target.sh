@@ -113,37 +113,40 @@ fi
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 first_admin_password="$(resolve_secret "APPLIANCE_FIRST_ADMIN_PASSWORD" "First administrator password")"
 
-# Pass the password into the pod without `kubectl exec -i`. Piping stdin via
-# -i often leaves the Mac-side ssh session stuck after bootstrap already
-# printed success, so the release flow never reaches license/verify.
+# Build the remote script as a single Mac-side expansion (avoid nesting single-quoted
+# remote_script pieces that break after shell_quote + ssh + bash -lc).
+# Password is base64 so the in-pod shell only needs a single safe quoted token —
+# no `kubectl exec -i` (which left Mac-side ssh stuck after success).
 password_b64="$(printf '%s' "${first_admin_password}" | base64 | tr -d '\n\r')"
-pod_bootstrap_cmd="$(cat <<EOF
-set -euo pipefail
-printf '%s' $(shell_quote "${password_b64}") | base64 -d >/tmp/zon-first-admin-pw
+pod_sh_c="printf '%s' $(shell_quote "${password_b64}") | base64 -d >/tmp/zon-first-admin-pw
 trap 'rm -f /tmp/zon-first-admin-pw' EXIT
-/appliance-server bootstrap init --admin-username $(shell_quote "${ADMIN_USERNAME}") --admin-password-file /tmp/zon-first-admin-pw
+/appliance-server bootstrap init --admin-username $(shell_quote "${ADMIN_USERNAME}") --admin-password-file /tmp/zon-first-admin-pw"
+remote_script="$(cat <<EOF
+set -euo pipefail
+printf '%s\n' $(shell_quote "${target_sudo_password}") | sudo -S -p '' -v >/dev/null
+echo '[target bootstrap] Waiting for control-plane rollout...'
+sudo -n kubectl -n $(shell_quote "${NAMESPACE}") rollout status deploy/$(shell_quote "${DEPLOYMENT}") --timeout=180s >/dev/null
+stdout_file=\$(mktemp)
+stderr_file=\$(mktemp)
+set +e
+sudo -n timeout 120 kubectl -n $(shell_quote "${NAMESPACE}") exec deploy/$(shell_quote "${DEPLOYMENT}") -- /bin/sh -c $(shell_quote "${pod_sh_c}") >"\${stdout_file}" 2>"\${stderr_file}"
+rc=\$?
+set -e
+if [[ "\${rc}" -eq 0 ]]; then
+  cat "\${stdout_file}"
+  rm -f "\${stdout_file}" "\${stderr_file}"
+  exit 0
+fi
+combined=\$(cat "\${stdout_file}" "\${stderr_file}")
+rm -f "\${stdout_file}" "\${stderr_file}"
+if [[ "\${combined}" == *'already initialized'* ]]; then
+  printf '%s\n' "\${combined}"
+  exit 0
+fi
+printf '%s\n' "\${combined}" >&2
+exit 1
 EOF
 )"
-remote_script='set -euo pipefail
-printf "%s\n" '"$(shell_quote "${target_sudo_password}")"' | sudo -S -p "" -v >/dev/null
-echo "[target bootstrap] Waiting for control-plane rollout..."
-sudo -n kubectl -n '"$(shell_quote "${NAMESPACE}")"' rollout status deploy/'"$(shell_quote "${DEPLOYMENT}")"' --timeout=180s >/dev/null
-stdout_file="$(mktemp)"
-stderr_file="$(mktemp)"
-# timeout: belt-and-suspenders if kubectl ever sticks after the process exits.
-if sudo -n timeout 120 kubectl -n '"$(shell_quote "${NAMESPACE}")"' exec deploy/'"$(shell_quote "${DEPLOYMENT}")"' -- /bin/sh -c '"$(shell_quote "${pod_bootstrap_cmd}")"' >"${stdout_file}" 2>"${stderr_file}"; then
-  cat "${stdout_file}"
-  rm -f "${stdout_file}" "${stderr_file}"
-  exit 0
-fi
-combined="$(cat "${stdout_file}" "${stderr_file}")"
-rm -f "${stdout_file}" "${stderr_file}"
-if [[ "${combined}" == *"already initialized"* ]]; then
-  printf "%s\n" "${combined}"
-  exit 0
-fi
-printf "%s\n" "${combined}" >&2
-exit 1'
 
 bootstrap_log="${RUN_DIR}/logs/bootstrap-admin.log"
 if bool_true "${LOCAL_MODE}"; then

@@ -102,21 +102,28 @@ else
 fi
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 
-remote_script='set -euo pipefail
-printf "%s\n" '"$(shell_quote "${target_sudo_password}")"' | sudo -S -p "" -v >/dev/null
-echo "[target license] Waiting for control-plane rollout..."
-sudo -n kubectl -n '"$(shell_quote "${NAMESPACE}")"' rollout status deploy/'"$(shell_quote "${DEPLOYMENT}")"' --timeout=180s >/dev/null
-stdout_file="$(mktemp)"
-stderr_file="$(mktemp)"
-if sudo -n timeout 120 kubectl -n '"$(shell_quote "${NAMESPACE}")"' exec deploy/'"$(shell_quote "${DEPLOYMENT}")"' -- /appliance-server licensing accept-base >"${stdout_file}" 2>"${stderr_file}"; then
-  cat "${stdout_file}"
-  rm -f "${stdout_file}" "${stderr_file}"
+remote_script="$(cat <<EOF
+set -euo pipefail
+printf '%s\n' $(shell_quote "${target_sudo_password}") | sudo -S -p '' -v >/dev/null
+echo '[target license] Waiting for control-plane rollout...'
+sudo -n kubectl -n $(shell_quote "${NAMESPACE}") rollout status deploy/$(shell_quote "${DEPLOYMENT}") --timeout=180s >/dev/null
+stdout_file=\$(mktemp)
+stderr_file=\$(mktemp)
+set +e
+sudo -n timeout 120 kubectl -n $(shell_quote "${NAMESPACE}") exec deploy/$(shell_quote "${DEPLOYMENT}") -- /appliance-server licensing accept-base >"\${stdout_file}" 2>"\${stderr_file}"
+rc=\$?
+set -e
+if [[ "\${rc}" -eq 0 ]]; then
+  cat "\${stdout_file}"
+  rm -f "\${stdout_file}" "\${stderr_file}"
   exit 0
 fi
-combined="$(cat "${stdout_file}" "${stderr_file}")"
-rm -f "${stdout_file}" "${stderr_file}"
-printf "%s\n" "${combined}" >&2
-exit 1'
+combined=\$(cat "\${stdout_file}" "\${stderr_file}")
+rm -f "\${stdout_file}" "\${stderr_file}"
+printf '%s\n' "\${combined}" >&2
+exit 1
+EOF
+)"
 
 license_log="${RUN_DIR}/logs/bootstrap-default-license.log"
 if bool_true "${LOCAL_MODE}"; then
