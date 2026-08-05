@@ -571,18 +571,35 @@ build_image_mirror_enabled() {
   esac
 }
 
+# Parse oci-archive:path[:reference] (first colon after transport separates
+# path from optional reference). References often contain further colons
+# (registry.local/zot:bundled). Linux archive paths never contain ':'.
+oci_archive_path_of() {
+  local rest="${1#oci-archive:}"
+  printf '%s' "${rest%%:*}"
+}
+
+oci_archive_ref_of() {
+  local rest="${1#oci-archive:}"
+  if [[ "${rest}" == *:* ]]; then
+    printf '%s' "${rest#*:}"
+  fi
+}
+
 # Low-level skopeo/podman-skopeo copy. Returns non-zero on failure (no exit).
-# Args: source_ref dest_spec timeout_secs src_tls dest_tls [src_user src_token] [dest_user dest_token]
+# Args: source_ref dest_spec timeout_secs src_tls dest_tls quiet src_user src_token dest_user dest_token
+# quiet=true → discard stdout/stderr (LAN probe); quiet=false → keep stderr visible.
 skopeo_try_copy() {
   local source_ref="$1"
   local dest_spec="$2" # oci-archive:path:name or docker://...
   local timeout_secs="${3:-0}"
   local src_tls_verify="${4:-true}"
   local dest_tls_verify="${5:-true}"
-  local src_user="${6:-}"
-  local src_token="${7:-}"
-  local dest_user="${8:-}"
-  local dest_token="${9:-}"
+  local quiet="${6:-true}"
+  local src_user="${7:-}"
+  local src_token="${8:-}"
+  local dest_user="${9:-}"
+  local dest_token="${10:-}"
   local skopeo_bin podman_bin auth_file skopeo_image
   local -a overrides=(--override-os "${BUNDLE_IMAGE_OS}" --override-arch "${BUNDLE_IMAGE_ARCH}")
   local -a tls_args=()
@@ -590,6 +607,7 @@ skopeo_try_copy() {
   local -a copy_cmd=()
   local -a wrapped=()
   local src_flag dest_flag
+  local out_path out_ref out_dir out_base src_spec container_dest
 
   src_flag="$(skopeo_tls_args_for src "${src_tls_verify}")"
   dest_flag="$(skopeo_tls_args_for dest "${dest_tls_verify}")"
@@ -618,21 +636,27 @@ skopeo_try_copy() {
     auth_file="${HOME}/.config/containers/auth.json"
     mkdir -p "$(dirname "${auth_file}")"
     # Dest oci-archive: must stay under mounted /out when using containerized skopeo.
+    # --network host so GHCR/public pulls match bare-host skopeo/podman (lab default
+    # bridge DNS sometimes cannot resolve ghcr.io).
     copy_cmd=(
       sudo -n "${podman_bin}" run --rm
+      --network host
       -v "${auth_file}:/tmp/auth.json:ro,Z"
     )
     if [[ "${dest_spec}" == oci-archive:* ]]; then
-      local out_path out_dir out_base dest_name src_spec
-      out_path="${dest_spec#oci-archive:}"
-      dest_name="${out_path##*:}"
-      out_path="${out_path%:*}"
+      out_path="$(oci_archive_path_of "${dest_spec}")"
+      out_ref="$(oci_archive_ref_of "${dest_spec}")"
       out_dir="$(dirname "${out_path}")"
       out_base="$(basename "${out_path}")"
       if [[ "${source_ref}" == oci-archive:* ]] || [[ "${source_ref}" == docker-archive:* ]]; then
         src_spec="${source_ref}"
       else
         src_spec="docker://${source_ref#docker://}"
+      fi
+      if [[ -n "${out_ref}" ]]; then
+        container_dest="oci-archive:/out/${out_base}:${out_ref}"
+      else
+        container_dest="oci-archive:/out/${out_base}"
       fi
       copy_cmd+=(
         -v "${out_dir}:/out:Z"
@@ -642,10 +666,9 @@ skopeo_try_copy() {
         "${tls_args[@]}"
         "${cred_args[@]}"
         "${src_spec}"
-        "oci-archive:/out/${out_base}:${dest_name}"
+        "${container_dest}"
       )
     else
-      local src_spec
       if [[ "${source_ref}" == oci-archive:* ]] || [[ "${source_ref}" == docker-archive:* ]]; then
         src_spec="${source_ref}"
       else
@@ -673,10 +696,43 @@ skopeo_try_copy() {
     wrapped=("${copy_cmd[@]}")
   fi
 
-  if "${wrapped[@]}" >/dev/null 2>&1; then
-    return 0
+  case "$(printf '%s' "${quiet}" | tr '[:upper:]' '[:lower:]')" in
+    0|false|no|off)
+      if "${wrapped[@]}"; then
+        return 0
+      fi
+      return 1
+      ;;
+    *)
+      if "${wrapped[@]}" >/dev/null 2>&1; then
+        return 0
+      fi
+      return 1
+      ;;
+  esac
+}
+
+# Host-network podman pull/save — same path used successfully for Argo OCI.
+# Used as upstream fallback when skopeo copy fails so LAN mirror work does not
+# regress plain internet pulls.
+podman_export_oci_archive() {
+  local source_ref="$1"
+  local output_path="$2"
+  local podman_bin
+  local bare="${source_ref#docker://}"
+
+  podman_bin="$(command -v podman || true)"
+  [[ -n "${podman_bin}" ]] || return 127
+  mkdir -p "$(dirname "${output_path}")"
+  rm -f "${output_path}"
+  if ! sudo -n "${podman_bin}" pull "${bare}"; then
+    return 1
   fi
-  return 1
+  if ! sudo -n "${podman_bin}" save --format oci-archive -o "${output_path}" "${bare}"; then
+    rm -f "${output_path}"
+    return 1
+  fi
+  [[ -f "${output_path}" && -s "${output_path}" ]]
 }
 
 ensure_build_image_mirror_login() {
@@ -720,7 +776,8 @@ skopeo_copy_oci_archive() {
   # Pull-through to local LAN appliance Artifact Server (build_image_mirror):
   #   1) If enabled: try LAN mirror first (short timeout). Hit → done (no push).
   #   2) Else (miss / timeout / unreachable / disabled): pull upstream
-  #      (internet or configured pull ref).
+  #      (internet or configured pull ref). Upstream is independent of the LAN
+  #      TLS/insecure settings used for Artifact Server (self-signed lab cert).
   #   3) If (2) succeeded and mirror is enabled: best-effort push the just-fetched
   #      archive to the LAN Artifact Server so the next build is a hit.
   # Bundle output always lands in output_path; fail closed only if (2) fails.
@@ -729,12 +786,23 @@ skopeo_copy_oci_archive() {
   local dest_name="$3"
   local mirror_ref=""
   local mirror_timeout="${BUILD_IMAGE_MIRROR_TIMEOUT_SECONDS:-15}"
-  local upstream_tls="${OCI_COPY_SRC_TLS_VERIFY:-true}"
+  # Public/upstream registries always verify TLS. Do not inherit
+  # OCI_COPY_SRC_TLS_VERIFY=false from the LAN Artifact Server (self-signed).
+  # Override only when the pull ref itself is the LAN registry host.
+  local upstream_tls="true"
   local mirror_tls="${BUILD_IMAGE_MIRROR_TLS_VERIFY:-true}"
   local mirror_user="${BUILD_IMAGE_MIRROR_USER:-}"
   local mirror_token="${BUILD_IMAGE_MIRROR_TOKEN:-}"
   local dest_spec
   local fetched_from_upstream=0
+  local bare_source mirror_host
+  local tmp_labeled
+
+  bare_source="${source_ref#docker://}"
+  mirror_host="$(printf '%s' "${BUILD_IMAGE_MIRROR_REGISTRY:-}" | sed 's#/*$##; s#^https\?://##')"
+  if [[ -n "${mirror_host}" && ( "${bare_source}" == "${mirror_host}"/* || "${bare_source}" == "${mirror_host}:"* ) ]]; then
+    upstream_tls="${OCI_COPY_SRC_TLS_VERIFY:-true}"
+  fi
 
   mkdir -p "$(dirname "${output_path}")"
   rm -f "${output_path}"
@@ -746,8 +814,9 @@ skopeo_copy_oci_archive() {
       echo "build-full-bundle: build_image_mirror enabled but could not map ${source_ref} to a LAN mirror ref; fetching upstream" >&2
     else
       echo "build-full-bundle: LAN artifact mirror try ${mirror_ref} (timeout ${mirror_timeout}s) for ${dest_name}" >&2
+      # quiet probe: miss/timeout is normal when the cache is cold
       if skopeo_try_copy "${mirror_ref}" "${dest_spec}" "${mirror_timeout}" "${mirror_tls}" "true" \
-        "${mirror_user}" "${mirror_token}" "" ""; then
+        "true" "${mirror_user}" "${mirror_token}" "" ""; then
         if [[ -f "${output_path}" && -s "${output_path}" ]]; then
           echo "build-full-bundle: LAN artifact mirror hit for ${dest_name} (${mirror_ref})" >&2
           return 0
@@ -762,15 +831,33 @@ skopeo_copy_oci_archive() {
     fi
   fi
 
-  if ! skopeo_try_copy "${source_ref}" "${dest_spec}" "0" "${upstream_tls}" "true"; then
-    cat >&2 <<EOF
+  # Upstream: show skopeo errors (do not swallow 2>&1). Optional podman
+  # fallback matches export_container_image_archive (Argo path) — host network.
+  if ! skopeo_try_copy "${source_ref}" "${dest_spec}" "0" "${upstream_tls}" "true" "false"; then
+    echo "build-full-bundle: skopeo upstream copy failed for ${source_ref}; trying sudo podman pull/save fallback" >&2
+    if ! podman_export_oci_archive "${source_ref}" "${output_path}"; then
+      cat >&2 <<EOF
 build-full-bundle: failed to export ${dest_name} from upstream ${source_ref}
-build-full-bundle: ensure the build host can pull the image (make dev-registry-login in appliance-code for the configured registry) or fix registry auth/TLS settings
+build-full-bundle: skopeo and podman pull both failed (see logs above)
+build-full-bundle: ensure the build host can reach the registry, or set an offline image_archive_source / seed the LAN build-cache mirror
 EOF
-    if ! command -v skopeo >/dev/null 2>&1 && ! command -v podman >/dev/null 2>&1; then
-      echo "build-full-bundle: skopeo or podman is required to export ${dest_name}" >&2
+      if ! command -v skopeo >/dev/null 2>&1 && ! command -v podman >/dev/null 2>&1; then
+        echo "build-full-bundle: skopeo or podman is required to export ${dest_name}" >&2
+      fi
+      exit 1
     fi
-    exit 1
+    # Relabel platform archive for finalize (name annotation may be missing from podman save).
+    if command -v skopeo >/dev/null 2>&1; then
+      tmp_labeled="${output_path}.labeled"
+      rm -f "${tmp_labeled}"
+      if sudo -n "$(command -v skopeo)" copy \
+        --override-os "${BUNDLE_IMAGE_OS}" --override-arch "${BUNDLE_IMAGE_ARCH}" \
+        "oci-archive:${output_path}" "oci-archive:${tmp_labeled}:${dest_name}" >/dev/null 2>&1; then
+        mv -f "${tmp_labeled}" "${output_path}"
+      else
+        rm -f "${tmp_labeled}"
+      fi
+    fi
   fi
   if [[ ! -f "${output_path}" || ! -s "${output_path}" ]]; then
     echo "build-full-bundle: upstream export for ${dest_name} produced empty archive at ${output_path}" >&2
