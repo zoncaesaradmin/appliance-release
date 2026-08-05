@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # run-release-from-devhost.sh — minimal Mac/devhost end-to-end driver.
 #
-#   1) scp build-publish config → build host; run build-and-publish-on-host.sh
-#   2) on target: curl published install-http-release.sh; run with name + profile
+#   1) scp build-publish config; SSH build host with env exported from *this* shell
+#   2) SSH target: curl helper URL (built on Mac) + bash with name/profile only
 #
-# No install YAML merge on target, no skill clone on target. Verify/report can
-# be run separately (verify-target.sh / verify-client-access.sh).
+# Secrets: only on this machine. Target never receives profile env exports.
 set -euo pipefail
 set +H
 
@@ -20,27 +19,13 @@ usage: run-release-from-devhost.sh \
   --build-publish-config PATH \
   --install-config PATH
 
-Minimal end-to-end from the Mac/devhost:
+One command from the Mac. Export DEV_* and APPLIANCE_BUILD_SUDO_PASSWORD here first.
 
-  1) Build host
-       scp build-publish YAML
-       run build-and-publish-on-host.sh  (DEV_* already on build host)
+  1) Build host — scp config, inject your env, run build-and-publish-on-host.sh
+  2) Target — curl install-http-release.sh (URL/auth from this machine), then
+     bash install-http-release.sh --appliance-name … --appliance-profile …
 
-  2) Target host
-       curl …/install-http-release.sh for release.version
-       bash install-http-release.sh \
-         --appliance-name <install.appliance_name> \
-         --appliance-profile <install.appliance_profile or core>
-
-Skips when config says so:
-  build_flow.skip: true
-  install.skip: true
-
-Example:
-  bash .agents/skills/release/scripts/run-release-from-devhost.sh \
-    --config ~/151-devhost.yaml \
-    --build-publish-config ~/151-build-publish.yaml \
-    --install-config ~/151-install.yaml
+Skips: build_flow.skip / install.skip in the role YAMLs.
 EOF
 }
 
@@ -117,5 +102,4 @@ else
   log "── install: skipped (install.skip=true)"
 fi
 
-log "done (host-local secrets on build/target; public install used --appliance-name/--appliance-profile only)"
-log "optional next: verify-target.sh / verify-client-access.sh with a merged config if needed"
+log "done"

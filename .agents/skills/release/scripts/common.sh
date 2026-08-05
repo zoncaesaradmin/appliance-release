@@ -343,7 +343,11 @@ run_ssh_logged() {
   ensure_dir "$(dirname "${log_file}")"
   quoted_remote_command="$(shell_quote "${remote_command}")"
   set +e
-  ssh -tt "${host}" "env -u BASH_ENV PS1='' bash -lc ${quoted_remote_command}" 2>&1 \
+  # Non-interactive login shell: sources ~/.bash_profile or ~/.profile (not the
+  # interactive-only half of ~/.bashrc). Operators should export DEV_* and
+  # APPLIANCE_* there. -tt keeps a remote TTY for tools that expect one / for
+  # log streaming.
+  ssh -tt "${host}" "env -u BASH_ENV bash -lc ${quoted_remote_command}" 2>&1 \
     | python3 -c 'import sys; [sys.stdout.write(line) for line in sys.stdin if not line.startswith("Connection to ") or " closed." not in line]' \
     | tee "${log_file}"
   local cmd_status="${PIPESTATUS[0]}"
@@ -360,11 +364,90 @@ run_ssh_captured() {
   ensure_dir "$(dirname "${log_file}")"
   quoted_remote_command="$(shell_quote "${remote_command}")"
   set +e
-  ssh -q -T "${host}" "env -u BASH_ENV PS1='' bash -lc ${quoted_remote_command}" >"${log_file}" 2>&1
+  ssh -q -T "${host}" "env -u BASH_ENV bash -lc ${quoted_remote_command}" >"${log_file}" 2>&1
   local cmd_status="$?"
   set -e
   return "${cmd_status}"
 }
+
+# Build a bash fragment that exports the given env var names from *this* process
+# (devhost). Fails if any name is missing or empty. Values are shell-quoted.
+# Example result:  DEV_REGISTRY='…' export DEV_REGISTRY; …
+render_export_assignments_from_current_env() {
+  local name value fragment=""
+  for name in "$@"; do
+    [[ -n "${name}" ]] || continue
+    value="${!name:-}"
+    [[ -n "${value}" ]] || fail "missing env ${name} on the devhost; export it before run-release-from-devhost.sh"
+    fragment+="${name}=$(shell_quote "${value}") export ${name}; "
+  done
+  printf '%s' "${fragment}"
+}
+
+# Env names referenced by a build-publish config (dev_image_pull, mirror, bundle_store).
+# Deduped. Includes APPLIANCE_BUILD_SUDO_PASSWORD when bootstrap/build needs sudo.
+collect_build_publish_env_names() {
+  local config_path="$1"
+  local names=()
+  local key candidate boot needs seen="|" n
+  for key in \
+    "build_flow.dev_image_pull.registry_env" \
+    "build_flow.dev_image_pull.image_repo_env" \
+    "build_flow.dev_image_pull.image_name_env" \
+    "build_flow.dev_image_pull.username_env" \
+    "build_flow.dev_image_pull.token_env" \
+    "build_flow.dev_image_pull.tls_verify_env" \
+    "build_flow.build_image_mirror.registry_env" \
+    "build_flow.build_image_mirror.username_env" \
+    "build_flow.build_image_mirror.token_env" \
+    "build_flow.build_image_mirror.tls_verify_env" \
+    "bundle_store.registry_env" \
+    "bundle_store.token_env" \
+    "bundle_store.tls_verify_env"
+  do
+    candidate="$(config_get_optional "${config_path}" "${key}" || true)"
+    if [[ -n "${candidate}" ]]; then
+      names+=("${candidate}")
+    fi
+  done
+  boot="$(config_get_optional "${config_path}" "build_flow.bootstrap_needs_sudo" || true)"
+  needs="$(config_get_optional "${config_path}" "build_flow.build_needs_sudo" || true)"
+  if { [[ -n "${boot}" ]] && bool_true "${boot}"; } || { [[ -n "${needs}" ]] && bool_true "${needs}"; }; then
+    names+=("APPLIANCE_BUILD_SUDO_PASSWORD")
+  fi
+  for n in "${names[@]}"; do
+    case "${seen}" in
+      *"|${n}|"*) continue ;;
+    esac
+    seen+="${n}|"
+    printf '%s\n' "${n}"
+  done
+}
+
+# Source login profile files the way a non-interactive `bash -l` would
+# (~/.bash_profile, else ~/.bash_login, else ~/.profile). Optional convenience
+# when operators run build-and-publish-on-host.sh by hand; e2e injects env from
+# the devhost instead.
+load_login_profile_env() {
+  local saved_opts
+  saved_opts="$(set +o)"
+  set +e
+  set +u
+  if [[ -f "${HOME}/.bash_profile" ]]; then
+    # shellcheck source=/dev/null
+    source "${HOME}/.bash_profile" || true
+  elif [[ -f "${HOME}/.bash_login" ]]; then
+    # shellcheck source=/dev/null
+    source "${HOME}/.bash_login" || true
+  elif [[ -f "${HOME}/.profile" ]]; then
+    # shellcheck source=/dev/null
+    source "${HOME}/.profile" || true
+  fi
+  eval "${saved_opts}" 2>/dev/null || true
+  set -e
+  set -u
+}
+
 
 # Run a command on this host, teeing stdout/stderr into log_file.
 run_local_logged() {

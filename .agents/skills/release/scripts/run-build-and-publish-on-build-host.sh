@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # run-build-and-publish-on-build-host.sh — Mac/devhost side.
 #
-# Copies a local build-publish config onto the build host and runs
-# build-and-publish-on-host.sh there. Registry credentials stay on the build
-# host (export DEV_* there); this script does not upload tokens.
+# scp build-publish YAML → build host, sync release checkout, inject *this*
+# machine's DEV_* / APPLIANCE_BUILD_SUDO_PASSWORD into the remote process, run
+# build-and-publish-on-host.sh. Build host does not need a permanent secrets profile.
 set -euo pipefail
 set +H
 
@@ -18,33 +18,12 @@ usage: run-build-and-publish-on-build-host.sh \
   (--config PATH | --build-host ALIAS) \
   [options]
 
-From the Mac/devhost: scp the build-publish YAML to the build host (under
-$HOME/.config/appliance-release/build-publish.yaml by default), ensure the
-skill-managed appliance-release checkout matches config refs, then SSH and run
-build-and-publish-on-host.sh on that host.
+From the Mac/devhost: scp the build-publish YAML, sync remote appliance-release,
+and SSH-run build-and-publish-on-host.sh with secrets taken from *this* shell
+(the env names in build_flow.dev_image_pull / mirror / bundle_store + sudo).
 
-Required:
-  --build-publish-config PATH   Local build-publish role file
-                                (same as run-release-flow.sh --build-publish-config).
-  --config PATH                 Devhost config with build_host.alias
-  --build-host ALIAS            SSH target (alternative to --config)
-
-Optional:
-  --remote-config-path PATH     Absolute *remote* destination for the config
-                                (default: $HOME/.config/appliance-release/build-publish.yaml
-                                on the build host).
-  --run-dir DIR                 Local (devhost) run directory for transfer logs.
-  --remote-run-dir DIR          Run directory *on the build host* (forwarded).
-  --skip-repo-sync              Do not fetch/reset release_workspace on the host
-                                before the worker (only if you already updated it).
-
-Build-host env (not set here — already configured on the build machine):
-  DEV_REGISTRY*, DEV_IMAGE_*, APPLIANCE_BUILD_SUDO_PASSWORD
-
-Example:
-  bash .agents/skills/release/scripts/run-build-and-publish-on-build-host.sh \
-    --config ~/151-devhost.yaml \
-    --build-publish-config ~/151-build-publish.yaml
+Required: build-publish config path + build_host (via --config or --build-host).
+Optional: --run-dir, --remote-run-dir, --remote-config-path, --skip-repo-sync.
 EOF
 }
 
@@ -108,7 +87,6 @@ fi
 
 require_cmd ssh
 require_cmd scp
-require_cmd rsync
 require_cmd python3
 
 if [[ -z "${RUN_DIR}" ]]; then
@@ -124,6 +102,17 @@ if [[ -z "${REMOTE_REPO_SOURCE}" ]]; then
 fi
 [[ -n "${REMOTE_REPO_SOURCE}" ]] || fail "release_workspace.remote_repo_source is required in build-publish config"
 EFFECTIVE_REMOTE_REPO_SOURCE="$(normalize_readonly_git_source "${REMOTE_REPO_SOURCE}")"
+
+BUILD_ENV_NAMES=()
+while IFS= read -r _env_name; do
+  [[ -n "${_env_name}" ]] || continue
+  BUILD_ENV_NAMES+=("${_env_name}")
+done < <(collect_build_publish_env_names "${BUILD_PUBLISH_CONFIG}")
+if [[ ${#BUILD_ENV_NAMES[@]} -eq 0 ]]; then
+  fail "build-publish config did not name any *_env keys to forward from the devhost"
+fi
+log "forwarding env from devhost: ${BUILD_ENV_NAMES[*]}"
+REMOTE_ENV_EXPORTS="$(render_export_assignments_from_current_env "${BUILD_ENV_NAMES[@]}")"
 
 transfer_log="${RUN_DIR}/logs/build-host-config-transfer.log"
 repo_sync_log="${RUN_DIR}/logs/release-repo-sync.log"
@@ -164,6 +153,7 @@ fi
 
 remote_worker="${REMOTE_REPO_PATH}/.agents/skills/release/scripts/build-and-publish-on-host.sh"
 remote_cmd="set -euo pipefail
+${REMOTE_ENV_EXPORTS}
 if [[ ! -f $(shell_quote "${remote_worker}") ]]; then
   echo \"build-and-publish-on-host.sh not found at ${remote_worker}; pull remote_repo_ref on the build host\" >&2
   exit 1
@@ -176,7 +166,7 @@ if [[ -n "${REMOTE_RUN_DIR}" ]]; then
 fi
 remote_cmd+="bash $(shell_quote "${remote_worker}") \"\${args[@]}\""
 
-log "running build-and-publish-on-host.sh on ${BUILD_HOST}"
+log "running build-and-publish-on-host.sh on ${BUILD_HOST} (env from devhost)"
 if ! run_ssh_logged "${BUILD_HOST}" "${worker_log}" "${remote_cmd}"; then
   fail "build/publish on ${BUILD_HOST} failed; see ${worker_log}"
 fi

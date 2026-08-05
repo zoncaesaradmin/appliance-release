@@ -82,14 +82,7 @@ done
 [[ -n "${CONFIG_PATH}" ]] || fail "requires --config PATH"
 CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
 
-if [[ -f "${HOME}/.profile" ]]; then
-  # shellcheck source=/dev/null
-  source "${HOME}/.profile" 2>/dev/null || true
-fi
-if [[ -f "${HOME}/.bashrc" ]]; then
-  # shellcheck source=/dev/null
-  source "${HOME}/.bashrc" 2>/dev/null || true
-fi
+load_login_profile_env
 
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"

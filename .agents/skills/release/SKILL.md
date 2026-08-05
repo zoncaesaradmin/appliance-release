@@ -95,9 +95,10 @@ curl `-k`). Optional config: `registry_env` / `token_env` / `tls_verify_env` /
 ## Scripts
 
 - `scripts/run-release-from-devhost.sh`
-  Minimal e2e from Mac: (1) scp build-publish config + run on-host build worker;
-  (2) SSH target to curl `install-http-release.sh` and run with
-  `--appliance-name` / `--appliance-profile` only.
+  One Mac command: injects this shell’s `DEV_*` / sudo password into the
+  build-host run; on the target runs a fully formed curl +
+  `install-http-release.sh --appliance-name` / `--appliance-profile`
+  (from install YAML). No host profile secrets required.
 - `scripts/run-build-and-publish-on-build-host.sh` / `build-and-publish-on-host.sh`
   Devhost scp + on-host build worker.
 - `scripts/run-install-via-public-helper-on-target.sh`
