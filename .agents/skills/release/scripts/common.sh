@@ -883,13 +883,15 @@ require_appliance_files_base_url() {
       return 0
       ;;
     *)
-      fail "bundle_store.mode=appliance_files requires base URL ending in ${files_path} (authenticated API). Traefik /files was removed; do not use unauthenticated static nginx paths."
+      fail "bundle_store.mode=appliance_files requires base URL ending in ${files_path} (authenticated API). Got: ${base_url}. For appliance_files omit bundle_store.base_url (and static_http publish_* keys) so the skill derives https://\$DEV_REGISTRY${files_path}; do not leave a static_http base_url. Traefik /files was removed."
       ;;
   esac
 }
 
 # Build https://<DEV_REGISTRY>/api/v1/files from env (preferred).
-# Optional override: bundle_store.base_url (legacy / tests).
+# Optional override: bundle_store.base_url ONLY when it already ends in files_path
+# (tests/advanced). Do not set base_url from the static_http example when mode
+# is appliance_files.
 # Optional: bundle_store.registry_env (default DEV_REGISTRY), bundle_store.files_path.
 resolve_appliance_files_base_url() {
   local config_path="$1"
@@ -897,8 +899,16 @@ resolve_appliance_files_base_url() {
   local files_path=""
   local registry_env=""
   local registry_host=""
+  local publish_server=""
+  local publish_root=""
 
   files_path="$(resolve_appliance_files_files_path "${config_path}")"
+  publish_server="$(bundle_store_get_optional "${config_path}" "publish_server_alias" || true)"
+  publish_root="$(bundle_store_get_optional "${config_path}" "publish_remote_root" || true)"
+  if [[ -n "${publish_server}" || -n "${publish_root}" ]]; then
+    fail "bundle_store.mode=appliance_files must not set publish_server_alias or publish_remote_root (those are static_http only). Remove them and use token/TLS env + DEV_REGISTRY-derived https://\$host${files_path}."
+  fi
+
   base_url="$(bundle_store_get_optional "${config_path}" "base_url" || true)"
   base_url="$(printf '%s' "${base_url}" | tr -d '[:space:]')"
   if [[ -n "${base_url}" ]]; then

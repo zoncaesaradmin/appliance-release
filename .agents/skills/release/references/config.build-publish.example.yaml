@@ -101,17 +101,20 @@ build_flow:
 # ============================================================================
 
 bundle_store:
-  # static_http | appliance_files
+  # static_http | appliance_files — pick ONE mode; do not leave the other
+  # mode's keys populated (mixing fails closed).
   mode: static_http
   release_path_prefix: appliance
 
-  # --- mode: static_http ---
+  # --- mode: static_http only ---
   base_url: http://192.168.1.155:28081
   publish_server_alias: zonsys@192.168.1.155
   publish_remote_root: /home/zonsys/releases
 
-  # --- mode: appliance_files (use instead of static_http fields above) ---
+  # --- mode: appliance_files only (comment out the three static_http keys) ---
+  # mode: appliance_files
   # registry_env: DEV_REGISTRY
   # token_env: DEV_REGISTRY_TOKEN
   # tls_verify_env: DEV_REGISTRY_TLS_VERIFY
-  # files_path: /api/v1/files
+  # # base_url optional override only if it already ends in /api/v1/files
+  # # files_path: /api/v1/files
