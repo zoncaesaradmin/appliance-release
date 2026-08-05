@@ -9,7 +9,9 @@ from datetime import datetime, timezone
 import json
 import re
 import shlex
+import subprocess
 import sys
+import tempfile
 from pathlib import PurePosixPath
 from pathlib import Path
 from typing import Any, Optional
@@ -382,8 +384,16 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
     return errors
 
 
-def build_command(script_path: Path, config_path: Path, profile: str, release_version: str, build_catalog: str) -> dict:
-    """Plan one profile run. run-release-flow.sh is config-only (no CLI flags)."""
+def build_command(
+    script_path: Path,
+    mac_config: Path,
+    build_publish_config: Path,
+    install_config: Path,
+    profile: str,
+    release_version: str,
+    build_catalog: str,
+) -> dict:
+    """Plan one profile run. run-release-flow.sh takes three config files only."""
     overrides: dict = {
         "install.appliance_profile": profile,
         "build_flow.skip": profile != "core",
@@ -399,11 +409,22 @@ def build_command(script_path: Path, config_path: Path, profile: str, release_ve
     if profile == "builder" and build_catalog:
         overrides["install.build_catalog_path"] = build_catalog
 
-    # Apply configOverrides to the YAML first, then run with --config only.
-    argv = ["bash", str(script_path), "--config", str(config_path)]
+    argv = [
+        "bash",
+        str(script_path),
+        "--config",
+        str(mac_config),
+        "--build-publish-config",
+        str(build_publish_config),
+        "--install-config",
+        str(install_config),
+    ]
     command = (
-        f"# Apply configOverrides for profile={profile} to the config file, then:\n"
-        f"bash {shlex.quote(str(script_path))} --config {shlex.quote(str(config_path))}"
+        f"# Apply configOverrides for profile={profile} to the matching role configs, then:\n"
+        f"bash {shlex.quote(str(script_path))} "
+        f"--config {shlex.quote(str(mac_config))} "
+        f"--build-publish-config {shlex.quote(str(build_publish_config))} "
+        f"--install-config {shlex.quote(str(install_config))}"
     )
     return {
         "profile": profile,
@@ -466,7 +487,9 @@ def suggested_final_config_overlay() -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Plan, but do not run, the final appliance profile matrix.")
-    parser.add_argument("--config", required=True)
+    parser.add_argument("--config", required=True, help="Devhost orchestration config path")
+    parser.add_argument("--build-publish-config", required=True, help="Build/publish config path")
+    parser.add_argument("--install-config", required=True, help="Install/verify config path")
     parser.add_argument("--release-version", default="")
     parser.add_argument("--output-json")
     parser.add_argument("--output-md")
@@ -475,177 +498,221 @@ def main() -> int:
     parser.add_argument("--checklist-only", action="store_true")
     args = parser.parse_args()
 
-    config_path = Path(args.config).expanduser().resolve()
-    config = load_config(config_path)
-    release_version = args.release_version or as_str(lookup(config, "release.version", ""))
-    build_catalog = as_str(lookup(config, "install.build_catalog_path", ""))
-    script_path = SCRIPT_DIR / "run-release-flow.sh"
-    audit_script_path = SCRIPT_DIR / "audit-profile-matrix-reports.py"
+    devhost_config_path = Path(args.config).expanduser().resolve()
+    build_publish_config_path = Path(args.build_publish_config).expanduser().resolve()
+    install_config_path = Path(args.install_config).expanduser().resolve()
 
-    validation_errors: list[str] = []
-    for value, label in ((build_catalog, "install.build_catalog_path"),):
-        error = file_error(config_path, value, label)
-        if error:
-            validation_errors.append(error)
-    validation_errors.extend(validate_build_catalog(config_path, config, build_catalog))
-    if args.require_builder_workflow:
-        validation_errors.extend(validate_builder_workflow(config))
-        if not build_catalog:
-            validation_errors.append("install.build_catalog_path is required for final builder workflow evidence")
-
-    commands = []
-    for profile in PROFILES:
-        item = build_command(script_path, config_path, profile, release_version, build_catalog)
-        commands.append(item)
-    out_json = Path(args.output_json).expanduser().resolve() if args.output_json else None
-    audit_argv = build_audit_command(audit_script_path, out_json, args.require_builder_workflow)
-    audit_command = {
-        "argv": audit_argv,
-        "command": shell_join(audit_argv),
-        "requiresBuilderWorkflow": bool(args.require_builder_workflow),
-    }
-
-    if args.checklist_only:
-        notes = [
-            "This checklist does not execute commands and is not a live run plan.",
-            "Fill every validation error, then run make plan-final-profile-matrix.",
-            "Use final-profile-matrix-plan.md, not this checklist, for live profile-matrix commands.",
-        ]
-    else:
-        notes = [
-            "This planner does not execute commands.",
-            "run-release-flow.sh accepts only --config; set each command's configOverrides (build_flow.skip, install.*, report.*) in the YAML, then run bash …/run-release-flow.sh --config PATH.",
-            "Each profile plan sets install.uninstall_first for clean profile evidence.",
-            "The core command sets build_flow.skip=false; storage and builder set build_flow.skip=true to reuse the same complete bundle.",
-            "Artifact verification is negative for core and positive for both storage and builder; storage remains negative for build/workflow routes.",
-            "Each real run writes metadata/release-report.json and release-report.md in its run directory.",
-            "After all three runs finish, replace the audit command placeholders with the real run directories and run it locally.",
-        ]
-    evidence_review_checklist = [
-        "Confirm each run's metadata/release-report.json has succeeded build/publish, install, target verification, and client verification steps.",
-        "Confirm each run's release-report.md has no failed or missing unskipped step.",
-        "For core and storage runs, confirm disabled builder REST/MCP evidence shows build routes/tools are absent.",
-        "Confirm core has negative artifact route evidence, while storage and builder have zot pod/PVC readiness, /v2 bearer challenge, token/catalog, anonymous/denied/malformed-token, and revocation evidence.",
-        "When OCI, ORAS, or offline artifact smoke commands are configured, confirm each completed successfully.",
-        "For the builder run, confirm builder REST/MCP tool evidence is present.",
-        "For final builder workflow evidence, confirm the optional workflow smoke succeeded, produced a non-empty artifactRef, and returned no private-key markers in job, step, or log evidence.",
-    ]
-
-    plan = {
-        "checklistOnly": bool(args.checklist_only),
-        "configPath": str(config_path),
-        "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "releaseVersion": release_version or None,
-        "readyForFinalPlan": not bool(validation_errors),
-        "buildCatalogPath": resolved_config_path_str(config_path, build_catalog),
-        "profiles": list(PROFILES),
-        "expectedCapabilities": {
-            "core": {"artifact": False, "builder": False},
-            "storage": {"artifact": True, "builder": False},
-            "builder": {"artifact": True, "builder": True},
-        },
-        "validationErrors": validation_errors,
-        "commands": [] if args.checklist_only else commands,
-        "auditCommand": None if args.checklist_only else audit_command,
-        "suggestedConfigOverlay": suggested_final_config_overlay() if args.checklist_only else None,
-        "notes": notes,
-        "evidenceReviewChecklist": evidence_review_checklist,
-    }
-
-    if out_json:
-        out_json.parent.mkdir(parents=True, exist_ok=True)
-        out_json.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    out_md = Path(args.output_md).expanduser().resolve() if args.output_md else None
-    if out_md:
-        lines = [f"# {args.document_title}", "", f"- Generated at: `{plan['generatedAt']}`", ""]
-        if args.checklist_only:
-            lines.extend(["## Status", ""])
-            if validation_errors:
-                lines.append("- Final inputs are not complete yet. Do not run the live profile matrix from this checklist.")
-            else:
-                lines.append("- Final inputs look complete. Generate the fail-closed final plan before running any live profile matrix command.")
-            lines.append("")
-        if validation_errors:
-            lines.extend(["## Validation Errors", ""])
-            lines.extend(f"- {error}" for error in validation_errors)
-            lines.append("")
-        if args.checklist_only:
-            lines.extend(
-                [
-                    "## Suggested Config Overlay",
-                    "",
-                    "Use this as a secret-free starting point, then replace every placeholder path, digest, repo, target, and commit SHA with real product values.",
-                    "",
-                    "```yaml",
-                    plan["suggestedConfigOverlay"] or "",
-                    "```",
-                    "",
-                ]
-            )
-        lines.extend(
+    # Merge for validation (same rules as run-release-flow.sh).
+    with tempfile.TemporaryDirectory(prefix="profile-matrix-merge-") as tmp:
+        merged_path = Path(tmp) / "merged.json"
+        merge_proc = subprocess.run(
             [
-                "## Resolved Inputs",
-                "",
-                f"- Config: {config_path}",
-                f"- Release version: {release_version or '(from generated release metadata)'}",
-                f"- Build catalog: {resolved_config_path_str(config_path, build_catalog) or '(not configured)'}",
-                "",
-            ]
+                "python3",
+                str(SCRIPT_DIR / "merge-release-configs.py"),
+                "--devhost-config",
+                str(devhost_config_path),
+                "--build-publish-config",
+                str(build_publish_config_path),
+                "--install-config",
+                str(install_config_path),
+                "--output",
+                str(merged_path),
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
         )
-        lines.extend(["## Notes", ""])
-        lines.extend(f"- {note}" for note in notes)
-        lines.append("")
+        if merge_proc.returncode != 0:
+            print(merge_proc.stderr or merge_proc.stdout, file=sys.stderr)
+            return 2
+        config_path = merged_path
+        config = load_config(config_path)
+        release_version = args.release_version or as_str(lookup(config, "release.version", ""))
+        build_catalog = as_str(lookup(config, "install.build_catalog_path", ""))
+        script_path = SCRIPT_DIR / "run-release-flow.sh"
+        audit_script_path = SCRIPT_DIR / "audit-profile-matrix-reports.py"
+
+        validation_errors: list[str] = []
+        for value, label in ((build_catalog, "install.build_catalog_path"),):
+            error = file_error(install_config_path, value, label)
+            if error:
+                validation_errors.append(error)
+        # prefer validate against install config path for relative file locations
+        validation_errors.extend(validate_build_catalog(install_config_path, config, build_catalog))
+        if args.require_builder_workflow:
+            validation_errors.extend(validate_builder_workflow(config))
+            if not build_catalog:
+                validation_errors.append("install.build_catalog_path is required for final builder workflow evidence")
+
+        commands = []
+        for profile in PROFILES:
+            item = build_command(
+                script_path,
+                devhost_config_path,
+                build_publish_config_path,
+                install_config_path,
+                profile,
+                release_version,
+                build_catalog,
+            )
+            commands.append(item)
+        out_json = Path(args.output_json).expanduser().resolve() if args.output_json else None
+        audit_argv = build_audit_command(audit_script_path, out_json, args.require_builder_workflow)
+        audit_command = {
+            "argv": audit_argv,
+            "command": shell_join(audit_argv),
+            "requiresBuilderWorkflow": bool(args.require_builder_workflow),
+        }
+
         if args.checklist_only:
+            notes = [
+                "This checklist does not execute commands and is not a live run plan.",
+                "Fill every validation error, then run make plan-final-profile-matrix.",
+                "Use final-profile-matrix-plan.md, not this checklist, for live profile-matrix commands.",
+            ]
+        else:
+            notes = [
+                "This planner does not execute commands.",
+                "run-release-flow.sh requires --config, --build-publish-config, and --install-config; set each command's configOverrides on the matching role file, then run with all three paths.",
+                "Each profile plan sets install.uninstall_first for clean profile evidence.",
+                "The core command sets build_flow.skip=false; storage and builder set build_flow.skip=true to reuse the same complete bundle.",
+                "Artifact verification is negative for core and positive for both storage and builder; storage remains negative for build/workflow routes.",
+                "Each real run writes metadata/release-report.json and release-report.md in its run directory.",
+                "After all three runs finish, replace the audit command placeholders with the real run directories and run it locally.",
+            ]
+        evidence_review_checklist = [
+            "Confirm each run's metadata/release-report.json has succeeded build/publish, install, target verification, and client verification steps.",
+            "Confirm each run's release-report.md has no failed or missing unskipped step.",
+            "For core and storage runs, confirm disabled builder REST/MCP evidence shows build routes/tools are absent.",
+            "Confirm core has negative artifact route evidence, while storage and builder have zot pod/PVC readiness, /v2 bearer challenge, token/catalog, anonymous/denied/malformed-token, and revocation evidence.",
+            "When OCI, ORAS, or offline artifact smoke commands are configured, confirm each completed successfully.",
+            "For the builder run, confirm builder REST/MCP tool evidence is present.",
+            "For final builder workflow evidence, confirm the optional workflow smoke succeeded, produced a non-empty artifactRef, and returned no private-key markers in job, step, or log evidence.",
+        ]
+
+        plan = {
+            "checklistOnly": bool(args.checklist_only),
+            "devhostConfigPath": str(devhost_config_path),
+            "buildPublishConfigPath": str(build_publish_config_path),
+            "installConfigPath": str(install_config_path),
+            "configPath": str(install_config_path),
+            "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "releaseVersion": release_version or None,
+            "readyForFinalPlan": not bool(validation_errors),
+            "buildCatalogPath": resolved_config_path_str(install_config_path, build_catalog),
+            "profiles": list(PROFILES),
+            "expectedCapabilities": {
+                "core": {"artifact": False, "builder": False},
+                "storage": {"artifact": True, "builder": False},
+                "builder": {"artifact": True, "builder": True},
+            },
+            "validationErrors": validation_errors,
+            "commands": [] if args.checklist_only else commands,
+            "auditCommand": None if args.checklist_only else audit_command,
+            "suggestedConfigOverlay": suggested_final_config_overlay() if args.checklist_only else None,
+            "notes": notes,
+            "evidenceReviewChecklist": evidence_review_checklist,
+        }
+
+        if out_json:
+            out_json.parent.mkdir(parents=True, exist_ok=True)
+            out_json.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        out_md = Path(args.output_md).expanduser().resolve() if args.output_md else None
+        if out_md:
+            lines = [f"# {args.document_title}", "", f"- Generated at: `{plan['generatedAt']}`", ""]
+            if args.checklist_only:
+                lines.extend(["## Status", ""])
+                if validation_errors:
+                    lines.append("- Final inputs are not complete yet. Do not run the live profile matrix from this checklist.")
+                else:
+                    lines.append("- Final inputs look complete. Generate the fail-closed final plan before running any live profile matrix command.")
+                lines.append("")
+            if validation_errors:
+                lines.extend(["## Validation Errors", ""])
+                lines.extend(f"- {error}" for error in validation_errors)
+                lines.append("")
+            if args.checklist_only:
+                lines.extend(
+                    [
+                        "## Suggested Config Overlay",
+                        "",
+                        "Use this as a secret-free starting point, then replace every placeholder path, digest, repo, target, and commit SHA with real product values.",
+                        "",
+                        "```yaml",
+                        plan["suggestedConfigOverlay"] or "",
+                        "```",
+                        "",
+                    ]
+                )
             lines.extend(
                 [
-                    "## Next Command",
+                    "## Resolved Inputs",
                     "",
-                    "```bash",
-                    "make plan-final-profile-matrix CONFIG=/abs/path/to/appliance-release.config.yaml",
-                    "```",
+                    f"- Devhost config: {devhost_config_path}",
+                    f"- Build/publish config: {build_publish_config_path}",
+                    f"- Install config: {install_config_path}",
+                    f"- Release version: {release_version or '(from generated release metadata)'}",
+                    f"- Build catalog: {resolved_config_path_str(install_config_path, build_catalog) or '(not configured)'}",
+                    "",
                 ]
             )
-        else:
-            lines.extend(["## Commands", ""])
-            for command in commands:
-                lines.extend([f"### {command['profile']}", ""])
-                overrides = command.get("configOverrides") or {}
-                if overrides:
-                    lines.extend(
-                        [
-                            "Set these keys in the config (or a copy for this profile), then run:",
-                            "",
-                            "```yaml",
-                        ]
-                    )
-                    # Nested dump is overkill; print flat paths as minimal nesting.
-                    section_lines: dict[str, list[str]] = {
-                        "build_flow": ["build_flow:"],
-                        "install": ["install:"],
-                        "report": ["report:"],
-                        "release": ["release:"],
-                    }
-                    for key, value in sorted(overrides.items()):
-                        yaml_val = "true" if value is True else "false" if value is False else value
-                        top, _, rest = key.partition(".")
-                        if top not in section_lines:
-                            section_lines[top] = [f"{top}:"]
-                        section_lines[top].append(f"  {rest}: {yaml_val}")
-                    for top in ("build_flow", "install", "report", "release"):
-                        block = section_lines.get(top) or []
-                        if len(block) > 1:
-                            lines.extend(block)
-                            lines.append("")
-                    lines.extend(["```", ""])
-                lines.extend(["```bash", command["command"], "```", ""])
-            lines.extend(["## Post-Run Audit Command", "", "```bash", audit_command["command"], "```", ""])
-            lines.extend(["## Evidence Review Checklist", ""])
-            lines.extend(f"- {item}" for item in evidence_review_checklist)
-        lines.append("")
-        out_md.parent.mkdir(parents=True, exist_ok=True)
-        out_md.write_text("\n".join(lines), encoding="utf-8")
-    print(json.dumps(plan, indent=2, sort_keys=True))
-    return 1 if validation_errors else 0
+            lines.extend(["## Notes", ""])
+            lines.extend(f"- {note}" for note in notes)
+            lines.append("")
+            if args.checklist_only:
+                lines.extend(
+                    [
+                        "## Next Command",
+                        "",
+                        "```bash",
+                        "make plan-final-profile-matrix \\",
+                        "  CONFIG=/abs/path/to/devhost.yaml \\",
+                        "  BUILD_PUBLISH_CONFIG=/abs/path/to/build-publish.yaml \\",
+                        "  INSTALL_CONFIG=/abs/path/to/install.yaml",
+                        "```",
+                    ]
+                )
+            else:
+                lines.extend(["## Commands", ""])
+                for command in commands:
+                    lines.extend([f"### {command['profile']}", ""])
+                    overrides = command.get("configOverrides") or {}
+                    if overrides:
+                        lines.extend(
+                            [
+                                "Set these keys in the matching role config (or a copy for this profile), then run:",
+                                "",
+                                "```yaml",
+                            ]
+                        )
+                        section_lines: dict[str, list[str]] = {
+                            "build_flow": ["build_flow:"],
+                            "install": ["install:"],
+                            "report": ["report:"],
+                            "release": ["release:"],
+                        }
+                        for key, value in sorted(overrides.items()):
+                            yaml_val = "true" if value is True else "false" if value is False else value
+                            top, _, rest = key.partition(".")
+                            if top not in section_lines:
+                                section_lines[top] = [f"{top}:"]
+                            section_lines[top].append(f"  {rest}: {yaml_val}")
+                        for top in ("build_flow", "install", "report", "release"):
+                            block = section_lines.get(top) or []
+                            if len(block) > 1:
+                                lines.extend(block)
+                                lines.append("")
+                        lines.extend(["```", ""])
+                    lines.extend(["```bash", command["command"], "```", ""])
+                lines.extend(["## Post-Run Audit Command", "", "```bash", audit_command["command"], "```", ""])
+                lines.extend(["## Evidence Review Checklist", ""])
+                lines.extend(f"- {item}" for item in evidence_review_checklist)
+            lines.append("")
+            out_md.parent.mkdir(parents=True, exist_ok=True)
+            out_md.write_text("\n".join(lines), encoding="utf-8")
+        print(json.dumps(plan, indent=2, sort_keys=True))
+        return 1 if validation_errors else 0
 
 
 if __name__ == "__main__":

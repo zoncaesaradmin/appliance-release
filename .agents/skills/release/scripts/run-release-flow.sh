@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 # run-release-flow.sh — stage orchestrator for the appliance release path.
 #
-# Fully config-driven: the only CLI option is --config PATH. Stage switches
-# live next to the stage they control (build_flow.skip, install.*, report.*).
-# See references/config.example.yaml.
+# Three host/role config files (all required):
+#   --config PATH                 Devhost: build_host, target_host, report
+#   --build-publish-config PATH   Build host content: workspace, release, build_flow, bundle_store
+#   --install-config PATH         Target install + verify blocks
 #
-# One config file today (build + install + verify). A future split into two
-# configs (build/publish vs install/verify) is planned; keep stage boundaries
-# sharp so that split is easy later.
-#
-# This script is intentionally thin: each stage is mostly a one-liner that
-# calls a dedicated helper under the same directory.
+# The three are merged (disjoint keys) into one temporary config for stage
+# workers (build-and-publish.sh, install-on-target.sh, …). See:
+#   references/config.example.yaml
 #
 # Stages (in order; gated by staged config keys):
-#   0  prepare         resolve config / run-dir / validate inputs
+#   0  prepare         resolve configs / merge / run-dir / validate
 #   1  buildPublish    build-and-publish.sh     (unless build_flow.skip)
 #   2  install         install-on-target.sh     (unless install.skip)
 #   2b bootstrapAdmin  bootstrap-admin-on-target.sh  (if install.bootstrap_admin)
@@ -31,31 +29,41 @@ source "${SCRIPT_DIR}/common.sh"
 
 usage() {
   cat <<'EOF'
-usage: run-release-flow.sh --config PATH
+usage: run-release-flow.sh \
+  --config PATH \
+  --build-publish-config PATH \
+  --install-config PATH
 
-The only CLI option is --config. Stage switches live next to each stage in that
-YAML/JSON file (no generic catch-all section):
+CLI options (only these three paths, plus --help):
 
-  build_flow:
-    skip: false                    # skip STEP 1 build + STEP 2 publish
-  install:
-    skip: false
-    uninstall_first: false
-    preserve_failed_state: false
-    bootstrap_admin: false         # also gates Mac client verify
-    enable_default_license: false
-  report:
-    final_ok: false
-    # run_dir: /abs/path/optional  # omit → timestamped .run/appliance-release/<ts>
+  --config PATH                 Devhost orchestration config.
+                                Top-level keys only:
+                                  build_host, target_host, report
+  --build-publish-config PATH   Build + publish config.
+                                Top-level keys only:
+                                  release_workspace, release, build_flow, bundle_store
+  --install-config PATH         Install + verify config.
+                                Top-level keys only:
+                                  install, verification, client_verification
 
-Other values (release.version, install identity, build_host, …) use the same file.
-See references/config.example.yaml for the full ordered schema.
+Examples (schema):
+  .agents/skills/release/references/config.devhost.example.yaml
+  .agents/skills/release/references/config.build-publish.example.yaml
+  .agents/skills/release/references/config.install.example.yaml
+
+Stage switches live next to the stage they control, e.g.:
+  build_flow.skip                 (build-publish file)
+  install.skip / uninstall_first / preserve_failed_state /
+    bootstrap_admin / enable_default_license   (install file)
+  report.final_ok                 (devhost file)
 
 Secrets remain shell env (e.g. APPLIANCE_*_PASSWORD, DEV_REGISTRY*), not CLI.
 
 Example:
   bash .agents/skills/release/scripts/run-release-flow.sh \
-    --config ~/151-appliance-config.yaml
+    --config ~/lab-devhost.yaml \
+    --build-publish-config ~/lab-build-publish.yaml \
+    --install-config ~/lab-install.yaml
 EOF
 }
 
@@ -74,9 +82,12 @@ end_stage() {
 }
 
 # ---------------------------------------------------------------------------
-# CLI: --config only (plus --help)
+# CLI: three config paths only (plus --help)
 # ---------------------------------------------------------------------------
 
+DEVHOST_CONFIG_PATH=""
+BUILD_PUBLISH_CONFIG_PATH=""
+INSTALL_CONFIG_PATH=""
 CONFIG_PATH=""
 RUN_DIR=""
 RELEASE_VERSION=""
@@ -94,7 +105,15 @@ CURRENT_STEP="startup"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)
-      CONFIG_PATH="${2:-}"
+      DEVHOST_CONFIG_PATH="${2:-}"
+      shift 2
+      ;;
+    --build-publish-config)
+      BUILD_PUBLISH_CONFIG_PATH="${2:-}"
+      shift 2
+      ;;
+    --install-config)
+      INSTALL_CONFIG_PATH="${2:-}"
       shift 2
       ;;
     --help|-h)
@@ -102,23 +121,42 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     *)
-      fail "run-release-flow.sh only accepts --config PATH (got: $*). Put stage switches in build_flow/install/report in the config. See --help."
+      fail "run-release-flow.sh only accepts --config, --build-publish-config, and --install-config (got: $*). See --help."
       ;;
   esac
 done
 
-[[ -n "${CONFIG_PATH}" ]] || fail "run-release-flow.sh requires --config PATH (see --help)"
+[[ -n "${DEVHOST_CONFIG_PATH}" ]] || fail "run-release-flow.sh requires --config PATH (Devhost orchestration config; see --help)"
+[[ -n "${BUILD_PUBLISH_CONFIG_PATH}" ]] || fail "run-release-flow.sh requires --build-publish-config PATH (see --help)"
+[[ -n "${INSTALL_CONFIG_PATH}" ]] || fail "run-release-flow.sh requires --install-config PATH (see --help)"
 
 # ---------------------------------------------------------------------------
 # Stage 0 — prepare
 # ---------------------------------------------------------------------------
 
-begin_stage "prepare" "resolve config and run directory"
+begin_stage "prepare" "resolve configs, merge, and run directory"
 
-CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
+DEVHOST_CONFIG_PATH="$(require_config_path "${DEVHOST_CONFIG_PATH}")"
+BUILD_PUBLISH_CONFIG_PATH="$(require_config_path "${BUILD_PUBLISH_CONFIG_PATH}")"
+INSTALL_CONFIG_PATH="$(require_config_path "${INSTALL_CONFIG_PATH}")"
+
+# Provisional run-dir from devhost report (before merge) so merge output can live under it.
+RUN_DIR="$(config_get_optional "${DEVHOST_CONFIG_PATH}" "report.run_dir" || true)"
+if [[ -z "${RUN_DIR}" ]]; then
+  RUN_DIR="$(default_release_run_dir)"
+fi
+ensure_release_run_dirs "${RUN_DIR}"
+
+MERGED_CONFIG_PATH="${RUN_DIR}/metadata/merged-release-config.json"
+python3 "${SCRIPT_DIR}/merge-release-configs.py" \
+  --devhost-config "${DEVHOST_CONFIG_PATH}" \
+  --build-publish-config "${BUILD_PUBLISH_CONFIG_PATH}" \
+  --install-config "${INSTALL_CONFIG_PATH}" \
+  --output "${MERGED_CONFIG_PATH}" >/dev/null
+CONFIG_PATH="${MERGED_CONFIG_PATH}"
 
 if python3 "${CONFIG_QUERY}" --keys "${CONFIG_PATH}" "flow" >/dev/null 2>&1; then
-  fail "config key 'flow' was removed; use build_flow.skip, install.skip / install.uninstall_first / install.preserve_failed_state / install.bootstrap_admin / install.enable_default_license, and report.final_ok (see references/config.example.yaml)"
+  fail "config key 'flow' was removed; use build_flow.skip, install.skip / install.uninstall_first / install.preserve_failed_state / install.bootstrap_admin / install.enable_default_license, and report.final_ok"
 fi
 
 SKIP_BUILD="$(config_require_bool "${CONFIG_PATH}" "build_flow.skip")"
@@ -129,22 +167,25 @@ BOOTSTRAP_ADMIN="$(config_require_bool "${CONFIG_PATH}" "install.bootstrap_admin
 ENABLE_DEFAULT_LICENSE="$(config_require_bool "${CONFIG_PATH}" "install.enable_default_license")"
 FINAL_OK="$(config_require_bool "${CONFIG_PATH}" "report.final_ok")"
 
-RUN_DIR="$(config_get_optional "${CONFIG_PATH}" "report.run_dir" || true)"
-if [[ -z "${RUN_DIR}" ]]; then
-  RUN_DIR="$(default_release_run_dir)"
+# Prefer report.run_dir after merge (same key path).
+MERGED_RUN_DIR="$(config_get_optional "${CONFIG_PATH}" "report.run_dir" || true)"
+if [[ -n "${MERGED_RUN_DIR}" ]]; then
+  RUN_DIR="${MERGED_RUN_DIR}"
+  ensure_release_run_dirs "${RUN_DIR}"
 fi
 
 RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
 BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
 APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}" "")"
-[[ -n "${RELEASE_VERSION}" ]] || fail "release.version is required in config"
+[[ -n "${RELEASE_VERSION}" ]] || fail "release.version is required in the build-publish config"
 BUILD_CATALOG_PATH="$(resolve_build_catalog_path "${CONFIG_PATH}" "")"
 require_builder_build_catalog_path "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}"
 
-ensure_release_run_dirs "${RUN_DIR}"
-
 log "run-dir=${RUN_DIR}"
-log "config=${CONFIG_PATH}"
+log "devhost-config=${DEVHOST_CONFIG_PATH}"
+log "build-publish-config=${BUILD_PUBLISH_CONFIG_PATH}"
+log "install-config=${INSTALL_CONFIG_PATH}"
+log "merged-config=${CONFIG_PATH}"
 log "release=${RELEASE_VERSION} profile=${APPLIANCE_PROFILE}"
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   log "build-catalog=${BUILD_CATALOG_PATH}"
@@ -226,14 +267,21 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
   fi
 
-  python3 - "${RUN_DIR}/metadata/run-release-flow.json" "${CONFIG_PATH}" "${RUN_DIR}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${SKIP_BUILD}" "${SKIP_INSTALL}" "${BOOTSTRAP_ADMIN}" "${ENABLE_DEFAULT_LICENSE}" "${UNINSTALL_FIRST}" "${PRESERVE_FAILED_STATE}" "${exit_code}" <<'PY'
+  python3 - "${RUN_DIR}/metadata/run-release-flow.json" \
+    "${DEVHOST_CONFIG_PATH}" "${BUILD_PUBLISH_CONFIG_PATH}" "${INSTALL_CONFIG_PATH}" "${CONFIG_PATH}" \
+    "${RUN_DIR}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" \
+    "${SKIP_BUILD}" "${SKIP_INSTALL}" "${BOOTSTRAP_ADMIN}" "${ENABLE_DEFAULT_LICENSE}" \
+    "${UNINSTALL_FIRST}" "${PRESERVE_FAILED_STATE}" "${exit_code}" <<'PY'
 import json
 from pathlib import Path
 import sys
 
 (
     out_path,
-    config_path,
+    devhost_config_path,
+    build_publish_config_path,
+    install_config_path,
+    merged_config_path,
     run_dir,
     release_version,
     appliance_profile,
@@ -245,7 +293,7 @@ import sys
     uninstall_first,
     preserve_failed_state,
     exit_code,
-) = sys.argv[1:14]
+) = sys.argv[1:17]
 
 run_dir_path = Path(run_dir)
 exit_code_int = int(exit_code)
@@ -253,7 +301,10 @@ bootstrap_admin_enabled = bootstrap_admin.lower() in ("1", "true", "yes", "on")
 default_license_enabled = enable_default_license.lower() in ("1", "true", "yes", "on")
 
 payload = {
-    "configPath": config_path,
+    "devhostConfigPath": devhost_config_path,
+    "buildPublishConfigPath": build_publish_config_path,
+    "installConfigPath": install_config_path,
+    "configPath": merged_config_path,
     "runDir": run_dir,
     "releaseVersion": release_version or None,
     "applianceProfile": appliance_profile or None,
@@ -302,7 +353,7 @@ finalize_on_exit() {
 trap finalize_on_exit EXIT
 
 # ===========================================================================
-# STEP 1 — Build & publish  (future: own config file)
+# STEP 1 — Build & publish
 # ===========================================================================
 
 if ! bool_true "${SKIP_BUILD}"; then
@@ -318,7 +369,7 @@ else
 fi
 
 # ===========================================================================
-# STEP 2 — Install & verify  (future: own config file)
+# STEP 2 — Install & verify
 # ===========================================================================
 
 if ! bool_true "${SKIP_INSTALL}"; then

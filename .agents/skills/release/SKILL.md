@@ -36,8 +36,17 @@ Read each participating repository's `AGENTS.md` before making code or command d
 
 ## Configuration
 
-The scripts read a local YAML or JSON config file. Start from [references/config.example.yaml](references/config.example.yaml).
-That example is one file with two clear sections (**BUILD / PUBLISH** then **INSTALL / VERIFY**); a later change may split them into two configs.
+Configs are **three YAML/JSON files** (one role each). Start from:
+
+- [config.devhost.example.yaml](references/config.devhost.example.yaml) — Devhost: `build_host`, `target_host`, `report`
+- [config.build-publish.example.yaml](references/config.build-publish.example.yaml) — build/publish
+- [config.install.example.yaml](references/config.install.example.yaml) — install + verify
+
+Index: [config.example.yaml](references/config.example.yaml).
+
+The orchestrator merges the three (disjoint keys) into one temporary document for
+stage workers. Secrets stay in the Mac shell as env vars **named** by config
+`*_env` keys.
 
 Important rules:
 
@@ -54,8 +63,7 @@ Important rules:
 
 Runtime secrets such as remote `sudo` passwords and first-admin credentials must be supplied at runtime, not written into the skill. Prefer environment variables or an interactive prompt.
 
-For day-to-day use, pass `--config /abs/path/to/appliance-release.config.yaml`
-to the wrappers and set secret-bearing shell env only:
+For day-to-day use, pass all three config paths and set secret-bearing shell env only:
 
 - `DEV_REGISTRY=...` (named by `build_flow.dev_image_pull.registry_env`; also used by appliance-code `SERVICE_IMAGE_REGISTRY`)
 - `DEV_IMAGE_REPO=...` / `DEV_IMAGE_NAME=...` (named by pull `image_repo_env` / `image_name_env` — development-container only)
@@ -87,8 +95,9 @@ curl `-k`). Optional config: `registry_env` / `token_env` / `tls_verify_env` /
 ## Scripts
 
 - `scripts/run-release-flow.sh`
-  One-shot end-to-end wrapper. **Only CLI option: `--config PATH`.** Stage
-  switches sit on `build_flow.skip`, `install.*`, and `report.*` in that config.
+  One-shot end-to-end wrapper. **CLI options only:**
+  `--config` (Mac), `--build-publish-config`, `--install-config`.
+  Stage switches sit on `build_flow.skip`, `install.*`, and `report.*` in those files.
 - `scripts/build-and-publish.sh`
   Run the deterministic build-host flow: sync the skill-managed release checkout, optional bootstrap, bundle build, publish, and artifact metadata capture. Publish uses `bundle_store.mode` (`static_http` or `appliance_files`).
 - `scripts/install-on-target.sh`

@@ -1,0 +1,48 @@
+# Devhost orchestration config (run-release-flow.sh --config).
+#
+# This file is for the developer machine that drives the pipeline: which build
+# host and target host to SSH to, and how the local run is reported. It
+# intentionally has no build_flow / bundle_store / install product settings.
+#
+# Pair with:
+#   --build-publish-config  references/config.build-publish.example.yaml
+#   --install-config        references/config.install.example.yaml
+#
+# Example:
+#   bash .agents/skills/release/scripts/run-release-flow.sh \
+#     --config ~/lab-devhost.yaml \
+#     --build-publish-config ~/lab-build-publish.yaml \
+#     --install-config ~/lab-install.yaml
+#
+# Rules:
+# - Only top-level keys: build_host, target_host, report.
+# - Absolute remote paths only on hosts (no ~/... on build/target).
+# - Secrets never live here.
+
+# ============================================================================
+# Build host (SSH from this devhost)
+# ============================================================================
+
+build_host:
+  # SSH user@host (or ssh-config alias) of the machine that compiles the bundle.
+  alias: zonsys@192.168.1.152
+
+# ============================================================================
+# Target host (SSH from this devhost)
+# ============================================================================
+
+target_host:
+  alias: zonsys@192.168.1.153
+  # Must match zonctl --state-dir (product default if you always use that path).
+  state_dir: /var/lib/zon/state
+
+# ============================================================================
+# Local report / run directory (devhost only)
+# ============================================================================
+
+report:
+  # Print "OK run" when the full orchestrator finishes successfully.
+  final_ok: false
+  # Optional absolute devhost run directory for logs/metadata.
+  # Omit to use .run/appliance-release/<timestamp> under the current working dir.
+  # run_dir: /Users/you/.run/appliance-release/manual

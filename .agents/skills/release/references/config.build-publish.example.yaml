@@ -1,0 +1,109 @@
+# Build + publish config (run-release-flow.sh --build-publish-config).
+#
+# All keys needed to produce and place the signed offline super-set bundle.
+# Does not contain Mac SSH target identity or install.module selection.
+#
+# Cross-step contract for install (must match values the target will download):
+#   release.version
+#   bundle_store.mode / release_path_prefix / download base (base_url or appliance_files env)
+#
+# Example:
+#   bash .agents/skills/release/scripts/run-release-flow.sh \
+#     --config ~/lab-devhost.yaml \
+#     --build-publish-config ~/lab-build-publish.yaml \
+#     --install-config ~/lab-install.yaml
+#
+# Rules:
+# - Only top-level keys: release_workspace, release, build_flow, bundle_store.
+# - Absolute paths on the build host only (no ~/...).
+# - Secrets never live here — only env *names* under *_env keys.
+#
+# Runtime secrets (export on the Mac before running):
+#   APPLIANCE_BUILD_SUDO_PASSWORD
+#   Values named by build_flow.dev_image_pull.*_env (and optional mirror):
+#     DEV_REGISTRY, DEV_IMAGE_REPO, DEV_IMAGE_NAME,
+#     DEV_REGISTRY_USER, DEV_REGISTRY_TOKEN, DEV_REGISTRY_TLS_VERIFY
+
+# ============================================================================
+# Release workspace on the build host
+# ============================================================================
+
+release_workspace:
+  # Skill-managed git checkout on the build host (clone if missing, hard-reset
+  # to remote_repo_ref each run; do not hand-edit files on the build host).
+  remote_repo_path: /home/zonsys/ws/appliance-release
+  remote_repo_source: https://github.com/zoncaesaradmin/appliance-release.git
+  remote_repo_ref: main
+  # Injected as EXPORT_DIR for build_command (and publish_command).
+  remote_export_dir: /home/zonsys/appliance-build/export
+
+# ============================================================================
+# Version + publish alias
+# ============================================================================
+
+release:
+  # PRODUCT_VERSION for the build; install download path uses the same string.
+  version: 0.1.0
+  # Whether publish writes/updates a “latest” alias.
+  publish_latest_alias: false
+
+# ============================================================================
+# Build (then publish command on the same host)
+# ============================================================================
+
+build_flow:
+  # When true, run-release-flow.sh skips build and publish together.
+  skip: false
+
+  code_repo_ref: main
+  ctl_repo_ref: main
+  k3s_binary_source: /home/zonsys/ci/inputs/k3s
+  k3s_airgap_images_source: /home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst
+
+  bootstrap_command: bash /home/zonsys/ws/appliance-release/scripts/ci/bootstrap-build-host.sh
+  bootstrap_needs_sudo: true
+  build_needs_sudo: true
+
+  # Bundled offline name for the appliance is fixed: registry.local/dev-build
+  dev_image_pull:
+    registry_env: DEV_REGISTRY
+    image_repo_env: DEV_IMAGE_REPO
+    image_name_env: DEV_IMAGE_NAME
+    image_tag: latest
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
+
+  build_image_mirror:
+    enabled: true
+    registry_env: DEV_REGISTRY
+    repository_prefix: build-cache
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
+    timeout_seconds: 10
+
+  # PRODUCT_VERSION and EXPORT_DIR injected by the skill.
+  build_command: bash scripts/ci/build-full-bundle.sh
+  # Skipped together with build when build_flow.skip is true.
+  publish_command: make publish-release
+
+# ============================================================================
+# Distribution (publish destination + install download source)
+# ============================================================================
+
+bundle_store:
+  # static_http | appliance_files
+  mode: static_http
+  release_path_prefix: appliance
+
+  # --- mode: static_http ---
+  base_url: http://192.168.1.155:28081
+  publish_server_alias: zonsys@192.168.1.155
+  publish_remote_root: /home/zonsys/releases
+
+  # --- mode: appliance_files (use instead of static_http fields above) ---
+  # registry_env: DEV_REGISTRY
+  # token_env: DEV_REGISTRY_TOKEN
+  # tls_verify_env: DEV_REGISTRY_TLS_VERIFY
+  # files_path: /api/v1/files

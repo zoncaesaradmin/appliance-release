@@ -74,7 +74,8 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 - Do not run real-environment verification flows unless the user explicitly asks for that exact run in the current turn.
 - Specifically, do not run a config with `build_flow.skip` / `install.skip`
   set for "verify against the real setup only" on behalf of the user (and do not
-  invent extra CLI flags on `run-release-flow.sh` — only `--config` is allowed).
+  invent extra CLI flags on `run-release-flow.sh` — only the three config paths
+  are allowed).
 - Do not use the user's real build server, publish server, or target device for validation after code changes unless the user explicitly asks for that execution in the current turn.
 - Hand off the exact command(s) for the user to run instead of consuming the real setup automatically.
 - Real build/publish/target hosts are **read-only by default** for the agent. SSH may be used to inspect logs and state, but the agent must not modify files or content on those hosts (`scp` uploads, remote edits, `git reset`/`checkout`/`clean`, package installs, image imports, cluster changes) unless the user explicitly authorizes that write in the current turn. Change code locally and sync through git / the release skill instead of hot-fixing the build server.

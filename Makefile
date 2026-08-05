@@ -100,19 +100,72 @@ verify-release-artifacts:
 .PHONY: verify-final-targets
 verify-final-targets:
 	@mkdir -p "$(VERIFY_LOG_DIR)"
-	@config_file="$(VERIFY_LOG_DIR)/final-incomplete-config.yaml"; \
+	@devhost_config="$(VERIFY_LOG_DIR)/final-incomplete-devhost.yaml"; \
+	build_publish_config="$(VERIFY_LOG_DIR)/final-incomplete-build-publish.yaml"; \
+	install_config="$(VERIFY_LOG_DIR)/final-incomplete-install.yaml"; \
 	printf '%s\n' \
+		'build_host:' \
+		'  alias: build@example' \
+		'target_host:' \
+		'  alias: target@example' \
+		'  state_dir: /var/lib/zon/state' \
+		'report:' \
+		'  final_ok: false' \
+		> "$$devhost_config"; \
+	printf '%s\n' \
+		'release_workspace:' \
+		'  remote_repo_path: /tmp/ws' \
+		'  remote_repo_source: https://example.com/r.git' \
+		'  remote_repo_ref: main' \
+		'  remote_export_dir: /tmp/export' \
 		'release:' \
 		'  version: 0.1.0' \
+		'  publish_latest_alias: false' \
+		'build_flow:' \
+		'  skip: false' \
+		'bundle_store:' \
+		'  mode: static_http' \
+		'  release_path_prefix: appliance' \
+		'  base_url: http://example:9' \
+		> "$$build_publish_config"; \
+	printf '%s\n' \
 		'install:' \
+		'  skip: false' \
+		'  uninstall_first: false' \
+		'  preserve_failed_state: false' \
+		'  bootstrap_admin: false' \
+		'  enable_default_license: false' \
+		'  appliance_name: n' \
+		'  dns_zone: z' \
 		'  appliance_profile: builder' \
-		'client_verification:' \
+		'  bundle_download_dir: /tmp/a' \
+		'verification:' \
+		'  status_command: true' \
+		'  argo:' \
+		'    enabled: false' \
 		'  builder:' \
+		'    enabled: false' \
+		'  artifact:' \
+		'    enabled: false' \
+		'  dns:' \
+		'    enabled: false' \
+		'client_verification:' \
+		'  base_url: https://n.z' \
+		'  username: admin' \
+		'  builder:' \
+		'    enabled: false' \
+		'    expect_disabled: true' \
 		'    workflow:' \
 		'      enabled: false' \
-		> "$$config_file"; \
+		'  artifact:' \
+		'    enabled: false' \
+		> "$$install_config"; \
 	set +e; \
-	$(MAKE) --no-print-directory plan-final-profile-matrix CONFIG="$$config_file" >"$(VERIFY_LOG_DIR)/final-plan-incomplete.out" 2>"$(VERIFY_LOG_DIR)/final-plan-incomplete.err"; \
+	$(MAKE) --no-print-directory plan-final-profile-matrix \
+		CONFIG="$$devhost_config" \
+		BUILD_PUBLISH_CONFIG="$$build_publish_config" \
+		INSTALL_CONFIG="$$install_config" \
+		>"$(VERIFY_LOG_DIR)/final-plan-incomplete.out" 2>"$(VERIFY_LOG_DIR)/final-plan-incomplete.err"; \
 	rc="$$?"; \
 	set -e; \
 	if [ "$$rc" -eq 0 ]; then \
@@ -120,7 +173,11 @@ verify-final-targets:
 		exit 1; \
 	fi; \
 	grep -q 'install.build_catalog_path is required for final builder workflow evidence' "$(VERIFY_LOG_DIR)/final-plan-incomplete.out"; \
-	$(MAKE) --no-print-directory final-profile-input-checklist CONFIG="$$config_file" >"$(VERIFY_LOG_DIR)/final-input-checklist.out" 2>"$(VERIFY_LOG_DIR)/final-input-checklist.err"; \
+	$(MAKE) --no-print-directory final-profile-input-checklist \
+		CONFIG="$$devhost_config" \
+		BUILD_PUBLISH_CONFIG="$$build_publish_config" \
+		INSTALL_CONFIG="$$install_config" \
+		>"$(VERIFY_LOG_DIR)/final-input-checklist.out" 2>"$(VERIFY_LOG_DIR)/final-input-checklist.err"; \
 	grep -q 'final-profile-input-checklist: missing final inputs' "$(VERIFY_LOG_DIR)/final-input-checklist.out"; \
 	grep -q '# Final Profile Input Checklist' "$(FINAL_PROFILE_INPUT_CHECKLIST_MD)"; \
 	grep -q 'Do not run the live profile matrix from this checklist' "$(FINAL_PROFILE_INPUT_CHECKLIST_MD)"; \
@@ -249,13 +306,17 @@ verify-local-milestone:
 .PHONY: plan-profile-matrix
 plan-profile-matrix:
 	@config_path="$${CONFIG:-}"; \
-	if [ -z "$${config_path}" ]; then \
-		echo "plan-profile-matrix: set CONFIG=/abs/path/to/appliance-release.config.yaml" >&2; \
+	build_publish_config="$${BUILD_PUBLISH_CONFIG:-}"; \
+	install_config="$${INSTALL_CONFIG:-}"; \
+	if [ -z "$${config_path}" ] || [ -z "$${build_publish_config}" ] || [ -z "$${install_config}" ]; then \
+		echo "plan-profile-matrix: set CONFIG=/abs/devhost.yaml BUILD_PUBLISH_CONFIG=/abs/build-publish.yaml INSTALL_CONFIG=/abs/install.yaml" >&2; \
 		exit 2; \
 	fi; \
 	mkdir -p "$(CURDIR)/.run/appliance-release"; \
 	python3 "$(RELEASE_SKILL_SCRIPT_DIR)/plan-profile-matrix.py" \
 		--config "$${config_path}" \
+		--build-publish-config "$${build_publish_config}" \
+		--install-config "$${install_config}" \
 		$${RELEASE_VERSION:+--release-version "$${RELEASE_VERSION}"} \
 		$${REQUIRE_BUILDER_WORKFLOW:+--require-builder-workflow} \
 		--output-json "$(CURDIR)/.run/appliance-release/profile-matrix-plan.json" \
@@ -264,13 +325,17 @@ plan-profile-matrix:
 .PHONY: plan-final-profile-matrix
 plan-final-profile-matrix:
 	@config_path="$${CONFIG:-}"; \
-	if [ -z "$${config_path}" ]; then \
-		echo "plan-final-profile-matrix: set CONFIG=/abs/path/to/appliance-release.config.yaml" >&2; \
+	build_publish_config="$${BUILD_PUBLISH_CONFIG:-}"; \
+	install_config="$${INSTALL_CONFIG:-}"; \
+	if [ -z "$${config_path}" ] || [ -z "$${build_publish_config}" ] || [ -z "$${install_config}" ]; then \
+		echo "plan-final-profile-matrix: set CONFIG=/abs/devhost.yaml BUILD_PUBLISH_CONFIG=/abs/build-publish.yaml INSTALL_CONFIG=/abs/install.yaml" >&2; \
 		exit 2; \
 	fi; \
 	mkdir -p "$(CURDIR)/.run/appliance-release"; \
 	python3 "$(RELEASE_SKILL_SCRIPT_DIR)/plan-profile-matrix.py" \
 		--config "$${config_path}" \
+		--build-publish-config "$${build_publish_config}" \
+		--install-config "$${install_config}" \
 		$${RELEASE_VERSION:+--release-version "$${RELEASE_VERSION}"} \
 		--require-builder-workflow \
 		--output-json "$(CURDIR)/.run/appliance-release/final-profile-matrix-plan.json" \
@@ -279,14 +344,18 @@ plan-final-profile-matrix:
 .PHONY: final-profile-input-checklist
 final-profile-input-checklist:
 	@config_path="$${CONFIG:-}"; \
-	if [ -z "$${config_path}" ]; then \
-		echo "final-profile-input-checklist: set CONFIG=/abs/path/to/appliance-release.config.yaml" >&2; \
+	build_publish_config="$${BUILD_PUBLISH_CONFIG:-}"; \
+	install_config="$${INSTALL_CONFIG:-}"; \
+	if [ -z "$${config_path}" ] || [ -z "$${build_publish_config}" ] || [ -z "$${install_config}" ]; then \
+		echo "final-profile-input-checklist: set CONFIG=/abs/devhost.yaml BUILD_PUBLISH_CONFIG=/abs/build-publish.yaml INSTALL_CONFIG=/abs/install.yaml" >&2; \
 		exit 2; \
 	fi; \
 	mkdir -p "$(CURDIR)/.run/appliance-release"; \
 	set +e; \
 	python3 "$(RELEASE_SKILL_SCRIPT_DIR)/plan-profile-matrix.py" \
 		--config "$${config_path}" \
+		--build-publish-config "$${build_publish_config}" \
+		--install-config "$${install_config}" \
 		$${RELEASE_VERSION:+--release-version "$${RELEASE_VERSION}"} \
 		--require-builder-workflow \
 		--document-title "Final Profile Input Checklist" \

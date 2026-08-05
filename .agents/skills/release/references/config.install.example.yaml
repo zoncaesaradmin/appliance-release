@@ -1,0 +1,102 @@
+# Install (+ post-install verify) config (run-release-flow.sh --install-config).
+#
+# All keys needed to install a previously published release on the target and
+# run post-install checks. Build host / Mac report settings live elsewhere.
+#
+# Must agree with build-publish on:
+#   release.version (for paths / report) — resolved after configs are merged
+#   bundle_store download base (from build-publish file)
+#
+# Example:
+#   bash .agents/skills/release/scripts/run-release-flow.sh \
+#     --config ~/lab-devhost.yaml \
+#     --build-publish-config ~/lab-build-publish.yaml \
+#     --install-config ~/lab-install.yaml
+#
+# Rules:
+# - Only top-level keys: install, verification, client_verification.
+# - target_host is in the Mac config (SSH from the Mac).
+# - Secrets never live here.
+#
+# Runtime secrets (export on the Mac before running):
+#   APPLIANCE_TARGET_SUDO_PASSWORD
+#   APPLIANCE_FIRST_ADMIN_PASSWORD  (when install.bootstrap_admin is true)
+#   DEV_REGISTRY* when downloading via bundle_store.mode=appliance_files
+
+# ============================================================================
+# Install on target
+# ============================================================================
+
+install:
+  # Orchestrator switches (required booleans)
+  skip: false
+  uninstall_first: false
+  preserve_failed_state: false
+  bootstrap_admin: false
+  enable_default_license: false
+
+  # Identity — FQDN becomes <appliance_name>.<dns_zone>
+  appliance_name: artifact-dns-1
+  dns_zone: appliance.internal
+  # core | builder | storage | landns | storage-landns | builder-landns | builder-storage-landns
+  appliance_profile: storage-landns
+
+  # Keep in sync with release.version from the build-publish config
+  bundle_download_dir: /tmp/appliance-0.1.0
+
+  # Used when install.bootstrap_admin is true
+  bootstrap_admin_username: admin
+  kubernetes_namespace: control
+  control_plane_deployment: api-server
+
+  # builder* profiles:
+  # build_catalog_path: /Users/you/build-catalog.yaml
+  #
+  # additional_tls_sans_csv: 192.168.1.101
+  #
+  # image_pull_registry:
+  #   registry_env: DEV_REGISTRY
+  #   username_env: DEV_REGISTRY_USER
+  #   token_env: DEV_REGISTRY_TOKEN
+  #   tls_verify_env: DEV_REGISTRY_TLS_VERIFY
+
+# ============================================================================
+# Target host checks (verify-target.sh)
+# ============================================================================
+
+verification:
+  status_command: sudo zonctl status --output json
+  verify_command: sudo zonctl verify --output json
+  service_health_command: sudo kubectl get pods -A
+  app_version_command: sudo zonctl status --output json
+  failure_log_command: sudo zonctl support-bundle --output json
+  smoke_test_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
+  smoke_test_retries: 5
+  smoke_test_retry_delay_seconds: 3
+  allow_ingress_warning: true
+  allow_verify_schema_bug: false
+  ui_home_command: 'body="$(curl -kfsS https://artifact-dns-1.appliance.internal/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Appliance Control Plane UI|appliance-controlplane-ui|Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
+  argo:
+    enabled: false
+  builder:
+    enabled: false
+  artifact:
+    enabled: true
+    readiness_command: sudo kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data
+  dns:
+    enabled: true
+    readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/dns-server --timeout=120s && dig +short @127.0.0.1 -p 53 SOA appliance.internal
+
+# ============================================================================
+# Mac client checks (verify-client-access.sh; needs install.bootstrap_admin)
+# ============================================================================
+
+client_verification:
+  base_url: https://artifact-dns-1.appliance.internal
+  username: admin
+  builder:
+    enabled: false
+    expect_disabled: true
+  artifact:
+    enabled: true
+    expect_denied_scope: false

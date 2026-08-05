@@ -1,6 +1,7 @@
 # Appliance Release Script Usage
 
-Okay these exports you enable first and then run the script with `--config`:
+Okay these exports you enable first and then run the script with the three config
+files:
 
 ```bash
 export DEV_REGISTRY_USER=zoncaesaradmin
@@ -12,14 +13,13 @@ export APPLIANCE_FIRST_ADMIN_PASSWORD='ins3965!'
 
 Notes:
 
-- Pass the config explicitly: `--config /abs/path/to/your-config.yaml`.
-- Start from `references/config.example.yaml`: one file ordered as
-  **STEP 1 BUILD → STEP 2 PUBLISH → STEP 3 INSTALL**, with env and
-  cross-step dependencies documented in comments. Scripts do **not** invent
-  operational defaults — every required key must be present in the config
-  (fixed lab values are fine in YAML). See the example for `release_path_prefix`,
-  `build_command` / `publish_command`, `bundle_download_dir`, verification
-  commands, and capability flags.
+- Pass three configs explicitly:
+  `--config` (Mac), `--build-publish-config`, `--install-config`.
+  Start from `references/config.devhost.example.yaml`,
+  `references/config.build-publish.example.yaml`, and
+  `references/config.install.example.yaml` (see `references/config.example.yaml`
+  for the overview). Scripts do **not** invent operational defaults — required
+  keys must appear in their role file (fixed lab values are fine in YAML).
 - Pull credentials for the dev container image are named by
   `build_flow.dev_image_pull.username_env` /
   `build_flow.dev_image_pull.token_env` and must be exported in the shell
@@ -62,8 +62,9 @@ Notes:
   Profile is **install-time only**: it selects which modules are activated on
   the target. Packaging always produces the complete product super-set (Argo,
   Zot, DNS, host-packages for mdns+wifi-ap, workspace-provisioner, dev-build).
-- `run-release-flow.sh` accepts only `--config PATH`. `install.appliance_profile`
-  and stage switches (`build_flow.skip`, `install.*`, `report.*`) come from that config file.
+- `run-release-flow.sh` accepts only `--config`, `--build-publish-config`, and
+  `--install-config`. Stage switches (`build_flow.skip`, `install.*`, `report.*`)
+  live in those role files.
 - Host mDNS and Wi-Fi AP packages are always in the signed bundle and staged
   at install; enable them day-2 via Admin UI/API after first admin login (not
   via install config flags).
@@ -114,21 +115,33 @@ Notes:
 
 ## 1. Full Flow
 
-Use this for the normal end-to-end workflow. The only CLI option is `--config`;
-stage switches sit next to the stage they control.
+Use this for the normal end-to-end workflow. CLI options are the three config
+paths only; stage switches sit next to the stage they control.
 
 ```bash
 /Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-flow.sh \
-  --config /abs/path/to/appliance-release.config.yaml
+  --config /abs/path/to/lab-devhost.yaml \
+  --build-publish-config /abs/path/to/lab-build-publish.yaml \
+  --install-config /abs/path/to/lab-install.yaml
 ```
 
-Set these (and all other required keys) in the config. Example matching a lab
-day-to-day run:
+Minimal lab day-to-day switches (spread across the three files):
 
 ```yaml
+# lab-devhost.yaml
+build_host: { alias: zonsys@… }
+target_host: { alias: zonsys@…, state_dir: /var/lib/zon/state }
+report:
+  final_ok: true
+
+# lab-build-publish.yaml (excerpt)
 build_flow:
   skip: false
+release:
+  version: 0.1.0
+# …release_workspace, bundle_store, full build_flow…
 
+# lab-install.yaml (excerpt)
 install:
   skip: false
   uninstall_first: true
@@ -136,18 +149,9 @@ install:
   bootstrap_admin: true
   enable_default_license: true
   appliance_profile: storage-landns
-  # build_catalog_path: /abs/path/to/build-catalog.yaml  # builder* only
-
-report:
-  final_ok: true
-
-release:
-  version: 0.1.0
 ```
 
-See `references/config.example.yaml` for the full fail-closed schema (required
-booleans on each stage).
-This does (stage banners print as `── stage <name>: …`):
+See the three `references/config.*.example.yaml` files for the full schemas.This does (stage banners print as `── stage <name>: …`):
 
 - **Step 1** `buildPublish` — build and publish on the build host
 - **Step 2** `install` — install on the target host
@@ -384,7 +388,9 @@ remote will still ignore them):
 ```bash
 APPLIANCE_RELEASE_ALLOW_DIRTY=1 \
   .agents/skills/release/scripts/run-release-flow.sh \
-  --config /abs/path/to/config.yaml
+  --config /abs/path/to/devhost.yaml \
+  --build-publish-config /abs/path/to/build-publish.yaml \
+  --install-config /abs/path/to/install.yaml
 ```
 
 Unpushed commits ahead of `origin/<ref>` still fail closed; push those first.
@@ -443,12 +449,13 @@ export APPLIANCE_TARGET_SUDO_PASSWORD='caesar'
 export APPLIANCE_FIRST_ADMIN_PASSWORD='ins3965!'
 
 /Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-flow.sh \
-  --config /Users/zoncaesar/ws/appliance-release/appliance-release.config.yaml
+  --config /Users/you/lab-devhost.yaml \
+  --build-publish-config /Users/you/lab-build-publish.yaml \
+  --install-config /Users/you/lab-install.yaml
 ```
 
 Put stage options next to their stage (`install.uninstall_first`,
-`report.final_ok`, …). The only CLI option on `run-release-flow.sh` is `--config`.
-
+`report.final_ok`, …). CLI options are only the three config paths.
 Before the remote build starts, the live wrapper now checks the local
 `appliance-release`, `appliance-code`, and `appliance-ctl` repos and fails
 closed if any of them are dirty or ahead of the remote ref the build host will
