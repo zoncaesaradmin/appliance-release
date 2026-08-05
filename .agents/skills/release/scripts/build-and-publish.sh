@@ -451,6 +451,13 @@ BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "DEV_REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}" \
   "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}")"
 
+# Non-interactive host bootstrap (make dev-sudo-setup) reads this instead of a TTY prompt.
+if bool_true "${BOOTSTRAP_NEEDS_SUDO:-false}" || bool_true "${BUILD_NEEDS_SUDO:-false}"; then
+  build_sudo_password_for_env="$(resolve_secret "APPLIANCE_BUILD_SUDO_PASSWORD" "Build host sudo password")"
+  BOOTSTRAP_ENV_PREFIX="$(append_env_assignment "${BOOTSTRAP_ENV_PREFIX}" "APPLIANCE_BUILD_SUDO_PASSWORD" "${build_sudo_password_for_env}")"
+  BUILD_ENV_PREFIX="$(append_env_assignment "${BUILD_ENV_PREFIX}" "APPLIANCE_BUILD_SUDO_PASSWORD" "${build_sudo_password_for_env}")"
+fi
+
 bootstrap_remote_cmd=""
 if [[ -n "${BOOTSTRAP_CMD}" ]]; then
   bootstrap_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BOOTSTRAP_ENV_PREFIX}${BOOTSTRAP_CMD}"
@@ -489,14 +496,14 @@ if bool_true "${BOOTSTRAP_NEEDS_SUDO:-false}" || bool_true "${BUILD_NEEDS_SUDO:-
   build_sudo_password="$(resolve_secret "APPLIANCE_BUILD_SUDO_PASSWORD" "Build host sudo password")"
 fi
 
+# Pre-cache sudo credentials for nested sudo in toolchains that still call plain
+# `sudo`. Host bootstrap itself prefers APPLIANCE_BUILD_SUDO_PASSWORD + sudo -S.
 wrap_remote_cmd_with_sudo() {
   local remote_cmd="$1"
   local sudo_password="$2"
-  # Keep password quoting in a variable first so a failed shell_quote cannot
-  # leave a partial `$(...)` residue on the local parser's command line.
   local quoted_password
   quoted_password="$(shell_quote "${sudo_password}")"
-  printf '%s' "printf '%s\n' ${quoted_password} | sudo -S -p '' -v >/dev/null && ${remote_cmd}"
+  printf '%s' "printf '%s\n' ${quoted_password} | sudo -S -p '' -v >/dev/null 2>&1 || true; export APPLIANCE_BUILD_SUDO_PASSWORD=${quoted_password}; ${remote_cmd}"
 }
 
 if [[ -n "${bootstrap_remote_cmd}" ]]; then
