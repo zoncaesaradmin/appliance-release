@@ -3,8 +3,9 @@
 #
 # CLI path presence decides work (no skip flags):
 #   --build-publish-config  → build/publish on build host (env from this shell)
-#   --install-config        → install on target (also needs --build-publish-config
-#                             for release.version / bundle_store URL)
+#   --install-config        → public helper install on target, then optional
+#                             bootstrap_admin / enable_default_license from that
+#                             install YAML (SSH from this Mac; secrets from shell)
 set -euo pipefail
 set +H
 
@@ -19,12 +20,17 @@ usage: run-release-from-devhost.sh \
   [--build-publish-config PATH] \
   [--install-config PATH]
 
-Export DEV_*, APPLIANCE_BUILD_SUDO_PASSWORD, and (for install)
-APPLIANCE_TARGET_SUDO_PASSWORD on this Mac first.
+Export on this Mac as needed:
+  DEV_*                          build/publish + bundle download URLs
+  APPLIANCE_BUILD_SUDO_PASSWORD  build host
+  APPLIANCE_TARGET_SUDO_PASSWORD install + bootstrap on target
+  APPLIANCE_FIRST_ADMIN_PASSWORD when install.bootstrap_admin is true
 
   --build-publish-config  → run build/publish
-  --install-config        → run install (requires --build-publish-config for
-                            version / download URL; no install.skip / build_flow.skip)
+  --install-config        → public install, then first-admin / default license
+                            when install.bootstrap_admin /
+                            install.enable_default_license are true
+                            (also requires --build-publish-config)
 
 Examples:
   full e2e:   … --config … --build-publish-config … --install-config …
@@ -98,6 +104,42 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
     --build-publish-config "${BUILD_PUBLISH_CONFIG}" \
     --install-config "${INSTALL_CONFIG}" \
     --run-dir "${RUN_DIR}"
+
+  # Public helper only runs zonctl install. Post-install bootstrap is
+  # orchestrator-owned (same as run-release-flow.sh stages).
+  MERGED_CONFIG_PATH="${RUN_DIR}/metadata/merged-release-config.json"
+  python3 "${SCRIPT_DIR}/merge-release-configs.py" \
+    --devhost-config "${DEVHOST_CONFIG}" \
+    --build-publish-config "${BUILD_PUBLISH_CONFIG}" \
+    --install-config "${INSTALL_CONFIG}" \
+    --output "${MERGED_CONFIG_PATH}" >/dev/null
+
+  BOOTSTRAP_ADMIN="false"
+  ENABLE_DEFAULT_LICENSE="false"
+  if [[ -n "$(config_get_optional "${MERGED_CONFIG_PATH}" "install.bootstrap_admin" || true)" ]]; then
+    BOOTSTRAP_ADMIN="$(config_require_bool "${MERGED_CONFIG_PATH}" "install.bootstrap_admin")"
+  fi
+  if [[ -n "$(config_get_optional "${MERGED_CONFIG_PATH}" "install.enable_default_license" || true)" ]]; then
+    ENABLE_DEFAULT_LICENSE="$(config_require_bool "${MERGED_CONFIG_PATH}" "install.enable_default_license")"
+  fi
+
+  if bool_true "${BOOTSTRAP_ADMIN}"; then
+    log "── bootstrapAdmin (install.bootstrap_admin=true)"
+    bash "${SCRIPT_DIR}/bootstrap-admin-on-target.sh" \
+      --config "${MERGED_CONFIG_PATH}" \
+      --run-dir "${RUN_DIR}"
+  else
+    log "── bootstrapAdmin: skipped (install.bootstrap_admin not true)"
+  fi
+
+  if bool_true "${ENABLE_DEFAULT_LICENSE}"; then
+    log "── bootstrapDefaultLicense (install.enable_default_license=true)"
+    bash "${SCRIPT_DIR}/bootstrap-default-license-on-target.sh" \
+      --config "${MERGED_CONFIG_PATH}" \
+      --run-dir "${RUN_DIR}"
+  else
+    log "── bootstrapDefaultLicense: skipped (install.enable_default_license not true)"
+  fi
 fi
 
 log "done"
