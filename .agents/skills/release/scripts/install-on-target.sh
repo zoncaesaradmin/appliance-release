@@ -163,9 +163,8 @@ fi
 # sudo drops the remote shell env unless preserved (same pattern as image-pull creds).
 require_builder_build_catalog_path "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}"
 if [[ -z "${UNINSTALL_FIRST}" ]]; then
-  UNINSTALL_FIRST="$(config_get_optional "${CONFIG_PATH}" "install.uninstall_first" || true)"
+  UNINSTALL_FIRST="false"
 fi
-[[ -n "${UNINSTALL_FIRST}" ]] || fail "install.uninstall_first is required in config (true|false)"
 [[ -n "${RELEASE_VERSION}" ]] || fail "release.version is required in config (or pass --release-version)"
 OUT_DIR="$(config_get_optional "${CONFIG_PATH}" "install.bundle_download_dir" || true)"
 [[ -n "${OUT_DIR}" ]] || fail "install.bundle_download_dir is required in config"

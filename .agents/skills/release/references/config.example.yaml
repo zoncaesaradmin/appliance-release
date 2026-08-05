@@ -221,7 +221,6 @@ install:
   # --- Bundle fetch / install layout (required) ---
   # Keep in sync with release.version (same release STEP 1/2 produced).
   bundle_download_dir: /tmp/appliance-0.1.0
-  uninstall_first: true
 
   # --- Optional post-install automation (used only when CLI flags are set) ---
   # --bootstrap-admin reads this username + APPLIANCE_FIRST_ADMIN_PASSWORD.
