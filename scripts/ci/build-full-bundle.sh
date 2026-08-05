@@ -698,7 +698,9 @@ skopeo_try_copy() {
 
   case "$(printf '%s' "${quiet}" | tr '[:upper:]' '[:lower:]')" in
     0|false|no|off)
-      if "${wrapped[@]}"; then
+      # Progress must go to stderr. call sites assign $(export_bundled...) and
+      # stdout pollution corrupts registry.local/<name>@sha256:<digest> refs.
+      if "${wrapped[@]}" 1>&2; then
         return 0
       fi
       return 1
@@ -725,10 +727,11 @@ podman_export_oci_archive() {
   [[ -n "${podman_bin}" ]] || return 127
   mkdir -p "$(dirname "${output_path}")"
   rm -f "${output_path}"
-  if ! sudo -n "${podman_bin}" pull "${bare}"; then
+  # stdout → stderr: same as skopeo_try_copy; outer $(...) must only see digest pins
+  if ! sudo -n "${podman_bin}" pull "${bare}" 1>&2; then
     return 1
   fi
-  if ! sudo -n "${podman_bin}" save --format oci-archive -o "${output_path}" "${bare}"; then
+  if ! sudo -n "${podman_bin}" save --format oci-archive -o "${output_path}" "${bare}" 1>&2; then
     rm -f "${output_path}"
     return 1
   fi
@@ -973,6 +976,7 @@ export_bundled_extra_oci_image_archive() {
   fi
 
   skopeo_copy_oci_archive "${pull_ref}" "${output_path}" "${local_name}:bundled"
+  # Only this function may write the digest pin to stdout for $(...) capture.
   finalize_bundled_oci_archive "${output_path}" "${local_name}" "${local_or_expected_ref}"
 }
 
