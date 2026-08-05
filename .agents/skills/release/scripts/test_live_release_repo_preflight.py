@@ -332,7 +332,7 @@ def test_require_config_path_helper() -> None:
             capture_output=True,
         )
         assert fail_result.returncode != 0
-        assert "config not provided; use --config or APPLIANCE_RELEASE_CONFIG" in fail_result.stderr
+        assert "config not provided; use --config PATH" in fail_result.stderr
 
 
 def test_release_run_dir_helpers() -> None:

@@ -13,12 +13,10 @@ explicit post-install step. Use this for simple installations so operators do
 not need to complete licensing after first UI login. Safe to rerun: if
 licensing is already resolved, acceptance is skipped successfully.
 
-run-release-flow.sh invokes this only when --enable-default-license is set.
+run-release-flow.sh invokes this only when install.enable_default_license is true.
 
 Options:
-  --config PATH              YAML or JSON config file. Optional if
-                             APPLIANCE_RELEASE_CONFIG is set or a local
-                             appliance-release.config.yaml exists.
+  --config PATH              YAML or JSON config file (or a local appliance-release.config.yaml).
   --run-dir DIR              Local run directory.
   --namespace NAME           Override install.kubernetes_namespace.
   --deployment NAME          Control-plane deployment name.

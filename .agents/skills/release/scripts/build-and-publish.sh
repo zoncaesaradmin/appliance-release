@@ -16,9 +16,7 @@ Run explicit build and publish commands on the remote build host, stop on the
 first failure, and pull back export metadata for reporting.
 
 Options:
-  --config PATH                 YAML or JSON config file. Optional if
-                                APPLIANCE_RELEASE_CONFIG is set or a local
-                                appliance-release.config.yaml exists.
+  --config PATH              YAML or JSON config file (or a local appliance-release.config.yaml).
   --bootstrap-cmd CMD           Optional remote bootstrap command.
   --build-cmd CMD               Remote build command. Defaults to build_flow.build_command.
   --publish-cmd CMD             Remote publish command. Defaults to build_flow.publish_command.

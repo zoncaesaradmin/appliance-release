@@ -18,9 +18,7 @@ DEV_REGISTRY_TLS_VERIFY. The Mac only orchestrates SSH; published artifact
 reachability is checked from the target (LAN DNS), not the Mac.
 
 Options:
-  --config PATH              YAML or JSON config file. Optional if
-                             APPLIANCE_RELEASE_CONFIG is set or a local
-                             appliance-release.config.yaml exists.
+  --config PATH              YAML or JSON config file (or a local appliance-release.config.yaml).
   --release-version VERSION  Release version to install. Defaults to release.version.
   --appliance-profile NAME   Override install.appliance_profile.
   --build-catalog PATH       Local build catalog JSON/YAML passed to zonctl.

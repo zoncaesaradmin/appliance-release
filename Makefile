@@ -248,9 +248,9 @@ verify-local-milestone:
 
 .PHONY: plan-profile-matrix
 plan-profile-matrix:
-	@config_path="$${CONFIG:-$${APPLIANCE_RELEASE_CONFIG:-}}"; \
+	@config_path="$${CONFIG:-}"; \
 	if [ -z "$${config_path}" ]; then \
-		echo "plan-profile-matrix: set CONFIG=/abs/path/to/appliance-release.config.yaml or APPLIANCE_RELEASE_CONFIG" >&2; \
+		echo "plan-profile-matrix: set CONFIG=/abs/path/to/appliance-release.config.yaml" >&2; \
 		exit 2; \
 	fi; \
 	mkdir -p "$(CURDIR)/.run/appliance-release"; \
@@ -263,9 +263,9 @@ plan-profile-matrix:
 
 .PHONY: plan-final-profile-matrix
 plan-final-profile-matrix:
-	@config_path="$${CONFIG:-$${APPLIANCE_RELEASE_CONFIG:-}}"; \
+	@config_path="$${CONFIG:-}"; \
 	if [ -z "$${config_path}" ]; then \
-		echo "plan-final-profile-matrix: set CONFIG=/abs/path/to/appliance-release.config.yaml or APPLIANCE_RELEASE_CONFIG" >&2; \
+		echo "plan-final-profile-matrix: set CONFIG=/abs/path/to/appliance-release.config.yaml" >&2; \
 		exit 2; \
 	fi; \
 	mkdir -p "$(CURDIR)/.run/appliance-release"; \
@@ -278,9 +278,9 @@ plan-final-profile-matrix:
 
 .PHONY: final-profile-input-checklist
 final-profile-input-checklist:
-	@config_path="$${CONFIG:-$${APPLIANCE_RELEASE_CONFIG:-}}"; \
+	@config_path="$${CONFIG:-}"; \
 	if [ -z "$${config_path}" ]; then \
-		echo "final-profile-input-checklist: set CONFIG=/abs/path/to/appliance-release.config.yaml or APPLIANCE_RELEASE_CONFIG" >&2; \
+		echo "final-profile-input-checklist: set CONFIG=/abs/path/to/appliance-release.config.yaml" >&2; \
 		exit 2; \
 	fi; \
 	mkdir -p "$(CURDIR)/.run/appliance-release"; \

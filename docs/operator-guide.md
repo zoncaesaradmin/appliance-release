@@ -66,9 +66,10 @@ The default appliance profile is `core` when `--appliance-profile` is omitted.
 Installation does **not** require a license file and does not perform online
 entitlement checks. By default, after first UI login, complete licensing setup
 (import an offline license or accept the base/free entitlement) from Admin /
-Licensing. For automated release runs, pass `--enable-default-license` so the
-base entitlement is accepted as a post-install step. Pass `--bootstrap-admin`
-when the run should also create the first administrator.
+Licensing. For automated release runs, set `install.enable_default_license: true`
+so the base entitlement is accepted as a post-install step. Set
+`install.bootstrap_admin: true` when the run should also create the first
+administrator.
 
 To install a different v1 profile:
 
@@ -112,8 +113,8 @@ different SKU.
 - automatically switches to `zonctl upgrade` when the target already has an
   owned appliance install
 - does not create the first administrator or accept a license (do those in the
-  UI, or via release automation flags `--bootstrap-admin` /
-  `--enable-default-license`)
+  UI, or via release-flow config `install.bootstrap_admin` /
+  `install.enable_default_license`)
 - installs `zonctl` to `/usr/local/bin/zonctl`
 
 ## Explicit Manual Install / Upgrade
@@ -172,7 +173,7 @@ sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-bundle/zonctl" upgrade \
 The install path is bundle-only in v1. There is no remote fallback and no
 unverified substitution. First-admin creation and base license acceptance are
 not part of `zonctl install`; use the control-plane UI or the release-flow
-flags `--bootstrap-admin` and `--enable-default-license`.
+config keys `install.bootstrap_admin` and `install.enable_default_license`.
 
 ## What `zonctl upgrade` Actually Does
 

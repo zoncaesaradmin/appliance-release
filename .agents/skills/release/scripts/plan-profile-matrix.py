@@ -382,16 +382,36 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
     return errors
 
 
-def build_command(script_path: Path, config_path: Path, profile: str, release_version: str, build_catalog: str) -> list[str]:
-    args = ["bash", str(script_path), "--config", str(config_path), "--appliance-profile", profile, "--uninstall-first", "--final-ok"]
+def build_command(script_path: Path, config_path: Path, profile: str, release_version: str, build_catalog: str) -> dict:
+    """Plan one profile run. run-release-flow.sh is config-only (no CLI flags)."""
+    overrides: dict = {
+        "install.appliance_profile": profile,
+        "build_flow.skip": profile != "core",
+        "install.skip": False,
+        "install.uninstall_first": True,
+        "install.preserve_failed_state": False,
+        "install.bootstrap_admin": True,
+        "install.enable_default_license": False,
+        "report.final_ok": True,
+    }
     if release_version:
-        args.extend(["--release-version", release_version])
-    if profile != "core":
-        args.append("--skip-build")
-    if profile == "builder":
-        if build_catalog:
-            args.extend(["--build-catalog", build_catalog])
-    return args
+        overrides["release.version"] = release_version
+    if profile == "builder" and build_catalog:
+        overrides["install.build_catalog_path"] = build_catalog
+
+    # Apply configOverrides to the YAML first, then run with --config only.
+    argv = ["bash", str(script_path), "--config", str(config_path)]
+    command = (
+        f"# Apply configOverrides for profile={profile} to the config file, then:\n"
+        f"bash {shlex.quote(str(script_path))} --config {shlex.quote(str(config_path))}"
+    )
+    return {
+        "profile": profile,
+        "argv": argv,
+        "configOverrides": overrides,
+        "command": command,
+        "reusesPublishedBuild": profile != "core",
+    }
 
 
 def build_audit_command(script_path: Path, plan_json: Optional[Path], require_builder_workflow: bool) -> list[str]:
@@ -475,15 +495,8 @@ def main() -> int:
 
     commands = []
     for profile in PROFILES:
-        argv = build_command(script_path, config_path, profile, release_version, build_catalog)
-        commands.append(
-            {
-                "profile": profile,
-                "argv": argv,
-                "command": shell_join(argv),
-                "reusesPublishedBuild": profile != "core",
-            }
-        )
+        item = build_command(script_path, config_path, profile, release_version, build_catalog)
+        commands.append(item)
     out_json = Path(args.output_json).expanduser().resolve() if args.output_json else None
     audit_argv = build_audit_command(audit_script_path, out_json, args.require_builder_workflow)
     audit_command = {
@@ -501,8 +514,9 @@ def main() -> int:
     else:
         notes = [
             "This planner does not execute commands.",
-            "Run commands sequentially against the real target; each command uses --uninstall-first for clean profile evidence.",
-            "The core command performs build/publish; storage and builder use --skip-build to reuse the same complete bundle.",
+            "run-release-flow.sh accepts only --config; set each command's configOverrides (build_flow.skip, install.*, report.*) in the YAML, then run bash …/run-release-flow.sh --config PATH.",
+            "Each profile plan sets install.uninstall_first for clean profile evidence.",
+            "The core command sets build_flow.skip=false; storage and builder set build_flow.skip=true to reuse the same complete bundle.",
             "Artifact verification is negative for core and positive for both storage and builder; storage remains negative for build/workflow routes.",
             "Each real run writes metadata/release-report.json and release-report.md in its run directory.",
             "After all three runs finish, replace the audit command placeholders with the real run directories and run it locally.",
@@ -594,7 +608,36 @@ def main() -> int:
         else:
             lines.extend(["## Commands", ""])
             for command in commands:
-                lines.extend([f"### {command['profile']}", "", "```bash", command["command"], "```", ""])
+                lines.extend([f"### {command['profile']}", ""])
+                overrides = command.get("configOverrides") or {}
+                if overrides:
+                    lines.extend(
+                        [
+                            "Set these keys in the config (or a copy for this profile), then run:",
+                            "",
+                            "```yaml",
+                        ]
+                    )
+                    # Nested dump is overkill; print flat paths as minimal nesting.
+                    section_lines: dict[str, list[str]] = {
+                        "build_flow": ["build_flow:"],
+                        "install": ["install:"],
+                        "report": ["report:"],
+                        "release": ["release:"],
+                    }
+                    for key, value in sorted(overrides.items()):
+                        yaml_val = "true" if value is True else "false" if value is False else value
+                        top, _, rest = key.partition(".")
+                        if top not in section_lines:
+                            section_lines[top] = [f"{top}:"]
+                        section_lines[top].append(f"  {rest}: {yaml_val}")
+                    for top in ("build_flow", "install", "report", "release"):
+                        block = section_lines.get(top) or []
+                        if len(block) > 1:
+                            lines.extend(block)
+                            lines.append("")
+                    lines.extend(["```", ""])
+                lines.extend(["```bash", command["command"], "```", ""])
             lines.extend(["## Post-Run Audit Command", "", "```bash", audit_command["command"], "```", ""])
             lines.extend(["## Evidence Review Checklist", ""])
             lines.extend(f"- {item}" for item in evidence_review_checklist)

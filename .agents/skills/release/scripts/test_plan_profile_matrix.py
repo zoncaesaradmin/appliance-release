@@ -88,13 +88,19 @@ client_verification:
             raise AssertionError(plan)
         if plan.get("buildCatalogPath") != str((tmp / "catalog.yaml").resolve()):
             raise AssertionError(plan)
-        if "--skip-build" in commands["core"]["argv"]:
+        if commands["core"]["configOverrides"].get("build_flow.skip") is not False:
             raise AssertionError(commands["core"])
         for profile in ("storage", "builder"):
-            if "--skip-build" not in commands[profile]["argv"]:
+            if commands[profile]["configOverrides"].get("build_flow.skip") is not True:
                 raise AssertionError(commands[profile])
-        if "--build-catalog" not in commands["builder"]["argv"]:
+        if commands["builder"]["configOverrides"].get("install.build_catalog_path") is None:
             raise AssertionError(commands["builder"])
+        if "--skip-build" in commands["core"].get("command", ""):
+            raise AssertionError(commands["core"])
+        if "--config" not in commands["core"].get("argv", []):
+            raise AssertionError(commands["core"])
+        if "APPLIANCE_RELEASE_CONFIG=" in commands["core"].get("command", ""):
+            raise AssertionError(commands["core"])
         if plan["validationErrors"]:
             raise AssertionError(plan)
         if plan.get("suggestedConfigOverlay") is not None:

@@ -54,9 +54,9 @@ Important rules:
 
 Runtime secrets such as remote `sudo` passwords and first-admin credentials must be supplied at runtime, not written into the skill. Prefer environment variables or an interactive prompt.
 
-For day-to-day use, set:
+For day-to-day use, pass `--config /abs/path/to/appliance-release.config.yaml`
+to the wrappers and set secret-bearing shell env only:
 
-- `APPLIANCE_RELEASE_CONFIG=/abs/path/to/appliance-release.config.yaml`
 - `DEV_REGISTRY=...` (named by `build_flow.dev_image_pull.registry_env`; also used by appliance-code `SERVICE_IMAGE_REGISTRY`)
 - `DEV_IMAGE_REPO=...` / `DEV_IMAGE_NAME=...` (named by pull `image_repo_env` / `image_name_env` — development-container only)
 - `DEV_REGISTRY_USER=...` / `DEV_REGISTRY_TOKEN=...` (named by `dev_image_pull` username/token env keys; also optional LAN pull on install)
@@ -84,22 +84,21 @@ curl `-k`). Optional config: `registry_env` / `token_env` / `tls_verify_env` /
 `cacert_path`. Traefik `/files` was removed. Historical aliases: `http`/
 `http-static` → `static_http`, `fileserver` → `appliance_files`.
 
-Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `--config`.
-
 ## Scripts
 
 - `scripts/run-release-flow.sh`
-  One-shot wrapper for the common flow from the `appliance-release` repo: build/publish, install, target verify, then macOS-side API verify.
+  One-shot end-to-end wrapper. **Only CLI option: `--config PATH`.** Stage
+  switches sit on `build_flow.skip`, `install.*`, and `report.*` in that config.
 - `scripts/build-and-publish.sh`
   Run the deterministic build-host flow: sync the skill-managed release checkout, optional bootstrap, bundle build, publish, and artifact metadata capture. Publish uses `bundle_store.mode` (`static_http` or `appliance_files`).
 - `scripts/install-on-target.sh`
   Optionally uninstall the previous appliance, then install the published release on the target host via HTTP `curl` against `base_url` (Mac only SSHs).
 - `scripts/bootstrap-admin-on-target.sh`
-  Create the first administrator on the target. Invoked only when
-  `run-release-flow.sh` is passed `--bootstrap-admin`.
+  Create the first administrator on the target. Invoked by `run-release-flow.sh`
+  when `install.bootstrap_admin` is true.
 - `scripts/bootstrap-default-license-on-target.sh`
-  Accept the base/free entitlement. Invoked only when `run-release-flow.sh` is
-  passed `--enable-default-license`.
+  Accept the base/free entitlement. Invoked by `run-release-flow.sh` when
+  `install.enable_default_license` is true.
 - `scripts/verify-target.sh`
   Run post-install verification, service-health checks, smoke checks, and failure-log capture.
 - `scripts/verify-client-access.sh`

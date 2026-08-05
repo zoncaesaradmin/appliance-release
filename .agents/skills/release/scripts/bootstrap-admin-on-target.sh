@@ -13,9 +13,7 @@ explicit post-install step. This is safe to rerun: if the appliance is already
 initialized, the bootstrap is skipped successfully.
 
 Options:
-  --config PATH              YAML or JSON config file. Optional if
-                             APPLIANCE_RELEASE_CONFIG is set or a local
-                             appliance-release.config.yaml exists.
+  --config PATH              YAML or JSON config file (or a local appliance-release.config.yaml).
   --run-dir DIR              Local run directory.
   --admin-username NAME      Override install.bootstrap_admin_username.
   --namespace NAME           Override install.kubernetes_namespace.

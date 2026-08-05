@@ -12,9 +12,7 @@ Run post-install verification on the configured target host. The script captures
 logs for each check and, on failure, runs an optional failure-log command.
 
 Options:
-  --config PATH                  YAML or JSON config file. Optional if
-                                 APPLIANCE_RELEASE_CONFIG is set or a local
-                                 appliance-release.config.yaml exists.
+  --config PATH              YAML or JSON config file (or a local appliance-release.config.yaml).
   --status-cmd CMD               Override verification.status_command.
   --verify-cmd CMD               Override verification.verify_command.
   --service-health-cmd CMD       Override verification.service_health_command.

@@ -13,9 +13,7 @@ Run macOS-side client/API checks against the installed appliance without
 storing tokens in logs or metadata.
 
 Options:
-  --config PATH            YAML or JSON config file. Optional if
-                           APPLIANCE_RELEASE_CONFIG is set or a local
-                           appliance-release.config.yaml exists.
+  --config PATH              YAML or JSON config file (or a local appliance-release.config.yaml).
   --appliance-profile NAME Effective installed appliance profile.
   --run-dir DIR            Local run directory.
   --final-ok               Print ok when all checks pass.

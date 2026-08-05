@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # run-release-flow.sh — stage orchestrator for the appliance release path.
 #
+# Fully config-driven: the only CLI option is --config PATH. Stage switches
+# live next to the stage they control (build_flow.skip, install.*, report.*).
+# See references/config.example.yaml.
+#
 # One config file today (build + install + verify). A future split into two
 # configs (build/publish vs install/verify) is planned; keep stage boundaries
 # sharp so that split is easy later.
@@ -8,15 +12,15 @@
 # This script is intentionally thin: each stage is mostly a one-liner that
 # calls a dedicated helper under the same directory.
 #
-# Stages (in order):
+# Stages (in order; gated by staged config keys):
 #   0  prepare         resolve config / run-dir / validate inputs
-#   1  buildPublish    build-and-publish.sh   (--skip-build)
-#   2  install         install-on-target.sh   (--skip-install)
-#   2b bootstrapAdmin  bootstrap-admin-on-target.sh  (--bootstrap-admin)
+#   1  buildPublish    build-and-publish.sh     (unless build_flow.skip)
+#   2  install         install-on-target.sh     (unless install.skip)
+#   2b bootstrapAdmin  bootstrap-admin-on-target.sh  (if install.bootstrap_admin)
 #   2b2 bootstrapDefaultLicense  bootstrap-default-license-on-target.sh
-#                                  (--enable-default-license)
+#                                  (if install.enable_default_license)
 #   2c targetVerify    verify-target.sh
-#   2d clientVerify    verify-client-access.sh  (only with --bootstrap-admin)
+#   2d clientVerify    verify-client-access.sh  (if install.bootstrap_admin)
 #   3  report          summarize-release-run.py + run metadata
 #
 set -euo pipefail
@@ -27,40 +31,31 @@ source "${SCRIPT_DIR}/common.sh"
 
 usage() {
   cat <<'EOF'
-usage: run-release-flow.sh [options]
+usage: run-release-flow.sh --config PATH
 
-Thin stage runner. One config today; stages stay ordered so build/publish and
-install/verify can later use separate configs without rewriting the flow.
+The only CLI option is --config. Stage switches live next to each stage in that
+YAML/JSON file (no generic catch-all section):
 
-  Stage 0  prepare         config, run-dir, catalog checks
-  Stage 1  buildPublish    → build-and-publish.sh
-  Stage 2  install         → install-on-target.sh
-  Stage 2b bootstrapAdmin  → bootstrap-admin-on-target.sh
-                             (only with --bootstrap-admin)
-  Stage 2b2 bootstrapDefaultLicense → bootstrap-default-license-on-target.sh
-                             (only with --enable-default-license)
-  Stage 2c targetVerify    → verify-target.sh
-  Stage 2d clientVerify    → verify-client-access.sh
-                             (only with --bootstrap-admin)
-  Stage 3  report          summarize run + write metadata
+  build_flow:
+    skip: false                    # skip STEP 1 build + STEP 2 publish
+  install:
+    skip: false
+    uninstall_first: false
+    preserve_failed_state: false
+    bootstrap_admin: false         # also gates Mac client verify
+    enable_default_license: false
+  report:
+    final_ok: false
+    # run_dir: /abs/path/optional  # omit → timestamped .run/appliance-release/<ts>
 
-Options:
-  --config PATH              YAML/JSON config (or APPLIANCE_RELEASE_CONFIG /
-                             local appliance-release.config.yaml).
-  --run-dir DIR              Default: <cwd>/.run/appliance-release/<timestamp>
-  --release-version VERSION  Override release.version
-  --appliance-profile NAME   Override install.appliance_profile
-  --build-catalog PATH       Local build catalog for zonctl (builder profiles)
-  --preserve-failed-state    Pass through to install/upgrade
-  --uninstall-first          Uninstall previous appliance before install
-  --bootstrap-admin          Create first admin (username from config;
-                             password from APPLIANCE_FIRST_ADMIN_PASSWORD)
-                             and run Mac-side client/API verify
-  --enable-default-license   Accept base/free entitlement on the target after
-                             install (and after bootstrap-admin when both set)
-  --skip-build               Skip stage 1 (build/publish)
-  --skip-install             Skip stage 2 (install)
-  --final-ok                 Print "OK run" on success
+Other values (release.version, install identity, build_host, …) use the same file.
+See references/config.example.yaml for the full ordered schema.
+
+Secrets remain shell env (e.g. APPLIANCE_*_PASSWORD, DEV_REGISTRY*), not CLI.
+
+Example:
+  bash .agents/skills/release/scripts/run-release-flow.sh \
+    --config ~/151-appliance-config.yaml
 EOF
 }
 
@@ -79,7 +74,7 @@ end_stage() {
 }
 
 # ---------------------------------------------------------------------------
-# Args
+# CLI: --config only (plus --help)
 # ---------------------------------------------------------------------------
 
 CONFIG_PATH=""
@@ -98,22 +93,21 @@ CURRENT_STEP="startup"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config) CONFIG_PATH="${2:-}"; shift 2 ;;
-    --run-dir) RUN_DIR="${2:-}"; shift 2 ;;
-    --release-version) RELEASE_VERSION="${2:-}"; shift 2 ;;
-    --appliance-profile) APPLIANCE_PROFILE="${2:-}"; shift 2 ;;
-    --build-catalog) BUILD_CATALOG_PATH="${2:-}"; shift 2 ;;
-    --preserve-failed-state) PRESERVE_FAILED_STATE="true"; shift 1 ;;
-    --uninstall-first) UNINSTALL_FIRST="true"; shift 1 ;;
-    --bootstrap-admin) BOOTSTRAP_ADMIN="true"; shift 1 ;;
-    --enable-default-license) ENABLE_DEFAULT_LICENSE="true"; shift 1 ;;
-    --skip-build) SKIP_BUILD="true"; shift 1 ;;
-    --skip-install) SKIP_INSTALL="true"; shift 1 ;;
-    --final-ok) FINAL_OK="true"; shift 1 ;;
-    --help|-h) usage; exit 0 ;;
-    *) fail "unknown argument: $1" ;;
+    --config)
+      CONFIG_PATH="${2:-}"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "run-release-flow.sh only accepts --config PATH (got: $*). Put stage switches in build_flow/install/report in the config. See --help."
+      ;;
   esac
 done
+
+[[ -n "${CONFIG_PATH}" ]] || fail "run-release-flow.sh requires --config PATH (see --help)"
 
 # ---------------------------------------------------------------------------
 # Stage 0 — prepare
@@ -123,16 +117,28 @@ begin_stage "prepare" "resolve config and run directory"
 
 CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
 
+if python3 "${CONFIG_QUERY}" --keys "${CONFIG_PATH}" "flow" >/dev/null 2>&1; then
+  fail "config key 'flow' was removed; use build_flow.skip, install.skip / install.uninstall_first / install.preserve_failed_state / install.bootstrap_admin / install.enable_default_license, and report.final_ok (see references/config.example.yaml)"
+fi
+
+SKIP_BUILD="$(config_require_bool "${CONFIG_PATH}" "build_flow.skip")"
+SKIP_INSTALL="$(config_require_bool "${CONFIG_PATH}" "install.skip")"
+UNINSTALL_FIRST="$(config_require_bool "${CONFIG_PATH}" "install.uninstall_first")"
+PRESERVE_FAILED_STATE="$(config_require_bool "${CONFIG_PATH}" "install.preserve_failed_state")"
+BOOTSTRAP_ADMIN="$(config_require_bool "${CONFIG_PATH}" "install.bootstrap_admin")"
+ENABLE_DEFAULT_LICENSE="$(config_require_bool "${CONFIG_PATH}" "install.enable_default_license")"
+FINAL_OK="$(config_require_bool "${CONFIG_PATH}" "report.final_ok")"
+
+RUN_DIR="$(config_get_optional "${CONFIG_PATH}" "report.run_dir" || true)"
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"
 fi
-if [[ -z "${RELEASE_VERSION}" ]]; then
-  RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
-fi
+
+RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
 BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
-APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}" "${APPLIANCE_PROFILE}")"
-[[ -n "${RELEASE_VERSION}" ]] || fail "release.version is required in config (or pass --release-version)"
-BUILD_CATALOG_PATH="$(resolve_build_catalog_path "${CONFIG_PATH}" "${BUILD_CATALOG_PATH}")"
+APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}" "")"
+[[ -n "${RELEASE_VERSION}" ]] || fail "release.version is required in config"
+BUILD_CATALOG_PATH="$(resolve_build_catalog_path "${CONFIG_PATH}" "")"
 require_builder_build_catalog_path "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}"
 
 ensure_release_run_dirs "${RUN_DIR}"
@@ -143,16 +149,7 @@ log "release=${RELEASE_VERSION} profile=${APPLIANCE_PROFILE}"
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   log "build-catalog=${BUILD_CATALOG_PATH}"
 fi
-if bool_true "${BOOTSTRAP_ADMIN}"; then
-  log "bootstrap-admin + client verify enabled (--bootstrap-admin)"
-else
-  log "bootstrap-admin + client verify skipped (pass --bootstrap-admin to enable)"
-fi
-if bool_true "${ENABLE_DEFAULT_LICENSE}"; then
-  log "default license accept enabled (--enable-default-license)"
-else
-  log "default license accept skipped (pass --enable-default-license to enable)"
-fi
+log "stages: build_flow.skip=${SKIP_BUILD} install.skip=${SKIP_INSTALL} uninstall_first=${UNINSTALL_FIRST} preserve_failed_state=${PRESERVE_FAILED_STATE} bootstrap_admin=${BOOTSTRAP_ADMIN} enable_default_license=${ENABLE_DEFAULT_LICENSE} report.final_ok=${FINAL_OK}"
 
 validate_builder_build_catalog "${SCRIPT_DIR}" "${CONFIG_PATH}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${RUN_DIR}" "build-catalog validation ok"
 
@@ -317,7 +314,7 @@ if ! bool_true "${SKIP_BUILD}"; then
   bash "${SCRIPT_DIR}/build-and-publish.sh" "${build_args[@]}"
   end_stage
 else
-  log "── stage buildPublish: skipped (--skip-build)"
+  log "── stage buildPublish: skipped (build_flow.skip=true)"
 fi
 
 # ===========================================================================
@@ -345,7 +342,7 @@ if ! bool_true "${SKIP_INSTALL}"; then
   bash "${SCRIPT_DIR}/install-on-target.sh" "${install_args[@]}"
   end_stage
 else
-  log "── stage install: skipped (--skip-install)"
+  log "── stage install: skipped (install.skip=true)"
 fi
 
 if bool_true "${BOOTSTRAP_ADMIN}"; then
@@ -353,7 +350,7 @@ if bool_true "${BOOTSTRAP_ADMIN}"; then
   bash "${SCRIPT_DIR}/bootstrap-admin-on-target.sh" --config "${CONFIG_PATH}" --run-dir "${RUN_DIR}"
   end_stage
 else
-  log "── stage bootstrapAdmin: skipped (pass --bootstrap-admin to enable)"
+  log "── stage bootstrapAdmin: skipped (install.bootstrap_admin=false)"
 fi
 
 if bool_true "${ENABLE_DEFAULT_LICENSE}"; then
@@ -361,7 +358,7 @@ if bool_true "${ENABLE_DEFAULT_LICENSE}"; then
   bash "${SCRIPT_DIR}/bootstrap-default-license-on-target.sh" --config "${CONFIG_PATH}" --run-dir "${RUN_DIR}"
   end_stage
 else
-  log "── stage bootstrapDefaultLicense: skipped (pass --enable-default-license to enable)"
+  log "── stage bootstrapDefaultLicense: skipped (install.enable_default_license=false)"
 fi
 
 begin_stage "targetVerify" "target host verification → verify-target.sh"
@@ -381,7 +378,7 @@ if bool_true "${BOOTSTRAP_ADMIN}"; then
   bash "${SCRIPT_DIR}/verify-client-access.sh" "${client_verify_args[@]}"
   end_stage
 else
-  log "── stage clientVerify: skipped (follows --bootstrap-admin)"
+  log "── stage clientVerify: skipped (install.bootstrap_admin=false)"
 fi
 
 # ===========================================================================

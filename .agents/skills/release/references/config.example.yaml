@@ -5,10 +5,12 @@
 #   STEP 1 — BUILD     produce the signed offline super-set bundle on the build host
 #   STEP 2 — PUBLISH   place that bundle where install can download it
 #   STEP 3 — INSTALL   install (and optionally bootstrap/verify) on the target
+#   STEP 4 — REPORT    run-metadata / release-report (local Mac only)
 #
 # This file stays one YAML document until we split configs. Blocks are ordered
 # by that pipeline so each step’s required keys and env vars are obvious.
-# Key names below are what the scripts already read (no renames yet).
+# Orchestrator stage switches live next to the stage they control (no generic
+# catch-all section).
 #
 # Rules:
 # - Scripts fail closed: every required key must appear (lab fixed values OK).
@@ -19,10 +21,8 @@
 #   only selects what the target turns on.
 # - Host mDNS / Wi-Fi AP enablement is day-2 Admin UI/API only.
 #
-# Optional run-release-flow CLI (not config keys):
-#   --bootstrap-admin           create first admin + Mac client verify
-#   --enable-default-license    accept base/free entitlement on target
-#   --skip-build / --skip-install
+# Example:
+#   bash .agents/skills/release/scripts/run-release-flow.sh --config /abs/path/to/this.yaml
 #
 # ============================================================================
 # STEP 1 — BUILD
@@ -69,6 +69,9 @@ release:
   publish_latest_alias: false
 
 build_flow:
+  # When true, run-release-flow.sh skips STEP 1+2 (build and publish together).
+  skip: false
+
   # --- STEP 1 BUILD: source pins and host inputs (required) ---
   code_repo_ref: main
   ctl_repo_ref: main
@@ -117,6 +120,7 @@ build_flow:
   # Runs after a successful build on the same build host. Needs bundle_store
   # (below) plus publish env for the chosen mode. Do not put product image
   # “push registry” here — signed-bundle distribution is only bundle_store.
+  # Skipped together with STEP 1 when build_flow.skip is true.
   publish_command: make publish-release
 
 # ============================================================================
@@ -176,11 +180,12 @@ bundle_store:
 # ============================================================================
 # STEP 3 — INSTALL (+ post-install verify)
 # Scripts (in order when using run-release-flow.sh):
-#   install-on-target.sh
-#   [optional] bootstrap-admin-on-target.sh          (--bootstrap-admin)
-#   [optional] bootstrap-default-license-on-target.sh (--enable-default-license)
+#   install-on-target.sh                     (unless install.skip)
+#   [optional] bootstrap-admin-on-target.sh  (install.bootstrap_admin)
+#   [optional] bootstrap-default-license-on-target.sh
+#                                  (install.enable_default_license)
 #   verify-target.sh
-#   [optional] verify-client-access.sh               (with --bootstrap-admin)
+#   [optional] verify-client-access.sh       (install.bootstrap_admin)
 #
 # Purpose: pull the published bundle onto the target, run zonctl install/upgrade,
 # then health checks (and optional first-admin / base license / client API checks).
@@ -200,7 +205,7 @@ bundle_store:
 #   APPLIANCE_TARGET_SUDO_PASSWORD          # always for install/verify on target
 #   For bundle_store.mode=appliance_files download from target:
 #     same DEV_REGISTRY / DEV_REGISTRY_TOKEN / DEV_REGISTRY_TLS_VERIFY as publish
-#   Only if you pass --bootstrap-admin:
+#   Only if install.bootstrap_admin is true:
 #     APPLIANCE_FIRST_ADMIN_PASSWORD
 #     install.bootstrap_admin_username (below)
 # ============================================================================
@@ -211,6 +216,14 @@ target_host:
   state_dir: /var/lib/zon/state
 
 install:
+  # --- Orchestrator switches (run-release-flow.sh; required booleans) ---
+  skip: false
+  uninstall_first: true
+  preserve_failed_state: true
+  # Post-install: first-admin bootstrap (+ Mac client verify) and base license
+  bootstrap_admin: false
+  enable_default_license: false
+
   # --- Identity (required) — FQDN becomes <appliance_name>.<dns_zone> ---
   appliance_name: artifact-dns-1
   dns_zone: appliance.internal
@@ -222,8 +235,7 @@ install:
   # Keep in sync with release.version (same release STEP 1/2 produced).
   bundle_download_dir: /tmp/appliance-0.1.0
 
-  # --- Optional post-install automation (used only when CLI flags are set) ---
-  # --bootstrap-admin reads this username + APPLIANCE_FIRST_ADMIN_PASSWORD.
+  # Used when install.bootstrap_admin is true (plus APPLIANCE_FIRST_ADMIN_PASSWORD).
   bootstrap_admin_username: admin
   kubernetes_namespace: control
   control_plane_deployment: api-server
@@ -270,11 +282,11 @@ verification:
     enabled: true
     readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/dns-server --timeout=120s && dig +short @127.0.0.1 -p 53 SOA appliance.internal
 
-# --- STEP 3: checks from the Mac (verify-client-access.sh; needs --bootstrap-admin) ---
+# --- STEP 3: checks from the Mac (verify-client-access.sh; needs install.bootstrap_admin) ---
 client_verification:
   # Prefer a name that matches the install certificate (FQDN or hostname.local).
   base_url: https://artifact-dns-1.appliance.internal
-  # Login user; password is APPLIANCE_FIRST_ADMIN_PASSWORD when bootstrap-admin ran.
+  # Login user; password is APPLIANCE_FIRST_ADMIN_PASSWORD when bootstrap_admin ran.
   username: admin
   builder:
     enabled: false
@@ -282,3 +294,14 @@ client_verification:
   artifact:
     enabled: true
     expect_denied_scope: false
+
+# ============================================================================
+# STEP 4 — REPORT (run-release-flow.sh only; after all remote stages)
+# ============================================================================
+
+report:
+  # Print "OK run" when the full orchestrator finishes successfully.
+  final_ok: false
+  # Optional absolute Mac run directory for logs/metadata.
+  # Omit to use .run/appliance-release/<timestamp> under the current working dir.
+  # run_dir: /Users/you/.run/appliance-release/manual

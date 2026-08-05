@@ -110,11 +110,6 @@ resolve_config_path() {
     return 0
   fi
 
-  if [[ -n "${APPLIANCE_RELEASE_CONFIG:-}" ]]; then
-    printf '%s\n' "${APPLIANCE_RELEASE_CONFIG}"
-    return 0
-  fi
-
   local search_dirs=(
     "${PWD}"
   )
@@ -144,7 +139,7 @@ resolve_config_path() {
 require_config_path() {
   local config_path=""
   config_path="$(resolve_config_path "${1:-}" || true)"
-  [[ -n "${config_path}" ]] || fail "config not provided; use --config or APPLIANCE_RELEASE_CONFIG"
+  [[ -n "${config_path}" ]] || fail "config not provided; use --config PATH"
   ensure_file "${config_path}"
   printf '%s\n' "${config_path}"
 }
@@ -197,6 +192,29 @@ bool_true() {
   case "${normalized}" in
     1|true|yes|on) return 0 ;;
     *) return 1 ;;
+  esac
+}
+
+# Read a required boolean config key; print "true" or "false". Fail closed.
+config_require_bool() {
+  local config_path="$1"
+  local query="$2"
+  local value=""
+  if ! value="$(config_get "${config_path}" "${query}" 2>/dev/null)"; then
+    fail "missing required config key: ${query} (must be true or false)"
+  fi
+  local normalized
+  normalized="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')"
+  case "${normalized}" in
+    1|true|yes|on)
+      printf 'true\n'
+      ;;
+    0|false|no|off)
+      printf 'false\n'
+      ;;
+    *)
+      fail "${query} must be a boolean (true/false), got: ${value}"
+      ;;
   esac
 }
 

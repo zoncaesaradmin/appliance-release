@@ -1,9 +1,8 @@
 # Appliance Release Script Usage
 
-Okay these exports you enable first and then run the script:
+Okay these exports you enable first and then run the script with `--config`:
 
 ```bash
-export APPLIANCE_RELEASE_CONFIG=/Users/zoncaesar/ws/appliance-release/appliance-release.config.yaml
 export DEV_REGISTRY_USER=zoncaesaradmin
 export DEV_REGISTRY_TOKEN='...'
 export APPLIANCE_BUILD_SUDO_PASSWORD='caesar'
@@ -13,7 +12,7 @@ export APPLIANCE_FIRST_ADMIN_PASSWORD='ins3965!'
 
 Notes:
 
-- `APPLIANCE_RELEASE_CONFIG` is the main common input for all scripts.
+- Pass the config explicitly: `--config /abs/path/to/your-config.yaml`.
 - Start from `references/config.example.yaml`: one file ordered as
   **STEP 1 BUILD → STEP 2 PUBLISH → STEP 3 INSTALL**, with env and
   cross-step dependencies documented in comments. Scripts do **not** invent
@@ -21,7 +20,6 @@ Notes:
   (fixed lab values are fine in YAML). See the example for `release_path_prefix`,
   `build_command` / `publish_command`, `bundle_download_dir`, verification
   commands, and capability flags.
-- If `APPLIANCE_RELEASE_CONFIG` is set, you usually do not need `--config`.
 - Pull credentials for the dev container image are named by
   `build_flow.dev_image_pull.username_env` /
   `build_flow.dev_image_pull.token_env` and must be exported in the shell
@@ -49,23 +47,23 @@ Notes:
   distribution is `bundle_store` + `publish_command`. Service image push defaults
   live in appliance-code `build/service-image.mk` (`SERVICE_IMAGE_*` /
   `DEV_REGISTRY`).
-- `APPLIANCE_FIRST_ADMIN_PASSWORD` is used only when you pass
-  `--bootstrap-admin` (first-admin bootstrap + Mac-side API verification).
-- First-admin bootstrap and client verify are **off by default**. Pass
-  `--bootstrap-admin` to run them. Username comes from
-  `install.bootstrap_admin_username`; password from `APPLIANCE_FIRST_ADMIN_PASSWORD`.
-- Default/base license accept is also **off by default**. Pass
-  `--enable-default-license` to accept the base/free entitlement after install
-  (stage `bootstrapDefaultLicense`). Without that flag, licensing stays unresolved
-  until an admin imports a license or accepts base entitlement in the UI.
-  Install never requires a license file or online entitlement checks.
+- `APPLIANCE_FIRST_ADMIN_PASSWORD` is used only when `install.bootstrap_admin` is
+  true (first-admin bootstrap + Mac-side API verification).
+- First-admin bootstrap and client verify are **off by default** in the example
+  config (`install.bootstrap_admin: false`). Set `install.bootstrap_admin: true` to
+  run them. Username comes from `install.bootstrap_admin_username`; password
+  from `APPLIANCE_FIRST_ADMIN_PASSWORD`.
+- Default/base license accept is also **off by default**. Set
+  `install.enable_default_license: true` to accept the base/free entitlement after
+  install (stage `bootstrapDefaultLicense`). Without that, licensing stays
+  unresolved until an admin imports a license or accepts base entitlement in
+  the UI. Install never requires a license file or online entitlement checks.
 - Set `install.appliance_profile` in the config, or omit it to default to `core`.
   Profile is **install-time only**: it selects which modules are activated on
   the target. Packaging always produces the complete product super-set (Argo,
   Zot, DNS, host-packages for mdns+wifi-ap, workspace-provisioner, dev-build).
-- A `run-release-flow.sh --appliance-profile` override is forwarded to install,
-  target verification, and client verification so all phases use the same
-  effective profile.
+- `run-release-flow.sh` accepts only `--config PATH`. `install.appliance_profile`
+  and stage switches (`build_flow.skip`, `install.*`, `report.*`) come from that config file.
 - Host mDNS and Wi-Fi AP packages are always in the signed bundle and staged
   at install; enable them day-2 via Admin UI/API after first admin login (not
   via install config flags).
@@ -116,29 +114,45 @@ Notes:
 
 ## 1. Full Flow
 
-Use this for the normal end-to-end workflow.
-
-```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-flow.sh
-```
-
-Common explicit example:
+Use this for the normal end-to-end workflow. The only CLI option is `--config`;
+stage switches sit next to the stage they control.
 
 ```bash
 /Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-flow.sh \
-  --release-version 0.1.0 \
-  --appliance-profile builder \
-  --build-catalog /Users/zoncaesar/ws/appliance-release/build-catalog.yaml \
-  --preserve-failed-state \
-  --uninstall-first \
-  --final-ok
+  --config /abs/path/to/appliance-release.config.yaml
 ```
 
+Set these (and all other required keys) in the config. Example matching a lab
+day-to-day run:
+
+```yaml
+build_flow:
+  skip: false
+
+install:
+  skip: false
+  uninstall_first: true
+  preserve_failed_state: true
+  bootstrap_admin: true
+  enable_default_license: true
+  appliance_profile: storage-landns
+  # build_catalog_path: /abs/path/to/build-catalog.yaml  # builder* only
+
+report:
+  final_ok: true
+
+release:
+  version: 0.1.0
+```
+
+See `references/config.example.yaml` for the full fail-closed schema (required
+booleans on each stage).
 This does (stage banners print as `── stage <name>: …`):
 
 - **Step 1** `buildPublish` — build and publish on the build host
 - **Step 2** `install` — install on the target host
-- **Step 2b–2d** bootstrap admin, target verify, client/API verify from the Mac
+- **Step 2b–2d** bootstrap admin (if `install.bootstrap_admin`), default license
+  (if `install.enable_default_license`), target verify, client/API verify from the Mac
 - **Step 3** `report` — summarize the run
 
 One config file today; stages are ordered so build/publish and install/verify
@@ -154,8 +168,8 @@ The wrapper writes the release-flow metadata and report on success and also
 best-effort on phase failure, so failed runs should still leave a useful
 handoff report in the run directory.
 
-For development-time target debugging, add `--preserve-failed-state` to
-forward zonctl's explicit debug mode to the target. In that mode, failed
+For development-time target debugging, set `install.preserve_failed_state: true`
+to forward zonctl's explicit debug mode to the target. In that mode, failed
 install/upgrade attempts are left in place for inspection instead of being
 rolled back automatically.
 
@@ -368,7 +382,9 @@ does not block. To force-continue with build-affecting dirty files (knowing the
 remote will still ignore them):
 
 ```bash
-APPLIANCE_RELEASE_ALLOW_DIRTY=1 .agents/skills/release/scripts/run-release-flow.sh
+APPLIANCE_RELEASE_ALLOW_DIRTY=1 \
+  .agents/skills/release/scripts/run-release-flow.sh \
+  --config /abs/path/to/config.yaml
 ```
 
 Unpushed commits ahead of `origin/<ref>` still fail closed; push those first.
@@ -420,15 +436,18 @@ readiness flow for final builder evidence, use the dedicated advanced guide:
 Most days, this is enough:
 
 ```bash
-export APPLIANCE_RELEASE_CONFIG=/Users/zoncaesar/ws/appliance-release/appliance-release.config.yaml
 export DEV_REGISTRY_USER=zoncaesaradmin
 export DEV_REGISTRY_TOKEN='...'
 export APPLIANCE_BUILD_SUDO_PASSWORD='caesar'
 export APPLIANCE_TARGET_SUDO_PASSWORD='caesar'
 export APPLIANCE_FIRST_ADMIN_PASSWORD='ins3965!'
 
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-flow.sh --uninstall-first --final-ok
+/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-flow.sh \
+  --config /Users/zoncaesar/ws/appliance-release/appliance-release.config.yaml
 ```
+
+Put stage options next to their stage (`install.uninstall_first`,
+`report.final_ok`, …). The only CLI option on `run-release-flow.sh` is `--config`.
 
 Before the remote build starts, the live wrapper now checks the local
 `appliance-release`, `appliance-code`, and `appliance-ctl` repos and fails
