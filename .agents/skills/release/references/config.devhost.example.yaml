@@ -42,7 +42,7 @@ target_host:
 
 report:
   # Print "OK run" when the full orchestrator finishes successfully.
-  final_ok: false
+  final_ok: true
   # Optional absolute devhost run directory for logs/metadata.
   # Omit to use .run/appliance-release/<timestamp> under the current working dir.
   # run_dir: /Users/you/.run/appliance-release/manual

@@ -28,7 +28,6 @@
 # ============================================================================
 
 install:
-  # Orchestrator switches (required booleans)
   skip: false
   uninstall_first: false
   preserve_failed_state: false
