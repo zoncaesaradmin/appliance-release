@@ -16,7 +16,6 @@ components:
     inputs:
       - OS_VERSION
       - capabilities: [mdns, wifi-ap]
-      - optional: HOST_PACKAGES_DIR_SOURCE
     outputs:
       - path: host-packages/ubuntu/<OS_VERSION>/amd64/*.deb
       - release_input: artifacts.hostPackages

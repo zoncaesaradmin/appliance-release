@@ -99,7 +99,6 @@ CODE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.code_repo_ref"
 CTL_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.ctl_repo_ref" || true)"
 BUILD_K3S_BINARY_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.k3s_binary_source" || true)"
 BUILD_K3S_AIRGAP_IMAGES_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.k3s_airgap_images_source" || true)"
-BUILD_HOST_PACKAGES_DIR_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.host_packages_dir_source" || true)"
 if [[ -z "${BOOTSTRAP_CMD}" ]]; then
   BOOTSTRAP_CMD="$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_command" || true)"
 fi
@@ -168,6 +167,15 @@ if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_arc
   || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user" || true)" \
   || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token" || true)" ]]; then
   fail "legacy build_flow registry/image keys are no longer supported; use build_flow.dev_image_pull.*"
+fi
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.host_packages_dir_source" || true)" \
+  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.crds_dir_source" || true)" \
+  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.controller_image_archive_source" || true)" \
+  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.executor_image_archive_source" || true)" \
+  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.workspace_provisioner_image_archive_source" || true)" \
+  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.zot.image_archive_source" || true)" \
+  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.image_archive_source" || true)" ]]; then
+  fail "offline/local archive path inputs under build_flow were removed; package always pulls (or uses build_image_mirror + upstream). Remove host_packages_dir_source, argo.*_archive_source, argo.crds_dir_source, zot/dns/workspace_provisioner image_archive_source keys"
 fi
 if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.product_publish.registry" || true)" \
   || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.product_publish.image_repo" || true)" \
@@ -260,19 +268,13 @@ fi
 BUILD_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.enabled" || true)"
 BUILD_ARGO_REQUIRED="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.required" || true)"
 BUILD_ARGO_VERSION="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.version" || true)"
-BUILD_ARGO_CRDS_DIR_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.crds_dir_source" || true)"
 BUILD_ARGO_CONTROLLER_IMAGE_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.controller_image_ref" || true)"
 BUILD_ARGO_EXECUTOR_IMAGE_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.executor_image_ref" || true)"
-BUILD_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.controller_image_archive_source" || true)"
-BUILD_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.executor_image_archive_source" || true)"
 BUILD_WORKSPACE_PROVISIONER_IMAGE_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.workspace_provisioner_image_ref" || true)"
-BUILD_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.workspace_provisioner_image_archive_source" || true)"
 BUILD_ZOT_VERSION="$(config_get_optional "${CONFIG_PATH}" "build_flow.zot.version" || true)"
 BUILD_ZOT_IMAGE_PULL_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.zot.image_pull_ref" || true)"
-BUILD_ZOT_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.zot.image_archive_source" || true)"
 BUILD_DNS_VERSION="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.version" || true)"
 BUILD_DNS_IMAGE_PULL_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.image_pull_ref" || true)"
-BUILD_DNS_IMAGE_ARCHIVE_SOURCE="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.image_archive_source" || true)"
 APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}")"
 VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
 [[ -n "${VERIFY_ARGO_ENABLED}" ]] || fail "verification.argo.enabled is required in config (true|false)"
@@ -321,25 +323,18 @@ BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "EXPORT_DIR" "${REMOTE_EXPORT_DIR}" \
   "K3S_BINARY_SOURCE" "${BUILD_K3S_BINARY_SOURCE}" \
   "K3S_AIRGAP_IMAGES_SOURCE" "${BUILD_K3S_AIRGAP_IMAGES_SOURCE}" \
-  "HOST_PACKAGES_DIR_SOURCE" "${BUILD_HOST_PACKAGES_DIR_SOURCE}" \
   "CODE_REPO_REF" "${CODE_REPO_REF}" \
   "CTL_REPO_REF" "${CTL_REPO_REF}" \
   "ARGO_ENABLED" "${BUILD_ARGO_ENABLED}" \
   "ARGO_REQUIRED" "${BUILD_ARGO_REQUIRED}" \
   "ARGO_VERSION" "${BUILD_ARGO_VERSION}" \
-  "ARGO_CRDS_DIR_SOURCE" "${BUILD_ARGO_CRDS_DIR_SOURCE}" \
   "ARGO_CONTROLLER_IMAGE_REF" "${BUILD_ARGO_CONTROLLER_IMAGE_REF}" \
   "ARGO_EXECUTOR_IMAGE_REF" "${BUILD_ARGO_EXECUTOR_IMAGE_REF}" \
-  "ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE" "${BUILD_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" \
-  "ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE" "${BUILD_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" \
   "WORKSPACE_PROVISIONER_IMAGE_REF" "${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}" \
-  "WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE" "${BUILD_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" \
   "ZOT_VERSION" "${BUILD_ZOT_VERSION}" \
   "ZOT_IMAGE_PULL_REF" "${BUILD_ZOT_IMAGE_PULL_REF}" \
-  "ZOT_IMAGE_ARCHIVE_SOURCE" "${BUILD_ZOT_IMAGE_ARCHIVE_SOURCE}" \
   "DNS_VERSION" "${BUILD_DNS_VERSION}" \
   "DNS_IMAGE_PULL_REF" "${BUILD_DNS_IMAGE_PULL_REF}" \
-  "DNS_IMAGE_ARCHIVE_SOURCE" "${BUILD_DNS_IMAGE_ARCHIVE_SOURCE}" \
   "EXTRA_OCI_IMAGE_REFS" "${BUILD_EXTRA_OCI_IMAGE_REFS}" \
   "EXTRA_OCI_IMAGE_PULL_REFS" "${IMAGE_REGISTRY_PULL_REF}" \
   "OCI_COPY_SRC_TLS_VERIFY" "${OCI_COPY_SRC_TLS_VERIFY}" \

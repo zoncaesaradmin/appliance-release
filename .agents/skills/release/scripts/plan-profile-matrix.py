@@ -419,10 +419,9 @@ def suggested_final_config_overlay() -> str:
     return "\n".join(
         [
             "build_flow:",
-            "  # Optional: omit these to let the build host package docker.io/alpine/git:latest",
-            "  # as registry.local/workspace-provisioner@sha256:<archived-platform-digest>.",
-            "  workspace_provisioner_image_archive_source: /abs/path/on/build-host/workspace-provisioner.oci.tar",
-            "  workspace_provisioner_image_ref: registry.local/workspace-provisioner",
+            "  # Optional upstream pull ref for the workspace provisioner base image.",
+            "  # Default is docker.io/alpine/git:latest → registry.local/workspace-provisioner@sha256:…",
+            "  workspace_provisioner_image_ref: docker.io/alpine/git:latest",
             "",
             "install:",
             "  appliance_profile: builder",

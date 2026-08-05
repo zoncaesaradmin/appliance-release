@@ -39,6 +39,11 @@ Notes:
   omit the block to skip the mirror. When enabled: try mirror first
   (`timeout_seconds`, default 15), on miss/timeout pull the public upstream,
   then best-effort push into `<registry>/<repository_prefix>/<image>:<tag>`.
+- Build packaging always pulls/packages from the network (or the mirror flow
+  above). Local build-host path inputs such as `*_image_archive_source`,
+  `argo.crds_dir_source`, and `host_packages_dir_source` are rejected.
+  Staging K3s binary/images under `k3s_*_source` remains (those are product
+  payload files, not alternate OCI fetch modes).
 - Do **not** put a `build_flow.product_publish` block in config. Signed-bundle
   distribution is `bundle_store` + `publish_command`. Service image push defaults
   live in appliance-code `build/service-image.mk` (`SERVICE_IMAGE_*` /
@@ -94,11 +99,10 @@ Notes:
   `build_flow.dev_image_pull` is configured so `registry.local/dev-build`
   is bundled and preloaded on the target.
 - The bundle flow always packages the complete offline host package super-set
-  (`mdns` + `wifi-ap` capabilities) for the selected OS baseline. When
-  `build_flow.host_packages_dir_source` is unset, `build-full-bundle` exports
-  that payload on the build host. Layout is OS/version/arch such as
-  `ubuntu/24.04/amd64/*.deb`. The signed tree becomes `host-packages/`;
-  zonctl stages packages at install; enable mDNS / Wi-Fi AP day-2 via Admin UI/API.
+  (`mdns` + `wifi-ap` capabilities) by exporting debs on the build host for the
+  selected OS baseline (`ubuntu/24.04/amd64/*.deb`, etc.). The signed tree is
+  `host-packages/`; zonctl stages packages at install; enable mDNS / Wi-Fi AP
+  day-2 via Admin UI/API.
 - Builder workflow repo URLs must use HTTPS.
 
 ## 1. Full Flow

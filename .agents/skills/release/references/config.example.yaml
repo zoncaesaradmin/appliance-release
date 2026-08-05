@@ -98,12 +98,9 @@ build_flow:
   ctl_repo_ref: main
   k3s_binary_source: /home/zonsys/ci/inputs/k3s
   k3s_airgap_images_source: /home/zonsys/ci/inputs/k3s-airgap-images-amd64.tar.zst
-  # Optional override for the offline host package payload source.
-  # When unset, build-full-bundle always exports the complete capability set
-  # (mdns + wifi-ap) for the selected OS_VERSION. Layout is OS/version/arch,
-  # for example ubuntu/24.04/amd64/*.deb. Install host flags do not affect
-  # which capabilities are packaged.
-  # host_packages_dir_source: /home/zonsys/ci/inputs/host-packages
+  # Host packages (mdns + wifi-ap debs) are always exported on the build host by
+  # build-full-bundle for OS_VERSION (ubuntu/<version>/amd64). No separate
+  # offline host-packages path input. Install stages debs; enable day-2 via Admin.
   build_command: bash scripts/ci/build-full-bundle.sh
   publish_command: make publish-release
 

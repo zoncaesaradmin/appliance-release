@@ -62,7 +62,6 @@ CODE_REPO_SOURCE=https://git.example.invalid/zon/appliance-code.git \
 CTL_REPO_SOURCE=https://git.example.invalid/zon/appliance-ctl.git \
 K3S_BINARY_SOURCE=/ci/inputs/k3s \
 K3S_AIRGAP_IMAGES_SOURCE=/ci/inputs/k3s-airgap-images-amd64.tar.zst \
-HOST_PACKAGES_DIR_SOURCE=/ci/inputs/host-packages \
 bash ./scripts/ci/build-full-bundle.sh
 ```
 
@@ -71,6 +70,9 @@ That script:
 - sources stable defaults from `configs/product-bundle.ci.env`
 - uses the current `appliance-release` checkout as the driver repo
 - clones or refreshes `appliance-code` and `appliance-ctl`
+- always packages OCI/host payloads by export/pull on the build host
+  (network or optional LAN `build_image_mirror` + upstream). Local pre-supplied
+  image archive / CRD / host-packages dir knobs are not supported
 - asks `appliance-code` to build `release-input-${PRODUCT_VERSION}.tar.gz`
 - assembles and verifies the final signed bundle
 - exports the delivery files into `EXPORT_DIR` or `WORK_ROOT/export`
@@ -83,13 +85,12 @@ Outputs:
 
 Product packaging always exports the complete host package super-set
 (`mdns` + `wifi-ap`) for the selected `OS_VERSION` baseline under
-`ubuntu/<version>/amd64/*.deb`. That tree is copied into signed
-`host-packages/`. Install stages the .deb payload offline but leaves mDNS and
-Wi-Fi AP services off; admins enable them day-2 via Admin UI / control-plane
-host APIs (with PSK supplied at enable time for Wi-Fi AP). Use
-`HOST_PACKAGES_DIR_SOURCE` only as an override for unusual offline workflows.
-Optional `COMPONENT_CACHE_DIR` enables fingerprint-based reuse of component
-outputs (Phase C); assemble and sign always re-run.
+`ubuntu/<version>/amd64/*.deb` on the build host (apt download during export).
+That tree is copied into signed `host-packages/`. Install stages the .deb
+payload offline but leaves mDNS and Wi-Fi AP services off; admins enable them
+day-2 via Admin UI / control-plane host APIs (with PSK supplied at enable time
+for Wi-Fi AP). Optional `COMPONENT_CACHE_DIR` enables fingerprint-based reuse
+of component outputs (Phase C); assemble and sign always re-run.
 
 ## One-Time Build Host Bootstrap
 

@@ -46,25 +46,20 @@ Optional overrides:
   HELM_VERSION=v3.21.1
   HELM_BINARY=/abs/path/to/linux-amd64/helm
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
-  # Optional override for a prebuilt offline host package payload.
-  # Layout must be OS/version/arch, for example
-  HOST_PACKAGES_DIR_SOURCE=/ci/inputs/host-packages
-  # ubuntu/24.04/amd64/*.deb. When omitted, build-full-bundle always exports the
-  # complete host capability set (mdns + wifi-ap) for OS_VERSION.
-  # Install stages those packages offline; enablement is day-2 Admin UI/API only.
+  # Host packages: always export-host-packages for mdns + wifi-ap under OS_VERSION
+  # (ubuntu/<version>/amd64/*.deb). Install stages debs; enablement is day-2 only.
   # BUILD_COMPLETE_PRODUCT=false  # developer slim path only; default true requires Argo + dev-build
   # COMPONENT_CACHE_DIR=/var/cache/appliance-build/components  # optional dirty-only rebuild cache
   ARGO_ENABLED=true                 # complete product always packages Argo (set BUILD_COMPLETE_PRODUCT=false to allow opt-out)
-  ARGO_CRDS_DIR_SOURCE=/ci/inputs/argo-crds   # use a local/offline CRD copy instead of fetching from GitHub
-  ARGO_VERSION=v3.5.10                        # pin a different Argo version than the chart's appVersion
+  ARGO_VERSION=v3.5.10              # pin a different Argo version than the chart's appVersion
   ARGO_CONTROLLER_IMAGE_REF=localhost/appliance-argo-controller:v3.5.10
   ARGO_EXECUTOR_IMAGE_REF=quay.io/argoproj/argoexec:v3.5.10
+  # Argo CRDs and controller/executor images are always fetched/packaged online
+  # (or via build_image_mirror). Pre-supplied local archive/dir paths are not supported.
   WORKSPACE_PROVISIONER_IMAGE_REF=docker.io/alpine/git:latest
-  WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE=/ci/inputs/workspace-provisioner.oci.tar
-  # When WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE is omitted, WORKSPACE_PROVISIONER_IMAGE_REF
-  # is the upstream pull ref (default docker.io/alpine/git:latest). The build copies the
-  # linux/amd64 image, then sets registry.local/workspace-provisioner@sha256:<archived
-  # platform manifest digest> from the archive contents (never from skopeo inspect).
+  # WORKSPACE_PROVISIONER_IMAGE_REF is the upstream pull ref. The build copies
+  # linux/amd64 then sets registry.local/workspace-provisioner@sha256:<digest>
+  # from the archive (never from skopeo inspect alone).
   EXTRA_OCI_IMAGE_REFS=registry.local/dev-build
   EXTRA_OCI_IMAGE_PULL_REFS=ghcr.io/org/development-container/dev-build:v0.1.0
   # Complete product always packages registry.local/dev-build (builder task image).
@@ -82,17 +77,12 @@ Optional overrides:
   #   try LAN Artifact Server → miss/timeout → public/upstream pull → best-effort push to LAN.
   ZOT_VERSION=2.1.8
   ZOT_IMAGE_PULL_REF=ghcr.io/project-zot/zot-linux-amd64:v2.1.8
-  ZOT_IMAGE_ARCHIVE_SOURCE=/ci/inputs/zot.oci.tar
-  # Zot is a first-class release artifact, not an EXTRA_OCI image. Online builds
-  # copy linux/amd64 on the build host; offline builds may supply an archive.
-  # Both paths derive registry.local/zot@sha256:<platform-digest> from index.json.
+  # Zot is a first-class release artifact: always pull/copy linux/amd64 and derive
+  # registry.local/zot@sha256:<platform-digest> from index.json.
   DNS_VERSION=1.14.4
   DNS_IMAGE_PULL_REF=registry.k8s.io/coredns/coredns:v1.14.4
-  DNS_IMAGE_ARCHIVE_SOURCE=/ci/inputs/coredns.oci.tar
-  # CoreDNS is a first-class release artifact. Online builds wrap upstream
-  # inside appliance-code's package-coredns-image-archive (dev-run has
-  # buildah+skopeo); offline builds may supply that wrapper archive. Both
-  # paths derive registry.local/coredns@sha256:<platform-digest> from index.json.
+  # CoreDNS: always wrap upstream via appliance-code package-coredns-image-archive
+  # (dev-run has buildah+skopeo); digest from index.json.
 EOF
 }
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -111,7 +101,6 @@ USER_CTL_REPO_SOURCE="${CTL_REPO_SOURCE-}"
 USER_CTL_REPO_REF="${CTL_REPO_REF-}"
 USER_K3S_BINARY_SOURCE="${K3S_BINARY_SOURCE-}"
 USER_K3S_AIRGAP_IMAGES_SOURCE="${K3S_AIRGAP_IMAGES_SOURCE-}"
-USER_HOST_PACKAGES_DIR_SOURCE="${HOST_PACKAGES_DIR_SOURCE-}"
 USER_HELM_BINARY="${HELM_BINARY-}"
 USER_HELM_VERSION="${HELM_VERSION-}"
 USER_VALUES_FILE_SOURCE="${VALUES_FILE_SOURCE-}"
@@ -122,19 +111,13 @@ USER_K3S_VERSION_OVERRIDE="${K3S_VERSION_OVERRIDE-}"
 USER_ARGO_ENABLED="${ARGO_ENABLED-}"
 USER_ARGO_REQUIRED="${ARGO_REQUIRED-}"
 USER_ARGO_VERSION="${ARGO_VERSION-}"
-USER_ARGO_CRDS_DIR_SOURCE="${ARGO_CRDS_DIR_SOURCE-}"
 USER_ARGO_CONTROLLER_IMAGE_REF="${ARGO_CONTROLLER_IMAGE_REF-}"
 USER_ARGO_EXECUTOR_IMAGE_REF="${ARGO_EXECUTOR_IMAGE_REF-}"
-USER_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE-}"
-USER_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE-}"
 USER_WORKSPACE_PROVISIONER_IMAGE_REF="${WORKSPACE_PROVISIONER_IMAGE_REF-}"
-USER_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE="${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE-}"
 USER_ZOT_VERSION="${ZOT_VERSION-}"
 USER_ZOT_IMAGE_PULL_REF="${ZOT_IMAGE_PULL_REF-}"
-USER_ZOT_IMAGE_ARCHIVE_SOURCE="${ZOT_IMAGE_ARCHIVE_SOURCE-}"
 USER_DNS_VERSION="${DNS_VERSION-}"
 USER_DNS_IMAGE_PULL_REF="${DNS_IMAGE_PULL_REF-}"
-USER_DNS_IMAGE_ARCHIVE_SOURCE="${DNS_IMAGE_ARCHIVE_SOURCE-}"
 USER_EXTRA_OCI_IMAGE_REFS="${EXTRA_OCI_IMAGE_REFS-}"
 USER_EXTRA_OCI_IMAGE_PULL_REFS="${EXTRA_OCI_IMAGE_PULL_REFS-}"
 USER_OCI_COPY_SRC_TLS_VERIFY="${OCI_COPY_SRC_TLS_VERIFY-}"
@@ -144,10 +127,26 @@ set -a
 source "${DEFAULTS_FILE}"
 set +a
 
-if [[ -n "${EXTRA_OCI_IMAGE_ARCHIVE_SOURCES-}" ]]; then
-  echo "build-full-bundle: EXTRA_OCI_IMAGE_ARCHIVE_SOURCES is no longer supported; pull extra OCI images via EXTRA_OCI_IMAGE_PULL_REFS (build_flow.dev_image_pull in the release config)" >&2
-  exit 2
-fi
+# Reject removed offline/local archive path knobs (build always pulls/packages
+# online or via optional build_image_mirror LAN+upstream).
+_removed_offline_build_inputs=(
+  EXTRA_OCI_IMAGE_ARCHIVE_SOURCES
+  ARGO_CRDS_DIR_SOURCE
+  ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE
+  ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE
+  WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE
+  ZOT_IMAGE_ARCHIVE_SOURCE
+  DNS_IMAGE_ARCHIVE_SOURCE
+  HOST_PACKAGES_DIR_SOURCE
+)
+for _var in "${_removed_offline_build_inputs[@]}"; do
+  if [[ -n "${!_var-}" ]]; then
+    echo "build-full-bundle: ${_var} is no longer supported (no offline/local archive path inputs)." >&2
+    echo "build-full-bundle: pull/package via the network (or optional BUILD_IMAGE_MIRROR_* / build_flow.build_image_mirror)." >&2
+    exit 2
+  fi
+done
+unset _var _removed_offline_build_inputs
 
 PRODUCT_VERSION="${USER_PRODUCT_VERSION:-${PRODUCT_VERSION:-}}"
 CODE_REPO_SOURCE="${USER_CODE_REPO_SOURCE:-${CODE_REPO_SOURCE:-}}"
@@ -156,7 +155,6 @@ CTL_REPO_SOURCE="${USER_CTL_REPO_SOURCE:-${CTL_REPO_SOURCE:-}}"
 CTL_REPO_REF="${USER_CTL_REPO_REF:-${CTL_REPO_REF:-main}}"
 K3S_BINARY_SOURCE="${USER_K3S_BINARY_SOURCE:-${K3S_BINARY_SOURCE:-}}"
 K3S_AIRGAP_IMAGES_SOURCE="${USER_K3S_AIRGAP_IMAGES_SOURCE:-${K3S_AIRGAP_IMAGES_SOURCE:-}}"
-HOST_PACKAGES_DIR_SOURCE="${USER_HOST_PACKAGES_DIR_SOURCE:-${HOST_PACKAGES_DIR_SOURCE:-}}"
 HELM_BINARY="${USER_HELM_BINARY:-${HELM_BINARY:-}}"
 HELM_VERSION="${USER_HELM_VERSION:-${HELM_VERSION:-}}"
 VALUES_FILE_SOURCE="${USER_VALUES_FILE_SOURCE:-${VALUES_FILE:-}}"
@@ -167,26 +165,20 @@ K3S_VERSION_OVERRIDE="${USER_K3S_VERSION_OVERRIDE:-}"
 ARGO_ENABLED="${USER_ARGO_ENABLED:-${ARGO_ENABLED:-}}"
 ARGO_REQUIRED="${USER_ARGO_REQUIRED:-${ARGO_REQUIRED:-}}"
 ARGO_VERSION="${USER_ARGO_VERSION:-${ARGO_VERSION:-}}"
-ARGO_CRDS_DIR_SOURCE="${USER_ARGO_CRDS_DIR_SOURCE:-${ARGO_CRDS_DIR_SOURCE:-}}"
 ARGO_CONTROLLER_IMAGE_REF="${USER_ARGO_CONTROLLER_IMAGE_REF:-${ARGO_CONTROLLER_IMAGE_REF:-}}"
 ARGO_EXECUTOR_IMAGE_REF="${USER_ARGO_EXECUTOR_IMAGE_REF:-${ARGO_EXECUTOR_IMAGE_REF:-}}"
-ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE="${USER_ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE:-${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE:-}}"
-ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE="${USER_ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE:-${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE:-}}"
 WORKSPACE_PROVISIONER_IMAGE_REF="${USER_WORKSPACE_PROVISIONER_IMAGE_REF:-${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:latest}}"
-WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE="${USER_WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE:-${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE:-}}"
 # compatibility.zotVersion is unprefixed (2.1.8). Chart appVersion and GHCR
 # tags use a leading v (v2.1.8). Normalize before constructing the pull ref.
 ZOT_VERSION="${USER_ZOT_VERSION:-${ZOT_VERSION:-2.1.8}}"
 ZOT_VERSION="${ZOT_VERSION#v}"
 ZOT_IMAGE_PULL_REF="${USER_ZOT_IMAGE_PULL_REF:-${ZOT_IMAGE_PULL_REF:-ghcr.io/project-zot/zot-linux-amd64:v${ZOT_VERSION}}}"
-ZOT_IMAGE_ARCHIVE_SOURCE="${USER_ZOT_IMAGE_ARCHIVE_SOURCE:-${ZOT_IMAGE_ARCHIVE_SOURCE:-}}"
 # compatibility.dnsVersion is unprefixed (1.14.4). Chart appVersion and the
 # upstream registry.k8s.io tag use a leading v (v1.14.4). Normalize before
 # constructing the pull ref, same as ZOT_VERSION above.
 DNS_VERSION="${USER_DNS_VERSION:-${DNS_VERSION:-1.14.4}}"
 DNS_VERSION="${DNS_VERSION#v}"
 DNS_IMAGE_PULL_REF="${USER_DNS_IMAGE_PULL_REF:-${DNS_IMAGE_PULL_REF:-registry.k8s.io/coredns/coredns:v${DNS_VERSION}}}"
-DNS_IMAGE_ARCHIVE_SOURCE="${USER_DNS_IMAGE_ARCHIVE_SOURCE:-${DNS_IMAGE_ARCHIVE_SOURCE:-}}"
 EXTRA_OCI_IMAGE_REFS="${USER_EXTRA_OCI_IMAGE_REFS:-${EXTRA_OCI_IMAGE_REFS:-}}"
 EXTRA_OCI_IMAGE_PULL_REFS="${USER_EXTRA_OCI_IMAGE_PULL_REFS:-${EXTRA_OCI_IMAGE_PULL_REFS:-}}"
 OCI_COPY_SRC_TLS_VERIFY="${USER_OCI_COPY_SRC_TLS_VERIFY:-${OCI_COPY_SRC_TLS_VERIFY:-true}}"
@@ -852,7 +844,7 @@ skopeo_copy_oci_archive() {
       cat >&2 <<EOF
 build-full-bundle: failed to export ${dest_name} from upstream ${source_ref}
 build-full-bundle: skopeo and podman pull both failed (see logs above)
-build-full-bundle: ensure the build host can reach the registry, or set an offline image_archive_source / seed the LAN build-cache mirror
+build-full-bundle: ensure the build host can reach the registry or seed the optional LAN build-cache mirror (build_flow.build_image_mirror)
 EOF
       if ! command -v skopeo >/dev/null 2>&1 && ! command -v podman >/dev/null 2>&1; then
         echo "build-full-bundle: skopeo or podman is required to export ${dest_name}" >&2
@@ -932,8 +924,9 @@ skopeo_push_oci_archive_to_mirror() {
     "docker://${mirror_ref#docker://}" >/dev/null 2>&1
 }
 
-# Finalize any OCI archive (online copy or pre-exported) so imageReference equals
-# the archived platform manifest digest. Prints the canonical bundle ref.
+# Finalize any OCI archive so imageReference equals the archived platform
+# manifest digest and the annotation is the :bundled local name.
+# Prints the canonical registry.local/<name>@sha256:… bundle ref.
 finalize_bundled_oci_archive() {
   local archive_path="$1"
   local local_name="$2"
@@ -1182,41 +1175,24 @@ require_file "${K3S_AIRGAP_IMAGES_SOURCE}" "k3s airgap images"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   require_file "${VALUES_FILE_SOURCE}" "values file"
 fi
-if [[ -n "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" ]]; then
-  require_file "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" "Argo controller image archive"
-fi
-if [[ -n "${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" ]]; then
-  require_file "${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" "Argo executor image archive"
-fi
-if [[ -n "${ARGO_CRDS_DIR_SOURCE}" && ! -d "${ARGO_CRDS_DIR_SOURCE}" ]]; then
-  echo "build-full-bundle: missing Argo CRDs directory: ${ARGO_CRDS_DIR_SOURCE}" >&2
-  exit 1
-fi
-if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" ]]; then
-  require_file "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" "workspace provisioner image archive"
-  if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_REF}" && "${WORKSPACE_PROVISIONER_IMAGE_REF}" != registry.local/workspace-provisioner && "${WORKSPACE_PROVISIONER_IMAGE_REF}" != registry.local/workspace-provisioner@sha256:* ]]; then
-    echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be registry.local/workspace-provisioner[@sha256:...] when WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE is provided (digest is derived from the archive)" >&2
-    exit 2
-  fi
-fi
 if [[ -z "${ZOT_VERSION}" || "${ZOT_VERSION}" == *latest* ]]; then
   echo "build-full-bundle: ZOT_VERSION must be an exact non-latest version" >&2
   exit 2
 fi
-if [[ -n "${ZOT_IMAGE_ARCHIVE_SOURCE}" ]]; then
-  require_file "${ZOT_IMAGE_ARCHIVE_SOURCE}" "zot image archive"
-elif [[ "${ZOT_IMAGE_PULL_REF}" == *:latest || "${ZOT_IMAGE_PULL_REF}" == registry.local/* ]]; then
-  echo "build-full-bundle: ZOT_IMAGE_PULL_REF must be a version-pinned upstream image when no archive is supplied" >&2
+if [[ "${ZOT_IMAGE_PULL_REF}" == *:latest || "${ZOT_IMAGE_PULL_REF}" == registry.local/* ]]; then
+  echo "build-full-bundle: ZOT_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
   exit 2
 fi
 if [[ -z "${DNS_VERSION}" || "${DNS_VERSION}" == *latest* ]]; then
   echo "build-full-bundle: DNS_VERSION must be an exact non-latest version" >&2
   exit 2
 fi
-if [[ -n "${DNS_IMAGE_ARCHIVE_SOURCE}" ]]; then
-  require_file "${DNS_IMAGE_ARCHIVE_SOURCE}" "coredns image archive"
-elif [[ "${DNS_IMAGE_PULL_REF}" == *:latest || "${DNS_IMAGE_PULL_REF}" == registry.local/* ]]; then
-  echo "build-full-bundle: DNS_IMAGE_PULL_REF must be a version-pinned upstream image when no archive is supplied" >&2
+if [[ "${DNS_IMAGE_PULL_REF}" == *:latest || "${DNS_IMAGE_PULL_REF}" == registry.local/* ]]; then
+  echo "build-full-bundle: DNS_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
+  exit 2
+fi
+if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner || "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner@sha256:* ]]; then
+  echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be an upstream pull ref (default docker.io/alpine/git:latest); got ${WORKSPACE_PROVISIONER_IMAGE_REF}" >&2
   exit 2
 fi
 
@@ -1277,10 +1253,6 @@ mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}" "$
 clone_repo "${CODE_REPO_SOURCE}" "${CODE_REPO_REF}" "${CODE_REPO_DIR}"
 clone_repo "${CTL_REPO_SOURCE}" "${CTL_REPO_REF}" "${CTL_REPO_DIR}"
 
-if [[ -n "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
-  require_dir "${HOST_PACKAGES_DIR_SOURCE}" "host packages directory"
-fi
-
 ZOT_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-registry/Chart.yaml")"
 # Chart.yaml may use Helm/upstream form v2.1.8 while ZOT_VERSION is 2.1.8.
 if [[ -z "${ZOT_CHART_APP_VERSION}" || "${ZOT_CHART_APP_VERSION#v}" != "${ZOT_VERSION}" ]]; then
@@ -1301,10 +1273,10 @@ if bool_true "${ARGO_ENABLED}"; then
   if [[ -z "${ARGO_VERSION}" ]]; then
     ARGO_VERSION="$(derive_argo_version_from_code_repo)"
   fi
-  if [[ -z "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" && -z "${ARGO_CONTROLLER_IMAGE_REF}" ]]; then
+  if [[ -z "${ARGO_CONTROLLER_IMAGE_REF}" ]]; then
     ARGO_CONTROLLER_IMAGE_REF="localhost/appliance-argo-controller:${ARGO_VERSION}"
   fi
-  if [[ -z "${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" && -z "${ARGO_EXECUTOR_IMAGE_REF}" ]]; then
+  if [[ -z "${ARGO_EXECUTOR_IMAGE_REF}" ]]; then
     ARGO_EXECUTOR_IMAGE_REF="quay.io/argoproj/argoexec:${ARGO_VERSION}"
   fi
 fi
@@ -1315,54 +1287,34 @@ ARGO_CRDS_DIR_FOR_DEV=""
 ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
 ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
 rm -rf "${CODE_REPO_DIR}/.run/host-packages"
-# Complete product super-set always packages both host capability closures.
+# Complete product super-set always packages both host capability closures by
+# export on the build host (no external host-packages tree override).
 HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
 HOST_CAPABILITIES=(mdns wifi-ap)
 mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
-host_packages_input="${HOST_PACKAGES_DIR_SOURCE:-}"
 host_packages_fingerprint_inputs=("${OS_VERSION}" "mdns" "wifi-ap")
-if [[ -n "${host_packages_input}" ]]; then
-  host_packages_fingerprint_inputs+=("${host_packages_input}")
-fi
 if ! component_cache_try_restore "host-packages" "${CODE_REPO_DIR}/.run/host-packages" "${host_packages_fingerprint_inputs[@]}"; then
-  if [[ -n "${HOST_PACKAGES_DIR_SOURCE}" ]]; then
-    cp -R "${HOST_PACKAGES_DIR_SOURCE}/." "${CODE_REPO_DIR}/.run/host-packages/"
-  else
-    CAP_ARGS=()
-    for cap in "${HOST_CAPABILITIES[@]}"; do
-      CAP_ARGS+=(--capability "${cap}")
-    done
-    bash "${CODE_REPO_DIR}/scripts/package/export-host-packages.sh" \
-      --out-dir "${CODE_REPO_DIR}/.run/host-packages" \
-      --os-version "${OS_VERSION}" \
-      "${CAP_ARGS[@]}"
-  fi
+  CAP_ARGS=()
+  for cap in "${HOST_CAPABILITIES[@]}"; do
+    CAP_ARGS+=(--capability "${cap}")
+  done
+  bash "${CODE_REPO_DIR}/scripts/package/export-host-packages.sh" \
+    --out-dir "${CODE_REPO_DIR}/.run/host-packages" \
+    --os-version "${OS_VERSION}" \
+    "${CAP_ARGS[@]}"
   component_cache_store "host-packages" "${CODE_REPO_DIR}/.run/host-packages" "${host_packages_fingerprint_inputs[@]}"
 fi
 
 if bool_true "${ARGO_ENABLED}"; then
-  if [[ -n "${ARGO_CRDS_DIR_SOURCE}" ]]; then
-    ARGO_CRDS_DIR_FOR_DEV="/workspace/.run/argo-crds"
-    rm -rf "${CODE_REPO_DIR}/.run/argo-crds"
-    mkdir -p "${CODE_REPO_DIR}/.run/argo-crds"
-    cp -R "${ARGO_CRDS_DIR_SOURCE}/." "${CODE_REPO_DIR}/.run/argo-crds/"
-  elif bool_true "${ARGO_REQUIRED:-true}"; then
+  # Always fetch CRDs and pull/package images (no local archive path inputs).
+  if bool_true "${ARGO_REQUIRED:-true}"; then
     ARGO_CRDS_DIR_FOR_DEV="/workspace/.run/argo-crds"
     fetch_argo_crds_from_release "${ARGO_VERSION}" "${CODE_REPO_DIR}/.run/argo-crds"
   fi
-
-  if [[ -n "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" ]]; then
-    ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-controller-image.tar"
-    cp "${ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/argo-controller-image.tar"
-  fi
-
-  if [[ -n "${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" ]]; then
-    ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-executor-image.tar"
-    cp "${ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/argo-executor-image.tar"
-  else
-    ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-executor-image.tar"
-    export_container_image_archive "${ARGO_EXECUTOR_IMAGE_REF}" "${CODE_REPO_DIR}/.run/argo-executor-image.tar"
-  fi
+  # Controller image is wrapped inside the code-repo dev-run (buildah).
+  ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
+  ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-executor-image.tar"
+  export_container_image_archive "${ARGO_EXECUTOR_IMAGE_REF}" "${CODE_REPO_DIR}/.run/argo-executor-image.tar"
 fi
 
 # Build the final archive/reference pairs carefully. EXTRA_OCI_IMAGE_REF_LIST is
@@ -1376,37 +1328,16 @@ PACKAGED_EXTRA_OCI_IMAGE_REFS=()
 ensure_build_image_mirror_login
 
 ZOT_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/zot-image.tar"
-if [[ -n "${ZOT_IMAGE_ARCHIVE_SOURCE}" ]]; then
-  cp "${ZOT_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/zot-image.tar"
-  ZOT_IMAGE_REF="$(finalize_bundled_oci_archive "${CODE_REPO_DIR}/.run/zot-image.tar" "registry.local/zot")"
-else
-  ZOT_IMAGE_REF="$(export_bundled_extra_oci_image_archive "${ZOT_IMAGE_PULL_REF}" "registry.local/zot" "${CODE_REPO_DIR}/.run/zot-image.tar")"
-fi
+ZOT_IMAGE_REF="$(export_bundled_extra_oci_image_archive "${ZOT_IMAGE_PULL_REF}" "registry.local/zot" "${CODE_REPO_DIR}/.run/zot-image.tar")"
 
-# Online CoreDNS wrap needs buildah+skopeo (same as Argo controller). Run it
-# inside CODE_DEV_SCRIPT via appliance-code's package target, not on the bare
-# build host where skopeo may only exist as a podman-pulled helper for copy.
+# CoreDNS wrap needs buildah+skopeo. Always package inside CODE_DEV_SCRIPT via
+# appliance-code's package target (not a pre-supplied local archive).
 DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/coredns-image.tar"
 DNS_IMAGE_REF=""
-if [[ -n "${DNS_IMAGE_ARCHIVE_SOURCE}" ]]; then
-  cp "${DNS_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/coredns-image.tar"
-  DNS_IMAGE_REF="$(finalize_bundled_oci_archive "${CODE_REPO_DIR}/.run/coredns-image.tar" "registry.local/coredns")"
-fi
 
-if [[ -n "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" ]]; then
-  WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
-  cp "${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE}" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar"
-  WORKSPACE_PROVISIONER_IMAGE_REF="$(finalize_bundled_oci_archive "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar" "registry.local/workspace-provisioner" "${WORKSPACE_PROVISIONER_IMAGE_REF:-}")"
-else
-  WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:latest}"
-  if [[ "${WORKSPACE_PROVISIONER_PULL_REF}" == registry.local/workspace-provisioner || "${WORKSPACE_PROVISIONER_PULL_REF}" == registry.local/workspace-provisioner@sha256:* ]]; then
-    echo "build-full-bundle: online workspace provisioner export uses WORKSPACE_PROVISIONER_IMAGE_REF as an upstream pull ref (default docker.io/alpine/git:latest); got bundle name ${WORKSPACE_PROVISIONER_PULL_REF}" >&2
-    echo "build-full-bundle: set WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE when supplying a pre-exported registry.local/workspace-provisioner archive" >&2
-    exit 2
-  fi
-  WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
-  WORKSPACE_PROVISIONER_IMAGE_REF="$(export_bundled_extra_oci_image_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "registry.local/workspace-provisioner" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
-fi
+WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:latest}"
+WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
+WORKSPACE_PROVISIONER_IMAGE_REF="$(export_bundled_extra_oci_image_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "registry.local/workspace-provisioner" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
 PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
 PACKAGED_EXTRA_OCI_IMAGE_REFS+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
 
@@ -1467,18 +1398,15 @@ HOST_PACKAGES_ARGS=(
   --host-packages-os-version "\${HOST_PACKAGES_OS_VERSION}"
 )
 
-DNS_IMAGE_ARCHIVE_FOR_DEV=$(shell_quote "${DNS_IMAGE_ARCHIVE_FOR_DEV}")
-DNS_IMAGE_REF=$(shell_quote "${DNS_IMAGE_REF}")
-if [[ -z "\${DNS_IMAGE_REF}" ]]; then
-  # Appliance-owned CoreDNS wrapper: tees stdout/stderr into /data/zon/logs/dns.
-  # Do not re-label bare upstream — that leaves the host log directory empty.
-  make package-coredns-image-archive \
-    OUT_FILE="/workspace/.run/coredns-image.tar" \
-    DNS_VERSION=$(shell_quote "${DNS_VERSION}") \
-    DNS_SOURCE_IMAGE=$(shell_quote "${DNS_IMAGE_PULL_REF}")
-  DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/coredns-image.tar"
-  DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/coredns-image.reference)"
-fi
+# Appliance-owned CoreDNS wrapper: tees stdout/stderr into /data/zon/logs/dns.
+# Always package from upstream pull ref (no pre-supplied archive path).
+make package-coredns-image-archive \
+  OUT_FILE="/workspace/.run/coredns-image.tar" \
+  DNS_VERSION=$(shell_quote "${DNS_VERSION}") \
+  DNS_SOURCE_IMAGE=$(shell_quote "${DNS_IMAGE_PULL_REF}")
+DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/coredns-image.tar"
+DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/coredns-image.reference)"
+
 
 METADATA_BUNDLE_ARCHIVE_FOR_DEV="\$(bash ./scripts/package/generate-metadata-bundle.sh --software-version "\${CODE_VERSION}" --out-dir "/workspace/.run/metadata-bundle")"
 
@@ -1489,15 +1417,12 @@ if bool_true $(shell_quote "${ARGO_ENABLED}"); then
     ARGO_ARGS+=(--argo-crds-dir $(shell_quote "${ARGO_CRDS_DIR_FOR_DEV}"))
   fi
 
-  if [[ -z $(shell_quote "${ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}") ]]; then
-    make package-argo-controller-image-archive \
-      OUT_FILE="/workspace/.run/argo-controller-image.tar" \
-      ARGO_VERSION=$(shell_quote "${ARGO_VERSION}") \
-      ARGO_CONTROLLER_BASE_IMAGE=$(shell_quote "quay.io/argoproj/workflow-controller:${ARGO_VERSION}")
-    ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-controller-image.tar"
-  else
-    ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=$(shell_quote "${ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}")
-  fi
+  # Always wrap the upstream controller inside the code-repo dev environment.
+  make package-argo-controller-image-archive \
+    OUT_FILE="/workspace/.run/argo-controller-image.tar" \
+    ARGO_VERSION=$(shell_quote "${ARGO_VERSION}") \
+    ARGO_CONTROLLER_BASE_IMAGE=$(shell_quote "quay.io/argoproj/workflow-controller:${ARGO_VERSION}")
+  ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-controller-image.tar"
 
   ARGO_ARGS+=(--argo-controller-image "\${ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}")
   ARGO_ARGS+=(--argo-controller-image-reference $(shell_quote "${ARGO_CONTROLLER_IMAGE_REF}"))
