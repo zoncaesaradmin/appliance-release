@@ -193,3 +193,4 @@ with open(out_path, "w", encoding="utf-8") as handle:
 PY
 
 log "bootstrap-admin metadata written to ${RUN_DIR}/metadata/bootstrap-admin.json"
+log "bootstrap-admin stage complete"

@@ -56,7 +56,12 @@ bash .agents/skills/release/scripts/run-release-from-devhost.sh \
 CLI path presence selects stages (no `build_flow.skip` / `install.skip`):
 
 - `--build-publish-config` → build/publish on the build host
-- `--install-config` → public helper install → optional bootstrap → target/client verify → report
+- `--install-config` → clean uninstall (if zonctl present) → public fresh
+  install → optional bootstrap → target/client verify → report
+
+**Reinstall policy (current):** no in-place upgrade on the public/lab path.
+Always `zonctl uninstall --confirm yes` then fresh install. Config-preserving
+upgrade is parked.
 
 Secrets stay in the Mac shell as env vars **named** by config `*_env` keys
 (`DEV_*`, `APPLIANCE_BUILD_SUDO_PASSWORD`, `APPLIANCE_TARGET_SUDO_PASSWORD`,

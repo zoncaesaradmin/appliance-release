@@ -346,19 +346,32 @@ run_ssh_logged() {
   local log_file="$2"
   local remote_command="$3"
   local quoted_remote_command=""
+  local cmd_status=0
+  local pipe0=0
+  local pipe1=0
+  local pipe2=0
 
   ensure_dir "$(dirname "${log_file}")"
   quoted_remote_command="$(shell_quote "${remote_command}")"
   set +e
   # Non-interactive login shell: sources ~/.bash_profile or ~/.profile (not the
   # interactive-only half of ~/.bashrc). Operators should export DEV_* and
-  # APPLIANCE_* there. -tt keeps a remote TTY for tools that expect one / for
-  # log streaming.
-  ssh -tt "${host}" "env -u BASH_ENV bash -lc ${quoted_remote_command}" 2>&1 \
+  # APPLIANCE_* there.
+  # Use -T (no remote TTY). ssh -tt was leaving the Mac-side pipe open after
+  # short remote commands finished (bootstrap), so e2e never reached
+  # default-license / verify / "OK run".
+  # Capture PIPESTATUS immediately after the pipeline before any other
+  # command (including `local`) can overwrite it.
+  ssh -T "${host}" "env -u BASH_ENV bash -lc ${quoted_remote_command}" 2>&1 \
     | python3 -c 'import sys; [sys.stdout.write(line) for line in sys.stdin if not line.startswith("Connection to ") or " closed." not in line]' \
     | tee "${log_file}"
-  local cmd_status="${PIPESTATUS[0]}"
+  # Capture all pipe statuses in one assignment before anything else runs.
+  pipe0=${PIPESTATUS[0]} pipe1=${PIPESTATUS[1]} pipe2=${PIPESTATUS[2]}
   set -e
+  cmd_status="${pipe0}"
+  if [[ "${pipe0}" -eq 0 && ( "${pipe1}" -ne 0 || "${pipe2}" -ne 0 ) ]]; then
+    cmd_status=1
+  fi
   return "${cmd_status}"
 }
 

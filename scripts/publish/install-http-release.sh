@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# install-http-release.sh — public target-host install / upgrade helper.
+# install-http-release.sh — public target-host install helper (fresh install only).
 #
 # Public path:
 #   1) curl -fsSL -o install-http-release.sh "<distributor>/…/install-http-release.sh"
 #   2) bash install-http-release.sh --appliance-name <unique-name> [--appliance-profile <profile>]
 #
+# This helper does not upgrade in place. If the host already has an owned
+# appliance, fail and require uninstall (or factory-reset), then re-run.
 # Publish stamps PRODUCT_VERSION_EMBEDDED, PATH_PREFIX_EMBEDDED, BASE_URL_EMBEDDED.
 # Other paths and distributor options are product defaults below (rarely edit).
 set -euo pipefail
@@ -14,7 +16,7 @@ usage() {
 usage: install-http-release.sh --appliance-name NAME [options]
        install-http-release.sh --help
 
-Public install / upgrade:
+Public install (fresh host only):
 
   1) Download this script for the release version you want (version is in the
      URL; open static HTTP vs appliance_files differ only on this curl, e.g.
@@ -34,6 +36,10 @@ Public install / upgrade:
          --appliance-name my-appliance-1 \
          --appliance-profile storage-landns
 
+  If the host already has an owned appliance, uninstall first, then re-run:
+
+       sudo zonctl uninstall --confirm yes
+
 Required:
   --appliance-name NAME        Single DNS label for this appliance instance.
                                Stable for the life of the install; do not invent
@@ -52,6 +58,8 @@ file after download — edit those variables if needed. Not public CLI flags
 and not release-orchestrator config.
 
 Does not create the first administrator or accept a license (UI or later).
+
+In-place upgrade is not supported by this helper.
 EOF
 }
 
@@ -383,14 +391,17 @@ fi
 
 install_output="$(cat "${install_stdout}" "${install_stderr}")"
 if [[ "${install_output}" == *"refusing to install (reuse-owned)"* || "${install_output}" == *"refusing to install (upgrade-owned)"* ]]; then
+  print_captured_failure "[5/5] Existing owned appliance detected; install refused." "${install_stdout}" "${install_stderr}"
   rm -f "${install_stdout}" "${install_stderr}"
-  run_zonctl_step \
-    "[5/5] Existing owned appliance detected. Switching to in-place upgrade/reconcile." \
-    "[5/5] Appliance upgrade/reconcile completed." \
-    "[5/5] Appliance upgrade/reconcile failed." \
-    sudo "${ZONCTL}" upgrade "${lifecycle_args[@]}"
-  announce_zonctl_ready
-  exit 0
+  cat >&2 <<'EOF'
+install-http-release: this helper performs a fresh install only.
+Uninstall the appliance on this host, then re-run install:
+
+  sudo zonctl uninstall --confirm yes
+
+In-place upgrade is not supported by the public install path for now.
+EOF
+  exit 1
 fi
 
 print_captured_failure "[5/5] Appliance installation failed." "${install_stdout}" "${install_stderr}"

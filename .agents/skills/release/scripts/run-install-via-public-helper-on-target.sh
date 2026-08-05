@@ -2,10 +2,12 @@
 # run-install-via-public-helper-on-target.sh — Mac/devhost side (install only).
 #
 # Builds the full curl URL and auth flags on *this* machine (using config +
-# devhost DEV_* env), SSHs to the target, downloads install-http-release.sh,
-# patches stamped settings if needed, and runs:
+# devhost DEV_* env), SSHs to the target, runs a clean uninstall when zonctl
+# is already present, downloads install-http-release.sh, patches stamped
+# settings if needed, and runs:
 #   install-http-release.sh --appliance-name … --appliance-profile …
 #
+# Lab policy: always uninstall then fresh install (no in-place upgrade).
 # Target needs no permanent env. Sudo for zonctl is non-interactive: Mac
 # APPLIANCE_TARGET_SUDO_PASSWORD is injected for this SSH job only.
 set -euo pipefail
@@ -22,7 +24,8 @@ usage: run-install-via-public-helper-on-target.sh \
   --build-publish-config PATH \
   --install-config PATH
 
-Devhost builds curl + name/profile; target only fetches and runs the public helper.
+Devhost builds curl + name/profile; target uninstalls any owned appliance
+(when zonctl is present), then fetches and runs the public install helper.
 
 Export APPLIANCE_TARGET_SUDO_PASSWORD on the Mac (same as other install paths).
 EOF
@@ -140,9 +143,8 @@ if [[ "${TLS_INSECURE}" == "1" ]]; then
   curl_extra+=" -k"
 fi
 
-# Run the public helper under a single non-interactive sudo so its nested
-# `sudo zonctl …` calls do not wait on a TTY password (timestamp cache alone
-# can expire during a long download).
+# Lab policy: clean uninstall then fresh public install (no in-place upgrade).
+# Nested sudo under one non-interactive sudo so zonctl does not wait on a TTY.
 remote_cmd="set -euo pipefail
 helper_url=$(shell_quote "${HELPER_URL}")
 script_path=$(shell_quote "${SCRIPT_PATH}")
@@ -153,6 +155,16 @@ version=$(shell_quote "${RELEASE_VERSION}")
 prefix=$(shell_quote "${PATH_PREFIX}")
 name=$(shell_quote "${APPLIANCE_NAME}")
 profile=$(shell_quote "${APPLIANCE_PROFILE}")
+
+if command -v zonctl >/dev/null 2>&1; then
+  echo \"uninstalling existing appliance before reinstall (lab clean install)\"
+  printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' zonctl uninstall --confirm yes
+elif [[ -x /usr/local/bin/zonctl ]]; then
+  echo \"uninstalling existing appliance before reinstall (lab clean install)\"
+  printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' /usr/local/bin/zonctl uninstall --confirm yes
+else
+  echo \"no zonctl on target; skipping uninstall (fresh host)\"
+fi
 
 echo \"downloading \${helper_url}\"
 curl -fsSL -o \"\${script_path}\"${curl_extra} \"\${helper_url}\"

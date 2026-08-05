@@ -175,3 +175,4 @@ with open(out_path, "w", encoding="utf-8") as handle:
 PY
 
 log "bootstrap-default-license metadata written to ${RUN_DIR}/metadata/bootstrap-default-license.json"
+log "bootstrap-default-license stage complete"

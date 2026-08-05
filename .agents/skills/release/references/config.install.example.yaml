@@ -28,6 +28,8 @@
 # ============================================================================
 
 install:
+  # Lab reinstall always uninstalls then fresh-installs (orchestrator does that;
+  # no in-place public upgrade). Profile/name below apply only after a clean host.
   bootstrap_admin: false
   enable_default_license: false
 

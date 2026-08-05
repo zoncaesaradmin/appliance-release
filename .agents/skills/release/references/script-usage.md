@@ -145,15 +145,15 @@ release:
 
 # lab-install.yaml (excerpt)
 install:
-  skip: false
-  uninstall_first: true
-  preserve_failed_state: true
   bootstrap_admin: true
   enable_default_license: true
   appliance_profile: storage-landns
 ```
 
-See the three `references/config.*.example.yaml` files for the full schemas.This does (stage banners print as `── stage <name>: …`):
+See the three `references/config.*.example.yaml` files for the full schemas.
+
+E2e install is always **uninstall (if zonctl present) then fresh install**.
+In-place public upgrade is not used.
 
 - **Step 1** `buildPublish` — build and publish on the build host
 - **Step 2** `install` — install on the target host
@@ -224,25 +224,15 @@ Use this when the release is already published and you want only the install ste
 
 ```bash
 /Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-install-via-public-helper-on-target.sh \
-  --release-version 0.1.0 \
-  --appliance-profile builder \
-  --build-catalog /Users/zoncaesar/ws/appliance-release/build-catalog.yaml \
-  --appliance-name registry1 \
-  --dns-zone appliance.internal \
-  --tls-san 192.168.1.101 \
-  --preserve-failed-state \
-  --uninstall-first
-```
-
-If you want to keep the current install and test without uninstalling first:
-
-```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-install-via-public-helper-on-target.sh \
-  --release-version 0.1.0
+  --config /abs/path/to/lab-devhost.yaml \
+  --build-publish-config /abs/path/to/lab-build-publish.yaml \
+  --install-config /abs/path/to/lab-install.yaml
 ```
 
 This script:
 
+- runs `zonctl uninstall --confirm yes` on the target when zonctl is present
+  (lab clean reinstall; skips on a fresh host)
 - preflights published helper/bundle/checksum URLs from the **target** (LAN DNS),
   not the Mac
 - downloads the published package on the target with HTTP `curl` against
@@ -252,8 +242,8 @@ This script:
 - verifies checksums
 - extracts the bundle on the target host
 - runs `zonctl preflight`
-- runs `zonctl install` on a fresh host
-- automatically switches to `zonctl upgrade` when the target already has an owned appliance install
+- runs `zonctl install` (fresh only; refuses owned appliance with a clear
+  uninstall-then-reinstall message — no auto-upgrade)
 - passes `--appliance-name` / `--dns-zone` so zonctl derives the FQDN used for
   TLS, canonical origin, and the registry realm
 - automatically includes the target host's current `hostname.local` as an
