@@ -18,14 +18,10 @@ Optional environment:
   CODE_REPO_SOURCE        Source repo/URL for appliance-code
   CODE_REPO_REF           Git ref to fetch. Default: main
   WORK_ROOT               Build root. Default: ${TMPDIR:-/tmp}/appliance-build
-  APPLIANCE_BUILD_SUDO_PASSWORD
-                          Host sudo password for non-interactive
-                          make dev-sudo-setup (required when no TTY)
 
 Example:
   export DEV_REGISTRY_USER=myuser
   export DEV_REGISTRY_TOKEN=xxxxxxxx
-  export APPLIANCE_BUILD_SUDO_PASSWORD=xxxxxxxx
   bash ./scripts/ci/bootstrap-build-host.sh
 EOF
 }
@@ -121,15 +117,6 @@ clone_repo "${CODE_REPO_SOURCE}" "${CODE_REPO_REF}" "${CODE_REPO_DIR}"
 echo "bootstrap-build-host: using appliance-code at:"
 echo "  ${CODE_REPO_DIR}"
 echo "bootstrap-build-host: running one-time host bootstrap commands"
-
-# Export so make dev-sudo-setup (appliance-code) can use sudo -S without a TTY.
-# Release e2e injects APPLIANCE_BUILD_SUDO_PASSWORD when bootstrap_needs_sudo is true.
-if [[ -n "${APPLIANCE_BUILD_SUDO_PASSWORD:-}" ]]; then
-  export APPLIANCE_BUILD_SUDO_PASSWORD
-elif [[ ! -t 0 ]]; then
-  echo "bootstrap-build-host: warning: no TTY and APPLIANCE_BUILD_SUDO_PASSWORD is unset;" >&2
-  echo "bootstrap-build-host: make dev-sudo-setup will fail if passwordless podman sudo is not already configured" >&2
-fi
 
 make -C "${CODE_REPO_DIR}" dev-registry-login
 make -C "${CODE_REPO_DIR}" dev-sudo-setup
