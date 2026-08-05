@@ -32,7 +32,7 @@ build_host:
 # ============================================================================
 
 target_host:
-  alias: zonsys@192.168.1.153
+  alias: zonsys@192.168.1.151
   # Appliance state dir is not config: fixed product path /var/lib/zon/state
   # (install-http-release.sh STATE_DIR / zonctl default). Override only by
   # editing the downloaded install script for special sites.
