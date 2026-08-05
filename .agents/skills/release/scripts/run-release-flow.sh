@@ -12,9 +12,11 @@
 #   0  prepare         resolve config / run-dir / validate inputs
 #   1  buildPublish    build-and-publish.sh   (--skip-build)
 #   2  install         install-on-target.sh   (--skip-install)
-#   2b bootstrapAdmin  bootstrap-admin-on-target.sh  (--skip-bootstrap-admin)
+#   2b bootstrapAdmin  bootstrap-admin-on-target.sh  (--bootstrap-admin)
+#   2b2 bootstrapDefaultLicense  bootstrap-default-license-on-target.sh
+#                                  (--enable-default-license)
 #   2c targetVerify    verify-target.sh
-#   2d clientVerify    verify-client-access.sh  (skipped with bootstrap)
+#   2d clientVerify    verify-client-access.sh  (only with --bootstrap-admin)
 #   3  report          summarize-release-run.py + run metadata
 #
 set -euo pipefail
@@ -34,8 +36,12 @@ install/verify can later use separate configs without rewriting the flow.
   Stage 1  buildPublish    → build-and-publish.sh
   Stage 2  install         → install-on-target.sh
   Stage 2b bootstrapAdmin  → bootstrap-admin-on-target.sh
+                             (only with --bootstrap-admin)
+  Stage 2b2 bootstrapDefaultLicense → bootstrap-default-license-on-target.sh
+                             (only with --enable-default-license)
   Stage 2c targetVerify    → verify-target.sh
   Stage 2d clientVerify    → verify-client-access.sh
+                             (only with --bootstrap-admin)
   Stage 3  report          summarize run + write metadata
 
 Options:
@@ -47,7 +53,11 @@ Options:
   --build-catalog PATH       Local build catalog for zonctl (builder profiles)
   --preserve-failed-state    Pass through to install/upgrade
   --uninstall-first          Uninstall previous appliance before install
-  --skip-bootstrap-admin     Skip first-admin bootstrap and client verify
+  --bootstrap-admin          Create first admin (username from config;
+                             password from APPLIANCE_FIRST_ADMIN_PASSWORD)
+                             and run Mac-side client/API verify
+  --enable-default-license   Accept base/free entitlement on the target after
+                             install (and after bootstrap-admin when both set)
   --skip-build               Skip stage 1 (build/publish)
   --skip-install             Skip stage 2 (install)
   --final-ok                 Print "OK run" on success
@@ -79,7 +89,8 @@ APPLIANCE_PROFILE=""
 BUILD_CATALOG_PATH=""
 PRESERVE_FAILED_STATE="false"
 UNINSTALL_FIRST="false"
-SKIP_BOOTSTRAP_ADMIN="false"
+BOOTSTRAP_ADMIN="false"
+ENABLE_DEFAULT_LICENSE="false"
 SKIP_BUILD="false"
 SKIP_INSTALL="false"
 FINAL_OK="false"
@@ -94,7 +105,8 @@ while [[ $# -gt 0 ]]; do
     --build-catalog) BUILD_CATALOG_PATH="${2:-}"; shift 2 ;;
     --preserve-failed-state) PRESERVE_FAILED_STATE="true"; shift 1 ;;
     --uninstall-first) UNINSTALL_FIRST="true"; shift 1 ;;
-    --skip-bootstrap-admin) SKIP_BOOTSTRAP_ADMIN="true"; shift 1 ;;
+    --bootstrap-admin) BOOTSTRAP_ADMIN="true"; shift 1 ;;
+    --enable-default-license) ENABLE_DEFAULT_LICENSE="true"; shift 1 ;;
     --skip-build) SKIP_BUILD="true"; shift 1 ;;
     --skip-install) SKIP_INSTALL="true"; shift 1 ;;
     --final-ok) FINAL_OK="true"; shift 1 ;;
@@ -131,8 +143,15 @@ log "release=${RELEASE_VERSION} profile=${APPLIANCE_PROFILE}"
 if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
   log "build-catalog=${BUILD_CATALOG_PATH}"
 fi
-if bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
-  log "bootstrap-admin + client verify skipped (--skip-bootstrap-admin)"
+if bool_true "${BOOTSTRAP_ADMIN}"; then
+  log "bootstrap-admin + client verify enabled (--bootstrap-admin)"
+else
+  log "bootstrap-admin + client verify skipped (pass --bootstrap-admin to enable)"
+fi
+if bool_true "${ENABLE_DEFAULT_LICENSE}"; then
+  log "default license accept enabled (--enable-default-license)"
+else
+  log "default license accept skipped (pass --enable-default-license to enable)"
 fi
 
 validate_builder_build_catalog "${SCRIPT_DIR}" "${CONFIG_PATH}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${RUN_DIR}" "build-catalog validation ok"
@@ -210,7 +229,7 @@ Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", 
 PY
   fi
 
-  python3 - "${RUN_DIR}/metadata/run-release-flow.json" "${CONFIG_PATH}" "${RUN_DIR}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${SKIP_BUILD}" "${SKIP_INSTALL}" "${SKIP_BOOTSTRAP_ADMIN}" "${UNINSTALL_FIRST}" "${PRESERVE_FAILED_STATE}" "${exit_code}" <<'PY'
+  python3 - "${RUN_DIR}/metadata/run-release-flow.json" "${CONFIG_PATH}" "${RUN_DIR}" "${RELEASE_VERSION}" "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}" "${SKIP_BUILD}" "${SKIP_INSTALL}" "${BOOTSTRAP_ADMIN}" "${ENABLE_DEFAULT_LICENSE}" "${UNINSTALL_FIRST}" "${PRESERVE_FAILED_STATE}" "${exit_code}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -224,14 +243,17 @@ import sys
     build_catalog_path,
     skip_build,
     skip_install,
-    skip_bootstrap_admin,
+    bootstrap_admin,
+    enable_default_license,
     uninstall_first,
     preserve_failed_state,
     exit_code,
-) = sys.argv[1:13]
+) = sys.argv[1:14]
 
 run_dir_path = Path(run_dir)
 exit_code_int = int(exit_code)
+bootstrap_admin_enabled = bootstrap_admin.lower() in ("1", "true", "yes", "on")
+default_license_enabled = enable_default_license.lower() in ("1", "true", "yes", "on")
 
 payload = {
     "configPath": config_path,
@@ -244,9 +266,10 @@ payload = {
     "steps": {
         "buildPublishSkipped": skip_build == "true",
         "installSkipped": skip_install == "true",
-        "bootstrapAdminSkipped": skip_bootstrap_admin == "true",
+        "bootstrapAdminSkipped": not bootstrap_admin_enabled,
+        "bootstrapDefaultLicenseSkipped": not default_license_enabled,
         "targetVerifySkipped": False,
-        "clientVerifySkipped": skip_bootstrap_admin == "true",
+        "clientVerifySkipped": not bootstrap_admin_enabled,
         "uninstallFirst": uninstall_first == "true",
         "preserveFailedState": preserve_failed_state == "true",
     },
@@ -254,6 +277,7 @@ payload = {
         "buildPublish": str(run_dir_path / "metadata" / "build-publish.json"),
         "install": str(run_dir_path / "metadata" / "install.json"),
         "bootstrapAdmin": str(run_dir_path / "metadata" / "bootstrap-admin.json"),
+        "bootstrapDefaultLicense": str(run_dir_path / "metadata" / "bootstrap-default-license.json"),
         "targetVerify": str(run_dir_path / "metadata" / "verify.json"),
         "clientVerify": str(run_dir_path / "metadata" / "client-verify.json"),
     },
@@ -324,12 +348,20 @@ else
   log "── stage install: skipped (--skip-install)"
 fi
 
-if ! bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
+if bool_true "${BOOTSTRAP_ADMIN}"; then
   begin_stage "bootstrapAdmin" "first-admin bootstrap → bootstrap-admin-on-target.sh"
   bash "${SCRIPT_DIR}/bootstrap-admin-on-target.sh" --config "${CONFIG_PATH}" --run-dir "${RUN_DIR}"
   end_stage
 else
-  log "── stage bootstrapAdmin: skipped (--skip-bootstrap-admin)"
+  log "── stage bootstrapAdmin: skipped (pass --bootstrap-admin to enable)"
+fi
+
+if bool_true "${ENABLE_DEFAULT_LICENSE}"; then
+  begin_stage "bootstrapDefaultLicense" "default/base license → bootstrap-default-license-on-target.sh"
+  bash "${SCRIPT_DIR}/bootstrap-default-license-on-target.sh" --config "${CONFIG_PATH}" --run-dir "${RUN_DIR}"
+  end_stage
+else
+  log "── stage bootstrapDefaultLicense: skipped (pass --enable-default-license to enable)"
 fi
 
 begin_stage "targetVerify" "target host verification → verify-target.sh"
@@ -340,7 +372,7 @@ fi
 bash "${SCRIPT_DIR}/verify-target.sh" "${target_verify_args[@]}"
 end_stage
 
-if ! bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
+if bool_true "${BOOTSTRAP_ADMIN}"; then
   begin_stage "clientVerify" "client/API verification from Mac → verify-client-access.sh"
   client_verify_args=(--config "${CONFIG_PATH}" --run-dir "${RUN_DIR}")
   if [[ -n "${APPLIANCE_PROFILE}" ]]; then
@@ -349,7 +381,7 @@ if ! bool_true "${SKIP_BOOTSTRAP_ADMIN}"; then
   bash "${SCRIPT_DIR}/verify-client-access.sh" "${client_verify_args[@]}"
   end_stage
 else
-  log "── stage clientVerify: skipped (follows --skip-bootstrap-admin)"
+  log "── stage clientVerify: skipped (follows --bootstrap-admin)"
 fi
 
 # ===========================================================================

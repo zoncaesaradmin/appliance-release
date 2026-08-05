@@ -48,12 +48,20 @@ Notes:
   distribution is `bundle_store` + `publish_command`. Service image push defaults
   live in appliance-code `build/service-image.mk` (`SERVICE_IMAGE_*` /
   `DEV_REGISTRY`).
-- `APPLIANCE_FIRST_ADMIN_PASSWORD` is used both for install and Mac-side API verification.
+- `APPLIANCE_FIRST_ADMIN_PASSWORD` is used only when you pass
+  `--bootstrap-admin` (first-admin bootstrap + Mac-side API verification).
+- First-admin bootstrap and client verify are **off by default**. Pass
+  `--bootstrap-admin` to run them. Username comes from
+  `install.bootstrap_admin_username`; password from `APPLIANCE_FIRST_ADMIN_PASSWORD`.
+- Default/base license accept is also **off by default**. Pass
+  `--enable-default-license` to accept the base/free entitlement after install
+  (stage `bootstrapDefaultLicense`). Without that flag, licensing stays unresolved
+  until an admin imports a license or accepts base entitlement in the UI.
+  Install never requires a license file or online entitlement checks.
 - Set `install.appliance_profile` in the config, or omit it to default to `core`.
   Profile is **install-time only**: it selects which modules are activated on
   the target. Packaging always produces the complete product super-set (Argo,
   Zot, DNS, host-packages for mdns+wifi-ap, workspace-provisioner, dev-build).
-  Licensing is completed after first login; install never asks for a license.
 - A `run-release-flow.sh --appliance-profile` override is forwarded to install,
   target verification, and client verification so all phases use the same
   effective profile.

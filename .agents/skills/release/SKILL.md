@@ -94,6 +94,12 @@ Once `APPLIANCE_RELEASE_CONFIG` is set, the scripts can usually be run without `
   Run the deterministic build-host flow: sync the skill-managed release checkout, optional bootstrap, bundle build, publish, and artifact metadata capture. Publish uses `bundle_store.mode` (`static_http` or `appliance_files`).
 - `scripts/install-on-target.sh`
   Optionally uninstall the previous appliance, then install the published release on the target host via HTTP `curl` against `base_url` (Mac only SSHs).
+- `scripts/bootstrap-admin-on-target.sh`
+  Create the first administrator on the target. Invoked only when
+  `run-release-flow.sh` is passed `--bootstrap-admin`.
+- `scripts/bootstrap-default-license-on-target.sh`
+  Accept the base/free entitlement. Invoked only when `run-release-flow.sh` is
+  passed `--enable-default-license`.
 - `scripts/verify-target.sh`
   Run post-install verification, service-health checks, smoke checks, and failure-log capture.
 - `scripts/verify-client-access.sh`

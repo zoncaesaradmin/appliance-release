@@ -63,9 +63,12 @@ curl -fsSL "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-releas
 ```
 
 The default appliance profile is `core` when `--appliance-profile` is omitted.
-Installation does **not** ask for a license file and does not perform online
-entitlement checks. After first UI login, complete licensing setup (import an
-offline license or accept the base/free entitlement) from Admin / Licensing.
+Installation does **not** require a license file and does not perform online
+entitlement checks. By default, after first UI login, complete licensing setup
+(import an offline license or accept the base/free entitlement) from Admin /
+Licensing. For automated release runs, pass `--enable-default-license` so the
+base entitlement is accepted as a post-install step. Pass `--bootstrap-admin`
+when the run should also create the first administrator.
 
 To install a different v1 profile:
 
@@ -108,7 +111,9 @@ different SKU.
 - runs `zonctl install` on a fresh host
 - automatically switches to `zonctl upgrade` when the target already has an
   owned appliance install
-- uses the first-administrator prompt only for a fresh install
+- does not create the first administrator or accept a license (do those in the
+  UI, or via release automation flags `--bootstrap-admin` /
+  `--enable-default-license`)
 - installs `zonctl` to `/usr/local/bin/zonctl`
 
 ## Explicit Manual Install / Upgrade
@@ -162,11 +167,12 @@ sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-bundle/zonctl" upgrade \
 4. Installs or adopts K3s as allowed by policy.
 5. Preloads verified K3s and application images.
 6. Applies the exact bundled Helm chart.
-7. Performs installer-owned first-admin bootstrap.
-8. Persists `installed-state.json` on success.
+7. Persists `installed-state.json` on success.
 
 The install path is bundle-only in v1. There is no remote fallback and no
-unverified substitution.
+unverified substitution. First-admin creation and base license acceptance are
+not part of `zonctl install`; use the control-plane UI or the release-flow
+flags `--bootstrap-admin` and `--enable-default-license`.
 
 ## What `zonctl upgrade` Actually Does
 
