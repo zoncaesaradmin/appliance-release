@@ -472,11 +472,12 @@ clone_repo() {
 
 CTL_CLONE_DIR="${WORKDIR}/sources/appliance-ctl"
 
-if [[ -d "${CTL_REPO_SOURCE}" && -z "${CTL_REPO_REF:-}" ]]; then
+if [[ -d "${CTL_REPO_SOURCE}" ]]; then
   make -C "${CTL_REPO_SOURCE}" build
   ZONCTL_BINARY="$(cd "${CTL_REPO_SOURCE}" && pwd)/bin/zonctl"
 else
-  clone_repo "${CTL_REPO_SOURCE}" "${CTL_REPO_REF:-}" "${CTL_CLONE_DIR}"
+  # Git URL: clone default branch (local path is preferred; set by build-full-bundle).
+  clone_repo "${CTL_REPO_SOURCE}" "" "${CTL_CLONE_DIR}"
   make -C "${CTL_CLONE_DIR}" build
   ZONCTL_BINARY="${CTL_CLONE_DIR}/bin/zonctl"
 fi

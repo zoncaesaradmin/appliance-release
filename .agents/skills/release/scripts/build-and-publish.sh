@@ -111,8 +111,10 @@ if [[ -z "${REMOTE_CWD}" ]]; then
 fi
 REMOTE_REPO_SOURCE="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_repo_source" || true)"
 REMOTE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_repo_ref" || true)"
-CODE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.code_repo_ref" || true)"
-CTL_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.ctl_repo_ref" || true)"
+# Dependent appliance-code / appliance-ctl refs are fixed in scripts/ci/*
+# (build-full-bundle.sh / bootstrap-build-host.sh), not operator config.
+readonly code_git_ref="main"
+readonly ctl_git_ref="main"
 if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_command" || true)" ]]; then
   fail "build_flow.bootstrap_command was removed; skill always runs: ${DEFAULT_BOOTSTRAP_CMD}"
 fi
@@ -133,19 +135,26 @@ fi
 if [[ -z "${PUBLISH_CMD}" ]]; then
   PUBLISH_CMD="${DEFAULT_PUBLISH_CMD}"
 fi
-if [[ -z "${RELEASE_VERSION}" ]]; then
-  RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
-fi
 if [[ -z "${REMOTE_EXPORT_DIR}" ]]; then
   REMOTE_EXPORT_DIR="$(derive_remote_export_dir_from_build_root "${REMOTE_BUILD_ROOT}")"
 fi
-[[ -n "${RELEASE_VERSION}" ]] || fail "release.version is required in config"
 if [[ -n "$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_release_input_path" || true)" \
   || -n "$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_bundle_dir" || true)" ]]; then
   fail "release_workspace.remote_release_input_path and remote_bundle_dir were removed; build-and-publish now auto-detects release-input and bundle paths from the build log"
 fi
 
 SKILL_RELEASE_REPO_ROOT="$(skill_release_repo_root "${SCRIPT_DIR}")"
+# Resolve product version: CLI --release-version > PRODUCT_VERSION env >
+# optional release.version config > configs/default-product-version.
+if [[ -z "${RELEASE_VERSION}" && -n "${PRODUCT_VERSION:-}" ]]; then
+  RELEASE_VERSION="${PRODUCT_VERSION}"
+fi
+if [[ -z "${RELEASE_VERSION}" ]]; then
+  RELEASE_VERSION="$(config_get_optional "${CONFIG_PATH}" "release.version" || true)"
+fi
+if [[ -z "${RELEASE_VERSION}" ]]; then
+  RELEASE_VERSION="$(read_default_product_version "${SKILL_RELEASE_REPO_ROOT}")"
+fi
 if [[ -z "${REMOTE_REPO_SOURCE}" ]]; then
   REMOTE_REPO_SOURCE="$(resolve_local_git_origin "${SKILL_RELEASE_REPO_ROOT}")"
 fi
@@ -155,8 +164,6 @@ if [[ "${EFFECTIVE_REMOTE_REPO_SOURCE}" != "${REMOTE_REPO_SOURCE}" ]]; then
   log "normalizing release workspace repo source from ${REMOTE_REPO_SOURCE} to read-only ${EFFECTIVE_REMOTE_REPO_SOURCE} for build-host sync"
 fi
 [[ -n "${REMOTE_REPO_REF}" ]] || fail "release_workspace.remote_repo_ref is required in config"
-[[ -n "${CODE_REPO_REF}" ]] || fail "build_flow.code_repo_ref is required in config"
-[[ -n "${CTL_REPO_REF}" ]] || fail "build_flow.ctl_repo_ref is required in config"
 
 require_cmd python3
 require_cmd rsync
@@ -297,8 +304,8 @@ ensure_release_run_dirs "${RUN_DIR}" "artifacts"
 if bool_true "${LOCAL_MODE}"; then
   log "local mode: skipping Mac/devhost live-repo preflight (release checkout is managed on this host)"
 else
-  log "running local live-build repo preflight against release=${REMOTE_REPO_REF}, appliance-code=${CODE_REPO_REF}, appliance-ctl=${CTL_REPO_REF}"
-  preflight_live_release_inputs "${SKILL_RELEASE_REPO_ROOT}" "${REMOTE_REPO_REF}" "${CODE_REPO_REF}" "${CTL_REPO_REF}"
+  log "running local live-build repo preflight against release=${REMOTE_REPO_REF}, appliance-code=${code_git_ref}, appliance-ctl=${ctl_git_ref}"
+  preflight_live_release_inputs "${SKILL_RELEASE_REPO_ROOT}" "${REMOTE_REPO_REF}" "${code_git_ref}" "${ctl_git_ref}"
 fi
 
 require_profile_supports_workflows "${VERIFY_ARGO_ENABLED}" "${APPLIANCE_PROFILE}" "verification.argo.enabled"
@@ -319,8 +326,6 @@ BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "PRODUCT_VERSION" "${RELEASE_VERSION}" \
   "BUILD_COMPLETE_PRODUCT" "${BUILD_COMPLETE_PRODUCT}" \
   "EXPORT_DIR" "${REMOTE_EXPORT_DIR}" \
-  "CODE_REPO_REF" "${CODE_REPO_REF}" \
-  "CTL_REPO_REF" "${CTL_REPO_REF}" \
   "ARGO_ENABLED" "${BUILD_ARGO_ENABLED}" \
   "ARGO_REQUIRED" "${BUILD_ARGO_REQUIRED}" \
   "ARGO_VERSION" "${BUILD_ARGO_VERSION}" \
@@ -384,7 +389,6 @@ BOOTSTRAP_REGISTRY_TOKEN="$(resolve_secret "${DEV_PULL_TOKEN_ENV}" "Dev image pu
 [[ -n "${BOOTSTRAP_REGISTRY_TOKEN}" ]] || fail "empty value for env ${DEV_PULL_TOKEN_ENV} (named by build_flow.dev_image_pull.token_env)"
 BOOTSTRAP_ENV_PREFIX=""
 BOOTSTRAP_ENV_PREFIX="$(append_env_assignments "${BOOTSTRAP_ENV_PREFIX}" \
-  "CODE_REPO_REF" "${CODE_REPO_REF}" \
   "DEV_REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}" \
   "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}" \
   "DEV_IMAGE" "${IMAGE_REGISTRY_PULL_REF}" \

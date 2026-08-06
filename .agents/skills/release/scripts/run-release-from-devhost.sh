@@ -73,7 +73,7 @@ if [[ -z "${BUILD_PUBLISH_CONFIG}" && -z "${INSTALL_CONFIG}" ]]; then
   fail "pass at least one of --build-publish-config or --install-config"
 fi
 if [[ -n "${INSTALL_CONFIG}" && -z "${BUILD_PUBLISH_CONFIG}" ]]; then
-  fail "install requires --build-publish-config (release.version and bundle_store URL)"
+  fail "install requires --build-publish-config (product version + bundle_store URL)"
 fi
 
 DEVHOST_CONFIG="$(require_config_path "${DEVHOST_CONFIG}")"

@@ -16,7 +16,6 @@ Required environment:
 
 Optional environment:
   CODE_REPO_SOURCE        Source repo/URL for appliance-code
-  CODE_REPO_REF           Git ref to fetch. Default: main
   RELEASE_WORK_ROOT        Build root. Default: ${TMPDIR:-/tmp}/appliance-build
 
 Example:
@@ -36,7 +35,6 @@ RELEASE_REPO_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DEFAULTS_FILE="${RELEASE_REPO_DIR}/configs/product-bundle.ci.env"
 
 USER_CODE_REPO_SOURCE="${CODE_REPO_SOURCE-}"
-USER_CODE_REPO_REF="${CODE_REPO_REF-}"
 USER_RELEASE_WORK_ROOT="${RELEASE_WORK_ROOT-}"
 
 set -a
@@ -45,7 +43,8 @@ source "${DEFAULTS_FILE}"
 set +a
 
 CODE_REPO_SOURCE="${USER_CODE_REPO_SOURCE:-${CODE_REPO_SOURCE:-}}"
-CODE_REPO_REF="${USER_CODE_REPO_REF:-${CODE_REPO_REF:-main}}"
+# Fixed appliance-code git ref (edit this script to pin a different branch).
+code_git_ref="main"
 RELEASE_WORK_ROOT="${USER_RELEASE_WORK_ROOT:-${TMPDIR:-/tmp}/appliance-build}"
 
 REPOS_DIR="${RELEASE_WORK_ROOT}/repos"
@@ -112,7 +111,7 @@ require_var DEV_REGISTRY_TOKEN
 require_var CODE_REPO_SOURCE
 
 mkdir -p "${REPOS_DIR}"
-clone_repo "${CODE_REPO_SOURCE}" "${CODE_REPO_REF}" "${CODE_REPO_DIR}"
+clone_repo "${CODE_REPO_SOURCE}" "${code_git_ref}" "${CODE_REPO_DIR}"
 
 echo "bootstrap-build-host: using appliance-code at:"
 echo "  ${CODE_REPO_DIR}"

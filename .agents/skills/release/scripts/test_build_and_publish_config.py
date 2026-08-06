@@ -16,10 +16,8 @@ release_workspace:
   remote_build_root: /tmp/appliance-build
   remote_repo_ref: main
 release:
-  version: 0.1.0
+  publish_latest_alias: false
 build_flow:
-  code_repo_ref: main
-  ctl_repo_ref: main
   dev_image_pull:
     registry_env: DEV_REGISTRY
     image_repo_env: DEV_IMAGE_REPO
@@ -99,8 +97,8 @@ def test_rejects_offline_archive_path_inputs() -> None:
         write(
             config,
             MINIMAL_VALID_CONFIG.replace(
-                "  ctl_repo_ref: main",
-                "  ctl_repo_ref: main\n  zot:\n    image_archive_source: /tmp/zot.oci.tar",
+                "build_flow:",
+                "build_flow:\n  zot:\n    image_archive_source: /tmp/zot.oci.tar",
             ),
         )
         result = run_build_publish_config(config, run_dir)
@@ -118,12 +116,12 @@ def test_rejects_skill_fixed_build_commands_and_sudo_flags() -> None:
         write(
             config,
             MINIMAL_VALID_CONFIG.replace(
-                "  code_repo_ref: main",
-                """  bootstrap_needs_sudo: true
+                "build_flow:",
+                """build_flow:
+  bootstrap_needs_sudo: true
   build_needs_sudo: true
   build_command: bash scripts/ci/build-full-bundle.sh
-  publish_command: make publish-release
-  code_repo_ref: main""",
+  publish_command: make publish-release""",
             ),
         )
         result = run_build_publish_config(config, run_dir)

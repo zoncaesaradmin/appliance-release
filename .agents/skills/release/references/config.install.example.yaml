@@ -4,7 +4,7 @@
 # run post-install checks. Build host / Mac report settings live elsewhere.
 #
 # Must agree with build-publish on values (roles are never merged):
-#   release.version (install/verify read version from the build-publish file)
+#   product version (release.version optional; else configs/default-product-version)
 #   bundle_store download base (from the build-publish file)
 #
 # Example:
@@ -39,7 +39,7 @@ install:
   # core | builder | storage | landns | storage-landns | builder-landns | builder-storage-landns
   appliance_profile: storage-landns
 
-  # Keep in sync with release.version from the build-publish config
+  # Bundle extract dir on the target (version should match the published release)
   bundle_download_dir: /tmp/appliance-0.1.0
 
   # Used when install.bootstrap_admin is true

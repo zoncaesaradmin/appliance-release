@@ -45,8 +45,7 @@ Workflows GitHub release unless you provide a local copy. You never need
 to set an Argo version yourself.
 
 Optional overrides:
-  CODE_REPO_REF=main
-  CTL_REPO_REF=main
+  PRODUCT_VERSION=0.1.0         # overrides configs/default-product-version
   RELEASE_WORK_ROOT=${TMPDIR:-/tmp}/appliance-build
   EXPORT_DIR=\$RELEASE_WORK_ROOT/export
   K3S_VERSION_OVERRIDE=v1.30.4+k3s1
@@ -91,9 +90,7 @@ DEFAULTS_FILE="${RELEASE_REPO_DIR}/configs/product-bundle.ci.env"
 
 USER_PRODUCT_VERSION="${PRODUCT_VERSION-}"
 USER_CODE_REPO_SOURCE="${CODE_REPO_SOURCE-}"
-USER_CODE_REPO_REF="${CODE_REPO_REF-}"
 USER_CTL_REPO_SOURCE="${CTL_REPO_SOURCE-}"
-USER_CTL_REPO_REF="${CTL_REPO_REF-}"
 USER_HELM_BINARY="${HELM_BINARY-}"
 USER_HELM_VERSION="${HELM_VERSION-}"
 USER_VALUES_FILE_SOURCE="${VALUES_FILE_SOURCE-}"
@@ -145,11 +142,19 @@ unset _var _removed_offline_build_inputs
 LAN_BUILD_CACHE_PREFIX="build-cache"
 LAN_BUILD_CACHE_TIMEOUT_SECONDS="15"
 
-PRODUCT_VERSION="${USER_PRODUCT_VERSION:-${PRODUCT_VERSION:-}}"
+# Fixed dependent-repo git refs (edit this script to pin a different branch).
+code_git_ref="main"
+ctl_git_ref="main"
+
+# Product version: PRODUCT_VERSION env overrides configs/default-product-version.
+default_product_version="$(tr -d '[:space:]' < "${RELEASE_REPO_DIR}/configs/default-product-version" 2>/dev/null || true)"
+if [[ -z "${default_product_version}" ]]; then
+  echo "build-full-bundle: missing or empty ${RELEASE_REPO_DIR}/configs/default-product-version" >&2
+  exit 2
+fi
+PRODUCT_VERSION="${USER_PRODUCT_VERSION:-${default_product_version}}"
 CODE_REPO_SOURCE="${USER_CODE_REPO_SOURCE:-${CODE_REPO_SOURCE:-}}"
-CODE_REPO_REF="${USER_CODE_REPO_REF:-${CODE_REPO_REF:-main}}"
 CTL_REPO_SOURCE="${USER_CTL_REPO_SOURCE:-${CTL_REPO_SOURCE:-}}"
-CTL_REPO_REF="${USER_CTL_REPO_REF:-${CTL_REPO_REF:-main}}"
 HELM_BINARY="${USER_HELM_BINARY:-${HELM_BINARY:-}}"
 HELM_VERSION="${USER_HELM_VERSION:-${HELM_VERSION:-}}"
 VALUES_FILE_SOURCE="${USER_VALUES_FILE_SOURCE:-${VALUES_FILE:-}}"
@@ -1214,7 +1219,6 @@ clone_repo() {
   fi
 }
 
-require_var PRODUCT_VERSION
 require_var CODE_REPO_SOURCE
 require_var CTL_REPO_SOURCE
 require_var K3S_VERSION
@@ -1256,8 +1260,8 @@ else
 fi
 mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}" "${EXPORT_DIR}"
 
-clone_repo "${CODE_REPO_SOURCE}" "${CODE_REPO_REF}" "${CODE_REPO_DIR}"
-clone_repo "${CTL_REPO_SOURCE}" "${CTL_REPO_REF}" "${CTL_REPO_DIR}"
+clone_repo "${CODE_REPO_SOURCE}" "${code_git_ref}" "${CODE_REPO_DIR}"
+clone_repo "${CTL_REPO_SOURCE}" "${ctl_git_ref}" "${CTL_REPO_DIR}"
 
 ZOT_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-registry/Chart.yaml")"
 # Chart.yaml may use Helm/upstream form v2.1.8 while ZOT_VERSION is 2.1.8.
@@ -1467,7 +1471,6 @@ set_env_var "${CONFIG_OUT}" RELEASE_INPUT_SOURCE "${RELEASE_INPUT_TAR}"
 set_env_var "${CONFIG_OUT}" RELEASE_INPUT_VERSION ""
 set_env_var "${CONFIG_OUT}" RELEASE_INPUT_FETCH_TEMPLATE ""
 set_env_var "${CONFIG_OUT}" CTL_REPO_SOURCE "${CTL_REPO_DIR}"
-set_env_var "${CONFIG_OUT}" CTL_REPO_REF ""
 set_env_var "${CONFIG_OUT}" INPUTS_DIR "${INPUTS_DIR}"
 set_env_var "${CONFIG_OUT}" SAMPLE_MODE "0"
 set_env_var "${CONFIG_OUT}" HELM_BINARY "${HELM_BINARY}"

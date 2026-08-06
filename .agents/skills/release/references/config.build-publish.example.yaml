@@ -4,7 +4,7 @@
 # Does not contain Mac SSH target identity or install.module selection.
 #
 # Cross-step contract for install (must match values the target will download):
-#   release.version
+#   product version (release.version optional override, else configs/default-product-version)
 #   bundle_store.mode / release_path_prefix / download base (base_url or appliance_files env)
 #
 # Example (full flow from Mac):
@@ -57,8 +57,9 @@ release_workspace:
 # ============================================================================
 
 release:
-  # PRODUCT_VERSION for the build; install download path uses the same string.
-  version: 0.1.0
+  # Optional. Overrides configs/default-product-version for this workflow.
+  # PRODUCT_VERSION in the shell also overrides (takes precedence over this key).
+  # version: 0.1.0
   # Whether publish writes/updates a “latest” alias.
   publish_latest_alias: false
 
@@ -67,14 +68,12 @@ release:
 # ============================================================================
 
 build_flow:
-  code_repo_ref: main
-  ctl_repo_ref: main
-
   # Bootstrap/build/publish commands and sudo are skill-fixed (not config):
   #   bash scripts/ci/bootstrap-build-host.sh
   #   bash scripts/ci/build-full-bundle.sh
   #   make publish-release
   # Always wrapped with sudo → APPLIANCE_BUILD_SUDO_PASSWORD.
+  # appliance-code / appliance-ctl git refs are fixed in those scripts (main).
 
   # Bundled offline name for the appliance is fixed: registry.local/dev-build.
   # build-full-bundle.sh derives the upstream pull ref from the DEV_* env vars below
@@ -88,7 +87,9 @@ build_flow:
     token_env: DEV_REGISTRY_TOKEN
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 
-  # PRODUCT_VERSION and EXPORT_DIR injected by the skill.
+  # EXPORT_DIR injected by the skill from remote_build_root/export.
+  # Product version comes from configs/default-product-version unless
+  # PRODUCT_VERSION or release.version overrides it.
 
 # ============================================================================
 # Distribution (publish destination + install download source)

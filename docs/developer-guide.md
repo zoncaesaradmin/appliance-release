@@ -57,7 +57,6 @@ make product-bundle CONFIG="$(pwd)/configs/product-bundle.sample.env"
 This is the supported end-to-end release build flow.
 
 ```bash
-PRODUCT_VERSION=0.1.0 \
 DEV_REGISTRY=artifact-dns-1.appliance.internal \
 DEV_REGISTRY_TOKEN=... \
 DEV_REGISTRY_TLS_VERIFY=false \
@@ -66,6 +65,8 @@ DEV_IMAGE_NAME=dev-build \
 DEV_IMAGE_TAG=latest \
 bash ./scripts/ci/build-full-bundle.sh
 ```
+
+Optional: `PRODUCT_VERSION=…` overrides `configs/default-product-version`.
 
 K3s binary and airgap images are downloaded during the build from the appliance
 files API (same layout seedable by `scripts/ci/fetch-k3s-inputs.sh`):
@@ -148,7 +149,7 @@ The simple flow is:
 Example:
 
 ```bash
-export PRODUCT_VERSION=0.1.0
+export PRODUCT_VERSION=0.1.0   # optional; defaults from configs/default-product-version
 make publish-release \
   EXPORT_DIR=/home/zonsys/appliance-build/export \
   PUBLISH_SERVER=release@downloads.example.internal \

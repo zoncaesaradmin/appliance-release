@@ -499,6 +499,18 @@ from the appliance files API (seed that API with scripts/ci/fetch-k3s-inputs.sh)
 EOF
 }
 
+# Repo-owned default product version (configs/default-product-version).
+# PRODUCT_VERSION / release.version may override it.
+read_default_product_version() {
+  local repo_root="$1"
+  local version_file="${repo_root}/configs/default-product-version"
+  local version=""
+  [[ -f "${version_file}" ]] || fail "missing ${version_file}"
+  version="$(tr -d '[:space:]' < "${version_file}")"
+  [[ -n "${version}" ]] || fail "empty product version in ${version_file}"
+  printf '%s\n' "${version}"
+}
+
 join_remote_build_root_path() {
   local root="$1"
   local subpath="$2"

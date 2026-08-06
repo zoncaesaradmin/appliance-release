@@ -76,7 +76,16 @@ require_cmd ssh
 require_cmd python3
 
 TARGET_HOST="$(config_get "${DEVHOST_CONFIG}" "target_host.alias")"
-RELEASE_VERSION="$(config_get "${BUILD_PUBLISH_CONFIG}" "release.version")"
+RELEASE_VERSION=""
+if [[ -n "${PRODUCT_VERSION:-}" ]]; then
+  RELEASE_VERSION="${PRODUCT_VERSION}"
+fi
+if [[ -z "${RELEASE_VERSION}" ]]; then
+  RELEASE_VERSION="$(config_get_optional "${BUILD_PUBLISH_CONFIG}" "release.version" || true)"
+fi
+if [[ -z "${RELEASE_VERSION}" ]]; then
+  RELEASE_VERSION="$(read_default_product_version "$(skill_release_repo_root "${SCRIPT_DIR}")")"
+fi
 PATH_PREFIX="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "release_path_prefix" || true)"
 [[ -n "${PATH_PREFIX}" ]] || fail "bundle_store.release_path_prefix is required"
 BUNDLE_MODE="$(resolve_bundle_store_mode "${BUILD_PUBLISH_CONFIG}")"

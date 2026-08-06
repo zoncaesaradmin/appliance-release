@@ -193,11 +193,13 @@ verify-bundle:
 
 .PHONY: publish-release
 publish-release:
-	@if [ -z "$${EXPORT_DIR:-}" ] || [ -z "$${PRODUCT_VERSION:-}" ]; then \
-		echo "publish-release: required env vars are EXPORT_DIR=/abs/path/to/export PRODUCT_VERSION=..." >&2; \
+	@PRODUCT_VERSION="$${PRODUCT_VERSION:-$$(tr -d '[:space:]' < configs/default-product-version)}"; \
+	if [ -z "$${EXPORT_DIR:-}" ] || [ -z "$${PRODUCT_VERSION}" ]; then \
+		echo "publish-release: required env var is EXPORT_DIR=/abs/path/to/export (PRODUCT_VERSION defaults from configs/default-product-version)" >&2; \
 		exit 2; \
-	fi
-	@if [ -z "$${PUBLISH_MODE:-}" ]; then \
+	fi; \
+	export PRODUCT_VERSION; \
+	if [ -z "$${PUBLISH_MODE:-}" ]; then \
 		echo "publish-release: PUBLISH_MODE is required (from bundle_store.mode)" >&2; \
 		exit 2; \
 	fi; \

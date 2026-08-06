@@ -53,7 +53,7 @@ set -euo pipefail
 set +H
 source {COMMON.as_posix()!r}
 prefix=""
-prefix="$(append_env_assignment "${{prefix}}" "CODE_REPO_REF" "main")"
+prefix="$(append_env_assignment "${{prefix}}" "PRODUCT_VERSION" "0.1.0")"
 prefix="$(append_env_assignment "${{prefix}}" "REGISTRY_USER" "user")"
 prefix="$(append_env_assignment "${{prefix}}" "REGISTRY_TOKEN" "$TOKEN")"
 # Same shape as build-and-publish: NAME=quoted-value child-command.
@@ -89,7 +89,7 @@ set +H
 source {COMMON.as_posix()!r}
 prefix=""
 prefix="$(append_env_assignments "${{prefix}}" \
-  "CODE_REPO_REF" "main" \
+  "PRODUCT_VERSION" "0.1.0" \
   "REGISTRY_USER" "user" \
   "REGISTRY_TOKEN" "$TOKEN")"
 remote_cmd="cd /tmp && set -euo pipefail && ${{prefix}}printenv REGISTRY_TOKEN"

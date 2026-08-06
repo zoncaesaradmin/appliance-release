@@ -269,8 +269,14 @@ BUNDLE_BIN_DIR=""
 TARGET_SUDO_PASSWORD="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 DEFAULT_TARGET_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 RELEASE_VERSION=""
-if [[ -n "${BUILD_PUBLISH_CONFIG}" ]]; then
+if [[ -n "${PRODUCT_VERSION:-}" ]]; then
+  RELEASE_VERSION="${PRODUCT_VERSION}"
+fi
+if [[ -z "${RELEASE_VERSION}" && -n "${BUILD_PUBLISH_CONFIG}" ]]; then
   RELEASE_VERSION="$(config_get_optional "${BUILD_PUBLISH_CONFIG}" "release.version" || true)"
+fi
+if [[ -z "${RELEASE_VERSION}" ]]; then
+  RELEASE_VERSION="$(read_default_product_version "$(skill_release_repo_root "${SCRIPT_DIR}")")"
 fi
 
 if [[ -f "${INSTALL_METADATA_PATH}" ]]; then
