@@ -76,7 +76,8 @@ build_flow:
   # Always wrapped with sudo → APPLIANCE_BUILD_SUDO_PASSWORD.
 
   # Bundled offline name for the appliance is fixed: registry.local/dev-build.
-  # build-full-bundle.sh derives the upstream pull ref from the DEV_* env vars below.
+  # build-full-bundle.sh derives the upstream pull ref from the DEV_* env vars below
+  # and uses DEV_REGISTRY/build-cache as an automatic LAN OCI pull-through cache.
   dev_image_pull:
     registry_env: DEV_REGISTRY
     image_repo_env: DEV_IMAGE_REPO
@@ -85,15 +86,6 @@ build_flow:
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
-
-  build_image_mirror:
-    enabled: true
-    registry_env: DEV_REGISTRY
-    repository_prefix: build-cache
-    username_env: DEV_REGISTRY_USER
-    token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
-    timeout_seconds: 10
 
   # PRODUCT_VERSION and EXPORT_DIR injected by the skill.
 

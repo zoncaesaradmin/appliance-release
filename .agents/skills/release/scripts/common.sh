@@ -547,10 +547,6 @@ collect_build_publish_env_names() {
     "build_flow.dev_image_pull.username_env" \
     "build_flow.dev_image_pull.token_env" \
     "build_flow.dev_image_pull.tls_verify_env" \
-    "build_flow.build_image_mirror.registry_env" \
-    "build_flow.build_image_mirror.username_env" \
-    "build_flow.build_image_mirror.token_env" \
-    "build_flow.build_image_mirror.tls_verify_env" \
     "bundle_store.registry_env" \
     "bundle_store.token_env" \
     "bundle_store.tls_verify_env"

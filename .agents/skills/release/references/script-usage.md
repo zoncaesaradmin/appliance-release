@@ -30,17 +30,14 @@ Notes:
 - Set `build_flow.dev_image_pull` (registry/repo/name env names, `image_tag`,
   username/token/TLS env names). That block is only for pulling the
   development-container used as build tooling. The bundled offline name is
-  fixed as `registry.local/dev-build`.
-- Optional `build_flow.build_image_mirror` is a **separate** Artifact Server
-  path for build-time OCI pulls (zot, workspace-provisioner, dev-build archival
-  copies, etc.). Keep the same `*_env` names as
-  `dev_image_pull` when both use the same host; leave `enabled: false` or
-  omit the block to skip the mirror. When enabled: try mirror first
-  (`timeout_seconds`, default 15), on miss/timeout pull the public upstream,
-  then best-effort push into `<registry>/<repository_prefix>/<image>:<tag>`.
-- Build packaging always pulls/packages from the network (or the mirror flow
-  above). Local build-host path inputs such as `*_image_archive_source`,
-  `argo.crds_dir_source`, and `host_packages_dir_source` are rejected.
+  fixed as `registry.local/dev-build`. The same `DEV_REGISTRY*` credentials
+  also drive an automatic LAN OCI build-cache inside `build-full-bundle.sh`
+  (`DEV_REGISTRY/build-cache/...`, short probe → upstream fallback →
+  best-effort seed).
+- Build packaging always pulls/packages from the network (or the automatic
+  LAN build-cache flow above). Local build-host path inputs such as
+  `*_image_archive_source`, `argo.crds_dir_source`, and
+  `host_packages_dir_source` are rejected.
   K3s binary/images are downloaded by `build-full-bundle` from the appliance
   files API (`https://$DEV_REGISTRY/api/v1/files/k3s/$K3S_VERSION/…`). Seed
   that path once with `scripts/ci/fetch-k3s-inputs.sh`.

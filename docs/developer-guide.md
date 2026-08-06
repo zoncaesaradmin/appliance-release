@@ -83,8 +83,9 @@ That script:
 - uses the current `appliance-release` checkout as the driver repo
 - clones or refreshes `appliance-code` and `appliance-ctl`
 - always packages OCI/host payloads by export/pull on the build host
-  (network or optional LAN `build_image_mirror` + upstream). Local pre-supplied
-  image archive / CRD / host-packages dir knobs are not supported
+  (network, with an automatic LAN build-cache on `DEV_REGISTRY` when set).
+  Local pre-supplied image archive / CRD / host-packages dir knobs are not
+  supported
 - asks `appliance-code` to build `release-input-${PRODUCT_VERSION}.tar.gz`
 - assembles and verifies the final signed bundle
 - exports the delivery files into `EXPORT_DIR` or `WORK_ROOT/export`

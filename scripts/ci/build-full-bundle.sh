@@ -62,19 +62,14 @@ Optional overrides:
   ARGO_CONTROLLER_IMAGE_REF=localhost/appliance-argo-controller:v3.5.10
   ARGO_EXECUTOR_IMAGE_REF=quay.io/argoproj/argoexec:v3.5.10
   # Argo CRDs and controller/executor images are always fetched/packaged online
-  # (or via build_image_mirror). Pre-supplied local archive/dir paths are not supported.
+  # (or via the automatic LAN build-cache on DEV_REGISTRY). Pre-supplied local
+  # archive/dir paths are not supported.
   WORKSPACE_PROVISIONER_IMAGE_REF=docker.io/alpine/git:latest
   # Complete product packages registry.local/dev-build from
   # DEV_REGISTRY + DEV_IMAGE_REPO/NAME/TAG (defaults: development-container/dev-build:latest).
-  # Optional build-time OCI pull-through mirror:
-  #   BUILD_IMAGE_MIRROR_ENABLED=true
-  #   BUILD_IMAGE_MIRROR_REGISTRY=$DEV_REGISTRY   # LAN appliance Artifact Server; can differ later
-  #   BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX=build-cache
-  #   BUILD_IMAGE_MIRROR_TIMEOUT_SECONDS=15
-  #   BUILD_IMAGE_MIRROR_TLS_VERIFY=$DEV_REGISTRY_TLS_VERIFY
-  #   BUILD_IMAGE_MIRROR_USER / BUILD_IMAGE_MIRROR_TOKEN
-  # Flow (per skopeo-exported image):
-  #   try LAN Artifact Server → miss/timeout → public/upstream pull → best-effort push to LAN.
+  # When DEV_REGISTRY is set, packaging auto-uses a LAN build-cache on that
+  # host (prefix build-cache/, 15s probe): try LAN → miss/timeout → upstream →
+  # best-effort push back to LAN. Auth/TLS reuse DEV_REGISTRY_USER/TOKEN/TLS_VERIFY.
   ZOT_VERSION=2.1.8
   ZOT_IMAGE_PULL_REF=ghcr.io/project-zot/zot-linux-amd64:v2.1.8
   # Zot is a first-class release artifact: always pull/copy linux/amd64 and derive
@@ -127,7 +122,7 @@ source "${DEFAULTS_FILE}"
 set +a
 
 # Reject removed offline/local archive path knobs (build always pulls/packages
-# online or via optional build_image_mirror LAN+upstream).
+# from the network, with an automatic LAN build-cache when DEV_REGISTRY is set).
 _removed_offline_build_inputs=(
   ARGO_CRDS_DIR_SOURCE
   ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE
@@ -140,11 +135,15 @@ _removed_offline_build_inputs=(
 for _var in "${_removed_offline_build_inputs[@]}"; do
   if [[ -n "${!_var-}" ]]; then
     echo "build-full-bundle: ${_var} is no longer supported (no offline/local archive path inputs)." >&2
-    echo "build-full-bundle: use network packaging or BUILD_IMAGE_MIRROR_*." >&2
+    echo "build-full-bundle: use network packaging (LAN build-cache is automatic from DEV_REGISTRY)." >&2
     exit 2
   fi
 done
 unset _var _removed_offline_build_inputs
+
+# Fixed LAN build-cache policy.
+LAN_BUILD_CACHE_PREFIX="build-cache"
+LAN_BUILD_CACHE_TIMEOUT_SECONDS="15"
 
 PRODUCT_VERSION="${USER_PRODUCT_VERSION:-${PRODUCT_VERSION:-}}"
 CODE_REPO_SOURCE="${USER_CODE_REPO_SOURCE:-${CODE_REPO_SOURCE:-}}"
@@ -595,14 +594,14 @@ skopeo_tls_args_for() {
   esac
 }
 
-# Map an upstream docker ref to the build mirror repository.
+# Map an upstream docker ref to the LAN build-cache repository on DEV_REGISTRY.
 # Example: ghcr.io/project-zot/zot-linux-amd64:v2.1.8
-#   →  ${BUILD_IMAGE_MIRROR_REGISTRY}/${BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX}/zot-linux-amd64:v2.1.8
-build_image_mirror_ref_for() {
+#   →  ${DEV_REGISTRY}/build-cache/zot-linux-amd64:v2.1.8
+lan_build_cache_ref_for() {
   local source_ref="$1"
   local registry prefix bare name tag digest
-  registry="$(printf '%s' "${BUILD_IMAGE_MIRROR_REGISTRY:-}" | sed 's#/*$##')"
-  prefix="$(printf '%s' "${BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX:-build-cache}" | sed 's#^/*##; s#/*$##')"
+  registry="$(printf '%s' "${DEV_REGISTRY:-}" | sed 's#/*$##')"
+  prefix="$(printf '%s' "${LAN_BUILD_CACHE_PREFIX}" | sed 's#^/*##; s#/*$##')"
   if [[ -z "${registry}" || -z "${prefix}" ]]; then
     return 1
   fi
@@ -630,11 +629,10 @@ build_image_mirror_ref_for() {
   printf '%s/%s/%s:%s' "${registry}" "${prefix}" "${name}" "${tag}"
 }
 
-build_image_mirror_enabled() {
-  case "$(printf '%s' "${BUILD_IMAGE_MIRROR_ENABLED:-false}" | tr '[:upper:]' '[:lower:]')" in
-    1|true|yes|on) return 0 ;;
-    *) return 1 ;;
-  esac
+# LAN build-cache is on whenever packaging already has DEV_REGISTRY (required
+# for K3s files API and builder pull). Miss/timeout falls back to upstream.
+lan_build_cache_enabled() {
+  [[ -n "${DEV_REGISTRY:-}" ]]
 }
 
 # Parse oci-archive:path[:reference] (first colon after transport separates
@@ -804,23 +802,19 @@ podman_export_oci_archive() {
   [[ -f "${output_path}" && -s "${output_path}" ]]
 }
 
-ensure_build_image_mirror_login() {
+ensure_lan_build_cache_login() {
   local registry user token tls_verify podman_bin skopeo_bin
   local -a login_tls=()
-  if ! build_image_mirror_enabled; then
+  if ! lan_build_cache_enabled; then
     return 0
   fi
-  registry="$(printf '%s' "${BUILD_IMAGE_MIRROR_REGISTRY:-}" | sed 's#/*$##')"
-  user="${BUILD_IMAGE_MIRROR_USER:-}"
-  token="${BUILD_IMAGE_MIRROR_TOKEN:-}"
-  tls_verify="${BUILD_IMAGE_MIRROR_TLS_VERIFY:-true}"
-  if [[ -z "${registry}" ]]; then
-    echo "build-full-bundle: BUILD_IMAGE_MIRROR_ENABLED but BUILD_IMAGE_MIRROR_REGISTRY is empty" >&2
-    exit 2
-  fi
-  echo "build-full-bundle: build_image_mirror enabled registry=${registry} prefix=${BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX:-build-cache} timeout=${BUILD_IMAGE_MIRROR_TIMEOUT_SECONDS:-15}s" >&2
+  registry="$(printf '%s' "${DEV_REGISTRY:-}" | sed 's#/*$##')"
+  user="${DEV_REGISTRY_USER:-}"
+  token="${DEV_REGISTRY_TOKEN:-}"
+  tls_verify="${DEV_REGISTRY_TLS_VERIFY:-true}"
+  echo "build-full-bundle: LAN build-cache enabled registry=${registry} prefix=${LAN_BUILD_CACHE_PREFIX} timeout=${LAN_BUILD_CACHE_TIMEOUT_SECONDS}s" >&2
   if [[ -z "${user}" || -z "${token}" ]]; then
-    echo "build-full-bundle: warning: build_image_mirror has no BUILD_IMAGE_MIRROR_USER/TOKEN; relying on existing registry auth" >&2
+    echo "build-full-bundle: warning: LAN build-cache has no DEV_REGISTRY_USER/TOKEN; relying on existing registry auth" >&2
     return 0
   fi
   case "$(printf '%s' "${tls_verify}" | tr '[:upper:]' '[:lower:]')" in
@@ -838,40 +832,36 @@ ensure_build_image_mirror_login() {
       return 0
     fi
   fi
-  echo "build-full-bundle: warning: could not login to build_image_mirror ${registry}; pulls may rely on --src-creds" >&2
+  echo "build-full-bundle: warning: could not login to LAN build-cache ${registry}; pulls may rely on --src-creds" >&2
 }
 
 skopeo_copy_oci_archive() {
-  # Pull-through to local LAN appliance Artifact Server (build_image_mirror):
-  #   1) If enabled: try LAN mirror first (short timeout). Hit → done (no push).
-  #   2) Else (miss / timeout / unreachable / disabled): pull upstream
-  #      (internet or configured pull ref). Upstream is independent of the LAN
-  #      TLS/insecure settings used for Artifact Server (self-signed lab cert).
-  #   3) If (2) succeeded and mirror is enabled: best-effort push the just-fetched
+  # Pull-through to local LAN appliance Artifact Server (build-cache on DEV_REGISTRY):
+  #   1) If DEV_REGISTRY is set: try LAN first (short timeout). Hit → done.
+  #   2) Else (miss / timeout / unreachable / no DEV_REGISTRY): pull upstream
+  #      (internet or configured pull ref). Upstream TLS is independent of the
+  #      LAN TLS/insecure settings used for Artifact Server (self-signed lab cert).
+  #   3) If (2) succeeded and DEV_REGISTRY is set: best-effort push the just-fetched
   #      archive to the LAN Artifact Server so the next build is a hit.
   # Bundle output always lands in output_path; fail closed only if (2) fails.
   local source_ref="$1"
   local output_path="$2"
   local dest_name="$3"
   local mirror_ref=""
-  local mirror_timeout="${BUILD_IMAGE_MIRROR_TIMEOUT_SECONDS:-15}"
-  # Public/upstream registries always verify TLS. LAN pulls use DEV_REGISTRY_TLS_VERIFY
-  # (or BUILD_IMAGE_MIRROR_TLS_VERIFY when the pull host is the mirror registry).
+  local mirror_timeout="${LAN_BUILD_CACHE_TIMEOUT_SECONDS}"
+  # Public/upstream registries always verify TLS. LAN pulls use DEV_REGISTRY_TLS_VERIFY.
   local upstream_tls="true"
-  local mirror_tls="${BUILD_IMAGE_MIRROR_TLS_VERIFY:-true}"
-  local mirror_user="${BUILD_IMAGE_MIRROR_USER:-}"
-  local mirror_token="${BUILD_IMAGE_MIRROR_TOKEN:-}"
+  local mirror_tls="${DEV_REGISTRY_TLS_VERIFY:-true}"
+  local mirror_user="${DEV_REGISTRY_USER:-}"
+  local mirror_token="${DEV_REGISTRY_TOKEN:-}"
   local dest_spec
   local fetched_from_upstream=0
-  local bare_source mirror_host dev_host
+  local bare_source mirror_host
   local tmp_labeled
 
   bare_source="${source_ref#docker://}"
-  mirror_host="$(printf '%s' "${BUILD_IMAGE_MIRROR_REGISTRY:-}" | sed 's#/*$##; s#^https\?://##')"
-  dev_host="$(printf '%s' "${DEV_REGISTRY:-}" | sed 's#/*$##; s#^https\?://##')"
+  mirror_host="$(printf '%s' "${DEV_REGISTRY:-}" | sed 's#/*$##; s#^https\?://##')"
   if [[ -n "${mirror_host}" && ( "${bare_source}" == "${mirror_host}"/* || "${bare_source}" == "${mirror_host}:"* ) ]]; then
-    upstream_tls="${BUILD_IMAGE_MIRROR_TLS_VERIFY:-${DEV_REGISTRY_TLS_VERIFY:-true}}"
-  elif [[ -n "${dev_host}" && ( "${bare_source}" == "${dev_host}"/* || "${bare_source}" == "${dev_host}:"* ) ]]; then
     upstream_tls="${DEV_REGISTRY_TLS_VERIFY:-true}"
   fi
 
@@ -879,23 +869,23 @@ skopeo_copy_oci_archive() {
   rm -f "${output_path}"
   dest_spec="oci-archive:${output_path}:${dest_name}"
 
-  if build_image_mirror_enabled; then
-    mirror_ref="$(build_image_mirror_ref_for "${source_ref}" || true)"
+  if lan_build_cache_enabled; then
+    mirror_ref="$(lan_build_cache_ref_for "${source_ref}" || true)"
     if [[ -z "${mirror_ref}" ]]; then
-      echo "build-full-bundle: build_image_mirror enabled but could not map ${source_ref} to a LAN mirror ref; fetching upstream" >&2
+      echo "build-full-bundle: LAN build-cache could not map ${source_ref}; fetching upstream" >&2
     else
-      echo "build-full-bundle: LAN artifact mirror try ${mirror_ref} (timeout ${mirror_timeout}s) for ${dest_name}" >&2
+      echo "build-full-bundle: LAN build-cache try ${mirror_ref} (timeout ${mirror_timeout}s) for ${dest_name}" >&2
       # quiet probe: miss/timeout is normal when the cache is cold
       if skopeo_try_copy "${mirror_ref}" "${dest_spec}" "${mirror_timeout}" "${mirror_tls}" "true" \
         "true" "${mirror_user}" "${mirror_token}" "" ""; then
         if [[ -f "${output_path}" && -s "${output_path}" ]]; then
-          echo "build-full-bundle: LAN artifact mirror hit for ${dest_name} (${mirror_ref})" >&2
+          echo "build-full-bundle: LAN build-cache hit for ${dest_name} (${mirror_ref})" >&2
           return 0
         fi
-        echo "build-full-bundle: LAN artifact mirror returned empty archive for ${mirror_ref}; treating as miss" >&2
+        echo "build-full-bundle: LAN build-cache returned empty archive for ${mirror_ref}; treating as miss" >&2
         rm -f "${output_path}"
       else
-        echo "build-full-bundle: LAN artifact mirror miss/timeout/unreachable for ${mirror_ref}" >&2
+        echo "build-full-bundle: LAN build-cache miss/timeout/unreachable for ${mirror_ref}" >&2
         rm -f "${output_path}"
       fi
       echo "build-full-bundle: falling back to upstream (internet/pull-ref) ${source_ref}" >&2
@@ -910,7 +900,7 @@ skopeo_copy_oci_archive() {
       cat >&2 <<EOF
 build-full-bundle: failed to export ${dest_name} from upstream ${source_ref}
 build-full-bundle: skopeo and podman pull both failed (see logs above)
-build-full-bundle: ensure the build host can reach the registry or seed the optional LAN build-cache mirror (build_flow.build_image_mirror)
+build-full-bundle: ensure the build host can reach the registry (LAN build-cache is automatic from DEV_REGISTRY)
 EOF
       if ! command -v skopeo >/dev/null 2>&1 && ! command -v podman >/dev/null 2>&1; then
         echo "build-full-bundle: skopeo or podman is required to export ${dest_name}" >&2
@@ -938,23 +928,23 @@ EOF
   echo "build-full-bundle: fetched ${dest_name} from upstream ${source_ref}" >&2
 
   # Seed LAN Artifact Server only after a successful upstream fetch (not on mirror hit).
-  if [[ "${fetched_from_upstream}" -eq 1 ]] && build_image_mirror_enabled && [[ -n "${mirror_ref}" ]]; then
-    echo "build-full-bundle: seeding LAN artifact mirror ${mirror_ref} with ${dest_name}" >&2
-    if skopeo_push_oci_archive_to_mirror "${output_path}" "${dest_name}" "${mirror_ref}" "${mirror_tls}"; then
-      echo "build-full-bundle: seeded LAN artifact mirror ${mirror_ref}" >&2
+  if [[ "${fetched_from_upstream}" -eq 1 ]] && lan_build_cache_enabled && [[ -n "${mirror_ref}" ]]; then
+    echo "build-full-bundle: seeding LAN build-cache ${mirror_ref} with ${dest_name}" >&2
+    if skopeo_push_oci_archive_to_lan_cache "${output_path}" "${dest_name}" "${mirror_ref}" "${mirror_tls}"; then
+      echo "build-full-bundle: seeded LAN build-cache ${mirror_ref}" >&2
     else
-      echo "build-full-bundle: warning: failed to seed LAN artifact mirror ${mirror_ref} (build continues; next build may re-fetch upstream)" >&2
+      echo "build-full-bundle: warning: failed to seed LAN build-cache ${mirror_ref} (build continues; next build may re-fetch upstream)" >&2
     fi
   fi
 }
 
-skopeo_push_oci_archive_to_mirror() {
+skopeo_push_oci_archive_to_lan_cache() {
   local archive_path="$1"
   local dest_name="$2"
   local mirror_ref="$3"
   local mirror_tls="$4"
-  local mirror_user="${BUILD_IMAGE_MIRROR_USER:-}"
-  local mirror_token="${BUILD_IMAGE_MIRROR_TOKEN:-}"
+  local mirror_user="${DEV_REGISTRY_USER:-}"
+  local mirror_token="${DEV_REGISTRY_TOKEN:-}"
   local skopeo_bin podman_bin auth_file skopeo_image
   local -a overrides=(--override-os "${BUNDLE_IMAGE_OS}" --override-arch "${BUNDLE_IMAGE_ARCH}")
   local -a dest_tls=()
@@ -1338,7 +1328,7 @@ fi
 BUNDLED_IMAGE_ARCHIVES=()
 BUNDLED_IMAGE_REFS=()
 
-ensure_build_image_mirror_login
+ensure_lan_build_cache_login
 
 ZOT_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/zot-image.tar"
 ZOT_IMAGE_REF="$(export_bundled_oci_archive "${ZOT_IMAGE_PULL_REF}" "registry.local/zot" "${CODE_REPO_DIR}/.run/zot-image.tar")"
