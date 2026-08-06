@@ -91,7 +91,7 @@ That script:
   supported
 - asks `appliance-code` to build `release-input-${PRODUCT_VERSION}.tar.gz`
 - assembles and verifies the final signed bundle
-- exports the delivery files into `EXPORT_DIR` or `RELEASE_WORK_ROOT/export`
+- exports the delivery files into `RELEASE_WORK_ROOT/export`
 
 Outputs:
 
@@ -152,11 +152,13 @@ Example:
 
 ```bash
 export PRODUCT_VERSION=0.1.0   # optional; defaults from configs/default-product-version
-make publish-release \
-  EXPORT_DIR=/home/zonsys/appliance-build/export \
-  PUBLISH_SERVER=release@downloads.example.internal \
-  PUBLISH_REMOTE_ROOT=/srv/www/releases \
-  PUBLISH_PUBLIC_BASE_URL=http://downloads.example.internal/releases
+export RELEASE_WORK_ROOT=/home/zonsys/appliance-build  # export output is $RELEASE_WORK_ROOT/export
+export PUBLISH_MODE=static_http
+export PUBLISH_PATH_PREFIX=appliance
+export PUBLISH_PUBLIC_BASE_URL=http://downloads.example.internal/releases
+export PUBLISH_SERVER=release@downloads.example.internal
+export PUBLISH_REMOTE_ROOT=/srv/www/releases
+make publish-release
 ```
 
 The published `install-http-release.sh` helper takes a required

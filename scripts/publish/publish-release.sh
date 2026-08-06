@@ -7,9 +7,10 @@ source "${SCRIPT_DIR}/bundle-store-lib.sh"
 
 usage() {
   cat <<'EOF'
-usage: publish-release.sh --export-dir DIR --product-version VERSION [options]
+usage: publish-release.sh --product-version VERSION [options]
 
 Publish the already-built customer delivery files from scripts/ci/build-full-bundle.sh.
+Export input is always $RELEASE_WORK_ROOT/export.
 
 Modes:
   static_http       Copy exported files to a remote server over SSH/SCP for a
@@ -20,10 +21,10 @@ Modes:
                     https://artifact-dns-1.appliance.internal/api/v1/files
 
 Options:
-  --export-dir DIR           Directory containing:
-                               appliance-<version>-bundle.tar.gz
-                               release-signing.pub
-                             Required.
+  --release-work-root DIR    Build/export root (same as RELEASE_WORK_ROOT).
+                             Export files are read from DIR/export. Required
+                             unless RELEASE_WORK_ROOT is already set in the
+                             environment.
   --product-version VERSION  Product version to publish. Required.
   --mode MODE                static_http|appliance_files. Required.
   --latest-alias             Also publish/update <path-prefix>/latest/ (static_http).
@@ -43,7 +44,7 @@ static_http mode options:
 
 Examples:
   bash ./scripts/publish/publish-release.sh \
-    --export-dir /tmp/appliance-build/export \
+    --release-work-root /tmp/appliance-build \
     --product-version 0.1.0 \
     --server release@downloads.internal \
     --remote-root /srv/www/releases \
@@ -53,7 +54,7 @@ EOF
 }
 
 MODE=""
-EXPORT_DIR=""
+RELEASE_WORK_ROOT="${RELEASE_WORK_ROOT-}"
 PRODUCT_VERSION=""
 SERVER_TARGET=""
 REMOTE_ROOT=""
@@ -64,9 +65,14 @@ LATEST_ALIAS="0"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --export-dir)
-      EXPORT_DIR="${2:-}"
+    --release-work-root)
+      RELEASE_WORK_ROOT="${2:-}"
       shift 2
+      ;;
+    --export-dir)
+      echo "publish-release: --export-dir is no longer supported." >&2
+      echo "publish-release: set --release-work-root or RELEASE_WORK_ROOT; export is always \$RELEASE_WORK_ROOT/export." >&2
+      exit 2
       ;;
     --product-version)
       PRODUCT_VERSION="${2:-}"
@@ -200,17 +206,23 @@ MODE="$(normalize_bundle_store_mode "${MODE}")" || {
   exit 2
 }
 
-require_var EXPORT_DIR
+require_var RELEASE_WORK_ROOT
 require_var PRODUCT_VERSION
 require_var PATH_PREFIX
 require_var PUBLIC_BASE_URL
 
-EXPORT_DIR="$(cd "$(dirname "${EXPORT_DIR}")" && pwd)/$(basename "${EXPORT_DIR}")"
+RELEASE_WORK_ROOT="$(cd "$(dirname "${RELEASE_WORK_ROOT}")" && pwd)/$(basename "${RELEASE_WORK_ROOT}")"
+EXPORT_DIR="${RELEASE_WORK_ROOT}/export"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-bundle.tar.gz"
 PUBLIC_KEY_FILE="${EXPORT_DIR}/release-signing.pub"
 CHECKSUM_FILE="${EXPORT_DIR}/sha256sum.txt"
 INSTALL_HELPER_HTTP="${SCRIPT_DIR}/install-http-release.sh"
 INSTALL_HELPER_HTTP_PUBLISHED="install-http-release.sh"
+
+if [[ ! -d "${EXPORT_DIR}" ]]; then
+  echo "publish-release: export directory not found: ${EXPORT_DIR} (from RELEASE_WORK_ROOT)" >&2
+  exit 1
+fi
 
 require_file "${BUNDLE_ARCHIVE}" "bundle archive"
 require_file "${PUBLIC_KEY_FILE}" "release signing public key"

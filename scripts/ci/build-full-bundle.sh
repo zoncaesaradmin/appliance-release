@@ -51,7 +51,6 @@ to set an Argo version yourself.
 Optional overrides:
   PRODUCT_VERSION=0.1.0         # overrides configs/default-product-version
   RELEASE_WORK_ROOT=${TMPDIR:-/tmp}/appliance-build
-  EXPORT_DIR=\$RELEASE_WORK_ROOT/export
   K3S_VERSION_OVERRIDE=v1.30.4+k3s1
   HELM_VERSION=v3.21.1
   HELM_BINARY=/abs/path/to/linux-amd64/helm
@@ -100,7 +99,6 @@ USER_HELM_BINARY="${HELM_BINARY-}"
 USER_HELM_VERSION="${HELM_VERSION-}"
 USER_VALUES_FILE_SOURCE="${VALUES_FILE_SOURCE-}"
 USER_RELEASE_WORK_ROOT="${RELEASE_WORK_ROOT-}"
-USER_EXPORT_DIR="${EXPORT_DIR-}"
 USER_OS_VERSION="${OS_VERSION-}"
 USER_K3S_VERSION_OVERRIDE="${K3S_VERSION_OVERRIDE-}"
 USER_ARGO_ENABLED="${ARGO_ENABLED-}"
@@ -143,6 +141,12 @@ for _var in "${_removed_offline_build_inputs[@]}"; do
 done
 unset _var _removed_offline_build_inputs
 
+if [[ -n "${EXPORT_DIR-}" ]]; then
+  echo "build-full-bundle: EXPORT_DIR is no longer supported." >&2
+  echo "build-full-bundle: set RELEASE_WORK_ROOT; export output is always \$RELEASE_WORK_ROOT/export." >&2
+  exit 2
+fi
+
 # Fixed LAN build-cache policy.
 LAN_BUILD_CACHE_PREFIX="build-cache"
 LAN_BUILD_CACHE_TIMEOUT_SECONDS="15"
@@ -163,8 +167,8 @@ CTL_REPO_SOURCE="${USER_CTL_REPO_SOURCE:-${CTL_REPO_SOURCE:-}}"
 HELM_BINARY="${USER_HELM_BINARY:-${HELM_BINARY:-}}"
 HELM_VERSION="${USER_HELM_VERSION:-${HELM_VERSION:-}}"
 VALUES_FILE_SOURCE="${USER_VALUES_FILE_SOURCE:-${VALUES_FILE:-}}"
-RELEASE_WORK_ROOT="${USER_RELEASE_WORK_ROOT:-${TMPDIR:-/tmp}/appliance-build}"
-EXPORT_DIR="${USER_EXPORT_DIR:-${EXPORT_DIR:-${RELEASE_WORK_ROOT}/export}}"
+RELEASE_WORK_ROOT="${USER_RELEASE_WORK_ROOT:-${RELEASE_WORK_ROOT:-${TMPDIR:-/tmp}/appliance-build}}"
+EXPORT_DIR="${RELEASE_WORK_ROOT}/export"
 OS_VERSION="${USER_OS_VERSION:-${OS_VERSION:-24.04}}"
 K3S_VERSION_OVERRIDE="${USER_K3S_VERSION_OVERRIDE:-}"
 ARGO_ENABLED="${USER_ARGO_ENABLED:-${ARGO_ENABLED:-}}"
@@ -1531,8 +1535,15 @@ echo "  ${BUNDLE_ARCHIVE}"
 echo "  ${PUBLIC_KEY_EXPORT}"
 echo
 echo "next publish step on the build machine:"
-echo "  export PRODUCT_VERSION=${PRODUCT_VERSION}"
-echo "  make publish-release EXPORT_DIR=${EXPORT_DIR} PUBLISH_SERVER=<user@host> PUBLISH_REMOTE_ROOT=/srv/www/releases"
-echo "optional publish vars:"
-echo "  PUBLISH_PUBLIC_BASE_URL=http://downloads.example.internal/releases"
+echo "  # PRODUCT_VERSION defaults from configs/default-product-version"
+echo "  # export dir is \$RELEASE_WORK_ROOT/export"
+echo "  export RELEASE_WORK_ROOT=${RELEASE_WORK_ROOT}"
+echo "  export PUBLISH_MODE=static_http   # or appliance_files"
+echo "  export PUBLISH_PATH_PREFIX=appliance"
+echo "  export PUBLISH_PUBLIC_BASE_URL=http://downloads.example.internal/releases"
+echo "  export PUBLISH_SERVER=<user@host>          # static_http only"
+echo "  export PUBLISH_REMOTE_ROOT=/srv/www/releases  # static_http only"
+echo "  make publish-release"
+echo "optional:"
 echo "  PUBLISH_LATEST_ALIAS=1"
+echo "  PRODUCT_VERSION=<override>"

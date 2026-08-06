@@ -194,11 +194,17 @@ verify-bundle:
 .PHONY: publish-release
 publish-release:
 	@PRODUCT_VERSION="$${PRODUCT_VERSION:-$$(tr -d '[:space:]' < configs/default-product-version)}"; \
-	if [ -z "$${EXPORT_DIR:-}" ] || [ -z "$${PRODUCT_VERSION}" ]; then \
-		echo "publish-release: required env var is EXPORT_DIR=/abs/path/to/export (PRODUCT_VERSION defaults from configs/default-product-version)" >&2; \
+	RELEASE_WORK_ROOT="$${RELEASE_WORK_ROOT:-$${TMPDIR:-/tmp}/appliance-build}"; \
+	EXPORT_DIR="$${RELEASE_WORK_ROOT}/export"; \
+	if [ -z "$${PRODUCT_VERSION}" ]; then \
+		echo "publish-release: missing configs/default-product-version (or set PRODUCT_VERSION)" >&2; \
 		exit 2; \
 	fi; \
-	export PRODUCT_VERSION; \
+	if [ ! -d "$${EXPORT_DIR}" ]; then \
+		echo "publish-release: export directory not found: $${EXPORT_DIR} (set RELEASE_WORK_ROOT)" >&2; \
+		exit 2; \
+	fi; \
+	export PRODUCT_VERSION RELEASE_WORK_ROOT; \
 	if [ -z "$${PUBLISH_MODE:-}" ]; then \
 		echo "publish-release: PUBLISH_MODE is required (from bundle_store.mode)" >&2; \
 		exit 2; \
@@ -219,7 +225,7 @@ publish-release:
 				exit 2; \
 			fi; \
 			bash ./scripts/publish/publish-release.sh \
-				--export-dir "$${EXPORT_DIR}" \
+				--release-work-root "$${RELEASE_WORK_ROOT}" \
 				--product-version "$${PRODUCT_VERSION}" \
 				--mode static_http \
 				--server "$${PUBLISH_SERVER}" \
@@ -231,7 +237,7 @@ publish-release:
 			;; \
 		appliance_files) \
 			bash ./scripts/publish/publish-release.sh \
-				--export-dir "$${EXPORT_DIR}" \
+				--release-work-root "$${RELEASE_WORK_ROOT}" \
 				--product-version "$${PRODUCT_VERSION}" \
 				--mode appliance_files \
 				--path-prefix "$${PUBLISH_PATH_PREFIX}" \

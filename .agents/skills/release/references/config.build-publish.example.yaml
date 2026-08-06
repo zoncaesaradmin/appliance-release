@@ -44,7 +44,7 @@
 release_workspace:
   # Single build-host root. Skill-managed layout under this path:
   #   release/ — appliance-release git checkout (clone/reset each run)
-  #   export/ — bundle export output (EXPORT_DIR)
+  #   export/ — bundle export output ($RELEASE_WORK_ROOT/export)
   #   inputs/ — local staging for scripts/ci/fetch-k3s-inputs.sh
   #            (seed the appliance files API once; build-full-bundle downloads
   #            K3s from that API during packaging)
@@ -88,7 +88,8 @@ build_flow:
     token_env: DEV_REGISTRY_TOKEN
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 
-  # EXPORT_DIR injected by the skill from remote_build_root/export.
+  # RELEASE_WORK_ROOT injected by the skill from remote_build_root
+  # (export dir is always $RELEASE_WORK_ROOT/export).
   # Product version comes from configs/default-product-version unless
   # PRODUCT_VERSION or release.version overrides it.
 

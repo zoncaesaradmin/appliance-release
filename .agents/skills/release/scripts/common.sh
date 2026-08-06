@@ -492,7 +492,7 @@ skill_remote_build_root_layout_message() {
   cat <<'EOF'
 Skill-fixed layout under release_workspace.remote_build_root:
   release/ — appliance-release git checkout (REMOTE_CWD)
-  export/ — bundle export output (EXPORT_DIR)
+  export/ — bundle export output ($RELEASE_WORK_ROOT/export)
   inputs/ — local staging for scripts/ci/fetch-k3s-inputs.sh
 K3s binary/airgap images used by the build are fetched during build-full-bundle
 from the appliance files API (seed that API with scripts/ci/fetch-k3s-inputs.sh).
