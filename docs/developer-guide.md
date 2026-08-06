@@ -135,10 +135,17 @@ Start from these templates if you want examples:
 ## Publish A Built Release
 
 One product sequence on the build host (after `DEV_*` and `RELEASE_WORK_ROOT`
-are set):
+are set). For CI / Argo, prefer the Makefile trigger from the repo root:
 
 ```bash
-bash ./scripts/bootstrap-build-host.sh   # once per host
+make build-and-publish
+```
+
+That runs bootstrap → build → publish and aborts on the first failure.
+The same leaf scripts, if you prefer to call them by hand:
+
+```bash
+bash ./scripts/bootstrap-build-host.sh
 bash ./scripts/build-full-bundle.sh
 bash ./scripts/publish-release.sh
 ```

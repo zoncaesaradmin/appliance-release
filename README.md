@@ -10,8 +10,12 @@ release-input handoff come from `appliance-code`.
 
 - `make verify`
   Local checks for this repo.
-- Build-host release sequence (only supported product path):
-  1. `bash ./scripts/bootstrap-build-host.sh` (once per host)
+- `make build-and-publish`
+  Build-host release sequence (bootstrap → build → publish). Prefer this
+  for CI / Argo: inject `DEV_*`, `RELEASE_WORK_ROOT`, and optional
+  `PRODUCT_VERSION` in the runner env; no script paths needed in the workflow.
+  Equivalent leaf scripts (same sequence):
+  1. `bash ./scripts/bootstrap-build-host.sh`
   2. `bash ./scripts/build-full-bundle.sh`
   3. `bash ./scripts/publish-release.sh`
 
