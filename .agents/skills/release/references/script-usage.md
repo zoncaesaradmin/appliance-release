@@ -41,10 +41,9 @@ Notes:
 - Build packaging always pulls/packages from the network (or the mirror flow
   above). Local build-host path inputs such as `*_image_archive_source`,
   `argo.crds_dir_source`, and `host_packages_dir_source` are rejected.
-  K3s binary/images are staged under
-  `$remote_build_root/inputs/k3s` and
-  `$remote_build_root/inputs/k3s-airgap-images-amd64.tar.zst` (skill-fixed;
-  set only `release_workspace.remote_build_root`).
+  K3s binary/images are downloaded by `build-full-bundle` from the appliance
+  files API (`https://$DEV_REGISTRY/api/v1/files/k3s/$K3S_VERSION/…`). Seed
+  that path once with `scripts/ci/fetch-k3s-inputs.sh`.
 - Do **not** put a `build_flow.product_publish` block in config. Signed-bundle
   distribution is `bundle_store` plus skill-fixed `make publish-release`. Service
   image push defaults live in appliance-code `build/service-image.mk`

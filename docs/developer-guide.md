@@ -58,12 +58,20 @@ This is the supported end-to-end release build flow.
 
 ```bash
 PRODUCT_VERSION=0.1.0 \
-CODE_REPO_SOURCE=https://git.example.invalid/zon/appliance-code.git \
-CTL_REPO_SOURCE=https://git.example.invalid/zon/appliance-ctl.git \
-K3S_BINARY_SOURCE=/ci/inputs/k3s \
-K3S_AIRGAP_IMAGES_SOURCE=/ci/inputs/k3s-airgap-images-amd64.tar.zst \
+DEV_REGISTRY=artifact-dns-1.appliance.internal \
+DEV_REGISTRY_TOKEN=... \
+DEV_REGISTRY_TLS_VERIFY=false \
+EXTRA_OCI_IMAGE_REFS=registry.local/dev-build \
+EXTRA_OCI_IMAGE_PULL_REFS="${DEV_REGISTRY}/development-container/dev-build:latest" \
 bash ./scripts/ci/build-full-bundle.sh
 ```
+
+K3s binary and airgap images are downloaded during the build from the appliance
+files API (same layout seedable by `scripts/ci/fetch-k3s-inputs.sh`):
+
+`https://$DEV_REGISTRY/api/v1/files/k3s/<K3S_VERSION>/…`
+
+`K3S_VERSION` defaults from `configs/product-bundle.ci.env`.
 
 That script:
 

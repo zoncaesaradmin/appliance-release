@@ -22,11 +22,17 @@ Run this from the checked-out appliance-release repo root:
 Configuration is taken from environment variables. The most common pattern is:
 
   PRODUCT_VERSION=0.1.0 \
-  CODE_REPO_SOURCE=https://git.example.invalid/zon/appliance-code.git \
-  CTL_REPO_SOURCE=https://git.example.invalid/zon/appliance-ctl.git \
-  K3S_BINARY_SOURCE=/ci/inputs/k3s \
-  K3S_AIRGAP_IMAGES_SOURCE=/ci/inputs/k3s-airgap-images-amd64.tar.zst \
+  DEV_REGISTRY=artifact-dns-1.appliance.internal \
+  DEV_REGISTRY_TOKEN=... \
+  EXTRA_OCI_IMAGE_REFS=registry.local/dev-build \
+  EXTRA_OCI_IMAGE_PULL_REFS=\$DEV_REGISTRY/development-container/dev-build:latest \
   bash ./scripts/ci/build-full-bundle.sh
+
+K3s binary + airgap images are downloaded at build time from the appliance
+files API (seed once with scripts/ci/fetch-k3s-inputs.sh). URL layout is fixed:
+  https://\$DEV_REGISTRY/api/v1/files/k3s/\$K3S_VERSION/k3s
+  https://\$DEV_REGISTRY/api/v1/files/k3s/\$K3S_VERSION/k3s-airgap-images-amd64.tar.zst
+K3S_VERSION comes from configs/product-bundle.ci.env (or K3S_VERSION_OVERRIDE).
 
 Argo Workflows is on by default (it is a mandatory component of the
 complete v1 appliance per ADR 0011) and needs no configuration: its
@@ -99,8 +105,6 @@ USER_CODE_REPO_SOURCE="${CODE_REPO_SOURCE-}"
 USER_CODE_REPO_REF="${CODE_REPO_REF-}"
 USER_CTL_REPO_SOURCE="${CTL_REPO_SOURCE-}"
 USER_CTL_REPO_REF="${CTL_REPO_REF-}"
-USER_K3S_BINARY_SOURCE="${K3S_BINARY_SOURCE-}"
-USER_K3S_AIRGAP_IMAGES_SOURCE="${K3S_AIRGAP_IMAGES_SOURCE-}"
 USER_HELM_BINARY="${HELM_BINARY-}"
 USER_HELM_VERSION="${HELM_VERSION-}"
 USER_VALUES_FILE_SOURCE="${VALUES_FILE_SOURCE-}"
@@ -142,7 +146,7 @@ _removed_offline_build_inputs=(
 for _var in "${_removed_offline_build_inputs[@]}"; do
   if [[ -n "${!_var-}" ]]; then
     echo "build-full-bundle: ${_var} is no longer supported (no offline/local archive path inputs)." >&2
-    echo "build-full-bundle: pull/package via the network (or optional BUILD_IMAGE_MIRROR_* / build_flow.build_image_mirror)." >&2
+    echo "build-full-bundle: use network packaging or BUILD_IMAGE_MIRROR_*." >&2
     exit 2
   fi
 done
@@ -153,8 +157,6 @@ CODE_REPO_SOURCE="${USER_CODE_REPO_SOURCE:-${CODE_REPO_SOURCE:-}}"
 CODE_REPO_REF="${USER_CODE_REPO_REF:-${CODE_REPO_REF:-main}}"
 CTL_REPO_SOURCE="${USER_CTL_REPO_SOURCE:-${CTL_REPO_SOURCE:-}}"
 CTL_REPO_REF="${USER_CTL_REPO_REF:-${CTL_REPO_REF:-main}}"
-K3S_BINARY_SOURCE="${USER_K3S_BINARY_SOURCE:-${K3S_BINARY_SOURCE:-}}"
-K3S_AIRGAP_IMAGES_SOURCE="${USER_K3S_AIRGAP_IMAGES_SOURCE:-${K3S_AIRGAP_IMAGES_SOURCE:-}}"
 HELM_BINARY="${USER_HELM_BINARY:-${HELM_BINARY:-}}"
 HELM_VERSION="${USER_HELM_VERSION:-${HELM_VERSION:-}}"
 VALUES_FILE_SOURCE="${USER_VALUES_FILE_SOURCE:-${VALUES_FILE:-}}"
@@ -305,6 +307,63 @@ stage_file() {
 
   echo "build-full-bundle: unsupported ${label} source: ${source}" >&2
   exit 1
+}
+
+# Same layout as scripts/ci/fetch-k3s-inputs.sh: files API under k3s/$K3S_VERSION/.
+# Requires DEV_REGISTRY + DEV_REGISTRY_TOKEN (existing registry/files auth vars).
+fetch_k3s_inputs_from_files_api() {
+  local dest_dir="$1"
+  local registry=""
+  local token=""
+  local files_base=""
+  local remote_prefix=""
+  local -a curl_tls=()
+  local bin_dest=""
+  local airgap_dest=""
+
+  registry="$(printf '%s' "${DEV_REGISTRY:-}" | tr -d '[:space:]')"
+  token="$(printf '%s' "${DEV_REGISTRY_TOKEN:-}" | tr -d '[:space:]')"
+  registry="${registry#https://}"
+  registry="${registry#http://}"
+  registry="${registry%/}"
+  if [[ -z "${registry}" ]]; then
+    echo "build-full-bundle: DEV_REGISTRY is required to download K3s inputs from the appliance files API" >&2
+    exit 2
+  fi
+  if [[ -z "${token}" ]]; then
+    echo "build-full-bundle: DEV_REGISTRY_TOKEN is required to download K3s inputs from the appliance files API" >&2
+    exit 2
+  fi
+  case "$(printf '%s' "${DEV_REGISTRY_TLS_VERIFY:-true}" | tr '[:upper:]' '[:lower:]')" in
+    0|false|no|off) curl_tls=(-k) ;;
+  esac
+
+  require_var K3S_VERSION
+  files_base="https://${registry}/api/v1/files"
+  remote_prefix="${files_base}/k3s/${K3S_VERSION}"
+  bin_dest="${dest_dir}/k3s"
+  airgap_dest="${dest_dir}/k3s-airgap-images-amd64.tar.zst"
+  mkdir -p "${dest_dir}"
+  rm -f "${bin_dest}" "${airgap_dest}"
+
+  echo "build-full-bundle: downloading K3s ${K3S_VERSION} from ${remote_prefix}/" >&2
+  if ! curl -fsSL "${curl_tls[@]}" \
+    -H "Authorization: Bearer ${token}" \
+    -o "${bin_dest}" \
+    "${remote_prefix}/k3s"; then
+    echo "build-full-bundle: failed to download k3s binary from ${remote_prefix}/k3s (seed with scripts/ci/fetch-k3s-inputs.sh)" >&2
+    exit 1
+  fi
+  chmod +x "${bin_dest}"
+  if ! curl -fsSL "${curl_tls[@]}" \
+    -H "Authorization: Bearer ${token}" \
+    -o "${airgap_dest}" \
+    "${remote_prefix}/k3s-airgap-images-amd64.tar.zst"; then
+    echo "build-full-bundle: failed to download airgap images from ${remote_prefix}/k3s-airgap-images-amd64.tar.zst (seed with scripts/ci/fetch-k3s-inputs.sh)" >&2
+    exit 1
+  fi
+  require_file "${bin_dest}" "k3s binary"
+  require_file "${airgap_dest}" "k3s airgap images"
 }
 
 require_appliance_code_bootstrap() {
@@ -1164,14 +1223,11 @@ require_var PRODUCT_VERSION
 require_var CODE_REPO_SOURCE
 require_var CTL_REPO_SOURCE
 require_var K3S_VERSION
-require_var K3S_BINARY_SOURCE
-require_var K3S_AIRGAP_IMAGES_SOURCE
 
 warn_if_local_repo_source "${CODE_REPO_SOURCE}" "CODE_REPO"
 warn_if_local_repo_source "${CTL_REPO_SOURCE}" "CTL_REPO"
 
-require_file "${K3S_BINARY_SOURCE}" "k3s binary"
-require_file "${K3S_AIRGAP_IMAGES_SOURCE}" "k3s airgap images"
+# K3s inputs: downloaded into workspace after dirs exist (mkdir below).
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   require_file "${VALUES_FILE_SOURCE}" "values file"
 fi
@@ -1459,9 +1515,7 @@ chmod +x "${CODE_DEV_SCRIPT_PATH}"
 make -C "${CODE_REPO_DIR}" dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}"
 cp "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"
 
-stage_file "${K3S_BINARY_SOURCE}" "${INPUTS_DIR}/k3s" "k3s binary"
-stage_file "${K3S_AIRGAP_IMAGES_SOURCE}" "${INPUTS_DIR}/k3s-airgap-images-amd64.tar.zst" "k3s airgap images"
-chmod +x "${INPUTS_DIR}/k3s" 2>/dev/null || true
+fetch_k3s_inputs_from_files_api "${INPUTS_DIR}"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   stage_file "${VALUES_FILE_SOURCE}" "${INPUTS_DIR}/values-minimal.yaml" "values file"
 fi

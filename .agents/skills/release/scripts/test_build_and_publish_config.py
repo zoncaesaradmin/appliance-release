@@ -146,32 +146,16 @@ def test_rejects_removed_build_publish_path_keys() -> None:
             "release_workspace",
             "  remote_export_dir: /tmp/export\n",
         ),
-        (
-            "build_flow.k3s_binary_source",
-            "build_flow",
-            "  k3s_binary_source: /tmp/k3s\n",
-        ),
-        (
-            "build_flow.k3s_airgap_images_source",
-            "build_flow",
-            "  k3s_airgap_images_source: /tmp/k3s-airgap-images.tar.zst\n",
-        ),
     ]
     for label, section, snippet in removed_cases:
         with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
             tmp = Path(tmp_dir)
             config = tmp / "config.yaml"
             run_dir = tmp / "run"
-            if section == "release_workspace":
-                config_text = MINIMAL_VALID_CONFIG.replace(
-                    "  remote_build_root: /tmp/appliance-build\n",
-                    f"  remote_build_root: /tmp/appliance-build\n{snippet}",
-                )
-            else:
-                config_text = MINIMAL_VALID_CONFIG.replace(
-                    "  ctl_repo_ref: main\n",
-                    f"  ctl_repo_ref: main\n{snippet}",
-                )
+            config_text = MINIMAL_VALID_CONFIG.replace(
+                "  remote_build_root: /tmp/appliance-build\n",
+                f"  remote_build_root: /tmp/appliance-build\n{snippet}",
+            )
             write(config, config_text)
             result = run_build_publish_config(config, run_dir)
             if result.returncode == 0:

@@ -113,8 +113,6 @@ REMOTE_REPO_SOURCE="$(config_get_optional "${CONFIG_PATH}" "release_workspace.re
 REMOTE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_repo_ref" || true)"
 CODE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.code_repo_ref" || true)"
 CTL_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.ctl_repo_ref" || true)"
-BUILD_K3S_BINARY_SOURCE="$(derive_k3s_binary_source_from_build_root "${REMOTE_BUILD_ROOT}")"
-BUILD_K3S_AIRGAP_IMAGES_SOURCE="$(derive_k3s_airgap_images_source_from_build_root "${REMOTE_BUILD_ROOT}")"
 if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_command" || true)" ]]; then
   fail "build_flow.bootstrap_command was removed; skill always runs: ${DEFAULT_BOOTSTRAP_CMD}"
 fi
@@ -367,8 +365,6 @@ BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "PRODUCT_VERSION" "${RELEASE_VERSION}" \
   "BUILD_COMPLETE_PRODUCT" "${BUILD_COMPLETE_PRODUCT}" \
   "EXPORT_DIR" "${REMOTE_EXPORT_DIR}" \
-  "K3S_BINARY_SOURCE" "${BUILD_K3S_BINARY_SOURCE}" \
-  "K3S_AIRGAP_IMAGES_SOURCE" "${BUILD_K3S_AIRGAP_IMAGES_SOURCE}" \
   "CODE_REPO_REF" "${CODE_REPO_REF}" \
   "CTL_REPO_REF" "${CTL_REPO_REF}" \
   "ARGO_ENABLED" "${BUILD_ARGO_ENABLED}" \

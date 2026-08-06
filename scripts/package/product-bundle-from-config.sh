@@ -339,12 +339,12 @@ require_valid_k3s_airgap_images() {
   fi
   if ! zstd -t "${path}" >/dev/null 2>&1; then
     echo "product-bundle-from-config: k3s airgap images file is not a valid zstd archive: ${path}" >&2
-    echo "product-bundle-from-config: re-check the K3S_AIRGAP_IMAGES/K3S_AIRGAP_IMAGES_SOURCE input before rebuilding the bundle" >&2
+    echo "product-bundle-from-config: re-check K3S_AIRGAP_IMAGES (files API seed: scripts/ci/fetch-k3s-inputs.sh) before rebuilding the bundle" >&2
     exit 1
   fi
   if ! zstd -dc "${path}" 2>/dev/null | tar -tf - >/dev/null 2>&1; then
     echo "product-bundle-from-config: k3s airgap images file decompresses but is not a valid tar archive: ${path}" >&2
-    echo "product-bundle-from-config: re-check the K3S_AIRGAP_IMAGES/K3S_AIRGAP_IMAGES_SOURCE input before rebuilding the bundle" >&2
+    echo "product-bundle-from-config: re-check K3S_AIRGAP_IMAGES (files API seed: scripts/ci/fetch-k3s-inputs.sh) before rebuilding the bundle" >&2
     exit 1
   fi
 }

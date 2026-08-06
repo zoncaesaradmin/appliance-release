@@ -487,16 +487,14 @@ product_control_plane_deployment() {
 # Skill-fixed layout under release_workspace.remote_build_root (build host only).
 SKILL_REMOTE_BUILD_ROOT_CHECKOUT_SUBDIR="release"
 SKILL_REMOTE_BUILD_ROOT_EXPORT_SUBDIR="export"
-SKILL_REMOTE_BUILD_ROOT_K3S_BINARY_SUBPATH="inputs/k3s"
-SKILL_REMOTE_BUILD_ROOT_K3S_AIRGAP_SUBPATH="inputs/k3s-airgap-images-amd64.tar.zst"
 
 skill_remote_build_root_layout_message() {
   cat <<'EOF'
 Skill-fixed layout under release_workspace.remote_build_root:
   release/ — appliance-release git checkout (REMOTE_CWD)
   export/ — bundle export output (EXPORT_DIR)
-  inputs/k3s — K3s binary directory
-  inputs/k3s-airgap-images-amd64.tar.zst — K3s airgap images archive
+K3s binary/airgap images are fetched during build-full-bundle from the appliance
+files API (seed with scripts/ci/fetch-k3s-inputs.sh), not from remote_build_root.
 EOF
 }
 
@@ -515,12 +513,6 @@ reject_removed_build_publish_path_keys() {
   fi
   if [[ -n "$(config_get_optional "${config_path}" "release_workspace.remote_export_dir" || true)" ]]; then
     removed+=("release_workspace.remote_export_dir")
-  fi
-  if [[ -n "$(config_get_optional "${config_path}" "build_flow.k3s_binary_source" || true)" ]]; then
-    removed+=("build_flow.k3s_binary_source")
-  fi
-  if [[ -n "$(config_get_optional "${config_path}" "build_flow.k3s_airgap_images_source" || true)" ]]; then
-    removed+=("build_flow.k3s_airgap_images_source")
   fi
   if ((${#removed[@]} > 0)); then
     fail "removed build-publish path keys: ${removed[*]}. Set release_workspace.remote_build_root only. $(skill_remote_build_root_layout_message)"
@@ -542,14 +534,6 @@ derive_remote_repo_path_from_build_root() {
 
 derive_remote_export_dir_from_build_root() {
   join_remote_build_root_path "$1" "${SKILL_REMOTE_BUILD_ROOT_EXPORT_SUBDIR}"
-}
-
-derive_k3s_binary_source_from_build_root() {
-  join_remote_build_root_path "$1" "${SKILL_REMOTE_BUILD_ROOT_K3S_BINARY_SUBPATH}"
-}
-
-derive_k3s_airgap_images_source_from_build_root() {
-  join_remote_build_root_path "$1" "${SKILL_REMOTE_BUILD_ROOT_K3S_AIRGAP_SUBPATH}"
 }
 
 collect_build_publish_env_names() {

@@ -45,8 +45,8 @@ release_workspace:
   # Single build-host root. Skill-managed layout under this path:
   #   release/ — appliance-release git checkout (clone/reset each run)
   #   export/ — bundle export output (EXPORT_DIR)
-  #   inputs/k3s — K3s binary directory
-  #   inputs/k3s-airgap-images-amd64.tar.zst — K3s airgap images archive
+  # K3s inputs: fetched by build-full-bundle from appliance files API
+  # (seed with scripts/ci/fetch-k3s-inputs.sh), not under remote_build_root.
   remote_build_root: /home/zonsys/appliance-build
   remote_repo_source: https://github.com/zoncaesaradmin/appliance-release.git
   remote_repo_ref: main
