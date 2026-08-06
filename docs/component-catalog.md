@@ -55,7 +55,7 @@ fingerprints can attach to the same units.
 
 | Order | Stage / recipe | Primary outputs |
 | --- | --- | --- |
-| 1 | `clone-repos` | WORK_ROOT checkouts |
+| 1 | `clone-repos` | RELEASE_WORK_ROOT checkouts |
 | 2 | `host-packages` | `.run/host-packages/ubuntu/<VER>/amd64/*.deb` (mdns + wifi-ap) |
 | 3 | `zot-image` / `dns-image` | first-class OCI archives + digest refs |
 | 4 | `argo-crds` / `argo-controller` / `argo-executor` | Argo offline set |

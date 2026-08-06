@@ -3,9 +3,10 @@
 # the same files to the appliance files API (authenticated artifact store).
 #
 # Required environment:
-#   K3S_INPUTS_DIR     Absolute directory for both files (created if missing):
-#                        $K3S_INPUTS_DIR/k3s
-#                        $K3S_INPUTS_DIR/k3s-airgap-images-amd64.tar.zst
+#   RELEASE_WORK_ROOT  Build root (e.g. /home/zonsys/appliance-build).
+#                      Files are staged under $RELEASE_WORK_ROOT/inputs/:
+#                        $RELEASE_WORK_ROOT/inputs/k3s
+#                        $RELEASE_WORK_ROOT/inputs/k3s-airgap-images-amd64.tar.zst
 #   DEV_REGISTRY       Appliance host (e.g. artifact-dns-1.appliance.internal)
 #   DEV_REGISTRY_TOKEN Bearer token with files/artifacts write
 #
@@ -17,7 +18,7 @@
 # Bump both together when changing the product K3s pin.
 #
 # Usage:
-#   export K3S_INPUTS_DIR=... DEV_REGISTRY=... DEV_REGISTRY_TOKEN=...
+#   export RELEASE_WORK_ROOT=... DEV_REGISTRY=... DEV_REGISTRY_TOKEN=...
 #   bash ./scripts/ci/fetch-k3s-inputs.sh
 set -euo pipefail
 
@@ -26,7 +27,7 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 usage: bash ./scripts/ci/fetch-k3s-inputs.sh
 
 Required environment:
-  K3S_INPUTS_DIR      Directory for k3s + k3s-airgap-images-amd64.tar.zst
+  RELEASE_WORK_ROOT   Build root; stages under $RELEASE_WORK_ROOT/inputs/
   DEV_REGISTRY        Appliance host
   DEV_REGISTRY_TOKEN  Bearer token with files write
 
@@ -52,7 +53,7 @@ require_var() {
   fi
 }
 
-require_var K3S_INPUTS_DIR
+require_var RELEASE_WORK_ROOT
 require_var DEV_REGISTRY
 require_var DEV_REGISTRY_TOKEN
 
@@ -61,7 +62,8 @@ case "$(printf '%s' "${DEV_REGISTRY_TLS_VERIFY:-true}" | tr '[:upper:]' '[:lower
   0|false|no|off) tls_insecure=(-k) ;;
 esac
 
-inputs_dir="${K3S_INPUTS_DIR%/}"
+release_work_root="${RELEASE_WORK_ROOT%/}"
+inputs_dir="${release_work_root}/inputs"
 bin_path="${inputs_dir}/${K3S_BINARY_NAME}"
 airgap_path="${inputs_dir}/${K3S_AIRGAP_NAME}"
 

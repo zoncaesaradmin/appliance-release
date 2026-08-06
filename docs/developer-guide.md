@@ -88,13 +88,13 @@ That script:
   supported
 - asks `appliance-code` to build `release-input-${PRODUCT_VERSION}.tar.gz`
 - assembles and verifies the final signed bundle
-- exports the delivery files into `EXPORT_DIR` or `WORK_ROOT/export`
+- exports the delivery files into `EXPORT_DIR` or `RELEASE_WORK_ROOT/export`
 
 Outputs:
 
-- `${WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-bundle`
-- `${WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-bundle.tar.gz`
-- `${WORK_ROOT}/export/release-signing.pub`
+- `${RELEASE_WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-bundle`
+- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-bundle.tar.gz`
+- `${RELEASE_WORK_ROOT}/export/release-signing.pub`
 
 Product packaging always exports the complete host package super-set
 (`mdns` + `wifi-ap`) for the selected `OS_VERSION` baseline under

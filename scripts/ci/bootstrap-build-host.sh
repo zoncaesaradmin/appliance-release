@@ -17,7 +17,7 @@ Required environment:
 Optional environment:
   CODE_REPO_SOURCE        Source repo/URL for appliance-code
   CODE_REPO_REF           Git ref to fetch. Default: main
-  WORK_ROOT               Build root. Default: ${TMPDIR:-/tmp}/appliance-build
+  RELEASE_WORK_ROOT        Build root. Default: ${TMPDIR:-/tmp}/appliance-build
 
 Example:
   export DEV_REGISTRY_USER=myuser
@@ -37,7 +37,7 @@ DEFAULTS_FILE="${RELEASE_REPO_DIR}/configs/product-bundle.ci.env"
 
 USER_CODE_REPO_SOURCE="${CODE_REPO_SOURCE-}"
 USER_CODE_REPO_REF="${CODE_REPO_REF-}"
-USER_WORK_ROOT="${WORK_ROOT-}"
+USER_RELEASE_WORK_ROOT="${RELEASE_WORK_ROOT-}"
 
 set -a
 # shellcheck disable=SC1090
@@ -46,9 +46,9 @@ set +a
 
 CODE_REPO_SOURCE="${USER_CODE_REPO_SOURCE:-${CODE_REPO_SOURCE:-}}"
 CODE_REPO_REF="${USER_CODE_REPO_REF:-${CODE_REPO_REF:-main}}"
-WORK_ROOT="${USER_WORK_ROOT:-${WORKDIR:-${TMPDIR:-/tmp}/appliance-build}}"
+RELEASE_WORK_ROOT="${USER_RELEASE_WORK_ROOT:-${TMPDIR:-/tmp}/appliance-build}"
 
-REPOS_DIR="${WORK_ROOT}/repos"
+REPOS_DIR="${RELEASE_WORK_ROOT}/repos"
 CODE_REPO_DIR="${REPOS_DIR}/appliance-code"
 
 require_var() {
