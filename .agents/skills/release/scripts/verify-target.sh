@@ -142,6 +142,8 @@ done
 [[ -n "${INSTALL_CONFIG}" ]] || fail "requires --install-config PATH"
 DEVHOST_CONFIG="$(require_config_path "${DEVHOST_CONFIG}")"
 INSTALL_CONFIG="$(require_config_path "${INSTALL_CONFIG}")"
+reject_removed_install_control_plane_identity_keys "${INSTALL_CONFIG}"
+reject_removed_verification_argo_keys "${INSTALL_CONFIG}"
 if [[ -n "${BUILD_PUBLISH_CONFIG}" ]]; then
   BUILD_PUBLISH_CONFIG="$(require_config_path "${BUILD_PUBLISH_CONFIG}")"
 fi

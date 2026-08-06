@@ -474,6 +474,17 @@ reject_removed_install_control_plane_identity_keys() {
   fi
 }
 
+# Hard-cut rename: verification.argo.* → verification.workflows.*
+reject_removed_verification_argo_keys() {
+  local config_path="$1"
+  if [[ -n "$(config_get_optional "${config_path}" "verification.argo.enabled" || true)" \
+    || -n "$(config_get_optional "${config_path}" "verification.argo.namespaces_command" || true)" \
+    || -n "$(config_get_optional "${config_path}" "verification.argo.crds_command" || true)" \
+    || -n "$(config_get_optional "${config_path}" "verification.argo.controller_command" || true)" ]]; then
+    fail "verification.argo.* was renamed to verification.workflows.* (Argo → generic workflows). Rename verification.argo to verification.workflows in the install config (see .agents/skills/release/references/config.install.example.yaml)."
+  fi
+}
+
 product_control_plane_namespace() {
   printf '%s\n' "${PRODUCT_CONTROL_PLANE_NAMESPACE}"
 }
