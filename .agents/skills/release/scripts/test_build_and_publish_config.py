@@ -121,7 +121,7 @@ def test_rejects_skill_fixed_build_commands_and_sudo_flags() -> None:
   bootstrap_needs_sudo: true
   build_needs_sudo: true
   build_command: bash scripts/ci/build-full-bundle.sh
-  publish_command: make publish-release""",
+  publish_command: bash scripts/publish/publish-release.sh""",
             ),
         )
         result = run_build_publish_config(config, run_dir)

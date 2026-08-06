@@ -3,7 +3,7 @@
 #
 # scp build-publish YAML → build host, sync release checkout, inject *this*
 # machine's DEV_* / APPLIANCE_BUILD_SUDO_PASSWORD into the remote process, run
-# build-and-publish-on-host.sh. Build host does not need a permanent secrets profile.
+# build-and-publish.sh --local. Build host does not need a permanent secrets profile.
 set -euo pipefail
 set +H
 
@@ -19,7 +19,7 @@ usage: run-build-and-publish-on-build-host.sh \
   [options]
 
 From the Mac/devhost: scp the build-publish YAML, sync remote appliance-release,
-and SSH-run build-and-publish-on-host.sh with secrets taken from *this* shell
+and SSH-run build-and-publish.sh --local with secrets taken from *this* shell
 (the env names in build_flow.dev_image_pull / mirror / bundle_store + sudo).
 
 Required: build-publish config path + build_host (via --config or --build-host).
@@ -117,7 +117,7 @@ REMOTE_ENV_EXPORTS="$(render_export_assignments_from_current_env "${BUILD_ENV_NA
 
 transfer_log="${RUN_DIR}/logs/build-host-config-transfer.log"
 repo_sync_log="${RUN_DIR}/logs/release-repo-sync.log"
-worker_log="${RUN_DIR}/logs/build-and-publish-on-host.log"
+worker_log="${RUN_DIR}/logs/build-and-publish-remote.log"
 
 REMOTE_HOME="$(ssh -q -T "${BUILD_HOST}" 'printf %s "$HOME"')"
 [[ -n "${REMOTE_HOME}" ]] || fail "could not resolve remote HOME on ${BUILD_HOST}"
@@ -152,14 +152,14 @@ else
   log "skipping release repo sync (--skip-repo-sync)"
 fi
 
-remote_worker="${REMOTE_REPO_PATH}/.agents/skills/release/scripts/build-and-publish-on-host.sh"
+remote_worker="${REMOTE_REPO_PATH}/.agents/skills/release/scripts/build-and-publish.sh"
 remote_cmd="set -euo pipefail
 ${REMOTE_ENV_EXPORTS}
 if [[ ! -f $(shell_quote "${remote_worker}") ]]; then
-  echo \"build-and-publish-on-host.sh not found at ${remote_worker}; pull remote_repo_ref on the build host\" >&2
+  echo \"build-and-publish.sh not found at ${remote_worker}; pull remote_repo_ref on the build host\" >&2
   exit 1
 fi
-args=(--build-publish-config $(shell_quote "${REMOTE_CONFIG_PATH}"))
+args=(--local --build-publish-config $(shell_quote "${REMOTE_CONFIG_PATH}"))
 "
 if [[ -n "${REMOTE_RUN_DIR}" ]]; then
   remote_cmd+="args+=(--run-dir $(shell_quote "${REMOTE_RUN_DIR}"))
@@ -167,7 +167,7 @@ if [[ -n "${REMOTE_RUN_DIR}" ]]; then
 fi
 remote_cmd+="bash $(shell_quote "${remote_worker}") \"\${args[@]}\""
 
-log "running build-and-publish-on-host.sh on ${BUILD_HOST} (env from devhost)"
+log "running build-and-publish.sh --local on ${BUILD_HOST} (env from devhost)"
 if ! run_ssh_logged "${BUILD_HOST}" "${worker_log}" "${remote_cmd}"; then
   fail "build/publish on ${BUILD_HOST} failed; see ${worker_log}"
 fi

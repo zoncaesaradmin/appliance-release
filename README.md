@@ -10,10 +10,10 @@ release-input handoff come from `appliance-code`.
 
 - `make verify`
   Local checks for this repo.
-- `bash ./scripts/ci/build-full-bundle.sh`
-  Primary build-machine / CI entrypoint.
-- `bash ./scripts/publish/publish-release.sh`
-  Upload exported release files to the appliance file API on `DEV_REGISTRY`.
+- Build-host release sequence (only supported product path):
+  1. `bash ./scripts/ci/bootstrap-build-host.sh` (once per host)
+  2. `bash ./scripts/ci/build-full-bundle.sh`
+  3. `bash ./scripts/publish/publish-release.sh`
 
 The build flow exports:
 

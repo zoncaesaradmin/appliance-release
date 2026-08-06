@@ -17,9 +17,12 @@
 #   bash .agents/skills/release/scripts/run-release-from-devhost.sh \
 #     --config ~/lab-devhost.yaml \
 #     --build-publish-config ~/lab-build-publish.yaml
-#   # Or already on the build host with DEV_* exported:
-#   bash …/build-and-publish-on-host.sh \
-#     --build-publish-config ~/.config/appliance-release/build-publish.yaml
+#   # Or already on the build host with DEV_* exported (no skill YAML):
+#   bash scripts/ci/bootstrap-build-host.sh   # once
+#   bash scripts/ci/build-full-bundle.sh
+#   bash scripts/publish/publish-release.sh
+#   # Or with skill YAML on the build host:
+#   bash …/build-and-publish.sh --local --build-publish-config ~/.config/appliance-release/build-publish.yaml
 #
 # Rules:
 # - Only top-level keys: release_workspace, release, build_flow, bundle_store.
@@ -68,7 +71,8 @@ release:
 # ============================================================================
 
 build_flow:
-  # Bootstrap/build/publish commands and sudo are skill-fixed (not config):
+  # Bootstrap/build/publish commands and sudo are skill-fixed (not config).
+  # Product sequence (same as hand runs on the build host):
   #   bash scripts/ci/bootstrap-build-host.sh
   #   bash scripts/ci/build-full-bundle.sh
   #   bash scripts/publish/publish-release.sh

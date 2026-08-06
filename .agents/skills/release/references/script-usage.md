@@ -43,14 +43,13 @@ Notes:
   that path once with `RELEASE_WORK_ROOT=<remote_build_root> scripts/ci/fetch-k3s-inputs.sh`
   (stages under `$RELEASE_WORK_ROOT/inputs/`, then uploads).
 - Do **not** put a `build_flow.product_publish` block in config. Signed-bundle
-  distribution is skill-fixed `bash scripts/publish/publish-release.sh` (DEV_REGISTRY
-  file API). Service image push defaults live in appliance-code
+  distribution is the fixed product sequence
+  `bootstrap-build-host.sh` → `build-full-bundle.sh` → `publish-release.sh`
+  (DEV_REGISTRY file API). Service image push defaults live in appliance-code
   `build/service-image.mk` (`SERVICE_IMAGE_*` / `DEV_REGISTRY`).
-- Bootstrap/build/publish are skill-fixed (not config):
-  `bash scripts/ci/bootstrap-build-host.sh`,
-  `bash scripts/ci/build-full-bundle.sh`, then
-  `bash scripts/publish/publish-release.sh`.
-  Both bootstrap and build always use sudo (`APPLIANCE_BUILD_SUDO_PASSWORD`).
+- On the build host (product), that is the only sequence. The skill remotes the
+  same three scripts. Bootstrap and build always use sudo via the skill
+  (`APPLIANCE_BUILD_SUDO_PASSWORD`).
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used only when `install.bootstrap_admin` is
   true (first-admin bootstrap + Mac-side API verification).
 - First-admin bootstrap and client verify are **off by default** in the example

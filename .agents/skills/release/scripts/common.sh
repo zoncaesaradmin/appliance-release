@@ -582,7 +582,7 @@ collect_build_publish_env_names() {
 
 # Source login profile files the way a non-interactive `bash -l` would
 # (~/.bash_profile, else ~/.bash_login, else ~/.profile). Optional convenience
-# when operators run build-and-publish-on-host.sh by hand; e2e injects env from
+# when operators run build-and-publish.sh --local by hand; e2e injects env from
 # the devhost instead.
 load_login_profile_env() {
   local saved_opts

@@ -18,7 +18,7 @@ verify-shell:
 	@bash -n $$(find "$(RELEASE_SKILL_SCRIPT_DIR)" -type f -name '*.sh' | LC_ALL=C sort)
 	@bash -n configs/product-bundle.sample.env
 	@bash -n configs/product-bundle.ci.env
-	@PYTHONPYCACHEPREFIX="$(CURDIR)/.run/pycache" python3 -m py_compile $$(find "$(RELEASE_SKILL_SCRIPT_DIR)" -type f -name '*.py' | LC_ALL=C sort)
+	@PYTHONPYCACHEPREFIX="$(CURDIR)/.run/pycache" python3 -m py_compile $$(find scripts "$(RELEASE_SKILL_SCRIPT_DIR)" -type f -name '*.py' | LC_ALL=C sort)
 
 .PHONY: verify-help
 verify-help:

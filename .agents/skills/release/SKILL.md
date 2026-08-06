@@ -1,17 +1,25 @@
 ---
 name: appliance-release
-description: Orchestrate the Zon appliance developer-to-target workflow across local repos, a remote build server, an artifact HTTP server, and one target host. Use when the user wants Codex to take code changes through local validation, workspace sync, remote build/publish, target install, post-install verification, and a final release report without hardcoding machine-specific details.
+description: Orchestrate the Zon appliance developer-to-target workflow across local repos, a remote build server, the appliance file API on DEV_REGISTRY, and one target host. Use when the user wants Codex to take code changes through local validation, workspace sync, remote build/publish, target install, post-install verification, and a final release report without hardcoding machine-specific details.
 ---
 
 # Appliance Release
 
-Use this skill when we need to drive the repeatable Zon appliance release path from a macOS development machine through a build server, a release distribution backend (preferably an external HTTP static server, or the appliance-managed authenticated file API), and onto a target host.
+Use this skill when we need to drive the repeatable Zon appliance release path from a macOS development machine through a build server, the appliance-managed authenticated file API on `DEV_REGISTRY`, and onto a target host.
 
 ## What This Skill Owns
 
-- repeatable remote execution, install, and verify mechanics
-- run-directory layout, log capture, and metadata capture
+- remote SSH/orchestration and run-directory / log / metadata capture
+- install + verify mechanics on the target
 - final report inputs: commits, artifacts, digests, install result, verification result
+
+Product packaging and publish **implementation** is only this fixed sequence under repo `scripts/`:
+
+1. `scripts/ci/bootstrap-build-host.sh`
+2. `scripts/ci/build-full-bundle.sh`
+3. `scripts/publish/publish-release.sh`
+
+This skill remotes that same sequence. It does not add a second product entrypoint.
 
 ## Source Of Truth
 
@@ -20,12 +28,10 @@ tracked in git at one path:
 
 - `.agents/skills/release`
 
-All skill docs, examples, and helper scripts live inside that directory.
-
 ## What This Skill Does Not Own
 
 - repository-specific architecture or coding rules
-- exact build, test, or publish commands when those belong to a repo's `AGENTS.md`
+- the product build/publish implementation (see `scripts/ci/` and `scripts/publish/`)
 - secrets, SSH keys, or stored passwords
 
 Read each participating repository's `AGENTS.md` before making code or command decisions. For the current Zon layout, that usually includes:
@@ -76,56 +82,44 @@ Important rules:
 - packaging always builds the **complete product super-set**;
   `install.appliance_profile` only selects modules at install
 
-`bundle_store` publish/install uses the appliance file API only:
+Publish/install download uses the appliance file API only:
 
-- `https://$DEV_REGISTRY/api/v1/files` (+ `DEV_REGISTRY_TOKEN` / TLS env)
-- optional `bundle_store.mode: appliance_files` (default when omitted)
+- `https://$DEV_REGISTRY/api/v1/files/appliance/<version>/`
+- token/TLS: `DEV_REGISTRY_TOKEN` / `DEV_REGISTRY_TLS_VERIFY`
 
 ## Scripts (e2e call graph)
 
-**Entry**
+**Product (repo `scripts/` — only supported build-host sequence)**
+
+1. `scripts/ci/bootstrap-build-host.sh`
+2. `scripts/ci/build-full-bundle.sh`
+3. `scripts/publish/publish-release.sh`
+
+Also skill-owned post-build check: `scripts/validate-release-artifacts.py`
+(release-input ↔ bundle OCI contract after the three product scripts).
+Product-owned install helper: `scripts/publish/install-http-release.sh`
+(published with the release).
+
+**Skill entry / remote wrappers**
 
 - `scripts/run-release-from-devhost.sh` — only day-to-day e2e entry
-
-**Build path**
-
 - `scripts/run-build-and-publish-on-build-host.sh` — Mac: scp config, inject env, SSH
-- `scripts/build-and-publish-on-host.sh` — build-host wrapper
-- `scripts/build-and-publish.sh` — bootstrap / build / publish / artifact metadata
-- `scripts/validate-release-artifacts.py` — post-publish validation
+- `scripts/build-and-publish.sh` — resolve YAML → run the three product scripts → collect/validate
 
 **Install path**
 
-- `scripts/run-install-via-public-helper-on-target.sh` — Mac: curl published
-  `install-http-release.sh` on target (sudo from Mac)
-- Product script lives under repo `scripts/publish/install-http-release.sh` (published with the release)
-
-**Post-install (from install YAML flags)**
-
-- `scripts/bootstrap-admin-on-target.sh` — when `install.bootstrap_admin`
-- `scripts/bootstrap-default-license-on-target.sh` — when `install.enable_default_license`
-- `scripts/verify-target.sh` — after install
-- `scripts/verify-client-access.sh` — when bootstrap_admin (Mac client/API)
-- `scripts/verify-artifact-access.py` — OCI registry checks from client verify
+- `scripts/run-install-via-public-helper-on-target.sh` — Mac: curl published helper on target
+- `scripts/bootstrap-admin-on-target.sh` / `bootstrap-default-license-on-target.sh` — optional
+- `scripts/verify-target.sh` / `verify-client-access.sh` / `verify-artifact-access.py`
 
 **Shared + report**
 
 - `scripts/common.sh` / `scripts/config_query.py`
-- `scripts/validate-build-catalog.py` — builder catalog validation
-- `scripts/summarize-release-run.py` — `metadata/release-report.json` + markdown
-
-Every stage takes only the role configs it needs (`--config` = devhost,
-`--build-publish-config`, `--install-config`). There is no merge step.
+- `scripts/validate-build-catalog.py`
+- `scripts/summarize-release-run.py`
 
 ## Workflow
 
-1. Assume the user already made local changes and pushed them unless they ask for local code work.
-2. Read the active repositories' `AGENTS.md` files.
-3. Prefer `run-release-from-devhost.sh` with the three configs.
-4. Summarize run-dir metadata, checksums, install, and verify results after the run.
-
-## Command Selection Guidance
-
-- Prefer existing repo scripts and Make targets over ad hoc commands.
-- Do not auto-retry failed build/publish with modified commands unless the user asks.
-- If a step needs `sudo`, supply it at runtime without writing it to disk.
+1. On the build host with `DEV_*` exported, run the three product scripts above.
+2. From the Mac, prefer `run-release-from-devhost.sh` with the three configs (same three product scripts remotely).
+3. Do not invent a third packaging path.

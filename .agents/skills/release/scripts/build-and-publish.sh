@@ -12,19 +12,19 @@ usage() {
   cat <<'EOF'
 usage: build-and-publish.sh [options]
 
-Run explicit build and publish commands on the remote build host (default),
-or on this machine with --local (for build-host login shells where DEV_*
-and APPLIANCE_BUILD_SUDO_PASSWORD are already exported).
+Skill wrapper: resolve build-publish YAML to env, then run the fixed
+product sequence on the build host:
+  scripts/ci/bootstrap-build-host.sh
+  scripts/ci/build-full-bundle.sh
+  scripts/publish/publish-release.sh
+
+Default: SSH to build_host. Use --local on the build machine (or via
+run-build-and-publish-on-build-host.sh).
 
 Options:
   --config PATH                 Alias for --build-publish-config.
   --build-publish-config PATH   Build-publish role file.
-  --local                       Run bootstrap/build/publish on this host
-                                (no SSH). Use from the build machine, or via
-                                run-build-and-publish-on-build-host.sh.
-  --bootstrap-cmd CMD           Optional bootstrap command.
-  --build-cmd CMD               Advanced override (default: skill-fixed build-full-bundle).
-  --publish-cmd CMD             Advanced override (default: skill-fixed publish-release.sh).
+  --local                       Run on this host (no SSH).
   --remote-cwd PATH             Working directory on the build host.
                                 Defaults to \$remote_build_root/release.
   --remote-export-dir PATH      Export directory to collect after build.
@@ -36,9 +36,6 @@ EOF
 
 CONFIG_PATH=""
 LOCAL_MODE="false"
-BOOTSTRAP_CMD=""
-BUILD_CMD=""
-PUBLISH_CMD=""
 REMOTE_CWD=""
 REMOTE_EXPORT_DIR=""
 REMOTE_RELEASE_INPUT=""
@@ -56,17 +53,8 @@ while [[ $# -gt 0 ]]; do
       LOCAL_MODE="true"
       shift
       ;;
-    --bootstrap-cmd)
-      BOOTSTRAP_CMD="${2:-}"
-      shift 2
-      ;;
-    --build-cmd)
-      BUILD_CMD="${2:-}"
-      shift 2
-      ;;
-    --publish-cmd)
-      PUBLISH_CMD="${2:-}"
-      shift 2
+    --bootstrap-cmd|--build-cmd|--publish-cmd)
+      fail "$1 was removed; skill always runs the fixed product script sequence"
       ;;
     --remote-cwd)
       REMOTE_CWD="${2:-}"
@@ -94,12 +82,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+[[ -n "${CONFIG_PATH}" ]] || fail "requires --build-publish-config PATH"
+
 CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
 
-# Fixed from the skill-managed release checkout (cwd = $remote_build_root/release).
-readonly DEFAULT_BOOTSTRAP_CMD="bash scripts/ci/bootstrap-build-host.sh"
-readonly DEFAULT_BUILD_CMD="bash scripts/ci/build-full-bundle.sh"
-readonly DEFAULT_PUBLISH_CMD="bash scripts/publish/publish-release.sh"
+# Fixed product sequence (implementation under scripts/ci + scripts/publish).
+readonly BOOTSTRAP_CMD="bash scripts/ci/bootstrap-build-host.sh"
+readonly BUILD_CMD="bash scripts/ci/build-full-bundle.sh"
+readonly PUBLISH_CMD="bash scripts/publish/publish-release.sh"
 
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"
@@ -116,24 +106,15 @@ REMOTE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remot
 readonly code_git_ref="main"
 readonly ctl_git_ref="main"
 if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_command" || true)" ]]; then
-  fail "build_flow.bootstrap_command was removed; skill always runs: ${DEFAULT_BOOTSTRAP_CMD}"
+  fail "build_flow.bootstrap_command was removed; skill always runs: ${BOOTSTRAP_CMD}"
 fi
 if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.build_command" || true)" \
   || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.publish_command" || true)" ]]; then
-  fail "build_flow.build_command and build_flow.publish_command were removed; skill always runs: ${DEFAULT_BUILD_CMD} then ${DEFAULT_PUBLISH_CMD}"
+  fail "build_flow.build_command and build_flow.publish_command were removed; skill always runs: ${BUILD_CMD} then ${PUBLISH_CMD}"
 fi
 if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_needs_sudo" || true)" \
   || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.build_needs_sudo" || true)" ]]; then
   fail "build_flow.bootstrap_needs_sudo and build_flow.build_needs_sudo were removed; skill always wraps bootstrap/build with sudo (APPLIANCE_BUILD_SUDO_PASSWORD)"
-fi
-if [[ -z "${BOOTSTRAP_CMD}" ]]; then
-  BOOTSTRAP_CMD="${DEFAULT_BOOTSTRAP_CMD}"
-fi
-if [[ -z "${BUILD_CMD}" ]]; then
-  BUILD_CMD="${DEFAULT_BUILD_CMD}"
-fi
-if [[ -z "${PUBLISH_CMD}" ]]; then
-  PUBLISH_CMD="${DEFAULT_PUBLISH_CMD}"
 fi
 if [[ -z "${REMOTE_EXPORT_DIR}" ]]; then
   REMOTE_EXPORT_DIR="$(derive_remote_export_dir_from_build_root "${REMOTE_BUILD_ROOT}")"
@@ -183,12 +164,10 @@ if bool_true "${LOCAL_MODE}"; then
 else
   BUILD_HOST="$(config_get "${CONFIG_PATH}" "build_host.alias")"
 fi
-# Bootstrap and build always need root; sudo password is always required.
-BOOTSTRAP_NEEDS_SUDO="true"
-BUILD_NEEDS_SUDO="true"
+# Product workflow always needs root; sudo password is always required.
 
-# Development-container pull/login only. Signed-bundle publish uses
-# skill-fixed scripts/publish/publish-release.sh (DEV_REGISTRY file API).
+# Development-container pull/login only. Product packaging/publish is the
+# fixed scripts/ci + scripts/publish sequence (DEV_REGISTRY file API).
 # Per-service make image defaults live in appliance-code build/service-image.mk
 # — not this config.
 # Fail closed on removed nested registry blocks.
@@ -311,6 +290,25 @@ if ! bool_true "${BUILD_ARGO_ENABLED}"; then
 fi
 # Builder and workspace-provisioner image refs are product-fixed; build-full-bundle packs them.
 
+# Resolve registry credentials from build_flow.dev_image_pull.*_env.
+BOOTSTRAP_REGISTRY_USER="$(resolve_secret "${DEV_PULL_USER_ENV}" "Dev image pull username")"
+[[ -n "${BOOTSTRAP_REGISTRY_USER}" ]] || fail "empty value for env ${DEV_PULL_USER_ENV} (named by build_flow.dev_image_pull.username_env)"
+BOOTSTRAP_REGISTRY_TOKEN="$(resolve_secret "${DEV_PULL_TOKEN_ENV}" "Dev image pull token")"
+[[ -n "${BOOTSTRAP_REGISTRY_TOKEN}" ]] || fail "empty value for env ${DEV_PULL_TOKEN_ENV} (named by build_flow.dev_image_pull.token_env)"
+
+BOOTSTRAP_ENV_PREFIX=""
+BOOTSTRAP_ENV_PREFIX="$(append_env_assignments "${BOOTSTRAP_ENV_PREFIX}" \
+  "DEV_REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}" \
+  "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}" \
+  "DEV_IMAGE" "${IMAGE_REGISTRY_PULL_REF}" \
+  "DEV_REGISTRY_HOST" "${IMAGE_REGISTRY_HOST}" \
+  "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}" \
+  "DEV_REGISTRY" "${DEV_PULL_REGISTRY}" \
+  "DEV_IMAGE_REPO" "${DEV_PULL_IMAGE_REPO}" \
+  "DEV_IMAGE_NAME" "${DEV_PULL_IMAGE_NAME}" \
+  "DEV_IMAGE_TAG" "${DEV_PULL_IMAGE_TAG}" \
+  "RELEASE_WORK_ROOT" "${REMOTE_BUILD_ROOT}")"
+
 BUILD_ENV_PREFIX=""
 BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "PRODUCT_VERSION" "${RELEASE_VERSION}" \
@@ -325,61 +323,36 @@ BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "ZOT_VERSION" "${BUILD_ZOT_VERSION}" \
   "ZOT_IMAGE_PULL_REF" "${BUILD_ZOT_IMAGE_PULL_REF}" \
   "DNS_VERSION" "${BUILD_DNS_VERSION}" \
-  "DNS_IMAGE_PULL_REF" "${BUILD_DNS_IMAGE_PULL_REF}")"
-# Point appliance-code at the pull image (DEV_*). Per-service image push
-# destination is owned by appliance-code build/service-image.mk.
-BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
+  "DNS_IMAGE_PULL_REF" "${BUILD_DNS_IMAGE_PULL_REF}" \
   "DEV_IMAGE" "${IMAGE_REGISTRY_PULL_REF}" \
   "DEV_REGISTRY_HOST" "${IMAGE_REGISTRY_HOST}" \
   "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}" \
   "DEV_REGISTRY" "${DEV_PULL_REGISTRY}" \
   "DEV_IMAGE_REPO" "${DEV_PULL_IMAGE_REPO}" \
   "DEV_IMAGE_NAME" "${DEV_PULL_IMAGE_NAME}" \
-  "DEV_IMAGE_TAG" "${DEV_PULL_IMAGE_TAG}")"
-
-PUBLISH_ENV_PREFIX=""
-
-release_repo_sync_remote_cmd=""
-release_repo_sync_remote_cmd="$(render_ensure_remote_release_repo_cmd "${REMOTE_CWD}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}")"
-
-# Resolve registry credentials from build_flow.dev_image_pull.*_env.
-BOOTSTRAP_REGISTRY_USER="$(resolve_secret "${DEV_PULL_USER_ENV}" "Dev image pull username")"
-[[ -n "${BOOTSTRAP_REGISTRY_USER}" ]] || fail "empty value for env ${DEV_PULL_USER_ENV} (named by build_flow.dev_image_pull.username_env)"
-BOOTSTRAP_REGISTRY_TOKEN="$(resolve_secret "${DEV_PULL_TOKEN_ENV}" "Dev image pull token")"
-[[ -n "${BOOTSTRAP_REGISTRY_TOKEN}" ]] || fail "empty value for env ${DEV_PULL_TOKEN_ENV} (named by build_flow.dev_image_pull.token_env)"
-BOOTSTRAP_ENV_PREFIX=""
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignments "${BOOTSTRAP_ENV_PREFIX}" \
-  "DEV_REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}" \
-  "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}" \
-  "DEV_IMAGE" "${IMAGE_REGISTRY_PULL_REF}" \
-  "DEV_REGISTRY_HOST" "${IMAGE_REGISTRY_HOST}" \
-  "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}" \
-  "DEV_REGISTRY" "${DEV_PULL_REGISTRY}" \
-  "DEV_IMAGE_REPO" "${DEV_PULL_IMAGE_REPO}" \
-  "DEV_IMAGE_NAME" "${DEV_PULL_IMAGE_NAME}" \
-  "DEV_IMAGE_TAG" "${DEV_PULL_IMAGE_TAG}")"
-# Same auth for the build so skopeo/podman can use it after login.
-BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
+  "DEV_IMAGE_TAG" "${DEV_PULL_IMAGE_TAG}" \
   "DEV_REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}" \
   "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}")"
 
-# Publish uses the same DEV_REGISTRY* auth; script derives the file API URL.
+PUBLISH_ENV_PREFIX=""
 PUBLISH_ENV_PREFIX="$(append_env_assignments "${PUBLISH_ENV_PREFIX}" \
   "PRODUCT_VERSION" "${RELEASE_VERSION}" \
   "RELEASE_WORK_ROOT" "${REMOTE_BUILD_ROOT}" \
   "DEV_REGISTRY" "${DEV_PULL_REGISTRY}" \
   "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}" \
   "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}")"
+
+EFFECTIVE_PUBLISH_CMD="${PUBLISH_CMD}"
 if bool_true "${PUBLISH_LATEST_ALIAS:-false}"; then
-  PUBLISH_CMD="${PUBLISH_CMD} --latest-alias"
+  EFFECTIVE_PUBLISH_CMD="${PUBLISH_CMD} --latest-alias"
 fi
 
-bootstrap_remote_cmd=""
-if [[ -n "${BOOTSTRAP_CMD}" ]]; then
-  bootstrap_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BOOTSTRAP_ENV_PREFIX}${BOOTSTRAP_CMD}"
-fi
+release_repo_sync_remote_cmd=""
+release_repo_sync_remote_cmd="$(render_ensure_remote_release_repo_cmd "${REMOTE_CWD}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}")"
+
+bootstrap_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BOOTSTRAP_ENV_PREFIX}${BOOTSTRAP_CMD}"
 build_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BUILD_ENV_PREFIX}${BUILD_CMD}"
-publish_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PUBLISH_ENV_PREFIX}${PUBLISH_CMD}"
+publish_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PUBLISH_ENV_PREFIX}${EFFECTIVE_PUBLISH_CMD}"
 
 release_repo_sync_log="${RUN_DIR}/logs/release-repo-sync.log"
 bootstrap_log="${RUN_DIR}/logs/bootstrap.log"
@@ -408,33 +381,20 @@ if [[ -n "${release_repo_sync_remote_cmd}" ]]; then
   run_build_step_logged "release-repo-sync" "${release_repo_sync_log}" "${release_repo_sync_remote_cmd}"
 fi
 
-if bool_true "${BOOTSTRAP_NEEDS_SUDO:-false}" || bool_true "${BUILD_NEEDS_SUDO:-false}"; then
-  build_sudo_password="$(resolve_secret "APPLIANCE_BUILD_SUDO_PASSWORD" "Build host sudo password")"
-fi
+build_sudo_password="$(resolve_secret "APPLIANCE_BUILD_SUDO_PASSWORD" "Build host sudo password")"
 
 wrap_remote_cmd_with_sudo() {
   local remote_cmd="$1"
   local sudo_password="$2"
-  # Keep password quoting in a variable first so a failed shell_quote cannot
-  # leave a partial `$(...)` residue on the local parser's command line.
-  # Requires a remote TTY (ssh -tt in run_ssh_logged) so the timestamp from
-  # `sudo -S -v` is usable for nested plain `sudo` / `sudo -n` in the same job.
   local quoted_password
   quoted_password="$(shell_quote "${sudo_password}")"
   printf '%s' "printf '%s\n' ${quoted_password} | sudo -S -p '' -v >/dev/null && ${remote_cmd}"
 }
 
-if [[ -n "${bootstrap_remote_cmd}" ]]; then
-  if bool_true "${BOOTSTRAP_NEEDS_SUDO:-false}"; then
-    bootstrap_remote_cmd="$(wrap_remote_cmd_with_sudo "${bootstrap_remote_cmd}" "${build_sudo_password}")"
-  fi
-  run_build_step_logged "bootstrap" "${bootstrap_log}" "${bootstrap_remote_cmd}"
-fi
+bootstrap_remote_cmd="$(wrap_remote_cmd_with_sudo "${bootstrap_remote_cmd}" "${build_sudo_password}")"
+build_remote_cmd="$(wrap_remote_cmd_with_sudo "${build_remote_cmd}" "${build_sudo_password}")"
 
-if bool_true "${BUILD_NEEDS_SUDO:-false}"; then
-  build_remote_cmd="$(wrap_remote_cmd_with_sudo "${build_remote_cmd}" "${build_sudo_password}")"
-fi
-
+run_build_step_logged "bootstrap" "${bootstrap_log}" "${bootstrap_remote_cmd}"
 run_build_step_logged "build" "${build_log}" "${build_remote_cmd}"
 run_build_step_logged "publish" "${publish_log}" "${publish_remote_cmd}"
 
@@ -622,7 +582,7 @@ else
   remote_release_commit="$(ssh "${BUILD_HOST}" "bash -lc $(shell_quote "${remote_release_commit_cmd}")" 2>/dev/null || true)"
 fi
 
-python3 - "${RUN_DIR}" "${CONFIG_PATH}" "${BUILD_HOST}" "${REMOTE_CWD}" "${RELEASE_VERSION}" "${BOOTSTRAP_CMD}" "${BUILD_CMD}" "${PUBLISH_CMD}" "${remote_release_commit}" "${REMOTE_REPO_SOURCE}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" <<'PY'
+python3 - "${RUN_DIR}" "${CONFIG_PATH}" "${BUILD_HOST}" "${REMOTE_CWD}" "${RELEASE_VERSION}" "${BOOTSTRAP_CMD}" "${BUILD_CMD}" "${EFFECTIVE_PUBLISH_CMD}" "${remote_release_commit}" "${REMOTE_REPO_SOURCE}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -710,7 +670,7 @@ payload = {
     "remoteRepoSource": remote_repo_source or None,
     "effectiveRemoteRepoSource": effective_remote_repo_source or None,
     "remoteRepoRef": remote_repo_ref or None,
-    "bootstrapCommand": bootstrap_cmd or None,
+    "bootstrapCommand": bootstrap_cmd,
     "buildCommand": build_cmd,
     "publishCommand": publish_cmd,
     "artifactChecksums": artifact_checksums,

@@ -134,19 +134,18 @@ Start from these templates if you want examples:
 
 ## Publish A Built Release
 
-Publishing is intentionally separate from build. The only supported path is
-the appliance file API on the same DEV_REGISTRY host used for build/auth:
-
-`https://$DEV_REGISTRY/api/v1/files/appliance/<version>/`
-
-Example (after bootstrap + `build-full-bundle.sh`):
+One product sequence on the build host (after `DEV_*` and `RELEASE_WORK_ROOT`
+are set):
 
 ```bash
-export RELEASE_WORK_ROOT=/home/zonsys/appliance-build  # export output is $RELEASE_WORK_ROOT/export
-# Reuse the same registry env already required for build:
-#   DEV_REGISTRY, DEV_REGISTRY_TOKEN, DEV_REGISTRY_TLS_VERIFY
+bash ./scripts/ci/bootstrap-build-host.sh   # once per host
+bash ./scripts/ci/build-full-bundle.sh
 bash ./scripts/publish/publish-release.sh
 ```
+
+Publish uploads to:
+
+`https://$DEV_REGISTRY/api/v1/files/appliance/<version>/`
 
 Optional: `bash ./scripts/publish/publish-release.sh --latest-alias` also
 uploads under `appliance/latest/`. `PRODUCT_VERSION` defaults from
