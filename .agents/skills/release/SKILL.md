@@ -76,10 +76,10 @@ Important rules:
 - packaging always builds the **complete product super-set**;
   `install.appliance_profile` only selects modules at install
 
-`bundle_store.mode`:
+`bundle_store` publish/install uses the appliance file API only:
 
-- `static_http` — open base URL
-- `appliance_files` — `https://$DEV_REGISTRY/api/v1/files` (+ token/TLS env)
+- `https://$DEV_REGISTRY/api/v1/files` (+ `DEV_REGISTRY_TOKEN` / TLS env)
+- optional `bundle_store.mode: appliance_files` (default when omitted)
 
 ## Scripts (e2e call graph)
 

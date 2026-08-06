@@ -5,7 +5,7 @@
 #
 # Cross-step contract for install (must match values the target will download):
 #   product version (release.version optional override, else configs/default-product-version)
-#   bundle_store.mode / release_path_prefix / download base (base_url or appliance_files env)
+#   bundle_store download base (DEV_REGISTRY file API)
 #
 # Example (full flow from Mac):
 #   bash .agents/skills/release/scripts/run-release-from-devhost.sh \
@@ -71,7 +71,7 @@ build_flow:
   # Bootstrap/build/publish commands and sudo are skill-fixed (not config):
   #   bash scripts/ci/bootstrap-build-host.sh
   #   bash scripts/ci/build-full-bundle.sh
-  #   make publish-release
+  #   bash scripts/publish/publish-release.sh
   # Always wrapped with sudo → APPLIANCE_BUILD_SUDO_PASSWORD.
   # appliance-code / appliance-ctl git refs are fixed in those scripts (main).
 
@@ -97,21 +97,15 @@ build_flow:
 # Distribution (publish destination + install download source)
 # ============================================================================
 
+# ============================================================================
+# Distribution (publish destination + install download source)
+# ============================================================================
+
 bundle_store:
-  # static_http | appliance_files — pick ONE mode; do not leave the other
-  # mode's keys populated (mixing fails closed).
-  mode: static_http
-  release_path_prefix: appliance
-
-  # --- mode: static_http only ---
-  base_url: http://192.168.1.155:28081
-  publish_server_alias: zonsys@192.168.1.155
-  publish_remote_root: /home/zonsys/releases
-
-  # --- mode: appliance_files only (comment out the three static_http keys) ---
-  # mode: appliance_files
-  # registry_env: DEV_REGISTRY
-  # token_env: DEV_REGISTRY_TOKEN
-  # tls_verify_env: DEV_REGISTRY_TLS_VERIFY
-  # # base_url optional override only if it already ends in /api/v1/files
-  # # files_path: /api/v1/files
+  # Always the appliance file API on DEV_REGISTRY:
+  #   https://$DEV_REGISTRY/api/v1/files/appliance/<version>/
+  # Token/TLS reuse DEV_REGISTRY_TOKEN / DEV_REGISTRY_TLS_VERIFY (same as build).
+  # Optional overrides only:
+  #   registry_env / token_env / tls_verify_env
+  #   files_path (default /api/v1/files)
+  #   base_url (must already end in files_path)

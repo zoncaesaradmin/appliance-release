@@ -1,25 +1,23 @@
 #!/usr/bin/env bash
-# Shared helpers for signed-bundle release distribution modes.
-# Sourced by publish-release.sh and the release skill (via common.sh).
+# Shared helpers for signed-bundle release distribution.
+# Sourced by the release skill (via common.sh).
+# Publish itself is always the appliance file API (see publish-release.sh).
 
-# Normalize bundle_store.mode / --mode to static_http|appliance_files.
-# Empty is rejected (callers must pass an explicit mode from config or --mode).
+# Normalize / accept only appliance_files. Empty → appliance_files.
+# static_http and other modes are rejected.
 normalize_bundle_store_mode() {
   local mode
   mode="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
   case "${mode}" in
-    static_http)
-      printf 'static_http\n'
-      ;;
-    appliance_files)
+    ""|appliance_files)
       printf 'appliance_files\n'
       ;;
-    "")
-      echo "bundle_store.mode / --mode is required (static_http or appliance_files)" >&2
+    static_http)
+      echo "bundle_store.mode=static_http was removed; only appliance_files (DEV_REGISTRY file API) is supported" >&2
       return 2
       ;;
     *)
-      echo "bundle_store.mode must be static_http or appliance_files (got ${mode})" >&2
+      echo "bundle_store.mode must be appliance_files (got ${mode})" >&2
       return 2
       ;;
   esac
@@ -31,7 +29,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
       cat <<'EOF'
 usage: source bundle-store-lib.sh
 
-Provides normalize_bundle_store_mode (static_http|appliance_files).
+Provides normalize_bundle_store_mode (appliance_files only).
 EOF
       exit 0
       ;;

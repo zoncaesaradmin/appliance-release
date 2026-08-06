@@ -16,7 +16,7 @@
 # Each stage script reads only the role file(s) it needs (no merge).
 # Cross-step contract is still shared by value agreement across roles:
 #   product version (optional release.version / PRODUCT_VERSION, else default-product-version)
-#   bundle_store.mode / release_path_prefix / download base
+#   bundle_store download base (DEV_REGISTRY file API)
 #
 # Rules:
 # - Scripts fail closed: required keys must appear in their role file.

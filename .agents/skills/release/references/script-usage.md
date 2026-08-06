@@ -43,12 +43,13 @@ Notes:
   that path once with `RELEASE_WORK_ROOT=<remote_build_root> scripts/ci/fetch-k3s-inputs.sh`
   (stages under `$RELEASE_WORK_ROOT/inputs/`, then uploads).
 - Do **not** put a `build_flow.product_publish` block in config. Signed-bundle
-  distribution is `bundle_store` plus skill-fixed `make publish-release`. Service
-  image push defaults live in appliance-code `build/service-image.mk`
-  (`SERVICE_IMAGE_*` / `DEV_REGISTRY`).
+  distribution is skill-fixed `bash scripts/publish/publish-release.sh` (DEV_REGISTRY
+  file API). Service image push defaults live in appliance-code
+  `build/service-image.mk` (`SERVICE_IMAGE_*` / `DEV_REGISTRY`).
 - Bootstrap/build/publish are skill-fixed (not config):
   `bash scripts/ci/bootstrap-build-host.sh`,
-  `bash scripts/ci/build-full-bundle.sh`, then `make publish-release`.
+  `bash scripts/ci/build-full-bundle.sh`, then
+  `bash scripts/publish/publish-release.sh`.
   Both bootstrap and build always use sudo (`APPLIANCE_BUILD_SUDO_PASSWORD`).
 - `APPLIANCE_FIRST_ADMIN_PASSWORD` is used only when `install.bootstrap_admin` is
   true (first-admin bootstrap + Mac-side API verification).
@@ -94,18 +95,11 @@ Notes:
   `token_env: DEV_REGISTRY_TOKEN`, `tls_verify_env: DEV_REGISTRY_TLS_VERIFY`.
   Do not set literal `install.image_pull_registry.registry` (rejected).
   Omit the block for preload-only.
-- Set `bundle_store.mode` to `static_http` or `appliance_files` (required):
-  - `static_http` — publish/install via an external static HTTP server (`base_url`,
-    `publish_server_alias`, `publish_remote_root`, `release_path_prefix`)
-  - `appliance_files` — publish/install via the appliance-managed authenticated
-    file API. Host/token/TLS come from env (defaults): `DEV_REGISTRY`,
-    `DEV_REGISTRY_TOKEN`, `DEV_REGISTRY_TLS_VERIFY`. Base URL is
-    `https://$DEV_REGISTRY$files_path` with optional `files_path`
-    (default `/api/v1/files`). Optional env-name keys: `registry_env`,
-    `token_env`, `tls_verify_env`. Optional overrides only: `base_url`,
-    `access_token`, `tls_insecure`, `cacert_path`. Traefik `/files` was
-    removed. Requires an already-installed artifact-capable distributor
-    appliance (day-2 path).
+- Publish always uses the appliance file API on `DEV_REGISTRY`
+  (`https://$DEV_REGISTRY/api/v1/files/appliance/<version>/`). Token/TLS reuse
+  `DEV_REGISTRY_TOKEN` / `DEV_REGISTRY_TLS_VERIFY`. Optional config overrides:
+  `registry_env`, `token_env`, `tls_verify_env`, `files_path`, or a `base_url`
+  that already ends in the files path. `static_http` / SSH publish was removed.
 - For advanced extra SANs beyond the derived FQDN and the automatic
   `hostname.local` SAN, use `install.additional_tls_sans_csv` in the config.
 - For the `builder` profile, set `install.build_catalog_path` or pass

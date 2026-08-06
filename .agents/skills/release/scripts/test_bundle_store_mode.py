@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for bundle_store mode normalization (static_http|appliance_files)."""
+"""Unit tests for bundle_store mode normalization (appliance_files only)."""
 
 import subprocess
 import tempfile
@@ -22,32 +22,32 @@ def run_bash(script: str) -> subprocess.CompletedProcess[str]:
 
 
 class BundleStoreModeTests(unittest.TestCase):
-    def test_normalize_modes(self) -> None:
+    def test_normalize_appliance_files_and_empty(self) -> None:
         script = f"""
 set -euo pipefail
 source {MODE_LIB.as_posix()!r}
-normalize_bundle_store_mode static_http
 normalize_bundle_store_mode appliance_files
+normalize_bundle_store_mode ''
 """
         proc = run_bash(script)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(
             proc.stdout.strip().splitlines(),
             [
-                "static_http",
+                "appliance_files",
                 "appliance_files",
             ],
         )
 
-    def test_normalize_rejects_empty(self) -> None:
+    def test_normalize_rejects_static_http(self) -> None:
         script = f"""
 set -euo pipefail
 source {MODE_LIB.as_posix()!r}
-normalize_bundle_store_mode ''
+normalize_bundle_store_mode static_http
 """
         proc = run_bash(script)
         self.assertNotEqual(proc.returncode, 0)
-        self.assertIn("required", proc.stderr)
+        self.assertIn("static_http was removed", proc.stderr)
 
     def test_normalize_rejects_oci_and_unknown(self) -> None:
         for mode in ("oci", "s3"):
@@ -58,20 +58,20 @@ normalize_bundle_store_mode {mode}
 """
             proc = run_bash(script)
             self.assertNotEqual(proc.returncode, 0, mode)
-            self.assertIn("must be static_http or appliance_files", proc.stderr)
+            self.assertIn("must be appliance_files", proc.stderr)
 
-    def test_resolve_mode_requires_explicit_config(self) -> None:
+    def test_resolve_mode_defaults_when_omitted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / "cfg.yaml"
-            cfg.write_text("bundle_store:\n  base_url: http://example\n", encoding="utf-8")
+            cfg.write_text("bundle_store: {}\n", encoding="utf-8")
             script = f"""
 set -euo pipefail
 source {COMMON.as_posix()!r}
 resolve_bundle_store_mode {cfg.as_posix()!r}
 """
             proc = run_bash(script)
-            self.assertNotEqual(proc.returncode, 0)
-            self.assertIn("bundle_store.mode is required", proc.stderr)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "appliance_files")
 
     def test_resolve_mode_from_bundle_store_config_appliance_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -89,11 +89,11 @@ resolve_bundle_store_mode {cfg.as_posix()!r}
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual(proc.stdout.strip(), "appliance_files")
 
-    def test_resolve_mode_rejects_legacy_fileserver_alias(self) -> None:
+    def test_resolve_mode_rejects_static_http_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / "cfg.yaml"
             cfg.write_text(
-                "bundle_store:\n  mode: fileserver\n  base_url: https://reg.example/api/v1/files\n",
+                "bundle_store:\n  publish_server_alias: user@host\n",
                 encoding="utf-8",
             )
             script = f"""
@@ -103,9 +103,9 @@ resolve_bundle_store_mode {cfg.as_posix()!r}
 """
             proc = run_bash(script)
             self.assertNotEqual(proc.returncode, 0)
-            self.assertIn("must be static_http or appliance_files", proc.stderr)
+            self.assertIn("publish_server_alias", proc.stderr)
 
-    def test_publish_release_help_mentions_appliance_files_not_oci(self) -> None:
+    def test_publish_release_help_mentions_file_api_not_static_http(self) -> None:
         proc = subprocess.run(
             ["bash", str(REPO_ROOT / "scripts" / "publish" / "publish-release.sh"), "--help"],
             check=False,
@@ -113,9 +113,10 @@ resolve_bundle_store_mode {cfg.as_posix()!r}
             text=True,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertIn("--mode", proc.stdout)
-        self.assertIn("appliance_files", proc.stdout)
-        self.assertIn("static_http", proc.stdout)
+        self.assertIn("DEV_REGISTRY", proc.stdout)
+        self.assertIn("appliance file API", proc.stdout)
+        self.assertNotIn("static_http", proc.stdout)
+        self.assertNotIn("--mode", proc.stdout)
         self.assertNotIn("oci", proc.stdout.lower())
         self.assertNotIn("--oci-registry", proc.stdout)
 

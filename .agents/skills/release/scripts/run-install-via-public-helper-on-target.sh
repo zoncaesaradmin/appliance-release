@@ -86,8 +86,7 @@ fi
 if [[ -z "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="$(read_default_product_version "$(skill_release_repo_root "${SCRIPT_DIR}")")"
 fi
-PATH_PREFIX="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "release_path_prefix" || true)"
-[[ -n "${PATH_PREFIX}" ]] || fail "bundle_store.release_path_prefix is required"
+PATH_PREFIX="$(resolve_bundle_store_release_path_prefix "${BUILD_PUBLISH_CONFIG}")"
 BUNDLE_MODE="$(resolve_bundle_store_mode "${BUILD_PUBLISH_CONFIG}")"
 APPLIANCE_NAME="$(config_get "${INSTALL_CONFIG}" "install.appliance_name")"
 APPLIANCE_PROFILE="$(config_get_optional "${INSTALL_CONFIG}" "install.appliance_profile" || true)"
@@ -99,32 +98,20 @@ BASE_URL=""
 BEARER_TOKEN=""
 TLS_INSECURE="0"
 
-case "${BUNDLE_MODE}" in
-  static_http)
-    BASE_URL="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "base_url" || true)"
-    [[ -n "${BASE_URL}" ]] || fail "bundle_store.mode=static_http requires bundle_store.base_url"
-    BASE_URL="${BASE_URL%/}"
-    ;;
-  appliance_files)
-    BASE_URL="$(resolve_appliance_files_base_url "${BUILD_PUBLISH_CONFIG}")"
-    token_env="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "token_env" || true)"
-    if [[ -z "${token_env}" ]]; then
-      token_env="DEV_REGISTRY_TOKEN"
-    fi
-    BEARER_TOKEN="$(resolve_secret "${token_env}" "Bundle store token (${token_env})")"
-    tls_env="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "tls_verify_env" || true)"
-    if [[ -z "${tls_env}" ]]; then
-      tls_env="DEV_REGISTRY_TLS_VERIFY"
-    fi
-    tls_verify="$(resolve_env_value "${tls_env}" "Bundle store TLS verify (${tls_env})")"
-    case "$(printf '%s' "${tls_verify}" | tr '[:upper:]' '[:lower:]')" in
-      0|false|no|off) TLS_INSECURE="1" ;;
-      *) TLS_INSECURE="0" ;;
-    esac
-    ;;
-  *)
-    fail "unsupported bundle_store.mode: ${BUNDLE_MODE}"
-    ;;
+BASE_URL="$(resolve_appliance_files_base_url "${BUILD_PUBLISH_CONFIG}")"
+token_env="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "token_env" || true)"
+if [[ -z "${token_env}" ]]; then
+  token_env="DEV_REGISTRY_TOKEN"
+fi
+BEARER_TOKEN="$(resolve_secret "${token_env}" "Bundle store token (${token_env})")"
+tls_env="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "tls_verify_env" || true)"
+if [[ -z "${tls_env}" ]]; then
+  tls_env="DEV_REGISTRY_TLS_VERIFY"
+fi
+tls_verify="$(resolve_env_value "${tls_env}" "Bundle store TLS verify (${tls_env})")"
+case "$(printf '%s' "${tls_verify}" | tr '[:upper:]' '[:lower:]')" in
+  0|false|no|off) TLS_INSECURE="1" ;;
+  *) TLS_INSECURE="0" ;;
 esac
 
 HELPER_URL="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-http-release.sh"

@@ -134,32 +134,23 @@ Start from these templates if you want examples:
 
 ## Publish A Built Release
 
-Publishing is intentionally separate from build.
+Publishing is intentionally separate from build. The only supported path is
+the appliance file API on the same DEV_REGISTRY host used for build/auth:
 
-The simple flow is:
+`https://$DEV_REGISTRY/api/v1/files/appliance/<version>/`
 
-1. Build the release bundle on the CI/build machine.
-2. Export:
-   - `appliance-<version>-bundle.tar.gz`
-   - `release-signing.pub`
-   - `sha256sum.txt`
-   - `install-http-release.sh`
-3. Copy those files to a download server over SSH/SCP.
-4. Serve them over HTTP or HTTPS.
-5. Let the customer download them and install from local disk.
-
-Example:
+Example (after bootstrap + `build-full-bundle.sh`):
 
 ```bash
-export PRODUCT_VERSION=0.1.0   # optional; defaults from configs/default-product-version
 export RELEASE_WORK_ROOT=/home/zonsys/appliance-build  # export output is $RELEASE_WORK_ROOT/export
-export PUBLISH_MODE=static_http
-export PUBLISH_PATH_PREFIX=appliance
-export PUBLISH_PUBLIC_BASE_URL=http://downloads.example.internal/releases
-export PUBLISH_SERVER=release@downloads.example.internal
-export PUBLISH_REMOTE_ROOT=/srv/www/releases
-make publish-release
+# Reuse the same registry env already required for build:
+#   DEV_REGISTRY, DEV_REGISTRY_TOKEN, DEV_REGISTRY_TLS_VERIFY
+bash ./scripts/publish/publish-release.sh
 ```
+
+Optional: `bash ./scripts/publish/publish-release.sh --latest-alias` also
+uploads under `appliance/latest/`. `PRODUCT_VERSION` defaults from
+`configs/default-product-version`.
 
 The published `install-http-release.sh` helper takes a required
 `--appliance-name` and optional `--appliance-profile` (default `core`). Other

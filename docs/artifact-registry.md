@@ -14,40 +14,30 @@ If your appliance TLS certificate is not trusted yet, keep the insecure flags
 shown below for quick testing. After you trust the certificate, remove `-k`,
 `--tls-verify=false`, and `--insecure`.
 
-## Release Distribution (HTTP vs appliance file API)
+## Release Distribution (appliance file API)
 
-Signed appliance **bundles** are distributed as static files over HTTP(S), not
-as OCI/ORAS artifacts. The Artifact Server (`/v2`) remains for container images.
-
-Recommended direction:
+Signed appliance **bundles** are distributed as files through the authenticated
+appliance file API on the same DEV_REGISTRY host used for OCI, not as OCI/ORAS
+artifacts. The Artifact Server (`/v2`) remains for container images.
 
 - keep OCI images and ORAS artifacts on the authenticated registry at `/v2`
-- keep signed bundle distribution on external static HTTP or the authenticated
-  appliance file API, depending on your release topology
+- publish signed bundles to `https://$DEV_REGISTRY/api/v1/files/appliance/<version>/`
 
-In `appliance-release.config.yaml` (see also
-`.agents/skills/release/references/config.example.yaml`):
+In build-publish config (see also
+`.agents/skills/release/references/config.build-publish.example.yaml`):
 
 ```yaml
 bundle_store:
-  # Default: external publish box
-  mode: static_http
-  base_url: http://192.168.1.105:28081
-  publish_server_alias: zonsys@192.168.1.105
-  publish_remote_root: /home/zonsys/releases
-
-  # Appliance-managed authenticated file API:
-  # mode: appliance_files
-  # base_url: https://artifact-dns-1.appliance.internal/api/v1/files
+  # Defaults: https://$DEV_REGISTRY/api/v1/files + DEV_REGISTRY_TOKEN / TLS
+  # Optional overrides: registry_env, token_env, tls_verify_env, files_path, base_url
 ```
 
-For `appliance_files`, the storage/artifact appliance stores bundle files under
-`/data/zon/files` but exposes them through the authenticated appliance API at
-`/api/v1/files/...`. Publish uses `POST`, pull uses `GET`, and both require an
-appliance bearer token with artifact file permissions. Prefer exporting that
-long-lived API token as `DEV_REGISTRY_TOKEN` (optional override:
-`bundle_store.access_token`). Operator curl examples are in
-[file-api.md](file-api.md).
+The storage/artifact appliance stores bundle files under `/data/zon/files` but
+exposes them through the authenticated appliance API at `/api/v1/files/...`.
+Publish uses `POST`, pull uses `GET`, and both require an appliance bearer token
+with artifact file permissions. Prefer exporting that long-lived API token as
+`DEV_REGISTRY_TOKEN` (optional override: `bundle_store.access_token`). Operator
+curl examples are in [file-api.md](file-api.md).
 
 `base_url` must end with `/api/v1/files`. Traefik `/files` (unauthenticated
 nginx static serving) has been removed; do not use that path.

@@ -30,8 +30,8 @@ verify-help:
 	done
 	@bash scripts/publish/install-http-release.sh --help | grep -q -- '--appliance-name'
 	@bash scripts/publish/install-http-release.sh --help | grep -q -- 'BUILD_CATALOG_PATH'
-	@bash scripts/publish/publish-release.sh --help | grep -q -- '--mode'
-	@bash scripts/publish/publish-release.sh --help | grep -q -- 'appliance_files'
+	@bash scripts/publish/publish-release.sh --help | grep -q -- 'DEV_REGISTRY'
+	@bash scripts/publish/publish-release.sh --help | grep -q -- 'appliance file API'
 	@bash scripts/publish/bundle-store-lib.sh --help | grep -q -- 'appliance_files'
 
 .PHONY: verify-json
@@ -190,66 +190,6 @@ verify-bundle:
 		exit 1; \
 	fi
 	"$(ZONCTL_BINARY)" verify-bundle --bundle-dir "$${BUNDLE_DIR}" --public-key "$${PUBLIC_KEY}"
-
-.PHONY: publish-release
-publish-release:
-	@PRODUCT_VERSION="$${PRODUCT_VERSION:-$$(tr -d '[:space:]' < configs/default-product-version)}"; \
-	RELEASE_WORK_ROOT="$${RELEASE_WORK_ROOT:-$${TMPDIR:-/tmp}/appliance-build}"; \
-	EXPORT_DIR="$${RELEASE_WORK_ROOT}/export"; \
-	if [ -z "$${PRODUCT_VERSION}" ]; then \
-		echo "publish-release: missing configs/default-product-version (or set PRODUCT_VERSION)" >&2; \
-		exit 2; \
-	fi; \
-	if [ ! -d "$${EXPORT_DIR}" ]; then \
-		echo "publish-release: export directory not found: $${EXPORT_DIR} (set RELEASE_WORK_ROOT)" >&2; \
-		exit 2; \
-	fi; \
-	export PRODUCT_VERSION RELEASE_WORK_ROOT; \
-	if [ -z "$${PUBLISH_MODE:-}" ]; then \
-		echo "publish-release: PUBLISH_MODE is required (from bundle_store.mode)" >&2; \
-		exit 2; \
-	fi; \
-	if [ -z "$${PUBLISH_PATH_PREFIX:-}" ]; then \
-		echo "publish-release: PUBLISH_PATH_PREFIX is required (from bundle_store.release_path_prefix)" >&2; \
-		exit 2; \
-	fi; \
-	if [ -z "$${PUBLISH_PUBLIC_BASE_URL:-}" ]; then \
-		echo "publish-release: PUBLISH_PUBLIC_BASE_URL is required (from bundle_store.base_url)" >&2; \
-		exit 2; \
-	fi; \
-	mode="$${PUBLISH_MODE}"; \
-	case "$$mode" in \
-		static_http) \
-			if [ -z "$${PUBLISH_SERVER:-}" ] || [ -z "$${PUBLISH_REMOTE_ROOT:-}" ]; then \
-				echo "publish-release: static_http mode requires PUBLISH_SERVER and PUBLISH_REMOTE_ROOT" >&2; \
-				exit 2; \
-			fi; \
-			bash ./scripts/publish/publish-release.sh \
-				--release-work-root "$${RELEASE_WORK_ROOT}" \
-				--product-version "$${PRODUCT_VERSION}" \
-				--mode static_http \
-				--server "$${PUBLISH_SERVER}" \
-				--remote-root "$${PUBLISH_REMOTE_ROOT}" \
-				--path-prefix "$${PUBLISH_PATH_PREFIX}" \
-				--public-base-url "$${PUBLISH_PUBLIC_BASE_URL}" \
-				$${PUBLISH_SSH_PORT:+--ssh-port "$${PUBLISH_SSH_PORT}"} \
-				$${PUBLISH_LATEST_ALIAS:+--latest-alias} \
-			;; \
-		appliance_files) \
-			bash ./scripts/publish/publish-release.sh \
-				--release-work-root "$${RELEASE_WORK_ROOT}" \
-				--product-version "$${PRODUCT_VERSION}" \
-				--mode appliance_files \
-				--path-prefix "$${PUBLISH_PATH_PREFIX}" \
-				--public-base-url "$${PUBLISH_PUBLIC_BASE_URL}" \
-				$${PUBLISH_LATEST_ALIAS:+--latest-alias} \
-			;; \
-		*) \
-			echo "publish-release: PUBLISH_MODE must be static_http or appliance_files (got $$mode)" >&2; \
-			exit 2; \
-			;; \
-	esac
-
 
 .PHONY: clean
 clean:

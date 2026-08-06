@@ -21,7 +21,7 @@
 # Runtime secrets (export on the Mac before running):
 #   APPLIANCE_TARGET_SUDO_PASSWORD
 #   APPLIANCE_FIRST_ADMIN_PASSWORD  (when install.bootstrap_admin is true)
-#   DEV_REGISTRY* when downloading via bundle_store.mode=appliance_files
+#   DEV_REGISTRY* when downloading via the appliance file API
 
 # ============================================================================
 # Install on target

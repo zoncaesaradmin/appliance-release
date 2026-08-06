@@ -24,7 +24,7 @@ Options:
                                 run-build-and-publish-on-build-host.sh.
   --bootstrap-cmd CMD           Optional bootstrap command.
   --build-cmd CMD               Advanced override (default: skill-fixed build-full-bundle).
-  --publish-cmd CMD             Advanced override (default: skill-fixed make publish-release).
+  --publish-cmd CMD             Advanced override (default: skill-fixed publish-release.sh).
   --remote-cwd PATH             Working directory on the build host.
                                 Defaults to \$remote_build_root/release.
   --remote-export-dir PATH      Export directory to collect after build.
@@ -99,7 +99,7 @@ CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
 # Fixed from the skill-managed release checkout (cwd = $remote_build_root/release).
 readonly DEFAULT_BOOTSTRAP_CMD="bash scripts/ci/bootstrap-build-host.sh"
 readonly DEFAULT_BUILD_CMD="bash scripts/ci/build-full-bundle.sh"
-readonly DEFAULT_PUBLISH_CMD="make publish-release"
+readonly DEFAULT_PUBLISH_CMD="bash scripts/publish/publish-release.sh"
 
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"
@@ -188,8 +188,9 @@ BOOTSTRAP_NEEDS_SUDO="true"
 BUILD_NEEDS_SUDO="true"
 
 # Development-container pull/login only. Signed-bundle publish uses
-# bundle_store.* + skill-fixed make publish-release. Per-service make image defaults live in
-# appliance-code build/service-image.mk — not this config.
+# skill-fixed scripts/publish/publish-release.sh (DEV_REGISTRY file API).
+# Per-service make image defaults live in appliance-code build/service-image.mk
+# — not this config.
 # Fail closed on removed nested registry blocks.
 if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.pull_ref" || true)" \
   || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.registry_user_env" || true)" \
@@ -281,25 +282,13 @@ if [[ -z "${VERIFY_ARGO_ENABLED}" ]]; then
   fi
 fi
 BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
-PUBLISH_PATH_PREFIX="$(bundle_store_get_optional "${CONFIG_PATH}" "release_path_prefix" || true)"
+PUBLISH_PATH_PREFIX="$(resolve_bundle_store_release_path_prefix "${CONFIG_PATH}")"
 PUBLISH_LATEST_ALIAS="$(config_get_optional "${CONFIG_PATH}" "release.publish_latest_alias" || true)"
-PUBLISH_SERVER="$(bundle_store_get_optional "${CONFIG_PATH}" "publish_server_alias" || true)"
-PUBLISH_REMOTE_ROOT="$(bundle_store_get_optional "${CONFIG_PATH}" "publish_remote_root" || true)"
-[[ -n "${PUBLISH_PATH_PREFIX}" ]] || fail "bundle_store.release_path_prefix is required in config"
-[[ -n "${PUBLISH_LATEST_ALIAS}" ]] || fail "release.publish_latest_alias is required in config (true|false)"
-PUBLISH_PUBLIC_BASE_URL=""
-case "${BUNDLE_STORE_MODE}" in
-  static_http)
-    PUBLISH_PUBLIC_BASE_URL="$(bundle_store_get_optional "${CONFIG_PATH}" "base_url" || true)"
-    [[ -n "${PUBLISH_PUBLIC_BASE_URL}" ]] || fail "bundle_store.mode=static_http requires bundle_store.base_url"
-    [[ -n "${PUBLISH_SERVER}" ]] || fail "bundle_store.mode=static_http requires bundle_store.publish_server_alias"
-    [[ -n "${PUBLISH_REMOTE_ROOT}" ]] || fail "bundle_store.mode=static_http requires bundle_store.publish_remote_root"
-    ;;
-  appliance_files)
-    # Host/token/TLS come from DEV_REGISTRY* (or registry_env/token_env/tls_verify_env).
-    PUBLISH_PUBLIC_BASE_URL="$(resolve_appliance_files_base_url "${CONFIG_PATH}")"
-    ;;
-esac
+if [[ -z "${PUBLISH_LATEST_ALIAS}" ]]; then
+  PUBLISH_LATEST_ALIAS="false"
+fi
+# Publish always uses the appliance file API derived from DEV_REGISTRY*.
+PUBLISH_PUBLIC_BASE_URL="$(resolve_appliance_files_base_url "${CONFIG_PATH}")"
 ensure_release_run_dirs "${RUN_DIR}" "artifacts"
 
 if bool_true "${LOCAL_MODE}"; then
@@ -349,36 +338,6 @@ BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "DEV_IMAGE_TAG" "${DEV_PULL_IMAGE_TAG}")"
 
 PUBLISH_ENV_PREFIX=""
-PUBLISH_ENV_PREFIX="$(append_env_assignments "${PUBLISH_ENV_PREFIX}" \
-  "PRODUCT_VERSION" "${RELEASE_VERSION}" \
-  "RELEASE_WORK_ROOT" "${REMOTE_BUILD_ROOT}" \
-  "PUBLISH_MODE" "${BUNDLE_STORE_MODE}" \
-  "PUBLISH_PUBLIC_BASE_URL" "${PUBLISH_PUBLIC_BASE_URL}" \
-  "PUBLISH_PATH_PREFIX" "${PUBLISH_PATH_PREFIX}")"
-if [[ "${BUNDLE_STORE_MODE}" == "static_http" ]]; then
-  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_SERVER" "${PUBLISH_SERVER}")"
-  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_REMOTE_ROOT" "${PUBLISH_REMOTE_ROOT}")"
-fi
-if bool_true "${PUBLISH_LATEST_ALIAS:-false}"; then
-  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_LATEST_ALIAS" "1")"
-fi
-if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
-  bundle_store_bearer_token="$(resolve_appliance_files_bearer_token "${CONFIG_PATH}" "${PUBLISH_PUBLIC_BASE_URL}")"
-  PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_BEARER_TOKEN" "${bundle_store_bearer_token}")"
-  bundle_store_fill_curl_tls_args "${CONFIG_PATH}"
-  tls_idx=0
-  while [[ ${tls_idx} -lt ${#BUNDLE_STORE_CURL_TLS_ARGS[@]} ]]; do
-    if [[ "${BUNDLE_STORE_CURL_TLS_ARGS[$tls_idx]}" == "--cacert" ]]; then
-      PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_CACERT" "${BUNDLE_STORE_CURL_TLS_ARGS[$((tls_idx + 1))]}")"
-      break
-    fi
-    if [[ "${BUNDLE_STORE_CURL_TLS_ARGS[$tls_idx]}" == "-k" ]]; then
-      PUBLISH_ENV_PREFIX="$(append_env_assignment "${PUBLISH_ENV_PREFIX}" "PUBLISH_TLS_INSECURE" "1")"
-      break
-    fi
-    tls_idx=$((tls_idx + 1))
-  done
-fi
 
 release_repo_sync_remote_cmd=""
 release_repo_sync_remote_cmd="$(render_ensure_remote_release_repo_cmd "${REMOTE_CWD}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}")"
@@ -403,6 +362,17 @@ BOOTSTRAP_ENV_PREFIX="$(append_env_assignments "${BOOTSTRAP_ENV_PREFIX}" \
 BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "DEV_REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}" \
   "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}")"
+
+# Publish uses the same DEV_REGISTRY* auth; script derives the file API URL.
+PUBLISH_ENV_PREFIX="$(append_env_assignments "${PUBLISH_ENV_PREFIX}" \
+  "PRODUCT_VERSION" "${RELEASE_VERSION}" \
+  "RELEASE_WORK_ROOT" "${REMOTE_BUILD_ROOT}" \
+  "DEV_REGISTRY" "${DEV_PULL_REGISTRY}" \
+  "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}" \
+  "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}")"
+if bool_true "${PUBLISH_LATEST_ALIAS:-false}"; then
+  PUBLISH_CMD="${PUBLISH_CMD} --latest-alias"
+fi
 
 bootstrap_remote_cmd=""
 if [[ -n "${BOOTSTRAP_CMD}" ]]; then

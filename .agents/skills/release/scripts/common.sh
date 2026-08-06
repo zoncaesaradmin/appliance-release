@@ -939,7 +939,8 @@ expand_legacy_ui_home_command_for_spa() {
 }
 
 
-# Normalize bundle_store.mode to static_http|appliance_files. Empty is rejected.
+# Normalize bundle_store.mode: empty or appliance_files only.
+# static_http was removed; publish always uses the DEV_REGISTRY file API.
 _BUNDLE_STORE_LIB="$(cd "${SCRIPT_DIR}/../../../.." && pwd)/scripts/publish/bundle-store-lib.sh"
 [[ -f "${_BUNDLE_STORE_LIB}" ]] || fail "missing shared bundle store library: ${_BUNDLE_STORE_LIB}"
 # shellcheck source=/dev/null
@@ -956,8 +957,26 @@ resolve_bundle_store_mode() {
   local config_path="$1"
   local mode
   mode="$(bundle_store_get_optional "${config_path}" "mode" || true)"
-  [[ -n "${mode}" ]] || fail "bundle_store.mode is required in config (static_http or appliance_files)"
-  normalize_bundle_store_mode "${mode}" || fail "bundle_store.mode must be static_http or appliance_files"
+  if [[ -n "$(bundle_store_get_optional "${config_path}" "publish_server_alias" || true)" || \
+        -n "$(bundle_store_get_optional "${config_path}" "publish_remote_root" || true)" ]]; then
+    fail "bundle_store.publish_server_alias / publish_remote_root were removed with static_http; publish uses DEV_REGISTRY file API only"
+  fi
+  normalize_bundle_store_mode "${mode}" || fail "bundle_store.mode must be appliance_files (or omitted)"
+}
+
+# Fixed path prefix under the file API (matches publish-release.sh).
+resolve_bundle_store_release_path_prefix() {
+  local config_path="$1"
+  local prefix=""
+  prefix="$(bundle_store_get_optional "${config_path}" "release_path_prefix" || true)"
+  prefix="$(printf '%s' "${prefix}" | tr -d '[:space:]')"
+  if [[ -z "${prefix}" ]]; then
+    prefix="appliance"
+  fi
+  if [[ "${prefix}" != "appliance" ]]; then
+    fail "bundle_store.release_path_prefix must be 'appliance' (or omitted); got ${prefix}"
+  fi
+  printf '%s\n' "${prefix}"
 }
 
 # Path suffix for the authenticated files API (default /api/v1/files).
@@ -987,15 +1006,14 @@ require_appliance_files_base_url() {
       return 0
       ;;
     *)
-      fail "bundle_store.mode=appliance_files requires base URL ending in ${files_path} (authenticated API). Got: ${base_url}. For appliance_files omit bundle_store.base_url (and static_http publish_* keys) so the skill derives https://\$DEV_REGISTRY${files_path}; do not leave a static_http base_url. Traefik /files was removed."
+      fail "bundle_store requires base URL ending in ${files_path} (authenticated API). Got: ${base_url}. Omit bundle_store.base_url so the skill derives https://\$DEV_REGISTRY${files_path}."
       ;;
   esac
 }
 
 # Build https://<DEV_REGISTRY>/api/v1/files from env (preferred).
 # Optional override: bundle_store.base_url ONLY when it already ends in files_path
-# (tests/advanced). Do not set base_url from the static_http example when mode
-# is appliance_files.
+# (tests/advanced).
 # Optional: bundle_store.registry_env (default DEV_REGISTRY), bundle_store.files_path.
 resolve_appliance_files_base_url() {
   local config_path="$1"
@@ -1003,15 +1021,8 @@ resolve_appliance_files_base_url() {
   local files_path=""
   local registry_env=""
   local registry_host=""
-  local publish_server=""
-  local publish_root=""
 
   files_path="$(resolve_appliance_files_files_path "${config_path}")"
-  publish_server="$(bundle_store_get_optional "${config_path}" "publish_server_alias" || true)"
-  publish_root="$(bundle_store_get_optional "${config_path}" "publish_remote_root" || true)"
-  if [[ -n "${publish_server}" || -n "${publish_root}" ]]; then
-    fail "bundle_store.mode=appliance_files must not set publish_server_alias or publish_remote_root (those are static_http only). Remove them and use token/TLS env + DEV_REGISTRY-derived https://\$host${files_path}."
-  fi
 
   base_url="$(bundle_store_get_optional "${config_path}" "base_url" || true)"
   base_url="$(printf '%s' "${base_url}" | tr -d '[:space:]')"
@@ -1068,7 +1079,7 @@ bundle_store_fill_curl_tls_args() {
     tls_verify_env="DEV_REGISTRY_TLS_VERIFY"
   fi
   tls_verify="$(printf '%s' "${!tls_verify_env:-}" | tr -d '[:space:]')"
-  [[ -n "${tls_verify}" ]] || fail "bundle_store.mode=appliance_files requires ${tls_verify_env} (or optional bundle_store.tls_insecure / cacert_path)"
+  [[ -n "${tls_verify}" ]] || fail "bundle_store requires ${tls_verify_env} (or optional bundle_store.tls_insecure / cacert_path)"
   tls_verify="$(normalize_bool_value "${tls_verify}")"
   if [[ "${tls_verify}" == "false" ]]; then
     BUNDLE_STORE_CURL_TLS_ARGS+=(-k)
@@ -1126,7 +1137,8 @@ resolve_appliance_files_bearer_token() {
     fi
     token="$(printf '%s' "${!token_env:-}" | tr -d '[:space:]')"
     if [[ -z "${token}" ]]; then
-      fail "bundle_store.mode=appliance_files requires ${token_env} (or optional bundle_store.access_token) — long-lived API token from the distributor Dashboard → API tokens"
+      fail "bundle_store requires ${token_env} (or optional bundle_store.access_token) — long-lived API token from the distributor Dashboard → API tokens"
+
     fi
   fi
   printf '%s' "${token}"

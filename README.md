@@ -12,8 +12,8 @@ release-input handoff come from `appliance-code`.
   Local checks for this repo.
 - `bash ./scripts/ci/build-full-bundle.sh`
   Primary build-machine / CI entrypoint.
-- `make publish-release ...`
-  Copy exported release files to an HTTP/HTTPS download server.
+- `bash ./scripts/publish/publish-release.sh`
+  Upload exported release files to the appliance file API on `DEV_REGISTRY`.
 
 The build flow exports:
 

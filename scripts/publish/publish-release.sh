@@ -2,65 +2,50 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=/dev/null
-source "${SCRIPT_DIR}/bundle-store-lib.sh"
+RELEASE_REPO_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+# Fixed layout under the appliance file API.
+readonly PUBLISH_PATH_PREFIX="appliance"
+readonly PUBLISH_FILES_PATH="/api/v1/files"
 
 usage() {
   cat <<'EOF'
-usage: publish-release.sh --product-version VERSION [options]
+usage: publish-release.sh [options]
 
-Publish the already-built customer delivery files from scripts/ci/build-full-bundle.sh.
-Export input is always $RELEASE_WORK_ROOT/export.
+Publish already-built customer delivery files from
+scripts/ci/build-full-bundle.sh to the appliance file API on the
+artifact/dev registry host.
 
-Modes:
-  static_http       Copy exported files to a remote server over SSH/SCP for a
-                    plain HTTP/HTTPS static file server (default).
-  appliance_files   Publish through the appliance-managed authenticated file API.
-                    Set PUBLISH_BEARER_TOKEN and point --public-base-url at the
-                    appliance file API base, for example:
-                    https://artifact-dns-1.appliance.internal/api/v1/files
+Uploads to:
+  https://$DEV_REGISTRY/api/v1/files/appliance/<version>/
+
+Required environment (same registry auth as build):
+  DEV_REGISTRY              Artifact/dev registry host (no scheme)
+  DEV_REGISTRY_TOKEN        Bearer token with files write access
+
+Optional environment:
+  DEV_REGISTRY_TLS_VERIFY   true|false (default: true). false → curl -k
+  RELEASE_WORK_ROOT         Build root; export is $RELEASE_WORK_ROOT/export
+                            (default: ${TMPDIR:-/tmp}/appliance-build)
+  PRODUCT_VERSION           Override configs/default-product-version
 
 Options:
-  --release-work-root DIR    Build/export root (same as RELEASE_WORK_ROOT).
-                             Export files are read from DIR/export. Required
-                             unless RELEASE_WORK_ROOT is already set in the
-                             environment.
-  --product-version VERSION  Product version to publish. Required.
-  --mode MODE                static_http|appliance_files. Required.
-  --latest-alias             Also publish/update <path-prefix>/latest/ (static_http).
+  --release-work-root DIR   Same as RELEASE_WORK_ROOT
+  --product-version VERSION Same as PRODUCT_VERSION
+  --latest-alias            Also upload under appliance/latest/
+  --help                    Show this help
 
-static_http mode options:
-  --server USER@HOST         Remote SSH target. Required for static_http.
-  --remote-root DIR          Remote root directory to publish under. Required.
-  --path-prefix PATH         Prefix under remote root / URL. Required
-                             (from bundle_store.release_path_prefix).
-  --ssh-port PORT            SSH port. Default: 22
-  --public-base-url URL      Public base URL. Required (from
-                             bundle_store.base_url).
-  appliance_files mode requires:
-    PUBLISH_BEARER_TOKEN     Appliance API bearer token with artifacts.write.
-    PUBLISH_TLS_INSECURE=1   Optional; skip TLS verify for self-signed certs.
-    PUBLISH_CACERT=PATH      Optional; PEM CA bundle (overrides insecure).
-
-Examples:
-  bash ./scripts/publish/publish-release.sh \
-    --release-work-root /tmp/appliance-build \
-    --product-version 0.1.0 \
-    --server release@downloads.internal \
-    --remote-root /srv/www/releases \
-    --path-prefix appliance \
-    --public-base-url https://downloads.internal/releases
+Example (after bootstrap + build-full-bundle on the build host):
+  export DEV_REGISTRY=artifact-dns-1.example.internal
+  export DEV_REGISTRY_TOKEN=…
+  export DEV_REGISTRY_TLS_VERIFY=false
+  export RELEASE_WORK_ROOT=/home/zonsys/appliance-build
+  bash ./scripts/publish/publish-release.sh
 EOF
 }
 
-MODE=""
 RELEASE_WORK_ROOT="${RELEASE_WORK_ROOT-}"
-PRODUCT_VERSION=""
-SERVER_TARGET=""
-REMOTE_ROOT=""
-PATH_PREFIX=""
-SSH_PORT="22"
-PUBLIC_BASE_URL=""
+PRODUCT_VERSION="${PRODUCT_VERSION-}"
 LATEST_ALIAS="0"
 
 while [[ $# -gt 0 ]]; do
@@ -69,42 +54,18 @@ while [[ $# -gt 0 ]]; do
       RELEASE_WORK_ROOT="${2:-}"
       shift 2
       ;;
-    --export-dir)
-      echo "publish-release: --export-dir is no longer supported." >&2
-      echo "publish-release: set --release-work-root or RELEASE_WORK_ROOT; export is always \$RELEASE_WORK_ROOT/export." >&2
-      exit 2
-      ;;
     --product-version)
       PRODUCT_VERSION="${2:-}"
-      shift 2
-      ;;
-    --mode)
-      MODE="${2:-}"
-      shift 2
-      ;;
-    --server)
-      SERVER_TARGET="${2:-}"
-      shift 2
-      ;;
-    --remote-root)
-      REMOTE_ROOT="${2:-}"
-      shift 2
-      ;;
-    --path-prefix)
-      PATH_PREFIX="${2:-}"
-      shift 2
-      ;;
-    --ssh-port)
-      SSH_PORT="${2:-}"
-      shift 2
-      ;;
-    --public-base-url)
-      PUBLIC_BASE_URL="${2:-}"
       shift 2
       ;;
     --latest-alias)
       LATEST_ALIAS="1"
       shift 1
+      ;;
+    --export-dir|--mode|--server|--remote-root|--path-prefix|--public-base-url|--ssh-port)
+      echo "publish-release: $1 is no longer supported." >&2
+      echo "publish-release: only appliance file API publish remains; use DEV_REGISTRY + DEV_REGISTRY_TOKEN." >&2
+      exit 2
       ;;
     --help|-h)
       usage
@@ -144,72 +105,32 @@ trim_trailing_slashes() {
   printf '%s\n' "${value}"
 }
 
-curl_upload_file() {
-  local src="$1"
-  local url="$2"
-  local -a curl_args=(-sS -X POST)
-  local http_code body
-  if [[ "${PUBLISH_TLS_INSECURE:-}" == "1" ]]; then
-    curl_args+=(-k)
-  fi
-  if [[ -n "${PUBLISH_CACERT:-}" ]]; then
-    curl_args+=(--cacert "${PUBLISH_CACERT}")
-  fi
-  body="$(mktemp)"
-  http_code="$(
-    curl "${curl_args[@]}" \
-      -o "${body}" -w "%{http_code}" \
-      -H "Authorization: Bearer ${PUBLISH_BEARER_TOKEN}" \
-      -H "Content-Type: application/octet-stream" \
-      --data-binary "@${src}" \
-      "${url}"
-  )"
-  if [[ "${http_code}" != 200 && "${http_code}" != 201 ]]; then
-    echo "publish-release: upload failed http=${http_code} src=${src} url=${url}" >&2
-    if [[ -s "${body}" ]]; then
-      head -c 512 "${body}" >&2 || true
-      echo >&2
-    fi
-    rm -f "${body}"
-    return 22
-  fi
-  cat "${body}"
-  rm -f "${body}"
-}
-
-upload_payloads_to_api_dir() {
-  local remote_dir="$1"
-  local payload=""
-  for payload in "${RELEASE_PAYLOADS[@]}"; do
-    curl_upload_file "${payload}" "${remote_dir}/$(basename "${payload}")" >/dev/null
-  done
-}
-
-print_target_download_and_run_commands() {
-  local heading="$1"
-  local helper_url="$2"
-  local use_latest_flag="${3:-}"
-  echo "${heading}:"
-  echo "  curl -fLo /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} ${helper_url}"
-  if [[ -n "${use_latest_flag}" ]]; then
-    echo "  bash /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} --base-url ${PUBLIC_BASE_URL} ${use_latest_flag} \\"
-  else
-    echo "  bash /tmp/${INSTALL_HELPER_HTTP_PUBLISHED} --base-url ${PUBLIC_BASE_URL} \\"
-  fi
-  echo "    --out-dir /tmp/appliance-${PRODUCT_VERSION} --state-dir /var/lib/zon/state \\"
-  echo "    --appliance-profile <profile> --appliance-name <name> --dns-zone <zone>"
-}
-
-MODE="$(normalize_bundle_store_mode "${MODE}")" || {
-  echo "publish-release: --mode is required (static_http or appliance_files)" >&2
-  usage >&2
+if [[ -z "${PRODUCT_VERSION}" ]]; then
+  PRODUCT_VERSION="$(tr -d '[:space:]' < "${RELEASE_REPO_DIR}/configs/default-product-version" 2>/dev/null || true)"
+fi
+[[ -n "${PRODUCT_VERSION}" ]] || {
+  echo "publish-release: missing PRODUCT_VERSION and configs/default-product-version" >&2
   exit 2
 }
 
-require_var RELEASE_WORK_ROOT
-require_var PRODUCT_VERSION
-require_var PATH_PREFIX
-require_var PUBLIC_BASE_URL
+if [[ -z "${RELEASE_WORK_ROOT}" ]]; then
+  RELEASE_WORK_ROOT="${TMPDIR:-/tmp}/appliance-build"
+fi
+
+require_var DEV_REGISTRY
+require_var DEV_REGISTRY_TOKEN
+
+registry_host="$(printf '%s' "${DEV_REGISTRY}" | tr -d '[:space:]')"
+registry_host="${registry_host#https://}"
+registry_host="${registry_host#http://}"
+registry_host="${registry_host%/}"
+[[ -n "${registry_host}" ]] || {
+  echo "publish-release: DEV_REGISTRY resolved empty" >&2
+  exit 2
+}
+
+PUBLIC_BASE_URL="https://${registry_host}${PUBLISH_FILES_PATH}"
+PATH_PREFIX="${PUBLISH_PATH_PREFIX}"
 
 RELEASE_WORK_ROOT="$(cd "$(dirname "${RELEASE_WORK_ROOT}")" && pwd)/$(basename "${RELEASE_WORK_ROOT}")"
 EXPORT_DIR="${RELEASE_WORK_ROOT}/export"
@@ -220,7 +141,7 @@ INSTALL_HELPER_HTTP="${SCRIPT_DIR}/install-http-release.sh"
 INSTALL_HELPER_HTTP_PUBLISHED="install-http-release.sh"
 
 if [[ ! -d "${EXPORT_DIR}" ]]; then
-  echo "publish-release: export directory not found: ${EXPORT_DIR} (from RELEASE_WORK_ROOT)" >&2
+  echo "publish-release: export directory not found: ${EXPORT_DIR} (set RELEASE_WORK_ROOT)" >&2
   exit 1
 fi
 
@@ -242,7 +163,6 @@ fi
 
 stamp_helper() {
   local src="$1" dest="$2"
-  # Stamp embedded fields without fragile sed delimiter fights on URLs.
   python3 - "${src}" "${dest}" "${PRODUCT_VERSION}" "${PATH_PREFIX}" "${PUBLIC_BASE_URL}" <<'PY'
 from pathlib import Path
 import sys
@@ -276,7 +196,50 @@ PY
   fi
 }
 
-PATH_PREFIX="$(trim_trailing_slashes "${PATH_PREFIX}")"
+curl_upload_file() {
+  local src="$1"
+  local url="$2"
+  local -a curl_args=(-sS -X POST)
+  local http_code body
+  local tls_verify="${DEV_REGISTRY_TLS_VERIFY:-true}"
+  case "$(printf '%s' "${tls_verify}" | tr '[:upper:]' '[:lower:]')" in
+    0|false|no|off)
+      curl_args+=(-k)
+      ;;
+  esac
+  if [[ -n "${PUBLISH_CACERT:-}" ]]; then
+    curl_args+=(--cacert "${PUBLISH_CACERT}")
+  fi
+  body="$(mktemp)"
+  http_code="$(
+    curl "${curl_args[@]}" \
+      -o "${body}" -w "%{http_code}" \
+      -H "Authorization: Bearer ${DEV_REGISTRY_TOKEN}" \
+      -H "Content-Type: application/octet-stream" \
+      --data-binary "@${src}" \
+      "${url}"
+  )"
+  if [[ "${http_code}" != 200 && "${http_code}" != 201 ]]; then
+    echo "publish-release: upload failed http=${http_code} src=${src} url=${url}" >&2
+    if [[ -s "${body}" ]]; then
+      head -c 512 "${body}" >&2 || true
+      echo >&2
+    fi
+    rm -f "${body}"
+    return 22
+  fi
+  cat "${body}"
+  rm -f "${body}"
+}
+
+upload_payloads_to_api_dir() {
+  local remote_dir="$1"
+  local payload=""
+  for payload in "${RELEASE_PAYLOADS[@]}"; do
+    curl_upload_file "${payload}" "${remote_dir}/$(basename "${payload}")" >/dev/null
+  done
+}
+
 PUBLIC_BASE_URL="$(trim_trailing_slashes "${PUBLIC_BASE_URL}")"
 PUBLISH_STAGE_DIR="$(mktemp -d "${EXPORT_DIR}/.publish-stage.XXXXXX")"
 trap 'rm -rf "${PUBLISH_STAGE_DIR}"' EXIT
@@ -292,96 +255,21 @@ RELEASE_PAYLOADS=(
   "${PUBLISHED_INSTALL_HELPER}"
 )
 
-case "${MODE}" in
-  static_http)
-    require_var SERVER_TARGET
-    require_var REMOTE_ROOT
+REMOTE_VERSION_DIR="${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}"
+upload_payloads_to_api_dir "${REMOTE_VERSION_DIR}"
 
-    REMOTE_ROOT="$(trim_trailing_slashes "${REMOTE_ROOT}")"
-    REMOTE_VERSION_DIR="${REMOTE_ROOT}/${PATH_PREFIX}/${PRODUCT_VERSION}"
-    REMOTE_LATEST_DIR="${REMOTE_ROOT}/${PATH_PREFIX}/latest"
+if [[ "${LATEST_ALIAS}" == "1" ]]; then
+  REMOTE_LATEST_DIR="${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest"
+  upload_payloads_to_api_dir "${REMOTE_LATEST_DIR}"
+fi
 
-    ssh -p "${SSH_PORT}" "${SERVER_TARGET}" "mkdir -p '${REMOTE_VERSION_DIR}'"
-    scp -P "${SSH_PORT}" "${RELEASE_PAYLOADS[@]}" "${SERVER_TARGET}:${REMOTE_VERSION_DIR}/"
-
-    if [[ "${LATEST_ALIAS}" == "1" ]]; then
-      latest_copy_cmd="mkdir -p '${REMOTE_LATEST_DIR}'"
-      for payload in "${RELEASE_PAYLOADS[@]}"; do
-        latest_copy_cmd+=" && cp '${REMOTE_VERSION_DIR}/$(basename "${payload}")' '${REMOTE_LATEST_DIR}/'"
-      done
-      ssh -p "${SSH_PORT}" "${SERVER_TARGET}" \
-        "${latest_copy_cmd}"
-    fi
-
-    echo "published release files:"
-    for payload in "${RELEASE_FILE_PAYLOADS[@]}"; do
-      echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/$(basename "${payload}")"
-    done
-    echo
-    echo "published helper script:"
-    echo "  ${SERVER_TARGET}:${REMOTE_VERSION_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
-    echo
-    echo "public base URL used for commands:"
-    echo "  ${PUBLIC_BASE_URL}"
-    echo
-    echo "download URLs:"
-    for payload in "${RELEASE_FILE_PAYLOADS[@]}"; do
-      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/$(basename "${payload}")"
-    done
-    echo
-    echo "helper script URL:"
-    echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_HTTP_PUBLISHED}"
-    echo
-    echo "target host install command (pass target-specific flags; version/path-prefix are stamped):"
-    echo "  curl -fsSL ${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_HTTP_PUBLISHED} | bash -s -- \\"
-    echo "    --base-url ${PUBLIC_BASE_URL} \\"
-    echo "    --out-dir /tmp/appliance-${PRODUCT_VERSION} \\"
-    echo "    --state-dir /var/lib/zon/state \\"
-    echo "    --appliance-profile <profile> \\"
-    echo "    --appliance-name <name> \\"
-    echo "    --dns-zone <zone>"
-    echo
-    print_target_download_and_run_commands \
-      "target host install commands (download then run)" \
-      "${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}/${INSTALL_HELPER_HTTP_PUBLISHED}"
-    if [[ "${LATEST_ALIAS}" == "1" ]]; then
-      echo
-      echo "latest alias URLs:"
-      for payload in "${RELEASE_FILE_PAYLOADS[@]}"; do
-        echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/$(basename "${payload}")"
-      done
-      echo "  ${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${INSTALL_HELPER_HTTP_PUBLISHED}"
-      echo
-      print_target_download_and_run_commands \
-        "target host latest-install commands" \
-        "${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest/${INSTALL_HELPER_HTTP_PUBLISHED}" \
-        "--use-latest"
-    fi
-    ;;
-  appliance_files)
-    require_var PUBLISH_BEARER_TOKEN
-
-    REMOTE_VERSION_DIR="${PUBLIC_BASE_URL}/${PATH_PREFIX}/${PRODUCT_VERSION}"
-    upload_payloads_to_api_dir "${REMOTE_VERSION_DIR}"
-
-    if [[ "${LATEST_ALIAS}" == "1" ]]; then
-      REMOTE_LATEST_DIR="${PUBLIC_BASE_URL}/${PATH_PREFIX}/latest"
-      upload_payloads_to_api_dir "${REMOTE_LATEST_DIR}"
-    fi
-
-    echo "published release files via appliance file API:"
-    for payload in "${RELEASE_FILE_PAYLOADS[@]}"; do
-      echo "  ${REMOTE_VERSION_DIR}/$(basename "${payload}")"
-    done
-    echo
-    echo "published helper script:"
-    echo "  ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
-    echo
-    echo "authenticated install helper example:"
-    echo "  curl -fsSL -H 'Authorization: Bearer <token>' ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED} | bash -s -- --base-url ${PUBLIC_BASE_URL}"
-    ;;
-  *)
-    echo "publish-release: unsupported mode: ${MODE}" >&2
-    exit 2
-    ;;
-esac
+echo "published release files via appliance file API:"
+for payload in "${RELEASE_FILE_PAYLOADS[@]}"; do
+  echo "  ${REMOTE_VERSION_DIR}/$(basename "${payload}")"
+done
+echo
+echo "published helper script:"
+echo "  ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
+echo
+echo "authenticated install helper example:"
+echo "  curl -fsSL -H 'Authorization: Bearer <token>' ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED} | bash -s -- --base-url ${PUBLIC_BASE_URL}"
