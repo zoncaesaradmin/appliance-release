@@ -183,27 +183,37 @@ rolled back automatically.
 
 ## 2. Build And Publish Only
 
-Use this if you only want the remote build and publish step.
+From the Mac (preferred):
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/build-and-publish.sh
+bash .agents/skills/release/scripts/run-release-from-devhost.sh \
+  --config /abs/path/to/lab-devhost.yaml \
+  --build-publish-config /abs/path/to/lab-build-publish.yaml
 ```
 
-Example with an explicit version:
+On the build host with skill YAML (after repo sync / env export):
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/build-and-publish.sh \
+bash .agents/skills/release/scripts/build-and-publish.sh \
+  --local \
+  --build-publish-config ~/.config/appliance-release/build-publish.yaml \
   --release-version 0.1.0
 ```
 
-Use this when:
+Or run the product scripts directly (no skill YAML):
 
-- code is already pushed
-- you want the build machine to pull, build, and publish
-- you do not want to install yet
+```bash
+bash scripts/ci/bootstrap-build-host.sh
+bash scripts/ci/build-full-bundle.sh
+bash scripts/publish/publish-release.sh
+```
 
-After copied release-input and bundle metadata are available, the script
-validates required product artifacts, Argo release artifacts, and any
+`build-and-publish.sh` is a thin local worker: resolve YAML → three product
+scripts → collect/validate artifacts. It does not SSH and does not own
+packaging pin defaults (those live in `scripts/ci/build-full-bundle.sh`).
+
+After copied release-input and bundle metadata are available, the worker
+validates required product artifacts, Argo release artifacts, and
 `extraOCIImages[]` entries against the final bundle manifest. Required runtime
 checks include the control-plane image, the separate appliance UI image, and
 the appliance Helm chart. For runtime OCI images, the copied release-input
@@ -214,10 +224,9 @@ The final bundle's `configuration/values.yaml` is also checked so
 those same control-plane and UI image references.
 Required release-input evidence checks include the configuration schema,
 compatibility metadata, checksums, SBOM, provenance, notices, and tests.
-`registry.local/dev-build` (from `build_flow.dev_image_pull` settings)
-must appear in digest-pinned `extraOCIImages[]` evidence. Digests in config
-refs are advisory; the build derives the platform manifest digest from each
-OCI archive. The validation log is written to
+`registry.local/dev-build` must appear in digest-pinned `extraOCIImages[]`
+evidence. Digests in config refs are advisory; the build derives the platform
+manifest digest from each OCI archive. The validation log is written to
 `.run/appliance-release/<timestamp>/logs/release-artifact-validation.json`.
 
 ## 3. Install On Target Only
@@ -354,25 +363,23 @@ reachability, builder image, and appliance registry are ready. For v1, set
 40-character commit SHA; branch and tag resolution belongs in the control
 plane/workflow layer later.
 
-## 6. Config File
+## 6. Config Files
 
-Start from:
+Start from the three role examples linked from:
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/references/config.example.yaml
+.agents/skills/release/references/config.example.yaml
 ```
+
+Day-to-day paths are usually home-dir copies such as `~/lab-devhost.yaml`,
+`~/lab-build-publish.yaml`, and `~/lab-install.yaml` — not a single merged
+repo config file.
 
 For final builder-profile evidence, also start from these local templates and
 replace every host, repo, image, and target path with your real product values:
 
 ```bash
-/Users/zoncaesar/ws/appliance-release/.agents/skills/release/references/build-catalog.example.yaml
-```
-
-Your usual real config lives in the repo, for example:
-
-```bash
-/Users/zoncaesar/ws/appliance-release/appliance-release.config.yaml
+.agents/skills/release/references/build-catalog.example.yaml
 ```
 
 Do not use a global skill symlink here. The single place to look is the
@@ -380,12 +387,12 @@ repo-local skill path: `.agents/skills/release/scripts`.
 
 ## 7. Live Release Local Repo Preflight
 
-`build-and-publish.sh` / `run-release-from-devhost.sh` refuse to start a **live** remote
-build when a sibling checkout has uncommitted changes that could affect what
-the remote git clone builds (repo `scripts/`, product code, Makefiles, schemas,
-charts, etc.). The remote build clones `origin/<ref>` and hard-resets, so those
-local edits are never used — the guard exists so a dirty tree is not mistaken
-for “what got tested.”
+`run-build-and-publish-on-build-host.sh` (and thus `run-release-from-devhost.sh`)
+refuses to start a **live** remote build when a sibling checkout has uncommitted
+changes that could affect what the remote git clone builds (repo `scripts/`,
+product code, Makefiles, schemas, charts, etc.). The remote build clones
+`origin/<ref>` and hard-resets, so those local edits are never used — the guard
+exists so a dirty tree is not mistaken for “what got tested.”
 
 Local-only dirt (for example under `docs/`, `.cursor/`, `.run/`, and the
 locally executed `.agents/skills/release/` skill files) only logs a warning and

@@ -10,8 +10,6 @@ ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = ROOT / ".agents" / "skills" / "release" / "scripts" / "build-and-publish.sh"
 
 MINIMAL_VALID_CONFIG = """
-build_host:
-  alias: build@example
 release_workspace:
   remote_build_root: /tmp/appliance-build
   remote_repo_ref: main
@@ -39,6 +37,7 @@ def run_build_publish_config(config: Path, run_dir: Path) -> subprocess.Complete
         [
             "bash",
             str(SCRIPT),
+            "--local",
             "--config",
             str(config),
             "--run-dir",
@@ -49,6 +48,25 @@ def run_build_publish_config(config: Path, run_dir: Path) -> subprocess.Complete
         stderr=subprocess.STDOUT,
         check=False,
     )
+
+
+def test_requires_local() -> None:
+    with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        config = tmp / "config.yaml"
+        run_dir = tmp / "run"
+        write(config, MINIMAL_VALID_CONFIG)
+        result = subprocess.run(
+            ["bash", str(SCRIPT), "--config", str(config), "--run-dir", str(run_dir)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if result.returncode == 0:
+            raise AssertionError("--local should be required")
+        if "requires --local" not in result.stdout:
+            raise AssertionError(result.stdout)
 
 
 def test_rejects_literal_dev_image_repo_and_name() -> None:
@@ -132,20 +150,37 @@ def test_rejects_skill_fixed_build_commands_and_sudo_flags() -> None:
             raise AssertionError(result.stdout)
 
 
+def test_rejects_packaging_pin_keys() -> None:
+    with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        config = tmp / "config.yaml"
+        run_dir = tmp / "run"
+        write(
+            config,
+            MINIMAL_VALID_CONFIG.replace(
+                "build_flow:",
+                "build_flow:\n  argo:\n    enabled: true\n",
+            ),
+        )
+        result = run_build_publish_config(config, run_dir)
+        if result.returncode == 0:
+            raise AssertionError("build_flow.argo pin keys were accepted")
+        if "Argo/Zot/DNS/provisioner pin keys were removed" not in result.stdout:
+            raise AssertionError(result.stdout)
+
+
 def test_rejects_removed_build_publish_path_keys() -> None:
     removed_cases = [
         (
             "release_workspace.remote_repo_path",
-            "release_workspace",
             "  remote_repo_path: /tmp/appliance-release\n",
         ),
         (
             "release_workspace.remote_export_dir",
-            "release_workspace",
             "  remote_export_dir: /tmp/export\n",
         ),
     ]
-    for label, section, snippet in removed_cases:
+    for label, snippet in removed_cases:
         with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
             tmp = Path(tmp_dir)
             config = tmp / "config.yaml"
@@ -165,10 +200,12 @@ def test_rejects_removed_build_publish_path_keys() -> None:
 
 
 def main() -> None:
+    test_requires_local()
     test_rejects_literal_dev_image_repo_and_name()
     test_rejects_removed_remote_release_input_and_bundle_overrides()
     test_rejects_offline_archive_path_inputs()
     test_rejects_skill_fixed_build_commands_and_sudo_flags()
+    test_rejects_packaging_pin_keys()
     test_rejects_removed_build_publish_path_keys()
     print("build-and-publish config tests passed")
 

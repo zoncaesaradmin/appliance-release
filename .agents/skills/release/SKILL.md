@@ -103,8 +103,8 @@ Product-owned install helper: `scripts/publish/install-http-release.sh`
 **Skill entry / remote wrappers**
 
 - `scripts/run-release-from-devhost.sh` — only day-to-day e2e entry
-- `scripts/run-build-and-publish-on-build-host.sh` — Mac: scp config, inject env, SSH
-- `scripts/build-and-publish.sh` — resolve YAML → run the three product scripts → collect/validate
+- `scripts/run-build-and-publish-on-build-host.sh` — Mac: preflight, sync repo, scp config, inject env, SSH
+- `scripts/build-and-publish.sh --local` — thin build-host worker: YAML → three product scripts → collect/validate
 
 **Install path**
 

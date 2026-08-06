@@ -35,10 +35,11 @@
 #     (then SSH injects them into remote steps).
 #   Build-host worker path: export the same vars on the *build* host only
 #     (e.g. ~/.bashrc).
-#   Values named by build_flow.dev_image_pull.*_env (and optional mirror):
+#   Values named by build_flow.dev_image_pull.*_env:
 #     DEV_REGISTRY, DEV_IMAGE_REPO, DEV_IMAGE_NAME,
 #     DEV_REGISTRY_USER, DEV_REGISTRY_TOKEN, DEV_REGISTRY_TLS_VERIFY
 #   Plus APPLIANCE_BUILD_SUDO_PASSWORD (bootstrap/build always use sudo).
+#   Packaging pins (Argo/Zot/DNS/provisioner) live in product scripts, not here.
 
 # ============================================================================
 # Release workspace on the build host

@@ -18,9 +18,9 @@ usage: run-build-and-publish-on-build-host.sh \
   (--config PATH | --build-host ALIAS) \
   [options]
 
-From the Mac/devhost: scp the build-publish YAML, sync remote appliance-release,
-and SSH-run build-and-publish.sh --local with secrets taken from *this* shell
-(the env names in build_flow.dev_image_pull / mirror / bundle_store + sudo).
+From the Mac/devhost: live-repo preflight, scp build-publish YAML, sync remote
+appliance-release, SSH-run build-and-publish.sh --local with secrets from
+*this* shell (build_flow.dev_image_pull / bundle_store *_env + sudo).
 
 Required: build-publish config path + build_host (via --config or --build-host).
 Optional: --run-dir, --remote-run-dir, --remote-config-path, --skip-repo-sync.
@@ -103,6 +103,13 @@ if [[ -z "${REMOTE_REPO_SOURCE}" ]]; then
 fi
 [[ -n "${REMOTE_REPO_SOURCE}" ]] || fail "release_workspace.remote_repo_source is required in build-publish config"
 EFFECTIVE_REMOTE_REPO_SOURCE="$(normalize_readonly_git_source "${REMOTE_REPO_SOURCE}")"
+reject_removed_build_publish_packaging_keys "${BUILD_PUBLISH_CONFIG}"
+
+# Live check on this Mac before touching the build host (refs fixed to main in product scripts).
+readonly code_git_ref="main"
+readonly ctl_git_ref="main"
+log "running local live-build repo preflight against release=${REMOTE_REPO_REF}, appliance-code=${code_git_ref}, appliance-ctl=${ctl_git_ref}"
+preflight_live_release_inputs "$(skill_release_repo_root "${SCRIPT_DIR}")" "${REMOTE_REPO_REF}" "${code_git_ref}" "${ctl_git_ref}"
 
 BUILD_ENV_NAMES=()
 while IFS= read -r _env_name; do

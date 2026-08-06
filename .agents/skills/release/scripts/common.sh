@@ -482,8 +482,8 @@ product_control_plane_deployment() {
   printf '%s\n' "${PRODUCT_CONTROL_PLANE_DEPLOYMENT}"
 }
 
-# Env names referenced by a build-publish config (dev_image_pull, mirror, bundle_store).
-# Deduped. Includes APPLIANCE_BUILD_SUDO_PASSWORD when bootstrap/build needs sudo.
+# Env names referenced by a build-publish config (dev_image_pull, bundle_store).
+# Deduped. Always includes APPLIANCE_BUILD_SUDO_PASSWORD.
 # Skill-fixed layout under release_workspace.remote_build_root (build host only).
 SKILL_REMOTE_BUILD_ROOT_CHECKOUT_SUBDIR="release"
 SKILL_REMOTE_BUILD_ROOT_EXPORT_SUBDIR="export"
@@ -529,6 +529,81 @@ reject_removed_build_publish_path_keys() {
   fi
   if ((${#removed[@]} > 0)); then
     fail "removed build-publish path keys: ${removed[*]}. Set release_workspace.remote_build_root only. $(skill_remote_build_root_layout_message)"
+  fi
+}
+
+# Fail closed on knobs the skill no longer forwards. Product scripts own
+# Argo/Zot/DNS/provisioner defaults; install-role owns verification.*.
+reject_removed_build_publish_packaging_keys() {
+  local config_path="$1"
+
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.bootstrap_command" || true)" ]]; then
+    fail "build_flow.bootstrap_command was removed; skill always runs: bash scripts/ci/bootstrap-build-host.sh"
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.build_command" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.publish_command" || true)" ]]; then
+    fail "build_flow.build_command and build_flow.publish_command were removed; skill always runs: bash scripts/ci/build-full-bundle.sh then bash scripts/publish/publish-release.sh"
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.bootstrap_needs_sudo" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.build_needs_sudo" || true)" ]]; then
+    fail "build_flow.bootstrap_needs_sudo and build_flow.build_needs_sudo were removed; skill always wraps bootstrap/build with sudo (APPLIANCE_BUILD_SUDO_PASSWORD)"
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "release_workspace.remote_release_input_path" || true)" \
+    || -n "$(config_get_optional "${config_path}" "release_workspace.remote_bundle_dir" || true)" ]]; then
+    fail "release_workspace.remote_release_input_path and remote_bundle_dir were removed; build-and-publish now auto-detects release-input and bundle paths from the build log"
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.dev_container_image_registry.pull_ref" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dev_container_image_registry.registry_user_env" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dev_container_image_registry.registry_token_env" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dev_container_image_registry.tls_insecure" || true)" ]]; then
+    fail "build_flow.dev_container_image_registry.* was removed; use build_flow.dev_image_pull.*"
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.registry_user_env" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.registry_token_env" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.registry_user" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.registry_token" || true)" ]]; then
+    fail "legacy build_flow.registry_* keys are no longer supported; use build_flow.dev_image_pull.*"
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.host_packages_dir_source" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.argo.crds_dir_source" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.argo.controller_image_archive_source" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.argo.executor_image_archive_source" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.workspace_provisioner_image_archive_source" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.zot.image_archive_source" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dns.image_archive_source" || true)" ]]; then
+    fail "offline/local archive path inputs under build_flow were removed; package always pulls from the network. Remove host_packages_dir_source, argo.*_archive_source, argo.crds_dir_source, zot/dns/workspace_provisioner image_archive_source keys"
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.product_publish.registry" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.product_publish.image_repo" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.product_publish.image_repo_env" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.product_publish.image_name" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.product_publish.image_name_env" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.product_publish.image_tag" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.product_publish.username_env" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.product_publish.token_env" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.product_publish.tls_verify_env" || true)" ]]; then
+    fail "build_flow.product_publish.* was removed (destination fields were unused). Use build_flow.dev_image_pull.* for registry login; remove the product_publish block from config"
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.dev_image_pull.image_repo" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dev_image_pull.image_name" || true)" ]]; then
+    fail "build_flow.dev_image_pull.image_repo and image_name were removed; use image_repo_env and image_name_env"
+  fi
+  # Packaging pins / install-role keys must not appear on build-publish YAML.
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.argo.enabled" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.argo.required" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.argo.version" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.argo.controller_image_ref" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.argo.executor_image_ref" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.workspace_provisioner_image_ref" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.zot.version" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.zot.image_pull_ref" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dns.version" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dns.image_pull_ref" || true)" ]]; then
+    fail "build_flow Argo/Zot/DNS/provisioner pin keys were removed from build-publish config; product scripts/ci/build-full-bundle.sh owns those defaults"
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "verification.argo.enabled" || true)" \
+    || -n "$(config_get_optional "${config_path}" "install.appliance_profile" || true)" ]]; then
+    fail "verification.* and install.* belong on the install-role config, not build-publish"
   fi
 }
 
@@ -579,31 +654,6 @@ collect_build_publish_env_names() {
     printf '%s\n' "${n}"
   done
 }
-
-# Source login profile files the way a non-interactive `bash -l` would
-# (~/.bash_profile, else ~/.bash_login, else ~/.profile). Optional convenience
-# when operators run build-and-publish.sh --local by hand; e2e injects env from
-# the devhost instead.
-load_login_profile_env() {
-  local saved_opts
-  saved_opts="$(set +o)"
-  set +e
-  set +u
-  if [[ -f "${HOME}/.bash_profile" ]]; then
-    # shellcheck source=/dev/null
-    source "${HOME}/.bash_profile" || true
-  elif [[ -f "${HOME}/.bash_login" ]]; then
-    # shellcheck source=/dev/null
-    source "${HOME}/.bash_login" || true
-  elif [[ -f "${HOME}/.profile" ]]; then
-    # shellcheck source=/dev/null
-    source "${HOME}/.profile" || true
-  fi
-  eval "${saved_opts}" 2>/dev/null || true
-  set -e
-  set -u
-}
-
 
 # Run a command on this host, teeing stdout/stderr into log_file.
 run_local_logged() {

@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
+# build-and-publish.sh — thin build-host worker (always local).
+#
+# Resolves build-publish YAML to env, then runs the fixed product sequence:
+#   scripts/ci/bootstrap-build-host.sh
+#   scripts/ci/build-full-bundle.sh
+#   scripts/publish/publish-release.sh
+#
+# Mac e2e uses run-build-and-publish-on-build-host.sh (repo sync + SSH + env
+# inject) which invokes this script with --local on the build host.
 set -euo pipefail
-# Secrets (tokens/passwords) may contain '!'; disable history expansion even if
-# this script is ever run from an interactive shell.
 set +H
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,36 +17,22 @@ source "${SCRIPT_DIR}/common.sh"
 
 usage() {
   cat <<'EOF'
-usage: build-and-publish.sh [options]
+usage: build-and-publish.sh --local --build-publish-config PATH [options]
 
-Skill wrapper: resolve build-publish YAML to env, then run the fixed
-product sequence on the build host:
-  scripts/ci/bootstrap-build-host.sh
-  scripts/ci/build-full-bundle.sh
-  scripts/publish/publish-release.sh
-
-Default: SSH to build_host. Use --local on the build machine (or via
-run-build-and-publish-on-build-host.sh).
+Run on the build host only (--local required). Product implementation is the
+three scripts under scripts/ci and scripts/publish.
 
 Options:
+  --build-publish-config PATH   Build-publish role file (required).
   --config PATH                 Alias for --build-publish-config.
-  --build-publish-config PATH   Build-publish role file.
-  --local                       Run on this host (no SSH).
-  --remote-cwd PATH             Working directory on the build host.
-                                Defaults to \$remote_build_root/release.
-  --remote-export-dir PATH      Export directory to collect after build.
-                                Defaults to \$remote_build_root/export.
-  --release-version VERSION     Release version for metadata and filenames.
-  --run-dir DIR                 Run directory for logs/metadata/artifacts.
+  --local                       Required (this worker never SSHs).
+  --release-version VERSION     Optional PRODUCT_VERSION override.
+  --run-dir DIR                 Logs/metadata/artifacts directory.
 EOF
 }
 
 CONFIG_PATH=""
 LOCAL_MODE="false"
-REMOTE_CWD=""
-REMOTE_EXPORT_DIR=""
-REMOTE_RELEASE_INPUT=""
-REMOTE_BUNDLE_DIR=""
 RELEASE_VERSION=""
 RUN_DIR=""
 
@@ -53,17 +46,6 @@ while [[ $# -gt 0 ]]; do
       LOCAL_MODE="true"
       shift
       ;;
-    --bootstrap-cmd|--build-cmd|--publish-cmd)
-      fail "$1 was removed; skill always runs the fixed product script sequence"
-      ;;
-    --remote-cwd)
-      REMOTE_CWD="${2:-}"
-      shift 2
-      ;;
-    --remote-export-dir)
-      REMOTE_EXPORT_DIR="${2:-}"
-      shift 2
-      ;;
     --release-version)
       RELEASE_VERSION="${2:-}"
       shift 2
@@ -71,6 +53,9 @@ while [[ $# -gt 0 ]]; do
     --run-dir)
       RUN_DIR="${2:-}"
       shift 2
+      ;;
+    --bootstrap-cmd|--build-cmd|--publish-cmd|--remote-cwd|--remote-export-dir)
+      fail "$1 was removed; this worker only runs the fixed product script sequence on --local"
       ;;
     --help|-h)
       usage
@@ -83,50 +68,27 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "${CONFIG_PATH}" ]] || fail "requires --build-publish-config PATH"
+bool_true "${LOCAL_MODE}" || fail "requires --local (use run-build-and-publish-on-build-host.sh from the Mac)"
 
 CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
 
-# Fixed product sequence (implementation under scripts/ci + scripts/publish).
 readonly BOOTSTRAP_CMD="bash scripts/ci/bootstrap-build-host.sh"
 readonly BUILD_CMD="bash scripts/ci/build-full-bundle.sh"
 readonly PUBLISH_CMD="bash scripts/publish/publish-release.sh"
+readonly BUILDER_LOCAL_REF="registry.local/dev-build"
 
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"
 fi
+ensure_release_run_dirs "${RUN_DIR}" "artifacts"
 
 REMOTE_BUILD_ROOT="$(resolve_build_publish_remote_build_root "${CONFIG_PATH}")"
-if [[ -z "${REMOTE_CWD}" ]]; then
-  REMOTE_CWD="$(derive_remote_repo_path_from_build_root "${REMOTE_BUILD_ROOT}")"
-fi
+REMOTE_CWD="$(derive_remote_repo_path_from_build_root "${REMOTE_BUILD_ROOT}")"
+REMOTE_EXPORT_DIR="$(derive_remote_export_dir_from_build_root "${REMOTE_BUILD_ROOT}")"
+REMOTE_REPO_REF="$(config_get "${CONFIG_PATH}" "release_workspace.remote_repo_ref")"
 REMOTE_REPO_SOURCE="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_repo_source" || true)"
-REMOTE_REPO_REF="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_repo_ref" || true)"
-# Dependent appliance-code / appliance-ctl refs are fixed in scripts/ci/*
-# (build-full-bundle.sh / bootstrap-build-host.sh), not operator config.
-readonly code_git_ref="main"
-readonly ctl_git_ref="main"
-if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_command" || true)" ]]; then
-  fail "build_flow.bootstrap_command was removed; skill always runs: ${BOOTSTRAP_CMD}"
-fi
-if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.build_command" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.publish_command" || true)" ]]; then
-  fail "build_flow.build_command and build_flow.publish_command were removed; skill always runs: ${BUILD_CMD} then ${PUBLISH_CMD}"
-fi
-if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.bootstrap_needs_sudo" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.build_needs_sudo" || true)" ]]; then
-  fail "build_flow.bootstrap_needs_sudo and build_flow.build_needs_sudo were removed; skill always wraps bootstrap/build with sudo (APPLIANCE_BUILD_SUDO_PASSWORD)"
-fi
-if [[ -z "${REMOTE_EXPORT_DIR}" ]]; then
-  REMOTE_EXPORT_DIR="$(derive_remote_export_dir_from_build_root "${REMOTE_BUILD_ROOT}")"
-fi
-if [[ -n "$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_release_input_path" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_bundle_dir" || true)" ]]; then
-  fail "release_workspace.remote_release_input_path and remote_bundle_dir were removed; build-and-publish now auto-detects release-input and bundle paths from the build log"
-fi
 
 SKILL_RELEASE_REPO_ROOT="$(skill_release_repo_root "${SCRIPT_DIR}")"
-# Resolve product version: CLI --release-version > PRODUCT_VERSION env >
-# optional release.version config > configs/default-product-version.
 if [[ -z "${RELEASE_VERSION}" && -n "${PRODUCT_VERSION:-}" ]]; then
   RELEASE_VERSION="${PRODUCT_VERSION}"
 fi
@@ -139,74 +101,12 @@ fi
 if [[ -z "${REMOTE_REPO_SOURCE}" ]]; then
   REMOTE_REPO_SOURCE="$(resolve_local_git_origin "${SKILL_RELEASE_REPO_ROOT}")"
 fi
-[[ -n "${REMOTE_REPO_SOURCE}" ]] || fail "release_workspace.remote_repo_source is required in config (or run from a local appliance-release git checkout with an origin)"
+[[ -n "${REMOTE_REPO_SOURCE}" ]] || fail "release_workspace.remote_repo_source is required (or run from a checkout with origin)"
 EFFECTIVE_REMOTE_REPO_SOURCE="$(normalize_readonly_git_source "${REMOTE_REPO_SOURCE}")"
-if [[ "${EFFECTIVE_REMOTE_REPO_SOURCE}" != "${REMOTE_REPO_SOURCE}" ]]; then
-  log "normalizing release workspace repo source from ${REMOTE_REPO_SOURCE} to read-only ${EFFECTIVE_REMOTE_REPO_SOURCE} for build-host sync"
-fi
-[[ -n "${REMOTE_REPO_REF}" ]] || fail "release_workspace.remote_repo_ref is required in config"
 
-require_cmd python3
-require_cmd rsync
-if ! bool_true "${LOCAL_MODE}"; then
-  require_cmd ssh
-fi
-
-BUILD_HOST=""
-if bool_true "${LOCAL_MODE}"; then
-  # build-publish role configs do not carry build_host (that lives on the
-  # devhost file). Record a local marker for metadata only.
-  BUILD_HOST="$(config_get_optional "${CONFIG_PATH}" "build_host.alias" || true)"
-  if [[ -z "${BUILD_HOST}" ]]; then
-    BUILD_HOST="local@$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo build-host)"
-  fi
-  log "local mode: bootstrap/build/publish run on this host (${BUILD_HOST}); expecting registry/sudo env already exported"
-else
-  BUILD_HOST="$(config_get "${CONFIG_PATH}" "build_host.alias")"
-fi
-# Product workflow always needs root; sudo password is always required.
-
-# Development-container pull/login only. Product packaging/publish is the
-# fixed scripts/ci + scripts/publish sequence (DEV_REGISTRY file API).
-# Per-service make image defaults live in appliance-code build/service-image.mk
-# — not this config.
-# Fail closed on removed nested registry blocks.
-if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.pull_ref" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.registry_user_env" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.registry_token_env" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.tls_insecure" || true)" ]]; then
-  fail "build_flow.dev_container_image_registry.* was removed; use build_flow.dev_image_pull.*"
-fi
-if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user_env" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token_env" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token" || true)" ]]; then
-  fail "legacy build_flow.registry_* keys are no longer supported; use build_flow.dev_image_pull.*"
-fi
-if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.host_packages_dir_source" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.crds_dir_source" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.controller_image_archive_source" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.executor_image_archive_source" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.workspace_provisioner_image_archive_source" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.zot.image_archive_source" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.image_archive_source" || true)" ]]; then
-  fail "offline/local archive path inputs under build_flow were removed; package always pulls from the network. Remove host_packages_dir_source, argo.*_archive_source, argo.crds_dir_source, zot/dns/workspace_provisioner image_archive_source keys"
-fi
-if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.product_publish.registry" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.product_publish.image_repo" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.product_publish.image_repo_env" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.product_publish.image_name" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.product_publish.image_name_env" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.product_publish.image_tag" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.product_publish.username_env" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.product_publish.token_env" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.product_publish.tls_verify_env" || true)" ]]; then
-  fail "build_flow.product_publish.* was removed (destination fields were unused). Use build_flow.dev_image_pull.* for registry login; remove the product_publish block from config"
-fi
-if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.image_repo" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.image_name" || true)" ]]; then
-  fail "build_flow.dev_image_pull.image_repo and image_name were removed; use image_repo_env and image_name_env"
-fi
+# Fail closed on removed / packaging-owned knobs (product scripts own defaults).
+reject_removed_build_publish_packaging_keys "${CONFIG_PATH}"
+resolve_bundle_store_mode "${CONFIG_PATH}" >/dev/null
 
 DEV_PULL_REGISTRY_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.registry_env" || true)"
 DEV_PULL_IMAGE_REPO_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.image_repo_env" || true)"
@@ -215,117 +115,42 @@ DEV_PULL_IMAGE_TAG="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image
 DEV_PULL_USER_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.username_env" || true)"
 DEV_PULL_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.token_env" || true)"
 DEV_PULL_TLS_VERIFY_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.tls_verify_env" || true)"
-[[ -n "${DEV_PULL_REGISTRY_ENV}" ]] || fail "build_flow.dev_image_pull.registry_env is required in config"
-DEV_PULL_REGISTRY="$(resolve_env_value "${DEV_PULL_REGISTRY_ENV}" "Dev image pull registry env")"
-[[ -n "${DEV_PULL_IMAGE_REPO_ENV}" ]] || fail "build_flow.dev_image_pull.image_repo_env is required in config"
-[[ -n "${DEV_PULL_IMAGE_NAME_ENV}" ]] || fail "build_flow.dev_image_pull.image_name_env is required in config"
-# DEV_IMAGE_REPO is registry-specific (GHCR vs LAN) and must be set in the named env.
-DEV_PULL_IMAGE_REPO="$(resolve_env_value "${DEV_PULL_IMAGE_REPO_ENV}" "Dev image pull image repo env")"
-DEV_PULL_IMAGE_NAME="$(resolve_env_value "${DEV_PULL_IMAGE_NAME_ENV}" "Dev image pull image name env")"
-[[ -n "${DEV_PULL_IMAGE_TAG}" ]] || fail "build_flow.dev_image_pull.image_tag is required in config"
-[[ -n "${DEV_PULL_USER_ENV}" ]] || fail "build_flow.dev_image_pull.username_env is required in config"
-[[ -n "${DEV_PULL_TOKEN_ENV}" ]] || fail "build_flow.dev_image_pull.token_env is required in config"
-[[ -n "${DEV_PULL_TLS_VERIFY_ENV}" ]] || fail "build_flow.dev_image_pull.tls_verify_env is required in config"
-IMAGE_REGISTRY_PULL_REF="${DEV_PULL_REGISTRY}/${DEV_PULL_IMAGE_REPO}/${DEV_PULL_IMAGE_NAME}:${DEV_PULL_IMAGE_TAG}"
-IMAGE_REGISTRY_HOST="${DEV_PULL_REGISTRY}"
+[[ -n "${DEV_PULL_REGISTRY_ENV}" ]] || fail "build_flow.dev_image_pull.registry_env is required"
+[[ -n "${DEV_PULL_IMAGE_REPO_ENV}" ]] || fail "build_flow.dev_image_pull.image_repo_env is required"
+[[ -n "${DEV_PULL_IMAGE_NAME_ENV}" ]] || fail "build_flow.dev_image_pull.image_name_env is required"
+[[ -n "${DEV_PULL_IMAGE_TAG}" ]] || fail "build_flow.dev_image_pull.image_tag is required"
+[[ -n "${DEV_PULL_USER_ENV}" ]] || fail "build_flow.dev_image_pull.username_env is required"
+[[ -n "${DEV_PULL_TOKEN_ENV}" ]] || fail "build_flow.dev_image_pull.token_env is required"
+[[ -n "${DEV_PULL_TLS_VERIFY_ENV}" ]] || fail "build_flow.dev_image_pull.tls_verify_env is required"
 
-DEV_PULL_TLS_VERIFY="$(normalize_bool_value "$(resolve_env_value "${DEV_PULL_TLS_VERIFY_ENV}" "TLS verify env")")"
-# Bundled offline builder name (not configurable).
-BUILDER_LOCAL_REF="registry.local/dev-build"
+DEV_PULL_REGISTRY="$(resolve_env_value "${DEV_PULL_REGISTRY_ENV}" "Dev image pull registry")"
+DEV_PULL_IMAGE_REPO="$(resolve_env_value "${DEV_PULL_IMAGE_REPO_ENV}" "Dev image pull image repo")"
+DEV_PULL_IMAGE_NAME="$(resolve_env_value "${DEV_PULL_IMAGE_NAME_ENV}" "Dev image pull image name")"
+DEV_PULL_TLS_VERIFY="$(normalize_bool_value "$(resolve_env_value "${DEV_PULL_TLS_VERIFY_ENV}" "TLS verify")")"
 if bool_true "${DEV_PULL_TLS_VERIFY}"; then
   DEV_REGISTRY_TLS_VERIFY="true"
 else
   DEV_REGISTRY_TLS_VERIFY="false"
 fi
+IMAGE_REGISTRY_PULL_REF="${DEV_PULL_REGISTRY}/${DEV_PULL_IMAGE_REPO}/${DEV_PULL_IMAGE_NAME}:${DEV_PULL_IMAGE_TAG}"
 
-BUILD_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.enabled" || true)"
-BUILD_ARGO_REQUIRED="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.required" || true)"
-BUILD_ARGO_VERSION="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.version" || true)"
-BUILD_ARGO_CONTROLLER_IMAGE_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.controller_image_ref" || true)"
-BUILD_ARGO_EXECUTOR_IMAGE_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.executor_image_ref" || true)"
-BUILD_WORKSPACE_PROVISIONER_IMAGE_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.workspace_provisioner_image_ref" || true)"
-BUILD_ZOT_VERSION="$(config_get_optional "${CONFIG_PATH}" "build_flow.zot.version" || true)"
-BUILD_ZOT_IMAGE_PULL_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.zot.image_pull_ref" || true)"
-BUILD_DNS_VERSION="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.version" || true)"
-BUILD_DNS_IMAGE_PULL_REF="$(config_get_optional "${CONFIG_PATH}" "build_flow.dns.image_pull_ref" || true)"
-APPLIANCE_PROFILE="$(require_appliance_profile "${CONFIG_PATH}")"
-VERIFY_ARGO_ENABLED="$(config_get_optional "${CONFIG_PATH}" "verification.argo.enabled" || true)"
-if [[ -z "${VERIFY_ARGO_ENABLED}" ]]; then
-  if bool_true "${LOCAL_MODE}"; then
-    # Build-publish-only configs do not include verification.*; packaging is
-    # always the complete product super-set, so default Argo packing checks on.
-    VERIFY_ARGO_ENABLED="true"
-    log "local mode: verification.argo.enabled not in config; defaulting to true for complete-product packaging"
-  else
-    fail "verification.argo.enabled is required in config (true|false)"
-  fi
-fi
-BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
-PUBLISH_PATH_PREFIX="$(resolve_bundle_store_release_path_prefix "${CONFIG_PATH}")"
 PUBLISH_LATEST_ALIAS="$(config_get_optional "${CONFIG_PATH}" "release.publish_latest_alias" || true)"
 if [[ -z "${PUBLISH_LATEST_ALIAS}" ]]; then
   PUBLISH_LATEST_ALIAS="false"
 fi
-# Publish always uses the appliance file API derived from DEV_REGISTRY*.
-PUBLISH_PUBLIC_BASE_URL="$(resolve_appliance_files_base_url "${CONFIG_PATH}")"
-ensure_release_run_dirs "${RUN_DIR}" "artifacts"
 
-if bool_true "${LOCAL_MODE}"; then
-  log "local mode: skipping Mac/devhost live-repo preflight (release checkout is managed on this host)"
-else
-  log "running local live-build repo preflight against release=${REMOTE_REPO_REF}, appliance-code=${code_git_ref}, appliance-ctl=${ctl_git_ref}"
-  preflight_live_release_inputs "${SKILL_RELEASE_REPO_ROOT}" "${REMOTE_REPO_REF}" "${code_git_ref}" "${ctl_git_ref}"
-fi
-
-require_profile_supports_workflows "${VERIFY_ARGO_ENABLED}" "${APPLIANCE_PROFILE}" "verification.argo.enabled"
-
-# Complete product super-set: package always includes Argo, host-packages (mdns+wifi-ap),
-# and registry.local/dev-build. Install.profile / host_* flags only affect target enablement.
-BUILD_COMPLETE_PRODUCT=true
-if [[ -z "${BUILD_ARGO_ENABLED}" ]]; then
-  BUILD_ARGO_ENABLED=true
-fi
-if ! bool_true "${BUILD_ARGO_ENABLED}"; then
-  fail "build_flow.argo.enabled must be true for complete product packaging (install profile selects runtime modules, not package contents)"
-fi
-# Builder and workspace-provisioner image refs are product-fixed; build-full-bundle packs them.
-
-# Resolve registry credentials from build_flow.dev_image_pull.*_env.
 BOOTSTRAP_REGISTRY_USER="$(resolve_secret "${DEV_PULL_USER_ENV}" "Dev image pull username")"
-[[ -n "${BOOTSTRAP_REGISTRY_USER}" ]] || fail "empty value for env ${DEV_PULL_USER_ENV} (named by build_flow.dev_image_pull.username_env)"
 BOOTSTRAP_REGISTRY_TOKEN="$(resolve_secret "${DEV_PULL_TOKEN_ENV}" "Dev image pull token")"
-[[ -n "${BOOTSTRAP_REGISTRY_TOKEN}" ]] || fail "empty value for env ${DEV_PULL_TOKEN_ENV} (named by build_flow.dev_image_pull.token_env)"
+[[ -n "${BOOTSTRAP_REGISTRY_USER}" ]] || fail "empty ${DEV_PULL_USER_ENV}"
+[[ -n "${BOOTSTRAP_REGISTRY_TOKEN}" ]] || fail "empty ${DEV_PULL_TOKEN_ENV}"
 
-BOOTSTRAP_ENV_PREFIX=""
-BOOTSTRAP_ENV_PREFIX="$(append_env_assignments "${BOOTSTRAP_ENV_PREFIX}" \
-  "DEV_REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}" \
-  "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}" \
-  "DEV_IMAGE" "${IMAGE_REGISTRY_PULL_REF}" \
-  "DEV_REGISTRY_HOST" "${IMAGE_REGISTRY_HOST}" \
-  "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}" \
-  "DEV_REGISTRY" "${DEV_PULL_REGISTRY}" \
-  "DEV_IMAGE_REPO" "${DEV_PULL_IMAGE_REPO}" \
-  "DEV_IMAGE_NAME" "${DEV_PULL_IMAGE_NAME}" \
-  "DEV_IMAGE_TAG" "${DEV_PULL_IMAGE_TAG}" \
-  "RELEASE_WORK_ROOT" "${REMOTE_BUILD_ROOT}")"
-
-BUILD_ENV_PREFIX=""
-BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
+# Shared env for the three product scripts (they own Argo/Zot/DNS/provisioner defaults).
+PRODUCT_ENV_PREFIX=""
+PRODUCT_ENV_PREFIX="$(append_env_assignments "${PRODUCT_ENV_PREFIX}" \
   "PRODUCT_VERSION" "${RELEASE_VERSION}" \
-  "BUILD_COMPLETE_PRODUCT" "${BUILD_COMPLETE_PRODUCT}" \
   "RELEASE_WORK_ROOT" "${REMOTE_BUILD_ROOT}" \
-  "ARGO_ENABLED" "${BUILD_ARGO_ENABLED}" \
-  "ARGO_REQUIRED" "${BUILD_ARGO_REQUIRED}" \
-  "ARGO_VERSION" "${BUILD_ARGO_VERSION}" \
-  "ARGO_CONTROLLER_IMAGE_REF" "${BUILD_ARGO_CONTROLLER_IMAGE_REF}" \
-  "ARGO_EXECUTOR_IMAGE_REF" "${BUILD_ARGO_EXECUTOR_IMAGE_REF}" \
-  "WORKSPACE_PROVISIONER_IMAGE_REF" "${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}" \
-  "ZOT_VERSION" "${BUILD_ZOT_VERSION}" \
-  "ZOT_IMAGE_PULL_REF" "${BUILD_ZOT_IMAGE_PULL_REF}" \
-  "DNS_VERSION" "${BUILD_DNS_VERSION}" \
-  "DNS_IMAGE_PULL_REF" "${BUILD_DNS_IMAGE_PULL_REF}" \
   "DEV_IMAGE" "${IMAGE_REGISTRY_PULL_REF}" \
-  "DEV_REGISTRY_HOST" "${IMAGE_REGISTRY_HOST}" \
+  "DEV_REGISTRY_HOST" "${DEV_PULL_REGISTRY}" \
   "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}" \
   "DEV_REGISTRY" "${DEV_PULL_REGISTRY}" \
   "DEV_IMAGE_REPO" "${DEV_PULL_IMAGE_REPO}" \
@@ -334,69 +159,38 @@ BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "DEV_REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}" \
   "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}")"
 
-PUBLISH_ENV_PREFIX=""
-PUBLISH_ENV_PREFIX="$(append_env_assignments "${PUBLISH_ENV_PREFIX}" \
-  "PRODUCT_VERSION" "${RELEASE_VERSION}" \
-  "RELEASE_WORK_ROOT" "${REMOTE_BUILD_ROOT}" \
-  "DEV_REGISTRY" "${DEV_PULL_REGISTRY}" \
-  "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}" \
-  "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}")"
-
 EFFECTIVE_PUBLISH_CMD="${PUBLISH_CMD}"
-if bool_true "${PUBLISH_LATEST_ALIAS:-false}"; then
+if bool_true "${PUBLISH_LATEST_ALIAS}"; then
   EFFECTIVE_PUBLISH_CMD="${PUBLISH_CMD} --latest-alias"
 fi
 
-release_repo_sync_remote_cmd=""
-release_repo_sync_remote_cmd="$(render_ensure_remote_release_repo_cmd "${REMOTE_CWD}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}")"
+build_sudo_password="$(resolve_secret "APPLIANCE_BUILD_SUDO_PASSWORD" "Build host sudo password")"
+wrap_with_sudo() {
+  local remote_cmd="$1"
+  local quoted_password
+  quoted_password="$(shell_quote "${build_sudo_password}")"
+  printf '%s' "printf '%s\n' ${quoted_password} | sudo -S -p '' -v >/dev/null && ${remote_cmd}"
+}
 
-bootstrap_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BOOTSTRAP_ENV_PREFIX}${BOOTSTRAP_CMD}"
-build_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BUILD_ENV_PREFIX}${BUILD_CMD}"
-publish_remote_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PUBLISH_ENV_PREFIX}${EFFECTIVE_PUBLISH_CMD}"
-
-release_repo_sync_log="${RUN_DIR}/logs/release-repo-sync.log"
 bootstrap_log="${RUN_DIR}/logs/bootstrap.log"
 build_log="${RUN_DIR}/logs/build.log"
 publish_log="${RUN_DIR}/logs/publish.log"
 
-run_build_step_logged() {
+run_step() {
   local label="$1"
   local log_file="$2"
   local command="$3"
-  if bool_true "${LOCAL_MODE}"; then
-    log "running ${label} on this host"
-    run_local_logged "${log_file}" "${command}"
-  else
-    log "running remote ${label} on ${BUILD_HOST}"
-    run_ssh_logged "${BUILD_HOST}" "${log_file}" "${command}"
-  fi
+  log "running ${label} on this host"
+  run_local_logged "${log_file}" "${command}"
 }
 
-if [[ -n "${release_repo_sync_remote_cmd}" ]]; then
-  if bool_true "${LOCAL_MODE}"; then
-    log "ensuring appliance-release checkout at ${REMOTE_CWD}"
-  else
-    log "ensuring remote appliance-release checkout on ${BUILD_HOST} (${REMOTE_CWD})"
-  fi
-  run_build_step_logged "release-repo-sync" "${release_repo_sync_log}" "${release_repo_sync_remote_cmd}"
-fi
+bootstrap_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PRODUCT_ENV_PREFIX}${BOOTSTRAP_CMD}"
+build_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PRODUCT_ENV_PREFIX}${BUILD_CMD}"
+publish_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PRODUCT_ENV_PREFIX}${EFFECTIVE_PUBLISH_CMD}"
 
-build_sudo_password="$(resolve_secret "APPLIANCE_BUILD_SUDO_PASSWORD" "Build host sudo password")"
-
-wrap_remote_cmd_with_sudo() {
-  local remote_cmd="$1"
-  local sudo_password="$2"
-  local quoted_password
-  quoted_password="$(shell_quote "${sudo_password}")"
-  printf '%s' "printf '%s\n' ${quoted_password} | sudo -S -p '' -v >/dev/null && ${remote_cmd}"
-}
-
-bootstrap_remote_cmd="$(wrap_remote_cmd_with_sudo "${bootstrap_remote_cmd}" "${build_sudo_password}")"
-build_remote_cmd="$(wrap_remote_cmd_with_sudo "${build_remote_cmd}" "${build_sudo_password}")"
-
-run_build_step_logged "bootstrap" "${bootstrap_log}" "${bootstrap_remote_cmd}"
-run_build_step_logged "build" "${build_log}" "${build_remote_cmd}"
-run_build_step_logged "publish" "${publish_log}" "${publish_remote_cmd}"
+run_step "bootstrap" "${bootstrap_log}" "$(wrap_with_sudo "${bootstrap_cmd}")"
+run_step "build" "${build_log}" "$(wrap_with_sudo "${build_cmd}")"
+run_step "publish" "${publish_log}" "${publish_cmd}"
 
 eval "$(
   python3 - "${build_log}" <<'PY'
@@ -417,26 +211,22 @@ def collect_block(label: str):
                 if value:
                     collected.append(value)
                 continue
-            if not line.strip():
-                break
-            if not line.startswith("  "):
-                break
+            break
         if line.strip() == label:
             capture = True
     return collected
 
+export_paths = collect_block("exported customer delivery files:")
 release_input_paths = collect_block("release-input tarball:")
 bundle_paths = collect_block("final bundle:")
-export_paths = collect_block("exported customer delivery files:")
-
 export_dir = ""
 bundle_archive = ""
 for path in export_paths:
     candidate = Path(path)
     if not export_dir:
-      export_dir = str(candidate.parent)
+        export_dir = str(candidate.parent)
     if candidate.name.endswith("-bundle.tar.gz") and not bundle_archive:
-      bundle_archive = str(candidate)
+        bundle_archive = str(candidate)
 
 def emit(name: str, value: str):
     print(f"{name}={shlex.quote(value)}")
@@ -448,46 +238,21 @@ emit("DETECTED_BUNDLE_ARCHIVE", bundle_archive)
 PY
 )"
 
-if [[ -n "${DETECTED_EXPORT_DIR}" ]]; then
-  REMOTE_EXPORT_DIR="${DETECTED_EXPORT_DIR}"
-  log "using remote export directory from build log: ${REMOTE_EXPORT_DIR}"
-fi
-if [[ -n "${DETECTED_RELEASE_INPUT_TAR}" ]]; then
-  REMOTE_RELEASE_INPUT="${DETECTED_RELEASE_INPUT_TAR}"
-  log "using remote release-input tarball from build log: ${REMOTE_RELEASE_INPUT}"
-fi
-if [[ -n "${DETECTED_BUNDLE_DIR}" ]]; then
-  REMOTE_BUNDLE_DIR="${DETECTED_BUNDLE_DIR}"
-  log "using remote bundle directory from build log: ${REMOTE_BUNDLE_DIR}"
-fi
-
-copy_remote_path() {
-  local remote_path="$1"
-  local local_path="$2"
-  [[ -n "${remote_path}" ]] || return 0
-
-  if bool_true "${LOCAL_MODE}"; then
-    if [[ -d "${remote_path}" ]]; then
-      ensure_dir "${local_path}"
-      rsync -az "${remote_path}/" "${local_path}/"
-      return 0
-    fi
-    if [[ -e "${remote_path}" ]]; then
-      ensure_dir "${local_path}"
-      rsync -az "${remote_path}" "${local_path}/"
-      return 0
-    fi
-    log "warning: path not found for local collection: ${remote_path}"
+copy_local_path() {
+  local src="$1"
+  local dest="$2"
+  [[ -n "${src}" ]] || return 0
+  if [[ -d "${src}" ]]; then
+    ensure_dir "${dest}"
+    rsync -az "${src}/" "${dest}/"
     return 0
   fi
-
-  if ssh "${BUILD_HOST}" "test -d $(shell_quote "${remote_path}")"; then
-    ensure_dir "${local_path}"
-    rsync -az "${BUILD_HOST}:${remote_path}/" "${local_path}/"
+  if [[ -e "${src}" ]]; then
+    ensure_dir "${dest}"
+    rsync -az "${src}" "${dest}/"
     return 0
   fi
-  ensure_dir "${local_path}"
-  rsync -az "${BUILD_HOST}:${remote_path}" "${local_path}/"
+  log "warning: path not found for collection: ${src}"
 }
 
 extract_archive_into_dir() {
@@ -504,27 +269,21 @@ find_first_file() {
   python3 - "${search_dir}" "${pattern}" <<'PY'
 from pathlib import Path
 import sys
-
 search_dir = Path(sys.argv[1])
 pattern = sys.argv[2]
-
-if not search_dir.is_dir():
-    raise SystemExit(0)
-
-matches = sorted(search_dir.glob(pattern))
-if matches:
-    print(matches[0])
+if search_dir.is_dir():
+    matches = sorted(search_dir.glob(pattern))
+    if matches:
+        print(matches[0])
 PY
 }
 
-if [[ -n "${REMOTE_EXPORT_DIR}" ]]; then
-  log "collecting remote export directory ${REMOTE_EXPORT_DIR}"
-  copy_remote_path "${REMOTE_EXPORT_DIR}" "${RUN_DIR}/artifacts/export"
+if [[ -n "${DETECTED_EXPORT_DIR}" ]]; then
+  REMOTE_EXPORT_DIR="${DETECTED_EXPORT_DIR}"
 fi
-
-if [[ -n "${REMOTE_RELEASE_INPUT}" ]]; then
-  log "collecting remote release input ${REMOTE_RELEASE_INPUT}"
-  copy_remote_path "${REMOTE_RELEASE_INPUT}" "${RUN_DIR}/artifacts/release-input-src"
+copy_local_path "${REMOTE_EXPORT_DIR}" "${RUN_DIR}/artifacts/export"
+if [[ -n "${DETECTED_RELEASE_INPUT_TAR}" ]]; then
+  copy_local_path "${DETECTED_RELEASE_INPUT_TAR}" "${RUN_DIR}/artifacts/release-input-src"
 fi
 
 local_release_input_archive="$(find_first_file "${RUN_DIR}/artifacts/release-input-src" "*.tar.gz")"
@@ -532,7 +291,6 @@ if [[ -z "${local_release_input_archive}" ]]; then
   local_release_input_archive="$(find_first_file "${RUN_DIR}/artifacts/release-input-src" "*.tgz")"
 fi
 if [[ -n "${local_release_input_archive}" ]]; then
-  log "extracting copied release-input archive ${local_release_input_archive}"
   extract_archive_into_dir "${local_release_input_archive}" "${RUN_DIR}/artifacts/release-input"
 elif [[ -d "${RUN_DIR}/artifacts/release-input-src" ]]; then
   rm -rf "${RUN_DIR}/artifacts/release-input"
@@ -547,42 +305,29 @@ if [[ -z "${local_bundle_archive}" || ! -f "${local_bundle_archive}" ]]; then
   local_bundle_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-bundle.tar.gz")"
 fi
 if [[ -n "${local_bundle_archive}" && -f "${local_bundle_archive}" ]]; then
-  log "extracting copied bundle archive ${local_bundle_archive}"
   extract_archive_into_dir "${local_bundle_archive}" "${RUN_DIR}/artifacts/bundle"
-elif [[ -n "${REMOTE_BUNDLE_DIR}" ]]; then
-  log "collecting remote bundle directory ${REMOTE_BUNDLE_DIR}"
-  copy_remote_path "${REMOTE_BUNDLE_DIR}" "${RUN_DIR}/artifacts/bundle"
+elif [[ -n "${DETECTED_BUNDLE_DIR}" ]]; then
+  copy_local_path "${DETECTED_BUNDLE_DIR}" "${RUN_DIR}/artifacts/bundle"
 fi
 
-VALIDATE_RELEASE_ARTIFACTS_ARGS=(--require-argo)
-EXPECTED_BUNDLED_IMAGE_REFS="${BUILDER_LOCAL_REF}"
-if [[ "${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}" == *@sha256:* ]]; then
-  EXPECTED_BUNDLED_IMAGE_REFS+=",${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}"
-fi
-if [[ -n "${EXPECTED_BUNDLED_IMAGE_REFS}" ]]; then
-  VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--expected-extra-oci-image-refs "${EXPECTED_BUNDLED_IMAGE_REFS}")
-fi
 if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle" ]]; then
-  log "validating copied release-input artifacts against final bundle manifest"
+  log "validating release-input against bundle"
   python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
     --release-input-root "${RUN_DIR}/artifacts/release-input" \
     --bundle-root "${RUN_DIR}/artifacts/bundle" \
-    "${VALIDATE_RELEASE_ARTIFACTS_ARGS[@]}" \
+    --require-argo \
+    --expected-extra-oci-image-refs "${BUILDER_LOCAL_REF}" \
     >"${RUN_DIR}/logs/release-artifact-validation.json"
-  log "release artifact validation completed; log: ${RUN_DIR}/logs/release-artifact-validation.json"
-elif [[ ${#VALIDATE_RELEASE_ARTIFACTS_ARGS[@]} -gt 0 ]]; then
-  fail "Argo validation requested but copied release-input or bundle metadata is missing"
-fi
-
-remote_release_commit=""
-if bool_true "${LOCAL_MODE}"; then
-  remote_release_commit="$(git -C "${REMOTE_CWD}" rev-parse HEAD 2>/dev/null || true)"
 else
-  remote_release_commit_cmd="cd $(shell_quote "${REMOTE_CWD}") && git rev-parse HEAD"
-  remote_release_commit="$(ssh "${BUILD_HOST}" "bash -lc $(shell_quote "${remote_release_commit_cmd}")" 2>/dev/null || true)"
+  fail "missing release-input or bundle artifacts for validation under ${RUN_DIR}/artifacts"
 fi
 
-python3 - "${RUN_DIR}" "${CONFIG_PATH}" "${BUILD_HOST}" "${REMOTE_CWD}" "${RELEASE_VERSION}" "${BOOTSTRAP_CMD}" "${BUILD_CMD}" "${EFFECTIVE_PUBLISH_CMD}" "${remote_release_commit}" "${REMOTE_REPO_SOURCE}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" <<'PY'
+remote_release_commit="$(git -C "${REMOTE_CWD}" rev-parse HEAD 2>/dev/null || true)"
+BUILD_HOST="local@$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo build-host)"
+
+python3 - "${RUN_DIR}" "${CONFIG_PATH}" "${BUILD_HOST}" "${REMOTE_CWD}" "${RELEASE_VERSION}" \
+  "${BOOTSTRAP_CMD}" "${BUILD_CMD}" "${EFFECTIVE_PUBLISH_CMD}" "${remote_release_commit}" \
+  "${REMOTE_REPO_SOURCE}" "${EFFECTIVE_REMOTE_REPO_SOURCE}" "${REMOTE_REPO_REF}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -603,14 +348,7 @@ run_dir = Path(sys.argv[1])
 ) = sys.argv[2:13]
 
 def read_text(path: Path):
-    if path.is_file():
-        return path.read_text(encoding="utf-8")
-    return None
-
-def read_json(path: Path):
-    if path.is_file():
-        return json.loads(path.read_text(encoding="utf-8"))
-    return None
+    return path.read_text(encoding="utf-8") if path.is_file() else None
 
 def read_json_named(root: Path, name: str):
     if not root.is_dir():
@@ -621,13 +359,9 @@ def read_json_named(root: Path, name: str):
     return json.loads(matches[0].read_text(encoding="utf-8"))
 
 export_dir = run_dir / "artifacts" / "export"
-release_input_dir = run_dir / "artifacts" / "release-input"
-bundle_dir = run_dir / "artifacts" / "bundle"
-
+release_input = read_json_named(run_dir / "artifacts" / "release-input", "release-input.json")
+release_manifest = read_json_named(run_dir / "artifacts" / "bundle", "release-manifest.json")
 checksums_text = read_text(export_dir / "sha256sum.txt")
-release_input = read_json_named(release_input_dir, "release-input.json")
-release_manifest = read_json_named(bundle_dir, "release-manifest.json")
-
 artifact_checksums = []
 if checksums_text:
     for raw_line in checksums_text.splitlines():
@@ -644,10 +378,7 @@ if release_input and isinstance(release_input.get("artifacts"), dict):
         if isinstance(value, dict):
             digest = value.get("digest") or value.get("manifestDigest")
             if digest:
-                image_digests[key] = {
-                    "path": value.get("path"),
-                    "digest": digest,
-                }
+                image_digests[key] = {"path": value.get("path"), "digest": digest}
 
 bundle_entries = []
 if release_manifest and isinstance(release_manifest.get("entries"), list):
@@ -677,16 +408,15 @@ payload = {
     "releaseInputArtifacts": image_digests,
     "bundleEntries": bundle_entries,
     "logs": {
-        "releaseRepoSync": str(run_dir / "logs" / "release-repo-sync.log"),
         "bootstrap": str(run_dir / "logs" / "bootstrap.log"),
         "build": str(run_dir / "logs" / "build.log"),
         "publish": str(run_dir / "logs" / "publish.log"),
         "releaseArtifactValidation": str(run_dir / "logs" / "release-artifact-validation.json"),
     },
 }
-
-out_path = run_dir / "metadata" / "build-publish.json"
-out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+(run_dir / "metadata" / "build-publish.json").write_text(
+    json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+)
 PY
 
 log "build/publish metadata written to ${RUN_DIR}/metadata/build-publish.json"
