@@ -75,7 +75,8 @@ build_flow:
   #   make publish-release
   # Always wrapped with sudo → APPLIANCE_BUILD_SUDO_PASSWORD.
 
-  # Bundled offline name for the appliance is fixed: registry.local/dev-build
+  # Bundled offline name for the appliance is fixed: registry.local/dev-build.
+  # build-full-bundle.sh derives the upstream pull ref from the DEV_* env vars below.
   dev_image_pull:
     registry_env: DEV_REGISTRY
     image_repo_env: DEV_IMAGE_REPO

@@ -190,14 +190,11 @@ if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image
   || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_container_image_registry.tls_insecure" || true)" ]]; then
   fail "build_flow.dev_container_image_registry.* was removed; use build_flow.dev_image_pull.*"
 fi
-if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_archive_sources" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_pull_refs" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.extra_oci_image_refs" || true)" \
-  || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user_env" || true)" \
+if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user_env" || true)" \
   || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token_env" || true)" \
   || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_user" || true)" \
   || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.registry_token" || true)" ]]; then
-  fail "legacy build_flow registry/image keys are no longer supported; use build_flow.dev_image_pull.*"
+  fail "legacy build_flow.registry_* keys are no longer supported; use build_flow.dev_image_pull.*"
 fi
 if [[ -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.host_packages_dir_source" || true)" \
   || -n "$(config_get_optional "${CONFIG_PATH}" "build_flow.argo.crds_dir_source" || true)" \
@@ -245,13 +242,11 @@ IMAGE_REGISTRY_PULL_REF="${DEV_PULL_REGISTRY}/${DEV_PULL_IMAGE_REPO}/${DEV_PULL_
 IMAGE_REGISTRY_HOST="${DEV_PULL_REGISTRY}"
 
 DEV_PULL_TLS_VERIFY="$(normalize_bool_value "$(resolve_env_value "${DEV_PULL_TLS_VERIFY_ENV}" "TLS verify env")")"
-# Bundled/target OCI contract name (not configurable).
-BUILD_EXTRA_OCI_IMAGE_REFS="registry.local/dev-build"
+# Bundled offline builder name (not configurable).
+BUILDER_LOCAL_REF="registry.local/dev-build"
 if bool_true "${DEV_PULL_TLS_VERIFY}"; then
-  OCI_COPY_SRC_TLS_VERIFY="true"
   DEV_REGISTRY_TLS_VERIFY="true"
 else
-  OCI_COPY_SRC_TLS_VERIFY="false"
   DEV_REGISTRY_TLS_VERIFY="false"
 fi
 
@@ -358,7 +353,7 @@ fi
 if ! bool_true "${BUILD_ARGO_ENABLED}"; then
   fail "build_flow.argo.enabled must be true for complete product packaging (install profile selects runtime modules, not package contents)"
 fi
-# BUILD_EXTRA_OCI_IMAGE_REFS is fixed to registry.local/dev-build above.
+# Builder and workspace-provisioner image refs are product-fixed; build-full-bundle packs them.
 
 BUILD_ENV_PREFIX=""
 BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
@@ -377,9 +372,6 @@ BUILD_ENV_PREFIX="$(append_env_assignments "${BUILD_ENV_PREFIX}" \
   "ZOT_IMAGE_PULL_REF" "${BUILD_ZOT_IMAGE_PULL_REF}" \
   "DNS_VERSION" "${BUILD_DNS_VERSION}" \
   "DNS_IMAGE_PULL_REF" "${BUILD_DNS_IMAGE_PULL_REF}" \
-  "EXTRA_OCI_IMAGE_REFS" "${BUILD_EXTRA_OCI_IMAGE_REFS}" \
-  "EXTRA_OCI_IMAGE_PULL_REFS" "${IMAGE_REGISTRY_PULL_REF}" \
-  "OCI_COPY_SRC_TLS_VERIFY" "${OCI_COPY_SRC_TLS_VERIFY}" \
   "BUILD_IMAGE_MIRROR_ENABLED" "${BUILD_IMAGE_MIRROR_ENABLED}" \
   "BUILD_IMAGE_MIRROR_REGISTRY" "${BUILD_IMAGE_MIRROR_REGISTRY}" \
   "BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX" "${BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX}" \
@@ -679,16 +671,12 @@ elif [[ -n "${REMOTE_BUNDLE_DIR}" ]]; then
 fi
 
 VALIDATE_RELEASE_ARTIFACTS_ARGS=(--require-argo)
-# Host mDNS / Wi-Fi AP enablement is day-2 (Admin UI); package always has host-packages.
-EXPECTED_EXTRA_OCI_IMAGE_REFS="${BUILD_EXTRA_OCI_IMAGE_REFS}"
+EXPECTED_BUNDLED_IMAGE_REFS="${BUILDER_LOCAL_REF}"
 if [[ "${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}" == *@sha256:* ]]; then
-  if [[ -n "${EXPECTED_EXTRA_OCI_IMAGE_REFS}" ]]; then
-    EXPECTED_EXTRA_OCI_IMAGE_REFS+=","
-  fi
-  EXPECTED_EXTRA_OCI_IMAGE_REFS+="${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}"
+  EXPECTED_BUNDLED_IMAGE_REFS+=",${BUILD_WORKSPACE_PROVISIONER_IMAGE_REF}"
 fi
-if [[ -n "${EXPECTED_EXTRA_OCI_IMAGE_REFS}" ]]; then
-  VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--expected-extra-oci-image-refs "${EXPECTED_EXTRA_OCI_IMAGE_REFS}")
+if [[ -n "${EXPECTED_BUNDLED_IMAGE_REFS}" ]]; then
+  VALIDATE_RELEASE_ARTIFACTS_ARGS+=(--expected-extra-oci-image-refs "${EXPECTED_BUNDLED_IMAGE_REFS}")
 fi
 if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle" ]]; then
   log "validating copied release-input artifacts against final bundle manifest"

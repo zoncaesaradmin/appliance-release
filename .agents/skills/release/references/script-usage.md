@@ -32,8 +32,8 @@ Notes:
   development-container used as build tooling. The bundled offline name is
   fixed as `registry.local/dev-build`.
 - Optional `build_flow.build_image_mirror` is a **separate** Artifact Server
-  path for build-time OCI pulls (zot, workspace-provisioner, EXTRA_OCI /
-  dev-build archival copies, etc.). Keep the same `*_env` names as
+  path for build-time OCI pulls (zot, workspace-provisioner, dev-build archival
+  copies, etc.). Keep the same `*_env` names as
   `dev_image_pull` when both use the same host; leave `enabled: false` or
   omit the block to skip the mirror. When enabled: try mirror first
   (`timeout_seconds`, default 15), on miss/timeout pull the public upstream,

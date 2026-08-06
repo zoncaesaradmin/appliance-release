@@ -100,19 +100,19 @@ components:
 
   - id: workspace-provisioner
     owner: appliance-release
-    recipe: export_bundled_extra_oci_image_archive (alpine/git → registry.local/workspace-provisioner)
+    recipe: export_bundled_oci_archive (alpine/git → registry.local/workspace-provisioner)
     outputs:
-      - EXTRA_OCI / imageReference digest pin
+      - imageReference digest pin
     depends_on: []
 
   - id: dev-build
     owner: appliance-release
-    recipe: EXTRA_OCI_IMAGE_PULL_REFS → registry.local/dev-build@sha256:...
+    recipe: DEV_* pull → export_bundled_oci_archive → registry.local/dev-build@sha256:...
     required_for: BUILD_COMPLETE_PRODUCT
     inputs:
-      - EXTRA_OCI_IMAGE_PULL_REFS / build_flow.dev_image_pull
+      - DEV_REGISTRY + DEV_IMAGE_REPO/NAME/TAG
     outputs:
-      - EXTRA_OCI imageReference digest pin
+      - imageReference digest pin
     depends_on: []
 
   - id: metadata-bundle

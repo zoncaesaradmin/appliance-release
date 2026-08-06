@@ -24,8 +24,9 @@ Configuration is taken from environment variables. The most common pattern is:
   PRODUCT_VERSION=0.1.0 \
   DEV_REGISTRY=artifact-dns-1.appliance.internal \
   DEV_REGISTRY_TOKEN=... \
-  EXTRA_OCI_IMAGE_REFS=registry.local/dev-build \
-  EXTRA_OCI_IMAGE_PULL_REFS=\$DEV_REGISTRY/development-container/dev-build:latest \
+  DEV_IMAGE_REPO=development-container \
+  DEV_IMAGE_NAME=dev-build \
+  DEV_IMAGE_TAG=latest \
   bash ./scripts/ci/build-full-bundle.sh
 
 K3s binary + airgap images are downloaded at build time from the appliance
@@ -63,16 +64,9 @@ Optional overrides:
   # Argo CRDs and controller/executor images are always fetched/packaged online
   # (or via build_image_mirror). Pre-supplied local archive/dir paths are not supported.
   WORKSPACE_PROVISIONER_IMAGE_REF=docker.io/alpine/git:latest
-  # WORKSPACE_PROVISIONER_IMAGE_REF is the upstream pull ref. The build copies
-  # linux/amd64 then sets registry.local/workspace-provisioner@sha256:<digest>
-  # from the archive (never from skopeo inspect alone).
-  EXTRA_OCI_IMAGE_REFS=registry.local/dev-build
-  EXTRA_OCI_IMAGE_PULL_REFS=ghcr.io/org/development-container/dev-build:v0.1.0
-  # Complete product always packages registry.local/dev-build (builder task image).
-  # Skill/release config should set EXTRA_OCI_*; bare CI must not omit them unless
-  # BUILD_COMPLETE_PRODUCT=false.
-  # OCI_COPY_SRC_TLS_VERIFY=false  # for LAN registries with self-signed TLS
-  # Optional build-time OCI pull-through mirror (from build_flow.build_image_mirror):
+  # Complete product packages registry.local/dev-build from
+  # DEV_REGISTRY + DEV_IMAGE_REPO/NAME/TAG (defaults: development-container/dev-build:latest).
+  # Optional build-time OCI pull-through mirror:
   #   BUILD_IMAGE_MIRROR_ENABLED=true
   #   BUILD_IMAGE_MIRROR_REGISTRY=$DEV_REGISTRY   # LAN appliance Artifact Server; can differ later
   #   BUILD_IMAGE_MIRROR_REPOSITORY_PREFIX=build-cache
@@ -122,9 +116,10 @@ USER_ZOT_VERSION="${ZOT_VERSION-}"
 USER_ZOT_IMAGE_PULL_REF="${ZOT_IMAGE_PULL_REF-}"
 USER_DNS_VERSION="${DNS_VERSION-}"
 USER_DNS_IMAGE_PULL_REF="${DNS_IMAGE_PULL_REF-}"
-USER_EXTRA_OCI_IMAGE_REFS="${EXTRA_OCI_IMAGE_REFS-}"
-USER_EXTRA_OCI_IMAGE_PULL_REFS="${EXTRA_OCI_IMAGE_PULL_REFS-}"
-USER_OCI_COPY_SRC_TLS_VERIFY="${OCI_COPY_SRC_TLS_VERIFY-}"
+USER_DEV_REGISTRY="${DEV_REGISTRY-}"
+USER_DEV_IMAGE_REPO="${DEV_IMAGE_REPO-}"
+USER_DEV_IMAGE_NAME="${DEV_IMAGE_NAME-}"
+USER_DEV_IMAGE_TAG="${DEV_IMAGE_TAG-}"
 
 set -a
 # shellcheck disable=SC1090
@@ -134,7 +129,6 @@ set +a
 # Reject removed offline/local archive path knobs (build always pulls/packages
 # online or via optional build_image_mirror LAN+upstream).
 _removed_offline_build_inputs=(
-  EXTRA_OCI_IMAGE_ARCHIVE_SOURCES
   ARGO_CRDS_DIR_SOURCE
   ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE
   ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE
@@ -181,9 +175,6 @@ ZOT_IMAGE_PULL_REF="${USER_ZOT_IMAGE_PULL_REF:-${ZOT_IMAGE_PULL_REF:-ghcr.io/pro
 DNS_VERSION="${USER_DNS_VERSION:-${DNS_VERSION:-1.14.4}}"
 DNS_VERSION="${DNS_VERSION#v}"
 DNS_IMAGE_PULL_REF="${USER_DNS_IMAGE_PULL_REF:-${DNS_IMAGE_PULL_REF:-registry.k8s.io/coredns/coredns:v${DNS_VERSION}}}"
-EXTRA_OCI_IMAGE_REFS="${USER_EXTRA_OCI_IMAGE_REFS:-${EXTRA_OCI_IMAGE_REFS:-}}"
-EXTRA_OCI_IMAGE_PULL_REFS="${USER_EXTRA_OCI_IMAGE_PULL_REFS:-${EXTRA_OCI_IMAGE_PULL_REFS:-}}"
-OCI_COPY_SRC_TLS_VERIFY="${USER_OCI_COPY_SRC_TLS_VERIFY:-${OCI_COPY_SRC_TLS_VERIFY:-true}}"
 
 # Argo Workflows is a mandatory component of the complete product super-set
 # (ADR 0011). BUILD_COMPLETE_PRODUCT defaults true and forces ARGO_ENABLED.
@@ -192,6 +183,13 @@ BUILD_COMPLETE_PRODUCT="${BUILD_COMPLETE_PRODUCT:-true}"
 if [[ -z "${ARGO_ENABLED}" ]]; then
   ARGO_ENABLED="true"
 fi
+
+DEV_REGISTRY="${USER_DEV_REGISTRY:-${DEV_REGISTRY:-}}"
+DEV_IMAGE_REPO="${USER_DEV_IMAGE_REPO:-${DEV_IMAGE_REPO:-development-container}}"
+DEV_IMAGE_NAME="${USER_DEV_IMAGE_NAME:-${DEV_IMAGE_NAME:-dev-build}}"
+DEV_IMAGE_TAG="${USER_DEV_IMAGE_TAG:-${DEV_IMAGE_TAG:-latest}}"
+BUILDER_LOCAL_REF="registry.local/dev-build"
+BUILDER_PULL_REF=""
 
 if [[ -n "${K3S_VERSION_OVERRIDE}" ]]; then
   K3S_VERSION="${K3S_VERSION_OVERRIDE}"
@@ -230,6 +228,13 @@ bool_true() {
 if bool_true "${BUILD_COMPLETE_PRODUCT}" && ! bool_true "${ARGO_ENABLED}"; then
   echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires ARGO_ENABLED=true (developer slim builds: BUILD_COMPLETE_PRODUCT=false)" >&2
   exit 2
+fi
+if bool_true "${BUILD_COMPLETE_PRODUCT}"; then
+  if [[ -z "${DEV_REGISTRY}" ]]; then
+    echo "build-full-bundle: DEV_REGISTRY is required to package ${BUILDER_LOCAL_REF}" >&2
+    exit 2
+  fi
+  BUILDER_PULL_REF="${DEV_REGISTRY}/${DEV_IMAGE_REPO}/${DEV_IMAGE_NAME}:${DEV_IMAGE_TAG}"
 fi
 
 shell_quote() {
@@ -850,22 +855,24 @@ skopeo_copy_oci_archive() {
   local dest_name="$3"
   local mirror_ref=""
   local mirror_timeout="${BUILD_IMAGE_MIRROR_TIMEOUT_SECONDS:-15}"
-  # Public/upstream registries always verify TLS. Do not inherit
-  # OCI_COPY_SRC_TLS_VERIFY=false from the LAN Artifact Server (self-signed).
-  # Override only when the pull ref itself is the LAN registry host.
+  # Public/upstream registries always verify TLS. LAN pulls use DEV_REGISTRY_TLS_VERIFY
+  # (or BUILD_IMAGE_MIRROR_TLS_VERIFY when the pull host is the mirror registry).
   local upstream_tls="true"
   local mirror_tls="${BUILD_IMAGE_MIRROR_TLS_VERIFY:-true}"
   local mirror_user="${BUILD_IMAGE_MIRROR_USER:-}"
   local mirror_token="${BUILD_IMAGE_MIRROR_TOKEN:-}"
   local dest_spec
   local fetched_from_upstream=0
-  local bare_source mirror_host
+  local bare_source mirror_host dev_host
   local tmp_labeled
 
   bare_source="${source_ref#docker://}"
   mirror_host="$(printf '%s' "${BUILD_IMAGE_MIRROR_REGISTRY:-}" | sed 's#/*$##; s#^https\?://##')"
+  dev_host="$(printf '%s' "${DEV_REGISTRY:-}" | sed 's#/*$##; s#^https\?://##')"
   if [[ -n "${mirror_host}" && ( "${bare_source}" == "${mirror_host}"/* || "${bare_source}" == "${mirror_host}:"* ) ]]; then
-    upstream_tls="${OCI_COPY_SRC_TLS_VERIFY:-true}"
+    upstream_tls="${BUILD_IMAGE_MIRROR_TLS_VERIFY:-${DEV_REGISTRY_TLS_VERIFY:-true}}"
+  elif [[ -n "${dev_host}" && ( "${bare_source}" == "${dev_host}"/* || "${bare_source}" == "${dev_host}:"* ) ]]; then
+    upstream_tls="${DEV_REGISTRY_TLS_VERIFY:-true}"
   fi
 
   mkdir -p "$(dirname "${output_path}")"
@@ -1023,9 +1030,8 @@ EOF
   printf '%s' "${bundle_ref}"
 }
 
-# Online export: copy pull_ref for the appliance platform, then label from content.
-# optional_expected_ref, when set, is only an advisory pin (name + optional digest).
-export_bundled_extra_oci_image_archive() {
+# Online export for a registry.local/* load name; returns digest-pinned ref.
+export_bundled_oci_archive() {
   local pull_ref="$1"
   local local_or_expected_ref="$2"
   local output_path="$3"
@@ -1038,7 +1044,6 @@ export_bundled_extra_oci_image_archive() {
   fi
 
   skopeo_copy_oci_archive "${pull_ref}" "${output_path}" "${local_name}:bundled"
-  # Only this function may write the digest pin to stdout for $(...) capture.
   finalize_bundled_oci_archive "${output_path}" "${local_name}" "${local_or_expected_ref}"
 }
 
@@ -1252,51 +1257,6 @@ if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provision
   exit 2
 fi
 
-EXTRA_OCI_IMAGE_REF_LIST=()
-EXTRA_OCI_IMAGE_PULL_REF_LIST=()
-split_csv "${EXTRA_OCI_IMAGE_REFS}" EXTRA_OCI_IMAGE_REF_LIST
-split_csv "${EXTRA_OCI_IMAGE_PULL_REFS}" EXTRA_OCI_IMAGE_PULL_REF_LIST
-if bool_true "${BUILD_COMPLETE_PRODUCT}"; then
-  # Complete product always packages workspace builder image as registry.local/dev-build.
-  has_dev_build=0
-  for ref in "${EXTRA_OCI_IMAGE_REF_LIST[@]+"${EXTRA_OCI_IMAGE_REF_LIST[@]}"}"; do
-    if [[ "$(oci_bundle_local_name "${ref}")" == registry.local/dev-build ]]; then
-      has_dev_build=1
-      break
-    fi
-  done
-  if [[ "${has_dev_build}" -eq 0 ]]; then
-    if [[ -n "${EXTRA_OCI_IMAGE_PULL_REFS:-}" || -n "${EXTRA_OCI_IMAGE_REFS:-}" ]]; then
-      echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires EXTRA_OCI to include registry.local/dev-build (and its pull ref)" >&2
-      exit 2
-    fi
-    echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires EXTRA_OCI_IMAGE_REFS=registry.local/dev-build and EXTRA_OCI_IMAGE_PULL_REFS=<upstream>" >&2
-    exit 2
-  fi
-fi
-if [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -eq 0 ]]; then
-  if [[ ${#EXTRA_OCI_IMAGE_REF_LIST[@]} -gt 0 ]]; then
-    echo "build-full-bundle: EXTRA_OCI_IMAGE_REFS is set without EXTRA_OCI_IMAGE_PULL_REFS" >&2
-    exit 2
-  fi
-else
-  if [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -ne ${#EXTRA_OCI_IMAGE_REF_LIST[@]} ]]; then
-    echo "build-full-bundle: EXTRA_OCI_IMAGE_PULL_REFS and EXTRA_OCI_IMAGE_REFS must have the same comma-separated length" >&2
-    exit 2
-  fi
-  for idx in "${!EXTRA_OCI_IMAGE_PULL_REF_LIST[@]}"; do
-    if [[ -z "${EXTRA_OCI_IMAGE_PULL_REF_LIST[idx]}" || -z "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" ]]; then
-      echo "build-full-bundle: extra OCI image pull refs and bundle refs must not contain empty entries" >&2
-      exit 2
-    fi
-    local_name="$(oci_bundle_local_name "${EXTRA_OCI_IMAGE_REF_LIST[idx]}")"
-    if [[ "${local_name}" != registry.local/* ]]; then
-      echo "build-full-bundle: EXTRA_OCI_IMAGE_REFS[${idx}] must be a registry.local/... name (optional @sha256 digest is derived from the archived platform manifest)" >&2
-      exit 2
-    fi
-  done
-fi
-
 rm -rf "${ARTIFACTS_DIR}" "${WORKSPACE}"
 if is_within_dir "${EXPORT_DIR}" "${WORK_ROOT}"; then
   rm -rf "${EXPORT_DIR}"
@@ -1373,48 +1333,36 @@ if bool_true "${ARGO_ENABLED}"; then
   export_container_image_archive "${ARGO_EXECUTOR_IMAGE_REF}" "${CODE_REPO_DIR}/.run/argo-executor-image.tar"
 fi
 
-# Build the final archive/reference pairs carefully. EXTRA_OCI_IMAGE_REF_LIST is
-# the user-configured extra refs only (e.g. dev-build). Do not append the
-# workspace provisioner ref onto that list before pairing archives, or the
-# provisioner archive will be labeled with the dev-build reference and
-# install-time ctr import will fail RequireReference checks.
-PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES=()
-PACKAGED_EXTRA_OCI_IMAGE_REFS=()
+# Bundled supplemental images for release-input (--extra-oci-image flags):
+# provisioner always; builder only when complete product.
+BUNDLED_IMAGE_ARCHIVES=()
+BUNDLED_IMAGE_REFS=()
 
 ensure_build_image_mirror_login
 
 ZOT_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/zot-image.tar"
-ZOT_IMAGE_REF="$(export_bundled_extra_oci_image_archive "${ZOT_IMAGE_PULL_REF}" "registry.local/zot" "${CODE_REPO_DIR}/.run/zot-image.tar")"
+ZOT_IMAGE_REF="$(export_bundled_oci_archive "${ZOT_IMAGE_PULL_REF}" "registry.local/zot" "${CODE_REPO_DIR}/.run/zot-image.tar")"
 
-# CoreDNS wrap needs buildah+skopeo. Always package inside CODE_DEV_SCRIPT via
-# appliance-code's package target (not a pre-supplied local archive).
 DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/coredns-image.tar"
 DNS_IMAGE_REF=""
 
 WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:latest}"
 WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
-WORKSPACE_PROVISIONER_IMAGE_REF="$(export_bundled_extra_oci_image_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "registry.local/workspace-provisioner" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
-PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
-PACKAGED_EXTRA_OCI_IMAGE_REFS+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
+WORKSPACE_PROVISIONER_IMAGE_REF="$(export_bundled_oci_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "registry.local/workspace-provisioner" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
+BUNDLED_IMAGE_ARCHIVES+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
+BUNDLED_IMAGE_REFS+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
 
-if [[ ${#EXTRA_OCI_IMAGE_PULL_REF_LIST[@]} -gt 0 ]]; then
-  mkdir -p "${CODE_REPO_DIR}/.run/extra-oci-images"
-  for idx in "${!EXTRA_OCI_IMAGE_PULL_REF_LIST[@]}"; do
-    dest="${CODE_REPO_DIR}/.run/extra-oci-images/extra-oci-image-${idx}.tar"
-    derived_ref="$(export_bundled_extra_oci_image_archive "${EXTRA_OCI_IMAGE_PULL_REF_LIST[idx]}" "${EXTRA_OCI_IMAGE_REF_LIST[idx]}" "${dest}")"
-    PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES+=("/workspace/.run/extra-oci-images/extra-oci-image-${idx}.tar")
-    PACKAGED_EXTRA_OCI_IMAGE_REFS+=("${derived_ref}")
-  done
+if bool_true "${BUILD_COMPLETE_PRODUCT}"; then
+  mkdir -p "${CODE_REPO_DIR}/.run/builder-image"
+  dest="${CODE_REPO_DIR}/.run/builder-image/dev-build.tar"
+  derived_ref="$(export_bundled_oci_archive "${BUILDER_PULL_REF}" "${BUILDER_LOCAL_REF}" "${dest}")"
+  BUNDLED_IMAGE_ARCHIVES+=("/workspace/.run/builder-image/dev-build.tar")
+  BUNDLED_IMAGE_REFS+=("${derived_ref}")
 fi
 
-if [[ ${#PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES[@]} -ne ${#PACKAGED_EXTRA_OCI_IMAGE_REFS[@]} ]]; then
-  echo "build-full-bundle: internal error: packaged extra OCI archives (${#PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES[@]}) and refs (${#PACKAGED_EXTRA_OCI_IMAGE_REFS[@]}) length mismatch" >&2
-  exit 1
-fi
-
-EXTRA_OCI_ARG_LINES=""
-for idx in "${!PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES[@]}"; do
-  EXTRA_OCI_ARG_LINES+="  EXTRA_OCI_ARGS+=(--extra-oci-image $(shell_quote "${PACKAGED_EXTRA_OCI_IMAGE_ARCHIVES[idx]}") --extra-oci-image-reference $(shell_quote "${PACKAGED_EXTRA_OCI_IMAGE_REFS[idx]}"))"$'\n'
+BUNDLED_IMAGE_ARG_LINES=""
+for idx in "${!BUNDLED_IMAGE_ARCHIVES[@]}"; do
+  BUNDLED_IMAGE_ARG_LINES+="  BUNDLED_IMAGE_ARGS+=(--extra-oci-image $(shell_quote "${BUNDLED_IMAGE_ARCHIVES[idx]}") --extra-oci-image-reference $(shell_quote "${BUNDLED_IMAGE_REFS[idx]}"))"$'\n'
 done
 
 cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF
@@ -1426,7 +1374,7 @@ UI_IMAGE_OUT="/workspace/.run/appliance-ui-image.tar"
 HOST_AGENT_IMAGE_OUT="/workspace/.run/appliance-host-agent-image.tar"
 HOST_AGENT_IMAGE_REF_FILE="/workspace/.run/appliance-host-agent-image.reference"
 ARGO_ARGS=()
-EXTRA_OCI_ARGS=()
+BUNDLED_IMAGE_ARGS=()
 # Prefer the release/product version for image tags and the control-plane
 # /version payload. Commit SHA stays in the separate Commit build field.
 CODE_VERSION="\${CODE_VERSION:-$(shell_quote "${PRODUCT_VERSION}")}"
@@ -1487,7 +1435,7 @@ if bool_true $(shell_quote "${ARGO_ENABLED}"); then
   ARGO_ARGS+=(--argo-executor-image-reference $(shell_quote "${ARGO_EXECUTOR_IMAGE_REF}"))
 fi
 
-${EXTRA_OCI_ARG_LINES}
+${BUNDLED_IMAGE_ARG_LINES}
 
 bash ./scripts/package/archive-release-input.sh \
   --out-file "/workspace/.run/release-input-${PRODUCT_VERSION}.tar.gz" \
@@ -1508,7 +1456,7 @@ bash ./scripts/package/archive-release-input.sh \
   --dns-image-reference "\${DNS_IMAGE_REF}" \
   --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \
   "\${ARGO_ARGS[@]}" \
-  "\${EXTRA_OCI_ARGS[@]}"
+  "\${BUNDLED_IMAGE_ARGS[@]}"
 EOF
 chmod +x "${CODE_DEV_SCRIPT_PATH}"
 

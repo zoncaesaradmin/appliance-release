@@ -59,7 +59,7 @@ fingerprints can attach to the same units.
 | 2 | `host-packages` | `.run/host-packages/ubuntu/<VER>/amd64/*.deb` (mdns + wifi-ap) |
 | 3 | `zot-image` / `dns-image` | first-class OCI archives + digest refs |
 | 4 | `argo-crds` / `argo-controller` / `argo-executor` | Argo offline set |
-| 5 | `workspace-provisioner` + `extra-oci-dev-build` | EXTRA_OCI archives |
+| 5 | `workspace-provisioner` + `dev-build` | bundled offline image archives |
 | 6 | `product-images` | control-plane, UI, host-agent OCI + host-agentd |
 | 7 | `archive-release-input` | release-input tar (super-set) |
 | 8 | `assemble-and-sign` | **always** re-run → signed `appliance-*-bundle.tar.gz` |

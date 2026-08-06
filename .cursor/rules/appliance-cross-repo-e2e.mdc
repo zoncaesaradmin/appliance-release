@@ -33,10 +33,10 @@ Never trust `skopeo inspect` alone for pins (multi-arch index ≠ platform manif
 ## Operator path (ordered)
 
 1. **Export** (`appliance-release` `scripts/ci/build-full-bundle.sh`)
-   - `finalize_bundled_oci_archive` / `export_bundled_extra_oci_image_archive`
+   - `finalize_bundled_oci_archive` / `export_bundled_oci_archive`
    - Derives digest from archive `index.json`; annotates `:bundled`
 2. **Release-input** (`appliance-code` `scripts/package/archive-release-input.sh`)
-   - `--extra-oci-image` + `--extra-oci-image-reference` (digest-pinned)
+   - `--extra-oci-image` + `--extra-oci-image-reference` (digest-pinned wire flags)
 3. **Assemble** (`appliance-release` + `appliance-ctl` `releasebundle.Assemble`)
    - Copies `imageReference` onto bundle oci-images entries
 4. **Install preload** (`appliance-ctl` `images.PreloadAll`)
@@ -63,7 +63,7 @@ Online pulls happen **only on the build host** during bundle assembly. Target in
 | Contract | Producer | Consumers |
 |---|---|---|
 | `:bundled` annotation + `@sha256` imageReference | `build-full-bundle.sh` finalize/relabel | `images/archive.go`, `preload.go`, `validate-release-artifacts.py` |
-| EXTRA_OCI pairing / order | `build-full-bundle.sh` (do not append provisioner onto EXTRA list before pairing) | path↔token checks in validator |
+| Bundled image archive/ref pairing | `build-full-bundle.sh` (provisioner + builder pairings separate) | path↔token checks in validator |
 | `RequireReference` + tag | Bundle entry `imageReference` | `install/source.go` `imageName`, `PreloadAll` |
 | Digests in Helm values | `PrepareValuesFile` | chart ConfigMap, `config.Load`, chart schema |
 | Catalog `dev-build` alias | catalog / examples | `ResolveBuilderImage`, `builderImageReference` |
@@ -78,7 +78,7 @@ Online pulls happen **only on the build host** during bundle assembly. Target in
 
 - **Annotation scheme** → ctl `ValidateOCIArchiveReference` + preload tag tests; release finalize + `validate-release-artifacts.py`; config.example docs
 - **Digest derivation** → finalize (archive wins); never reintroduce inspect-first pins
-- **EXTRA_OCI refs/order** → pairing comments; path/token validator; both provisioner and dev-build in bundle
+- **Bundled image refs/order** → path/token validator; both provisioner and dev-build in bundle
 - **Builder image name** → `source.go`, `catalog.go` DefaultBuilderImageRef, chart schema, examples, tests
 - **Tag/import algorithm** → `preload.go` / tests; install+upgrade fake-ctr tests
 - **PrepareValuesFile keys** → chart `configmap.yaml` env names; config Load; chart_test
