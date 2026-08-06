@@ -533,7 +533,7 @@ reject_removed_build_publish_path_keys() {
 }
 
 # Fail closed on knobs the skill no longer forwards. Product scripts own
-# Argo/Zot/DNS/provisioner defaults; install-role owns verification.*.
+# Argo/Artifact Server/DNS/provisioner defaults; install-role owns verification.*.
 reject_removed_build_publish_packaging_keys() {
   local config_path="$1"
 

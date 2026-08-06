@@ -365,7 +365,7 @@ def validate_argo(artifacts: dict, release_input_dir: Path, entries_by_path: dic
     return checked
 
 
-def validate_zot(
+def validate_artifact_server(
     release_input: dict,
     bundle_manifest: dict,
     artifacts: dict,
@@ -375,21 +375,21 @@ def validate_zot(
     compatibility = release_input.get("compatibility")
     if not isinstance(compatibility, dict):
         raise ValueError("release-input compatibility must be an object")
-    zot_version = str(compatibility.get("zotVersion") or "").strip()
-    if not zot_version or zot_version.lower() == "latest":
-        raise ValueError("release-input compatibility.zotVersion must be an exact non-latest version")
+    artifact_server_version = str(compatibility.get("artifactServerVersion") or "").strip()
+    if not artifact_server_version or artifact_server_version.lower() == "latest":
+        raise ValueError("release-input compatibility.artifactServerVersion must be an exact non-latest version")
     bundle_compatibility = bundle_manifest.get("compatibility")
     if not isinstance(bundle_compatibility, dict):
         raise ValueError("bundle manifest compatibility must be an object")
-    bundle_zot_version = str(bundle_compatibility.get("zotVersion") or "").strip()
-    if bundle_zot_version != zot_version:
+    bundle_artifact_server_version = str(bundle_compatibility.get("artifactServerVersion") or "").strip()
+    if bundle_artifact_server_version != artifact_server_version:
         raise ValueError(
-            "bundle manifest compatibility.zotVersion mismatch: "
-            f"expected {zot_version}, got {bundle_zot_version}"
+            "bundle manifest compatibility.artifactServerVersion mismatch: "
+            f"expected {artifact_server_version}, got {bundle_artifact_server_version}"
         )
 
-    chart = require_artifact(artifacts, "zotChart")
-    chart_path = require_file_artifact(artifacts, "zotChart", release_input_dir)
+    chart = require_artifact(artifacts, "artifactServerChart")
+    chart_path = require_file_artifact(artifacts, "artifactServerChart", release_input_dir)
     chart_candidates = (
         f"charts/{chart_path.name}",
         f"chart/{chart_path.name}",
@@ -398,45 +398,46 @@ def validate_zot(
     chart_bundle_path = next((path for path in chart_candidates if path in entries_by_path), "")
     if not chart_bundle_path:
         raise ValueError(
-            "bundle manifest is missing zotChart; expected one of: "
+            "bundle manifest is missing artifactServerChart; expected one of: "
             + ", ".join(chart_candidates)
         )
-    chart_entry = require_bundle_entry(entries_by_path, chart_bundle_path, "zotChart")
-    require_matching_bundle_digest(chart_entry, chart, chart_bundle_path, "zotChart")
+    chart_entry = require_bundle_entry(entries_by_path, chart_bundle_path, "artifactServerChart")
+    require_matching_bundle_digest(chart_entry, chart, chart_bundle_path, "artifactServerChart")
 
-    image = require_artifact(artifacts, "zotImage")
-    image_path = require_file_artifact(artifacts, "zotImage", release_input_dir)
-    image_ref = require_image_reference(image, "zotImage")
-    if not re.fullmatch(r"registry\.local/zot@sha256:[0-9a-f]{64}", image_ref):
+    image = require_artifact(artifacts, "artifactServerImage")
+    image_path = require_file_artifact(artifacts, "artifactServerImage", release_input_dir)
+    image_ref = require_image_reference(image, "artifactServerImage")
+    if not re.fullmatch(r"registry\.local/artifact-server@sha256:[0-9a-f]{64}", image_ref):
         raise ValueError(
-            "release-input artifacts.zotImage.imageReference must be "
-            "registry.local/zot@sha256:<64 lowercase hex>"
+            "release-input artifacts.artifactServerImage.imageReference must be "
+            "registry.local/artifact-server@sha256:<64 lowercase hex>"
         )
-    # Product archive basename is artifact-server-*. Legacy "zot" basenames are
-    # still accepted for older release-inputs; do not rename new archives to zot.
+    # Product archive basename must identify Artifact Server. Plain "zot"
+    # basenames are no longer accepted (hard-cut rename); rename any legacy
+    # archives to an artifact-server/artifactserver basename.
     name_lower = image_path.name.lower()
-    if "artifact-server" not in name_lower and "artifactserver" not in name_lower and "zot" not in name_lower:
+    if "artifact-server" not in name_lower and "artifactserver" not in name_lower:
         raise ValueError(
-            "release-input artifacts.zotImage.path must identify Artifact Server "
+            "release-input artifacts.artifactServerImage.path must identify Artifact Server "
             f"(expected artifact-server in the basename), got {image['path']!r}"
         )
-    require_oci_archive_reference_matches_content(image_path, image_ref, "zotImage")
+    require_oci_archive_reference_matches_content(image_path, image_ref, "artifactServerImage")
     index = load_oci_archive_index(image_path)
     if index is None:
-        raise ValueError(f"zotImage OCI archive {image_path} is missing index.json")
+        raise ValueError(f"artifactServerImage OCI archive {image_path} is missing index.json")
     annotation = (
         (index.get("manifests") or [{}])[0].get("annotations") or {}
     ).get("org.opencontainers.image.ref.name")
-    if annotation != "registry.local/zot:bundled":
+    if annotation != "registry.local/artifact-server:bundled":
         raise ValueError(
-            "zotImage OCI archive annotation must be 'registry.local/zot:bundled', "
+            "artifactServerImage OCI archive annotation must be 'registry.local/artifact-server:bundled', "
             f"got {annotation!r}"
         )
     image_bundle_path = f"oci-images/{image_path.name}"
-    image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "zotImage")
-    require_matching_bundle_digest(image_entry, image, image_bundle_path, "zotImage")
-    require_matching_bundle_image_reference(image_entry, image_ref, image_bundle_path, "zotImage")
-    return ["zotChart", "zotImage", f"zotVersion={zot_version}"]
+    image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "artifactServerImage")
+    require_matching_bundle_digest(image_entry, image, image_bundle_path, "artifactServerImage")
+    require_matching_bundle_image_reference(image_entry, image_ref, image_bundle_path, "artifactServerImage")
+    return ["artifactServerChart", "artifactServerImage", f"artifactServerVersion={artifact_server_version}"]
 
 
 def validate_dns(
@@ -740,7 +741,7 @@ def main() -> int:
             artifacts, release_input_path.parent, entries_by_path, host_packages_required=host_packages_required
         ),
         "runtimeValues": validate_runtime_values(artifacts, bundle_values),
-        "zot": validate_zot(
+        "artifactServer": validate_artifact_server(
             release_input,
             bundle_manifest,
             artifacts,

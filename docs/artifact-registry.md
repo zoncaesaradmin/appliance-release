@@ -103,7 +103,7 @@ advertised host must be reachable from the client machine.
 REGISTRY_TOKEN="$(
   curl -ksS --get \
     -u "${USERNAME}:${API_TOKEN}" \
-    --data-urlencode service=zot \
+    --data-urlencode service=artifact-server \
     --data-urlencode scope='repository:demo/hello:pull,push' \
     "${APPLIANCE}/api/v1/registry/token" \
   | jq -r '.token // .access_token'

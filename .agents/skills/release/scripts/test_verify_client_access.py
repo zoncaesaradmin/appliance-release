@@ -60,7 +60,7 @@ class FakeApplianceHandler(BaseHTTPRequestHandler):
             self._write_json(
                 401,
                 {"errors": [{"code": "UNAUTHORIZED"}]},
-                {"WWW-Authenticate": 'Bearer realm="/api/v1/registry/token",service="zot"'},
+                {"WWW-Authenticate": 'Bearer realm="/api/v1/registry/token",service="artifact-server"'},
             )
             return
         if parsed.path == "/api/v1/registry/repositories":

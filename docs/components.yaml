@@ -58,20 +58,20 @@ components:
       - release_input: artifacts.applianceChart
     depends_on: []
 
-  - id: zot-image
+  - id: artifact-server-image
     owner: appliance-code / appliance-release
     recipe: scripts/package/export-artifact-server-image-archive.sh
     outputs:
-      - release_input: artifacts.zotImage
-      - reference: registry.local/zot@sha256:...
+      - release_input: artifacts.artifactServerImage
+      - reference: registry.local/artifact-server@sha256:...
     depends_on: []
 
   - id: registry-chart
     owner: appliance-code
     recipe: archive-release-input
     outputs:
-      - release_input: artifacts.zotChart
-    depends_on: [zot-image]
+      - release_input: artifacts.artifactServerChart
+    depends_on: [artifact-server-image]
 
   - id: coredns-image
     owner: appliance-code / appliance-release
@@ -132,7 +132,7 @@ components:
       - host-agent-image
       - host-agent-binary
       - control-plane-chart
-      - zot-image
+      - artifact-server-image
       - registry-chart
       - coredns-image
       - dns-chart

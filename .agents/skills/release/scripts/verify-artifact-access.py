@@ -231,7 +231,7 @@ def main() -> int:
         raise ValueError("API-token creation omitted token or id")
     try:
         query = urllib.parse.urlencode(
-            {"service": "zot", "scope": "repository:release-smoke:pull,push"}
+            {"service": "artifact-server", "scope": "repository:release-smoke:pull,push"}
         )
         token_status, _, token_body = request(
             f"{base}/api/v1/registry/token?{query}",
@@ -247,7 +247,7 @@ def main() -> int:
             raise ValueError("registry token response omitted token")
 
         denied_query = urllib.parse.urlencode(
-            {"service": "zot", "scope": "repository:denied/release-smoke:pull,push"}
+            {"service": "artifact-server", "scope": "repository:denied/release-smoke:pull,push"}
         )
         denied_status, _, denied_body = request(
             f"{base}/api/v1/registry/token?{denied_query}",

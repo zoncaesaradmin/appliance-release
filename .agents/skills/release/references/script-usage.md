@@ -64,7 +64,7 @@ Notes:
 - Set `install.appliance_profile` in the config, or omit it to default to `core`.
   Profile is **install-time only**: it selects which modules are activated on
   the target. Packaging always produces the complete product super-set (Argo,
-  Zot, DNS, host-packages for mdns+wifi-ap, workspace-provisioner, dev-build).
+  Artifact Server, DNS, host-packages for mdns+wifi-ap, workspace-provisioner, dev-build).
 - Day-to-day entry is `run-release-from-devhost.sh` with only
   `--config`, `--build-publish-config`, and `--install-config`. Stage selection
   is by which paths you pass (no `build_flow.skip` / `install.skip`). After

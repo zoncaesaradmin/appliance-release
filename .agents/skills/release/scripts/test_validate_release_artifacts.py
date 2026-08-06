@@ -36,7 +36,7 @@ def run_validator(tmp: Path, *extra_args: str) -> subprocess.CompletedProcess:
 
 
 def populate_positive_case(tmp: Path, *, include_host_packages: bool = True) -> None:
-    zot_digest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    artifact_server_digest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     dns_digest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     host_agent_digest = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     write(tmp / "release-input" / "images" / "control-plane.tar", "control")
@@ -56,11 +56,11 @@ def populate_positive_case(tmp: Path, *, include_host_packages: bool = True) -> 
     write(tmp / "release-input" / "images" / "argo-controller.tar", "controller")
     write(tmp / "release-input" / "images" / "argo-executor.tar", "executor")
     write(tmp / "release-input" / "images" / "buildah.tar", "buildah")
-    write(tmp / "release-input" / "chart" / "appliance-registry-2.1.11.tgz", "zot chart")
+    write(tmp / "release-input" / "chart" / "appliance-registry-2.1.11.tgz", "artifact server chart")
     write_mismatched_oci_archive(
         tmp / "release-input" / "images" / "artifact-server-image.tar",
-        "registry.local/zot:bundled",
-        zot_digest,
+        "registry.local/artifact-server:bundled",
+        artifact_server_digest,
     )
     write(tmp / "release-input" / "chart" / "appliance-dns-1.14.4.tgz", "coredns chart")
     write_mismatched_oci_archive(
@@ -108,8 +108,8 @@ ingress:
     "hostAgentImage": {"path": "images/appliance-host-agent.tar", "digest": "sha256:host-agent-archive", "sizeBytes": 256, "imageReference": "registry.local/appliance-host-agent@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
     "hostAgentBinary": {"path": "bin/appliance-host-agentd", "digest": "sha256:host-agentd", "sizeBytes": 11},
     "applianceChart": {"path": "chart/appliance-chart-1.0.0.tgz", "digest": "sha256:appliance-chart", "sizeBytes": 15},
-    "zotImage": {"path": "images/artifact-server-image.tar", "digest": "sha256:zot-archive", "sizeBytes": 1024, "imageReference": "registry.local/zot@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
-    "zotChart": {"path": "chart/appliance-registry-2.1.11.tgz", "digest": "sha256:zot-chart", "sizeBytes": 9},
+    "artifactServerImage": {"path": "images/artifact-server-image.tar", "digest": "sha256:artifact-server-archive", "sizeBytes": 1024, "imageReference": "registry.local/artifact-server@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+    "artifactServerChart": {"path": "chart/appliance-registry-2.1.11.tgz", "digest": "sha256:artifact-server-chart", "sizeBytes": 9},
     "dnsImage": {"path": "images/coredns-image.tar", "digest": "sha256:dns-archive", "sizeBytes": 512, "imageReference": "registry.local/coredns@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
     "dnsChart": {"path": "chart/appliance-dns-1.14.4.tgz", "digest": "sha256:dns-chart", "sizeBytes": 11},
     "metadataBundle": {"path": "artifacts/appliance-metadata-bundle-1.0.0.0.tar.zst", "digest": "sha256:policy", "sizeBytes": 6},
@@ -128,7 +128,7 @@ ingress:
       {"path": "images/buildah.tar", "digest": "sha256:buildah", "sizeBytes": 6, "imageReference": "registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
     ]
   },
-  "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "zotVersion": "2.1.11", "dnsVersion": "1.14.4"}
+  "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "artifactServerVersion": "2.1.11", "dnsVersion": "1.14.4"}
 }
 """.lstrip(),
     )
@@ -144,15 +144,15 @@ ingress:
         tmp / "bundle" / "release-manifest.json",
         """
 {
-  "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "zotVersion": "2.1.11", "dnsVersion": "1.14.4"},
+  "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "artifactServerVersion": "2.1.11", "dnsVersion": "1.14.4"},
   "entries": [
     {"targetPath": "oci-images/control-plane.tar", "digest": "sha256:control", "sizeBytes": 7, "imageReference": "internal/control-plane:1.0.0"},
     {"targetPath": "oci-images/appliance-ui.tar", "digest": "sha256:ui", "sizeBytes": 2, "imageReference": "internal/appliance-ui:1.0.0"},
     {"targetPath": "oci-images/appliance-host-agent.tar", "digest": "sha256:host-agent-archive", "sizeBytes": 256, "imageReference": "registry.local/appliance-host-agent@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
     {"targetPath": "bin/appliance-host-agentd", "digest": "sha256:host-agentd", "sizeBytes": 11},
     {"targetPath": "charts/appliance-chart-1.0.0.tgz", "digest": "sha256:appliance-chart", "sizeBytes": 15},
-    {"targetPath": "oci-images/artifact-server-image.tar", "digest": "sha256:zot-archive", "sizeBytes": 1024, "imageReference": "registry.local/zot@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
-    {"targetPath": "charts/appliance-registry-2.1.11.tgz", "digest": "sha256:zot-chart", "sizeBytes": 9},
+    {"targetPath": "oci-images/artifact-server-image.tar", "digest": "sha256:artifact-server-archive", "sizeBytes": 1024, "imageReference": "registry.local/artifact-server@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+    {"targetPath": "charts/appliance-registry-2.1.11.tgz", "digest": "sha256:artifact-server-chart", "sizeBytes": 9},
     {"targetPath": "oci-images/coredns-image.tar", "digest": "sha256:dns-archive", "sizeBytes": 512, "imageReference": "registry.local/coredns@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
     {"targetPath": "charts/appliance-dns-1.14.4.tgz", "digest": "sha256:dns-chart", "sizeBytes": 11},
     {"targetPath": "artifacts/appliance-metadata-bundle-1.0.0.0.tar.zst", "digest": "sha256:policy", "sizeBytes": 6},
@@ -497,27 +497,27 @@ def test_rejects_oci_archive_annotation_digest_mismatch() -> None:
             raise AssertionError(result.stderr)
 
 
-def test_rejects_zot_annotation_and_version_mismatch() -> None:
+def test_rejects_artifact_server_annotation_and_version_mismatch() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp)
         write_mismatched_oci_archive(
             tmp / "release-input" / "images" / "artifact-server-image.tar",
-            "registry.local/zot:wrong",
+            "registry.local/artifact-server:wrong",
             "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         )
         result = run_validator(tmp)
         if result.returncode == 0 or "annotation must be" not in result.stderr:
-            raise AssertionError(result.stderr or "wrong zot annotation accepted")
+            raise AssertionError(result.stderr or "wrong artifact-server annotation accepted")
 
         populate_positive_case(tmp)
         manifest_path = tmp / "bundle" / "release-manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest["compatibility"]["zotVersion"] = "2.1.12"
+        manifest["compatibility"]["artifactServerVersion"] = "2.1.12"
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         result = run_validator(tmp)
-        if result.returncode == 0 or "zotVersion mismatch" not in result.stderr:
-            raise AssertionError(result.stderr or "wrong zot version accepted")
+        if result.returncode == 0 or "artifactServerVersion mismatch" not in result.stderr:
+            raise AssertionError(result.stderr or "wrong artifact-server version accepted")
 
 
 def test_rejects_dns_annotation_and_version_mismatch() -> None:
@@ -543,7 +543,8 @@ def test_rejects_dns_annotation_and_version_mismatch() -> None:
             raise AssertionError(result.stderr or "wrong dns version accepted")
 
 
-def test_accepts_legacy_zot_image_path_name() -> None:
+def test_rejects_legacy_zot_image_path_name() -> None:
+    """Hard-cut rename: plain "zot" basenames are no longer accepted."""
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp)
@@ -552,7 +553,7 @@ def test_accepts_legacy_zot_image_path_name() -> None:
         old.rename(new)
         release_input_path = tmp / "release-input" / "release-input.json"
         release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
-        release_input["artifacts"]["zotImage"]["path"] = "images/zot-image.tar"
+        release_input["artifacts"]["artifactServerImage"]["path"] = "images/zot-image.tar"
         release_input_path.write_text(json.dumps(release_input), encoding="utf-8")
         manifest_path = tmp / "bundle" / "release-manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -561,8 +562,8 @@ def test_accepts_legacy_zot_image_path_name() -> None:
                 entry["targetPath"] = "oci-images/zot-image.tar"
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         result = run_validator(tmp)
-        if result.returncode != 0:
-            raise AssertionError(result.stderr or result.stdout)
+        if result.returncode == 0 or "must identify Artifact Server" not in result.stderr:
+            raise AssertionError(result.stderr or "legacy zot-only basename was accepted")
 
 
 def test_rejects_unidentified_artifact_server_image_path() -> None:
@@ -574,7 +575,7 @@ def test_rejects_unidentified_artifact_server_image_path() -> None:
         old.rename(new)
         release_input_path = tmp / "release-input" / "release-input.json"
         release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
-        release_input["artifacts"]["zotImage"]["path"] = "images/registry-image.tar"
+        release_input["artifacts"]["artifactServerImage"]["path"] = "images/registry-image.tar"
         release_input_path.write_text(json.dumps(release_input), encoding="utf-8")
         manifest_path = tmp / "bundle" / "release-manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -599,9 +600,9 @@ def main() -> None:
     test_rejects_workspace_provisioner_path_ref_mismatch()
     test_rejects_oci_archive_annotation_digest_mismatch()
     test_accepts_dot_slash_prefixed_dns_oci_archive()
-    test_rejects_zot_annotation_and_version_mismatch()
+    test_rejects_artifact_server_annotation_and_version_mismatch()
     test_rejects_dns_annotation_and_version_mismatch()
-    test_accepts_legacy_zot_image_path_name()
+    test_rejects_legacy_zot_image_path_name()
     test_rejects_unidentified_artifact_server_image_path()
     test_rejects_missing_ui_bundle_entry()
     test_rejects_missing_host_packages_bundle_entry()

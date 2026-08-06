@@ -144,7 +144,7 @@ BOOTSTRAP_REGISTRY_TOKEN="$(resolve_secret "${DEV_PULL_TOKEN_ENV}" "Dev image pu
 [[ -n "${BOOTSTRAP_REGISTRY_USER}" ]] || fail "empty ${DEV_PULL_USER_ENV}"
 [[ -n "${BOOTSTRAP_REGISTRY_TOKEN}" ]] || fail "empty ${DEV_PULL_TOKEN_ENV}"
 
-# Shared env for the three product scripts (they own Argo/Zot/DNS/provisioner defaults).
+# Shared env for the three product scripts (they own Argo/Artifact Server/DNS/provisioner defaults).
 PRODUCT_ENV_PREFIX=""
 PRODUCT_ENV_PREFIX="$(append_env_assignments "${PRODUCT_ENV_PREFIX}" \
   "PRODUCT_VERSION" "${RELEASE_VERSION}" \

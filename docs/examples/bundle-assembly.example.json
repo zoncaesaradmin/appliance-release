@@ -59,10 +59,10 @@
       "imageReference": "internal/control-plane:2.4.0"
     },
     {
-      "sourcePath": "/absolute/path/to/staging/zot.tar",
-      "targetPath": "oci-images/zot.tar",
+      "sourcePath": "/absolute/path/to/staging/artifact-server.tar",
+      "targetPath": "oci-images/artifact-server.tar",
       "component": "oci-images",
-      "imageReference": "internal/zot:pin-me"
+      "imageReference": "internal/artifact-server:pin-me"
     },
     {
       "sourcePath": "/absolute/path/to/release-input/appliance-chart-2.4.0.tgz",

@@ -21,10 +21,9 @@ Runtime:             config.*ImageDigest == digest pin → Argo pod image (IfNot
 ```
 
 Names today: `workspace-provisioner` (alpine/git), `dev-build` (builder),
-first-class artifact-server (OCI registry; wire name still `registry.local/zot`),
-and first-class `coredns` (LAN DNS).
-Artifact-server archives use `registry.local/zot:bundled` plus
-`registry.local/zot@sha256:<platform-digest>`; CoreDNS uses
+first-class `artifact-server` (OCI registry), and first-class `coredns` (LAN DNS).
+Artifact-server archives use `registry.local/artifact-server:bundled` plus
+`registry.local/artifact-server@sha256:<platform-digest>`; CoreDNS uses
 `registry.local/coredns:bundled` plus
 `registry.local/coredns@sha256:<platform-digest>`. Neither is an anonymous
 `extraOCIImages` entry.
@@ -52,9 +51,8 @@ Never trust `skopeo inspect` alone for pins (multi-arch index ≠ platform manif
 8. **Build submit** → Argo build pod
    - `ResolveBuilderImage("dev-build", …)` → dev-build digest pin
 9. **Artifact service** (`appliance-ctl` registry release + `appliance-code` chart/control-plane)
-   - `artifacts.zotImage` + `artifacts.zotChart` + `compatibility.zotVersion`
-     (existing release-input field names; product name is artifact-server)
-   - preload/tag `registry.local/zot` before Helm; install registry only for `artifact` capability
+   - `artifacts.artifactServerImage` + `artifacts.artifactServerChart` + `compatibility.artifactServerVersion`
+   - preload/tag `registry.local/artifact-server` before Helm; install registry only for `artifact` capability
    - registry chart/PVC/public verification key → internal artifact-server URL → Traefik `/v2`
    - storage and builder prove challenge/token/catalog/OCI/ORAS; core proves routes absent
 
@@ -71,7 +69,7 @@ Online pulls happen **only on the build host** during bundle assembly. Target in
 | Catalog `dev-build` alias | catalog / examples | `ResolveBuilderImage`, `builderImageReference` |
 | Offline images present | preload/tag | Argo `IfNotPresent` pods |
 | Artifact-server image/chart/version | `build-full-bundle.sh` + `archive-release-input.sh` | release-input schema, bundle assembly, source resolution, registry Helm release, release validator |
-| Artifact capability | profile map | zot preload/deploy, control-plane adapter/routes, `/v2`, profile-matrix evidence |
+| Artifact capability | profile map | artifact-server preload/deploy, control-plane adapter/routes, `/v2`, profile-matrix evidence |
 | Builder Git HTTPS access | UI `PUT /builder/git-access` → CP secret `builder-git-access` | `resolveWorkspaceGitCredential` → Argo mount + `GIT_ASKPASS` clone |
 | Writable tool home for builds | Argo `HOME`/`GOPATH`/`GOCACHE` under `/tmp/appliance-home` | dev-build image ENV (`/home/devcontainer/...`) must be overridden |
 | Catalog make/script args | `build-catalog.example.yaml` / operator catalog | Must match real repo Makefile/scripts (forgeline: `make build`, not root `build.sh`) |
@@ -86,7 +84,7 @@ Online pulls happen **only on the build host** during bundle assembly. Target in
 - **PrepareValuesFile keys** → chart `configmap.yaml` env names; config Load; chart_test
 - **Argo image / pullPolicy** → offline contract; preload completeness
 - **Artifact-server version/image/chart** → archive-first platform digest, `:bundled` annotation, first-class release-input fields, bundle compatibility, registry chart install, validator fixtures
-- **Artifact profile behavior** → storage/builder positive zot pod/PVC + token/catalog/OCI/ORAS evidence; core negative artifact routes; storage negative build routes
+- **Artifact profile behavior** → storage/builder positive artifact-server pod/PVC + token/catalog/OCI/ORAS evidence; core negative artifact routes; storage negative build routes
 - **Git clone / credential mount** → `buildergit` secret shape (`host`/`username`/`token`); `argo.gitAuthPreamble` + workspace-prepare tests; UI git-access form; docs/developer-workflows-v1.md
 - **Builder HOME/GOPATH** → `argo.workflowToolHomeEnv` + build preamble mkdir; dev-build image ENV; platformkit/forgeline make targets
 - **Build catalog targets** → real Makefile/script paths in each product repo; `build-catalog.example.yaml`; operator `build-catalog.yaml`

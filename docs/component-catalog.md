@@ -25,8 +25,8 @@ flowchart TB
     haBin[host-agent-binary]
     chart[control-plane-chart]
     schema[config-schema]
-    zotImg[zot-image]
-    zotChart[registry-chart]
+    artifactServerImg[artifact-server-image]
+    artifactServerChart[registry-chart]
     dnsImg[coredns-image]
     dnsChart[dns-chart]
     argoChart[argo-chart-crds]
@@ -57,7 +57,7 @@ fingerprints can attach to the same units.
 | --- | --- | --- |
 | 1 | `clone-repos` | RELEASE_WORK_ROOT checkouts |
 | 2 | `host-packages` | `.run/host-packages/ubuntu/<VER>/amd64/*.deb` (mdns + wifi-ap) |
-| 3 | `zot-image` / `dns-image` | first-class OCI archives + digest refs |
+| 3 | `artifact-server-image` / `dns-image` | first-class OCI archives + digest refs |
 | 4 | `argo-crds` / `argo-controller` / `argo-executor` | Argo offline set |
 | 5 | `workspace-provisioner` + `dev-build` | bundled offline image archives |
 | 6 | `product-images` | control-plane, UI, host-agent OCI + host-agentd |

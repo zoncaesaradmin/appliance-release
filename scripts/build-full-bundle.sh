@@ -73,12 +73,12 @@ Optional overrides:
   # When DEV_REGISTRY is set, packaging auto-uses a LAN build-cache on that
   # host (prefix build-cache/, 15s probe): try LAN → miss/timeout → upstream →
   # best-effort push back to LAN. Auth/TLS reuse DEV_REGISTRY_USER/TOKEN/TLS_VERIFY.
-  ZOT_VERSION=2.1.8
-  ZOT_IMAGE_PULL_REF=ghcr.io/project-zot/zot-linux-amd64:v2.1.8
+  ARTIFACT_SERVER_VERSION=2.1.8
+  ARTIFACT_SERVER_SOURCE_IMAGE=ghcr.io/project-zot/zot-linux-amd64:v2.1.8
   # Artifact server: always wrap upstream via appliance-code
   # package-artifact-server-image-archive (dev-run has buildah+skopeo);
-  # annotate registry.local/zot:bundled and derive
-  # registry.local/zot@sha256:<platform-digest> from index.json
+  # annotate registry.local/artifact-server:bundled and derive
+  # registry.local/artifact-server@sha256:<platform-digest> from index.json
   # (existing install OCI contract name).
   DNS_VERSION=1.14.4
   DNS_IMAGE_PULL_REF=registry.k8s.io/coredns/coredns:v1.14.4
@@ -110,8 +110,8 @@ USER_ARGO_VERSION="${ARGO_VERSION-}"
 USER_ARGO_CONTROLLER_IMAGE_REF="${ARGO_CONTROLLER_IMAGE_REF-}"
 USER_ARGO_EXECUTOR_IMAGE_REF="${ARGO_EXECUTOR_IMAGE_REF-}"
 USER_WORKSPACE_PROVISIONER_IMAGE_REF="${WORKSPACE_PROVISIONER_IMAGE_REF-}"
-USER_ZOT_VERSION="${ZOT_VERSION-}"
-USER_ZOT_IMAGE_PULL_REF="${ZOT_IMAGE_PULL_REF-}"
+USER_ARTIFACT_SERVER_VERSION="${ARTIFACT_SERVER_VERSION-}"
+USER_ARTIFACT_SERVER_SOURCE_IMAGE="${ARTIFACT_SERVER_SOURCE_IMAGE-}"
 USER_DNS_VERSION="${DNS_VERSION-}"
 USER_DNS_IMAGE_PULL_REF="${DNS_IMAGE_PULL_REF-}"
 USER_DEV_REGISTRY="${DEV_REGISTRY-}"
@@ -131,7 +131,7 @@ _removed_offline_build_inputs=(
   ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE
   ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE
   WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE
-  ZOT_IMAGE_ARCHIVE_SOURCE
+  ARTIFACT_SERVER_IMAGE_ARCHIVE_SOURCE
   DNS_IMAGE_ARCHIVE_SOURCE
   HOST_PACKAGES_DIR_SOURCE
 )
@@ -180,14 +180,15 @@ ARGO_VERSION="${USER_ARGO_VERSION:-${ARGO_VERSION:-}}"
 ARGO_CONTROLLER_IMAGE_REF="${USER_ARGO_CONTROLLER_IMAGE_REF:-${ARGO_CONTROLLER_IMAGE_REF:-}}"
 ARGO_EXECUTOR_IMAGE_REF="${USER_ARGO_EXECUTOR_IMAGE_REF:-${ARGO_EXECUTOR_IMAGE_REF:-}}"
 WORKSPACE_PROVISIONER_IMAGE_REF="${USER_WORKSPACE_PROVISIONER_IMAGE_REF:-${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:latest}}"
-# compatibility.zotVersion is unprefixed (2.1.8). Chart appVersion and GHCR
-# tags use a leading v (v2.1.8). Normalize before constructing the pull ref.
-ZOT_VERSION="${USER_ZOT_VERSION:-${ZOT_VERSION:-2.1.8}}"
-ZOT_VERSION="${ZOT_VERSION#v}"
-ZOT_IMAGE_PULL_REF="${USER_ZOT_IMAGE_PULL_REF:-${ZOT_IMAGE_PULL_REF:-ghcr.io/project-zot/zot-linux-amd64:v${ZOT_VERSION}}}"
+# compatibility.artifactServerVersion is unprefixed (2.1.8). Chart appVersion
+# and GHCR tags use a leading v (v2.1.8). Normalize before constructing the
+# pull ref.
+ARTIFACT_SERVER_VERSION="${USER_ARTIFACT_SERVER_VERSION:-${ARTIFACT_SERVER_VERSION:-2.1.8}}"
+ARTIFACT_SERVER_VERSION="${ARTIFACT_SERVER_VERSION#v}"
+ARTIFACT_SERVER_SOURCE_IMAGE="${USER_ARTIFACT_SERVER_SOURCE_IMAGE:-${ARTIFACT_SERVER_SOURCE_IMAGE:-ghcr.io/project-zot/zot-linux-amd64:v${ARTIFACT_SERVER_VERSION}}}"
 # compatibility.dnsVersion is unprefixed (1.14.4). Chart appVersion and the
 # upstream registry.k8s.io tag use a leading v (v1.14.4). Normalize before
-# constructing the pull ref, same as ZOT_VERSION above.
+# constructing the pull ref, same as ARTIFACT_SERVER_VERSION above.
 DNS_VERSION="${USER_DNS_VERSION:-${DNS_VERSION:-1.14.4}}"
 DNS_VERSION="${DNS_VERSION#v}"
 DNS_IMAGE_PULL_REF="${USER_DNS_IMAGE_PULL_REF:-${DNS_IMAGE_PULL_REF:-registry.k8s.io/coredns/coredns:v${DNS_VERSION}}}"
@@ -740,7 +741,7 @@ lan_build_cache_enabled() {
 
 # Parse oci-archive:path[:reference] (first colon after transport separates
 # path from optional reference). References often contain further colons
-# (registry.local/zot:bundled). Linux archive paths never contain ':'.
+# (registry.local/artifact-server:bundled). Linux archive paths never contain ':'.
 oci_archive_path_of() {
   local rest="${1#oci-archive:}"
   printf '%s' "${rest%%:*}"
@@ -1328,12 +1329,12 @@ warn_if_local_repo_source "${CTL_REPO_SOURCE}" "CTL_REPO"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   require_file "${VALUES_FILE_SOURCE}" "values file"
 fi
-if [[ -z "${ZOT_VERSION}" || "${ZOT_VERSION}" == *latest* ]]; then
-  echo "build-full-bundle: ZOT_VERSION must be an exact non-latest version" >&2
+if [[ -z "${ARTIFACT_SERVER_VERSION}" || "${ARTIFACT_SERVER_VERSION}" == *latest* ]]; then
+  echo "build-full-bundle: ARTIFACT_SERVER_VERSION must be an exact non-latest version" >&2
   exit 2
 fi
-if [[ "${ZOT_IMAGE_PULL_REF}" == *:latest || "${ZOT_IMAGE_PULL_REF}" == registry.local/* ]]; then
-  echo "build-full-bundle: ZOT_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
+if [[ "${ARTIFACT_SERVER_SOURCE_IMAGE}" == *:latest || "${ARTIFACT_SERVER_SOURCE_IMAGE}" == registry.local/* ]]; then
+  echo "build-full-bundle: ARTIFACT_SERVER_SOURCE_IMAGE must be a version-pinned upstream image ref" >&2
   exit 2
 fi
 if [[ -z "${DNS_VERSION}" || "${DNS_VERSION}" == *latest* ]]; then
@@ -1361,10 +1362,10 @@ mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}" "$
 clone_repo "${CODE_REPO_SOURCE}" "${code_git_ref}" "${CODE_REPO_DIR}"
 clone_repo "${CTL_REPO_SOURCE}" "${ctl_git_ref}" "${CTL_REPO_DIR}"
 
-ZOT_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-registry/Chart.yaml")"
-# Chart.yaml may use Helm/upstream form v2.1.8 while ZOT_VERSION is 2.1.8.
-if [[ -z "${ZOT_CHART_APP_VERSION}" || "${ZOT_CHART_APP_VERSION#v}" != "${ZOT_VERSION}" ]]; then
-  echo "build-full-bundle: ZOT_VERSION ${ZOT_VERSION} must match appliance-registry chart appVersion ${ZOT_CHART_APP_VERSION:-<missing>}" >&2
+ARTIFACT_SERVER_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-registry/Chart.yaml")"
+# Chart.yaml may use Helm/upstream form v2.1.8 while ARTIFACT_SERVER_VERSION is 2.1.8.
+if [[ -z "${ARTIFACT_SERVER_CHART_APP_VERSION}" || "${ARTIFACT_SERVER_CHART_APP_VERSION#v}" != "${ARTIFACT_SERVER_VERSION}" ]]; then
+  echo "build-full-bundle: ARTIFACT_SERVER_VERSION ${ARTIFACT_SERVER_VERSION} must match appliance-registry chart appVersion ${ARTIFACT_SERVER_CHART_APP_VERSION:-<missing>}" >&2
   exit 2
 fi
 
@@ -1432,8 +1433,8 @@ BUNDLED_IMAGE_REFS=()
 
 ensure_lan_build_cache_login
 
-ZOT_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/artifact-server-image.tar"
-ZOT_IMAGE_REF=""
+ARTIFACT_SERVER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/artifact-server-image.tar"
+ARTIFACT_SERVER_IMAGE_REF=""
 
 DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/coredns-image.tar"
 DNS_IMAGE_REF=""
@@ -1499,10 +1500,10 @@ HOST_PACKAGES_ARGS=(
 # chart config. Always package from upstream pull ref (no pre-supplied archive).
 make package-artifact-server-image-archive \
   OUT_FILE="/workspace/.run/artifact-server-image.tar" \
-  ARTIFACT_SERVER_VERSION=$(shell_quote "${ZOT_VERSION}") \
-  ARTIFACT_SERVER_SOURCE_IMAGE=$(shell_quote "${ZOT_IMAGE_PULL_REF}")
-ZOT_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/artifact-server-image.tar"
-ZOT_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/artifact-server-image.reference)"
+  ARTIFACT_SERVER_VERSION=$(shell_quote "${ARTIFACT_SERVER_VERSION}") \
+  ARTIFACT_SERVER_SOURCE_IMAGE=$(shell_quote "${ARTIFACT_SERVER_SOURCE_IMAGE}")
+ARTIFACT_SERVER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/artifact-server-image.tar"
+ARTIFACT_SERVER_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/artifact-server-image.reference)"
 
 # Appliance-owned CoreDNS wrapper: tees stdout/stderr into /data/zon/logs/dns.
 # Always package from upstream pull ref (no pre-supplied archive path).
@@ -1550,9 +1551,9 @@ bash ./scripts/package/archive-release-input.sh \
   --host-agent-image-reference "\${HOST_AGENT_IMAGE_REF}" \
   "\${HOST_PACKAGES_ARGS[@]}" \
   --k3s-version $(shell_quote "${K3S_VERSION}") \
-  --zot-version $(shell_quote "${ZOT_VERSION}") \
-  --zot-image "\${ZOT_IMAGE_ARCHIVE_FOR_DEV}" \
-  --zot-image-reference "\${ZOT_IMAGE_REF}" \
+  --artifact-server-version $(shell_quote "${ARTIFACT_SERVER_VERSION}") \
+  --artifact-server-image "\${ARTIFACT_SERVER_IMAGE_ARCHIVE_FOR_DEV}" \
+  --artifact-server-image-reference "\${ARTIFACT_SERVER_IMAGE_REF}" \
   --dns-version $(shell_quote "${DNS_VERSION}") \
   --dns-image "\${DNS_IMAGE_ARCHIVE_FOR_DEV}" \
   --dns-image-reference "\${DNS_IMAGE_REF}" \
@@ -1564,7 +1565,7 @@ chmod +x "${CODE_DEV_SCRIPT_PATH}"
 
 make -C "${CODE_REPO_DIR}" dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}"
 cp "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"
-ZOT_IMAGE_REF="$(tr -d '\r\n' < "${CODE_REPO_DIR}/.run/artifact-server-image.reference")"
+ARTIFACT_SERVER_IMAGE_REF="$(tr -d '\r\n' < "${CODE_REPO_DIR}/.run/artifact-server-image.reference")"
 
 fetch_k3s_inputs_from_files_api "${INPUTS_DIR}"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
@@ -1608,7 +1609,7 @@ echo "final bundle:"
 echo "  ${BUNDLE_DIR}"
 echo
 echo "bundled artifact-server image:"
-echo "  ${ZOT_IMAGE_REF}"
+echo "  ${ARTIFACT_SERVER_IMAGE_REF}"
 echo
 echo "generated bundle config:"
 echo "  ${WORKSPACE}/generated/product-bundle.env"

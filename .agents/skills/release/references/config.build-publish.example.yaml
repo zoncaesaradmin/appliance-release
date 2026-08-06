@@ -39,7 +39,7 @@
 #     DEV_REGISTRY, DEV_IMAGE_REPO, DEV_IMAGE_NAME,
 #     DEV_REGISTRY_USER, DEV_REGISTRY_TOKEN, DEV_REGISTRY_TLS_VERIFY
 #   Plus APPLIANCE_BUILD_SUDO_PASSWORD (bootstrap/build always use sudo).
-#   Packaging pins (Argo/Zot/DNS/provisioner) live in product scripts, not here.
+#   Packaging pins (Argo/Artifact Server/DNS/provisioner) live in product scripts, not here.
 
 # ============================================================================
 # Release workspace on the build host
