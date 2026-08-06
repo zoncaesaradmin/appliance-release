@@ -51,7 +51,7 @@ def test_complete_report() -> None:
                 "releaseVersion": "0.1.0",
                 "remoteReleaseCommit": "abc123",
                 "artifactChecksums": [{"path": "bundle.tar.gz", "digest": "sha256:x"}],
-                "releaseInputArtifacts": {"argoExecutorImage": {"digest": "sha256:y"}},
+                "releaseInputArtifacts": {"workflowExecutorImage": {"digest": "sha256:y"}},
                 "bundleEntries": [{"path": "oci-images/executor.tar", "digest": "sha256:z"}],
                 "logs": {"releaseArtifactValidation": str(run_dir / "logs" / "release-artifact-validation.json")},
             },

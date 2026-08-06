@@ -165,7 +165,7 @@ def test_rejects_packaging_pin_keys() -> None:
         result = run_build_publish_config(config, run_dir)
         if result.returncode == 0:
             raise AssertionError("build_flow.argo pin keys were accepted")
-        if "Argo/Zot/DNS/provisioner pin keys were removed" not in result.stdout:
+        if "workflows engine/Zot/DNS/provisioner pin keys were removed" not in result.stdout:
             raise AssertionError(result.stdout)
 
 

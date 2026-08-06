@@ -12,7 +12,7 @@ release-input handoff come from `appliance-code`.
   Local checks for this repo.
 - `make build-and-publish`
   Build-host release sequence (bootstrap → build → publish). Prefer this
-  for CI / Argo: inject `DEV_*`, `RELEASE_WORK_ROOT`, and optional
+  for CI: inject `DEV_*`, `RELEASE_WORK_ROOT`, and optional
   `PRODUCT_VERSION` in the runner env; no script paths needed in the workflow.
   Equivalent leaf scripts (same sequence):
   1. `bash ./scripts/bootstrap-build-host.sh`

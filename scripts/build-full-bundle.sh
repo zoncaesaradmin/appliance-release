@@ -39,14 +39,14 @@ files API (seed once with scripts/fetch-k3s-inputs.sh). URL layout is fixed:
   https://\$DEV_REGISTRY/api/v1/files/k3s/\$K3S_VERSION/k3s-airgap-images-amd64.tar.zst
 K3S_VERSION comes from configs/product-bundle.ci.env (or K3S_VERSION_OVERRIDE).
 
-Argo Workflows is on by default (it is a mandatory component of the
+The workflows engine is on by default (it is a mandatory component of the
 complete v1 appliance per ADR 0011) and needs no configuration: its
 version and controller/executor image references are derived
 automatically from appliance-code's own
-deploy/charts/argo-workflows/Chart.yaml (the chart's pinned appVersion),
+deploy/charts/appliance-workflows/Chart.yaml (the chart's pinned appVersion),
 and its CRDs are fetched automatically from the matching upstream Argo
 Workflows GitHub release unless you provide a local copy. You never need
-to set an Argo version yourself.
+to set a workflows version yourself.
 
 Optional overrides:
   PRODUCT_VERSION=0.1.0         # overrides configs/default-product-version
@@ -57,13 +57,13 @@ Optional overrides:
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
   # Host packages: always export-host-packages for mdns + wifi-ap under OS_VERSION
   # (ubuntu/<version>/amd64/*.deb). Install stages debs; enablement is day-2 only.
-  # BUILD_COMPLETE_PRODUCT=false  # developer slim path only; default true requires Argo + dev-build
+  # BUILD_COMPLETE_PRODUCT=false  # developer slim path only; default true requires workflows + dev-build
   # COMPONENT_CACHE_DIR=/var/cache/appliance-build/components  # optional dirty-only rebuild cache
-  ARGO_ENABLED=true                 # complete product always packages Argo (set BUILD_COMPLETE_PRODUCT=false to allow opt-out)
-  ARGO_VERSION=v3.5.10              # pin a different Argo version than the chart's appVersion
-  ARGO_CONTROLLER_IMAGE_REF=localhost/appliance-argo-controller:v3.5.10
-  ARGO_EXECUTOR_IMAGE_REF=quay.io/argoproj/argoexec:v3.5.10
-  # Argo CRDs and controller/executor images are always fetched/packaged online
+  WORKFLOWS_ENABLED=true                 # complete product always packages the workflows engine (set BUILD_COMPLETE_PRODUCT=false to allow opt-out)
+  WORKFLOWS_VERSION=v3.5.10              # pin a different workflows engine version than the chart's appVersion
+  WORKFLOW_CONTROLLER_IMAGE_REF=localhost/appliance-workflow-controller:v3.5.10
+  WORKFLOW_EXECUTOR_IMAGE_REF=quay.io/argoproj/argoexec:v3.5.10
+  # Workflow CRDs and controller/executor images are always fetched/packaged online
   # (or via the automatic LAN build-cache on DEV_REGISTRY). Pre-supplied local
   # archive/dir paths are not supported.
   WORKSPACE_PROVISIONER_IMAGE_REF=docker.io/alpine/git:latest
@@ -104,11 +104,11 @@ USER_VALUES_FILE_SOURCE="${VALUES_FILE_SOURCE-}"
 USER_RELEASE_WORK_ROOT="${RELEASE_WORK_ROOT-}"
 USER_OS_VERSION="${OS_VERSION-}"
 USER_K3S_VERSION_OVERRIDE="${K3S_VERSION_OVERRIDE-}"
-USER_ARGO_ENABLED="${ARGO_ENABLED-}"
-USER_ARGO_REQUIRED="${ARGO_REQUIRED-}"
-USER_ARGO_VERSION="${ARGO_VERSION-}"
-USER_ARGO_CONTROLLER_IMAGE_REF="${ARGO_CONTROLLER_IMAGE_REF-}"
-USER_ARGO_EXECUTOR_IMAGE_REF="${ARGO_EXECUTOR_IMAGE_REF-}"
+USER_WORKFLOWS_ENABLED="${WORKFLOWS_ENABLED-}"
+USER_WORKFLOWS_REQUIRED="${WORKFLOWS_REQUIRED-}"
+USER_WORKFLOWS_VERSION="${WORKFLOWS_VERSION-}"
+USER_WORKFLOW_CONTROLLER_IMAGE_REF="${WORKFLOW_CONTROLLER_IMAGE_REF-}"
+USER_WORKFLOW_EXECUTOR_IMAGE_REF="${WORKFLOW_EXECUTOR_IMAGE_REF-}"
 USER_WORKSPACE_PROVISIONER_IMAGE_REF="${WORKSPACE_PROVISIONER_IMAGE_REF-}"
 USER_ARTIFACT_SERVER_VERSION="${ARTIFACT_SERVER_VERSION-}"
 USER_ARTIFACT_SERVER_SOURCE_IMAGE="${ARTIFACT_SERVER_SOURCE_IMAGE-}"
@@ -127,9 +127,9 @@ set +a
 # Reject removed offline/local archive path knobs (build always pulls/packages
 # from the network, with an automatic LAN build-cache when DEV_REGISTRY is set).
 _removed_offline_build_inputs=(
-  ARGO_CRDS_DIR_SOURCE
-  ARGO_CONTROLLER_IMAGE_ARCHIVE_SOURCE
-  ARGO_EXECUTOR_IMAGE_ARCHIVE_SOURCE
+  WORKFLOWS_CRDS_DIR_SOURCE
+  WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_SOURCE
+  WORKFLOW_EXECUTOR_IMAGE_ARCHIVE_SOURCE
   WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE
   ARTIFACT_SERVER_IMAGE_ARCHIVE_SOURCE
   DNS_IMAGE_ARCHIVE_SOURCE
@@ -174,11 +174,11 @@ RELEASE_WORK_ROOT="${USER_RELEASE_WORK_ROOT:-${RELEASE_WORK_ROOT:-${TMPDIR:-/tmp
 EXPORT_DIR="${RELEASE_WORK_ROOT}/export"
 OS_VERSION="${USER_OS_VERSION:-${OS_VERSION:-24.04}}"
 K3S_VERSION_OVERRIDE="${USER_K3S_VERSION_OVERRIDE:-}"
-ARGO_ENABLED="${USER_ARGO_ENABLED:-${ARGO_ENABLED:-}}"
-ARGO_REQUIRED="${USER_ARGO_REQUIRED:-${ARGO_REQUIRED:-}}"
-ARGO_VERSION="${USER_ARGO_VERSION:-${ARGO_VERSION:-}}"
-ARGO_CONTROLLER_IMAGE_REF="${USER_ARGO_CONTROLLER_IMAGE_REF:-${ARGO_CONTROLLER_IMAGE_REF:-}}"
-ARGO_EXECUTOR_IMAGE_REF="${USER_ARGO_EXECUTOR_IMAGE_REF:-${ARGO_EXECUTOR_IMAGE_REF:-}}"
+WORKFLOWS_ENABLED="${USER_WORKFLOWS_ENABLED:-${WORKFLOWS_ENABLED:-}}"
+WORKFLOWS_REQUIRED="${USER_WORKFLOWS_REQUIRED:-${WORKFLOWS_REQUIRED:-}}"
+WORKFLOWS_VERSION="${USER_WORKFLOWS_VERSION:-${WORKFLOWS_VERSION:-}}"
+WORKFLOW_CONTROLLER_IMAGE_REF="${USER_WORKFLOW_CONTROLLER_IMAGE_REF:-${WORKFLOW_CONTROLLER_IMAGE_REF:-}}"
+WORKFLOW_EXECUTOR_IMAGE_REF="${USER_WORKFLOW_EXECUTOR_IMAGE_REF:-${WORKFLOW_EXECUTOR_IMAGE_REF:-}}"
 WORKSPACE_PROVISIONER_IMAGE_REF="${USER_WORKSPACE_PROVISIONER_IMAGE_REF:-${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:latest}}"
 # compatibility.artifactServerVersion is unprefixed (2.1.8). Chart appVersion
 # and GHCR tags use a leading v (v2.1.8). Normalize before constructing the
@@ -193,12 +193,12 @@ DNS_VERSION="${USER_DNS_VERSION:-${DNS_VERSION:-1.14.4}}"
 DNS_VERSION="${DNS_VERSION#v}"
 DNS_IMAGE_PULL_REF="${USER_DNS_IMAGE_PULL_REF:-${DNS_IMAGE_PULL_REF:-registry.k8s.io/coredns/coredns:v${DNS_VERSION}}}"
 
-# Argo Workflows is a mandatory component of the complete product super-set
-# (ADR 0011). BUILD_COMPLETE_PRODUCT defaults true and forces ARGO_ENABLED.
-# ARGO_VERSION is derived later from appliance-code's Chart.yaml once checked out.
+# The workflows engine is a mandatory component of the complete product
+# super-set (ADR 0011). BUILD_COMPLETE_PRODUCT defaults true and forces WORKFLOWS_ENABLED.
+# WORKFLOWS_VERSION is derived later from appliance-code's Chart.yaml once checked out.
 BUILD_COMPLETE_PRODUCT="${BUILD_COMPLETE_PRODUCT:-true}"
-if [[ -z "${ARGO_ENABLED}" ]]; then
-  ARGO_ENABLED="true"
+if [[ -z "${WORKFLOWS_ENABLED}" ]]; then
+  WORKFLOWS_ENABLED="true"
 fi
 
 DEV_REGISTRY="${USER_DEV_REGISTRY:-${DEV_REGISTRY:-}}"
@@ -328,8 +328,8 @@ bool_true() {
   esac
 }
 
-if bool_true "${BUILD_COMPLETE_PRODUCT}" && ! bool_true "${ARGO_ENABLED}"; then
-  echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires ARGO_ENABLED=true (developer slim builds: BUILD_COMPLETE_PRODUCT=false)" >&2
+if bool_true "${BUILD_COMPLETE_PRODUCT}" && ! bool_true "${WORKFLOWS_ENABLED}"; then
+  echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires WORKFLOWS_ENABLED=true (developer slim builds: BUILD_COMPLETE_PRODUCT=false)" >&2
   exit 2
 fi
 if bool_true "${BUILD_COMPLETE_PRODUCT}"; then
@@ -882,7 +882,7 @@ skopeo_try_copy() {
   esac
 }
 
-# Host-network podman pull/save — same path used successfully for Argo OCI.
+# Host-network podman pull/save — same path used successfully for workflows OCI.
 # Used as upstream fallback when skopeo copy fails so LAN mirror work does not
 # regress plain internet pulls.
 podman_export_oci_archive() {
@@ -997,7 +997,7 @@ skopeo_copy_oci_archive() {
   fi
 
   # Upstream: show skopeo errors (do not swallow 2>&1). Optional podman
-  # fallback matches export_container_image_archive (Argo path) — host network.
+  # fallback matches export_container_image_archive (workflows path) — host network.
   if ! skopeo_try_copy "${source_ref}" "${dest_spec}" "0" "${upstream_tls}" "true" "false"; then
     echo "build-full-bundle: skopeo upstream copy failed for ${source_ref}; trying sudo podman pull/save fallback" >&2
     if ! podman_export_oci_archive "${source_ref}" "${output_path}"; then
@@ -1141,19 +1141,20 @@ export_bundled_oci_archive() {
   finalize_bundled_oci_archive "${output_path}" "${local_name}" "${local_or_expected_ref}"
 }
 
-# derive_argo_version_from_code_repo reads the pinned Argo version out of
-# appliance-code's own deploy/charts/argo-workflows/Chart.yaml (its
-# appVersion field), the single source of truth for which Argo release
-# this chart is built against. This is what lets an operator build a
-# complete appliance without ever having to know or set an Argo version
+# derive_workflows_version_from_code_repo reads the pinned workflows engine
+# version out of appliance-code's own
+# deploy/charts/appliance-workflows/Chart.yaml (its appVersion field), the
+# single source of truth for which upstream Argo Workflows release this
+# chart is built against. This is what lets an operator build a complete
+# appliance without ever having to know or set a workflows version
 # themselves: it's the same version the chart itself is pinned to,
 # already reviewed and committed in that repo.
-derive_argo_version_from_code_repo() {
-  local chart_yaml="${CODE_REPO_DIR}/deploy/charts/argo-workflows/Chart.yaml"
+derive_workflows_version_from_code_repo() {
+  local chart_yaml="${CODE_REPO_DIR}/deploy/charts/appliance-workflows/Chart.yaml"
   local version
 
   if [[ ! -f "${chart_yaml}" ]]; then
-    echo "build-full-bundle: ARGO_ENABLED is true but ${chart_yaml} was not found; cannot derive the Argo version" >&2
+    echo "build-full-bundle: WORKFLOWS_ENABLED is true but ${chart_yaml} was not found; cannot derive the workflows version" >&2
     exit 1
   fi
   version="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${chart_yaml}")"
@@ -1164,10 +1165,10 @@ derive_argo_version_from_code_repo() {
   printf '%s' "${version}"
 }
 
-fetch_argo_crds_from_release() {
-  local argo_version="$1"
+fetch_workflows_crds_from_release() {
+  local workflows_version="$1"
   local output_dir="$2"
-  local manifest_url="https://github.com/argoproj/argo-workflows/releases/download/${argo_version}/namespace-install.yaml"
+  local manifest_url="https://github.com/argoproj/argo-workflows/releases/download/${workflows_version}/namespace-install.yaml"
   local tmp_manifest
 
   tmp_manifest="$(mktemp)"
@@ -1195,13 +1196,13 @@ for raw_doc in docs:
         continue
     match = re.search(r"^\s*name:\s*([A-Za-z0-9._-]+)\s*$", doc, flags=re.MULTILINE)
     if not match:
-        raise SystemExit("build-full-bundle: could not determine Argo CRD filename from downloaded manifest")
+        raise SystemExit("build-full-bundle: could not determine workflow CRD filename from downloaded manifest")
     out_path = output_dir / f"{match.group(1)}.yaml"
     out_path.write_text(doc + "\n", encoding="utf-8")
     written += 1
 
 if written == 0:
-    raise SystemExit("build-full-bundle: downloaded Argo manifest did not contain any CRDs")
+    raise SystemExit("build-full-bundle: downloaded workflow manifest did not contain any CRDs")
 PY
   rm -f "${tmp_manifest}"
   trap - RETURN
@@ -1378,23 +1379,23 @@ fi
 
 require_appliance_code_bootstrap
 
-if bool_true "${ARGO_ENABLED}"; then
-  if [[ -z "${ARGO_VERSION}" ]]; then
-    ARGO_VERSION="$(derive_argo_version_from_code_repo)"
+if bool_true "${WORKFLOWS_ENABLED}"; then
+  if [[ -z "${WORKFLOWS_VERSION}" ]]; then
+    WORKFLOWS_VERSION="$(derive_workflows_version_from_code_repo)"
   fi
-  if [[ -z "${ARGO_CONTROLLER_IMAGE_REF}" ]]; then
-    ARGO_CONTROLLER_IMAGE_REF="localhost/appliance-argo-controller:${ARGO_VERSION}"
+  if [[ -z "${WORKFLOW_CONTROLLER_IMAGE_REF}" ]]; then
+    WORKFLOW_CONTROLLER_IMAGE_REF="localhost/appliance-workflow-controller:${WORKFLOWS_VERSION}"
   fi
-  if [[ -z "${ARGO_EXECUTOR_IMAGE_REF}" ]]; then
-    ARGO_EXECUTOR_IMAGE_REF="quay.io/argoproj/argoexec:${ARGO_VERSION}"
+  if [[ -z "${WORKFLOW_EXECUTOR_IMAGE_REF}" ]]; then
+    WORKFLOW_EXECUTOR_IMAGE_REF="quay.io/argoproj/argoexec:${WORKFLOWS_VERSION}"
   fi
 fi
 
 mkdir -p "${CODE_REPO_DIR}/.run"
 
-ARGO_CRDS_DIR_FOR_DEV=""
-ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
-ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
+WORKFLOWS_CRDS_DIR_FOR_DEV=""
+WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
+WORKFLOW_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
 rm -rf "${CODE_REPO_DIR}/.run/host-packages"
 # Complete product super-set always packages both host capability closures by
 # export on the build host (no external host-packages tree override).
@@ -1414,16 +1415,16 @@ if ! component_cache_try_restore "host-packages" "${CODE_REPO_DIR}/.run/host-pac
   component_cache_store "host-packages" "${CODE_REPO_DIR}/.run/host-packages" "${host_packages_fingerprint_inputs[@]}"
 fi
 
-if bool_true "${ARGO_ENABLED}"; then
+if bool_true "${WORKFLOWS_ENABLED}"; then
   # Always fetch CRDs and pull/package images (no local archive path inputs).
-  if bool_true "${ARGO_REQUIRED:-true}"; then
-    ARGO_CRDS_DIR_FOR_DEV="/workspace/.run/argo-crds"
-    fetch_argo_crds_from_release "${ARGO_VERSION}" "${CODE_REPO_DIR}/.run/argo-crds"
+  if bool_true "${WORKFLOWS_REQUIRED:-true}"; then
+    WORKFLOWS_CRDS_DIR_FOR_DEV="/workspace/.run/workflows-crds"
+    fetch_workflows_crds_from_release "${WORKFLOWS_VERSION}" "${CODE_REPO_DIR}/.run/workflows-crds"
   fi
   # Controller image is wrapped inside the code-repo dev-run (buildah).
-  ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
-  ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-executor-image.tar"
-  export_container_image_archive "${ARGO_EXECUTOR_IMAGE_REF}" "${CODE_REPO_DIR}/.run/argo-executor-image.tar"
+  WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
+  WORKFLOW_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workflow-executor-image.tar"
+  export_container_image_archive "${WORKFLOW_EXECUTOR_IMAGE_REF}" "${CODE_REPO_DIR}/.run/workflow-executor-image.tar"
 fi
 
 # Bundled supplemental images for release-input (--extra-oci-image flags):
@@ -1466,7 +1467,7 @@ CONTROL_PLANE_IMAGE_OUT="/workspace/.run/control-plane-image.tar"
 UI_IMAGE_OUT="/workspace/.run/appliance-ui-image.tar"
 HOST_AGENT_IMAGE_OUT="/workspace/.run/appliance-host-agent-image.tar"
 HOST_AGENT_IMAGE_REF_FILE="/workspace/.run/appliance-host-agent-image.reference"
-ARGO_ARGS=()
+WORKFLOWS_ARGS=()
 BUNDLED_IMAGE_ARGS=()
 # Prefer the release/product version for image tags and the control-plane
 # /version payload. Commit SHA stays in the separate Commit build field.
@@ -1517,25 +1518,25 @@ DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/coredns-image.reference)"
 
 METADATA_BUNDLE_ARCHIVE_FOR_DEV="\$(bash ./scripts/package/generate-metadata-bundle.sh --software-version "\${CODE_VERSION}" --out-dir "/workspace/.run/metadata-bundle")"
 
-if bool_true $(shell_quote "${ARGO_ENABLED}"); then
-  ARGO_ARGS+=(--argo-version $(shell_quote "${ARGO_VERSION}"))
+if bool_true $(shell_quote "${WORKFLOWS_ENABLED}"); then
+  WORKFLOWS_ARGS+=(--workflows-version $(shell_quote "${WORKFLOWS_VERSION}"))
 
-  if [[ -n $(shell_quote "${ARGO_CRDS_DIR_FOR_DEV}") ]]; then
-    ARGO_ARGS+=(--argo-crds-dir $(shell_quote "${ARGO_CRDS_DIR_FOR_DEV}"))
+  if [[ -n $(shell_quote "${WORKFLOWS_CRDS_DIR_FOR_DEV}") ]]; then
+    WORKFLOWS_ARGS+=(--workflows-crds-dir $(shell_quote "${WORKFLOWS_CRDS_DIR_FOR_DEV}"))
   fi
 
   # Always wrap the upstream controller inside the code-repo dev environment.
-  make package-argo-controller-image-archive \
-    OUT_FILE="/workspace/.run/argo-controller-image.tar" \
-    ARGO_VERSION=$(shell_quote "${ARGO_VERSION}") \
-    ARGO_CONTROLLER_BASE_IMAGE=$(shell_quote "quay.io/argoproj/workflow-controller:${ARGO_VERSION}")
-  ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/argo-controller-image.tar"
+  make package-workflow-controller-image-archive \
+    OUT_FILE="/workspace/.run/workflow-controller-image.tar" \
+    WORKFLOWS_VERSION=$(shell_quote "${WORKFLOWS_VERSION}") \
+    WORKFLOW_CONTROLLER_BASE_IMAGE=$(shell_quote "quay.io/argoproj/workflow-controller:${WORKFLOWS_VERSION}")
+  WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workflow-controller-image.tar"
 
-  ARGO_ARGS+=(--argo-controller-image "\${ARGO_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}")
-  ARGO_ARGS+=(--argo-controller-image-reference $(shell_quote "${ARGO_CONTROLLER_IMAGE_REF}"))
+  WORKFLOWS_ARGS+=(--workflow-controller-image "\${WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}")
+  WORKFLOWS_ARGS+=(--workflow-controller-image-reference $(shell_quote "${WORKFLOW_CONTROLLER_IMAGE_REF}"))
 
-  ARGO_ARGS+=(--argo-executor-image $(shell_quote "${ARGO_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV}"))
-  ARGO_ARGS+=(--argo-executor-image-reference $(shell_quote "${ARGO_EXECUTOR_IMAGE_REF}"))
+  WORKFLOWS_ARGS+=(--workflow-executor-image $(shell_quote "${WORKFLOW_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV}"))
+  WORKFLOWS_ARGS+=(--workflow-executor-image-reference $(shell_quote "${WORKFLOW_EXECUTOR_IMAGE_REF}"))
 fi
 
 ${BUNDLED_IMAGE_ARG_LINES}
@@ -1558,7 +1559,7 @@ bash ./scripts/package/archive-release-input.sh \
   --dns-image "\${DNS_IMAGE_ARCHIVE_FOR_DEV}" \
   --dns-image-reference "\${DNS_IMAGE_REF}" \
   --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \
-  "\${ARGO_ARGS[@]}" \
+  "\${WORKFLOWS_ARGS[@]}" \
   "\${BUNDLED_IMAGE_ARGS[@]}"
 EOF
 chmod +x "${CODE_DEV_SCRIPT_PATH}"

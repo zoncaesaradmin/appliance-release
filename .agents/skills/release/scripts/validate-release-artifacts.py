@@ -334,27 +334,27 @@ def validate_runtime_values(artifacts: dict, bundle_values: dict) -> list:
     return checked
 
 
-def validate_argo(artifacts: dict, release_input_dir: Path, entries_by_path: dict) -> list:
+def validate_workflows(artifacts: dict, release_input_dir: Path, entries_by_path: dict) -> list:
     checked = []
-    chart = require_artifact(artifacts, "argoWorkflowsChart")
-    chart_path = require_existing_release_path(release_input_dir, chart["path"], "argoWorkflowsChart")
-    require_bundle_entry(entries_by_path, f"charts/{chart_path.name}", "Argo chart")
-    checked.append("argoWorkflowsChart")
+    chart = require_artifact(artifacts, "workflowsChart")
+    chart_path = require_existing_release_path(release_input_dir, chart["path"], "workflowsChart")
+    require_bundle_entry(entries_by_path, f"charts/{chart_path.name}", "workflows chart")
+    checked.append("workflowsChart")
 
-    crds = require_artifact(artifacts, "argoCRDs")
-    crds_path = require_existing_release_path(release_input_dir, crds["path"], "argoCRDs")
+    crds = require_artifact(artifacts, "workflowsCRDs")
+    crds_path = require_existing_release_path(release_input_dir, crds["path"], "workflowsCRDs")
     if crds_path.is_file():
-        require_bundle_entry(entries_by_path, f"kubernetes/crds/{crds_path.name}", "Argo CRDs")
+        require_bundle_entry(entries_by_path, f"kubernetes/crds/{crds_path.name}", "workflows CRDs")
     else:
         prefix = f"kubernetes/crds/{str(crds['path']).rstrip('/')}/"
         matches = [path for path in entries_by_path if path.startswith(prefix)]
         if not matches:
-            raise ValueError(f"bundle manifest is missing Argo CRD entries under {prefix}")
+            raise ValueError(f"bundle manifest is missing workflow CRD entries under {prefix}")
         for path in matches:
-            require_bundle_entry(entries_by_path, path, "Argo CRD")
-    checked.append("argoCRDs")
+            require_bundle_entry(entries_by_path, path, "workflow CRD")
+    checked.append("workflowsCRDs")
 
-    for key in ("argoControllerImage", "argoExecutorImage"):
+    for key in ("workflowControllerImage", "workflowExecutorImage"):
         artifact = require_artifact(artifacts, key)
         image_path = require_existing_release_path(release_input_dir, artifact["path"], key)
         image_ref = require_image_reference(artifact, key)
@@ -695,11 +695,11 @@ def validate_extra_oci_images(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate release-input Argo/extra OCI artifacts in a final bundle manifest."
+        description="Validate release-input workflows engine/extra OCI artifacts in a final bundle manifest."
     )
     parser.add_argument("--release-input-root", required=True)
     parser.add_argument("--bundle-root", required=True)
-    parser.add_argument("--require-argo", action="store_true")
+    parser.add_argument("--require-workflows", action="store_true")
     parser.add_argument(
         "--expected-extra-oci-image-refs",
         default="",
@@ -766,8 +766,8 @@ def main() -> int:
             release_input_path.parent,
             entries_by_path,
         ),
-        "argo": validate_argo(artifacts, release_input_path.parent, entries_by_path)
-        if args.require_argo
+        "workflows": validate_workflows(artifacts, release_input_path.parent, entries_by_path)
+        if args.require_workflows
         else [],
         "extraOCIImages": validate_extra_oci_images(
             artifacts, release_input_path.parent, entries_by_path, expected_extra_refs

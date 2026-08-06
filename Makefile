@@ -12,7 +12,7 @@ VERIFY_CLIENT_CONFIG_CASE_LOG := $(VERIFY_LOG_DIR)/verify-client-config-case.log
 VERIFY_RELEASE_ARTIFACTS_LOG := $(VERIFY_LOG_DIR)/verify-release-artifacts.log
 RELEASE_SKILL_SCRIPT_DIR := .agents/skills/release/scripts
 
-# Full product sequence for CI / Argo: bootstrap → build → publish.
+# Full product sequence for CI: bootstrap → build → publish.
 # Inject DEV_*, RELEASE_WORK_ROOT, PRODUCT_VERSION (optional), etc. in the
 # runner environment. Aborts on the first failing step (.SHELLFLAGS).
 .PHONY: build-and-publish

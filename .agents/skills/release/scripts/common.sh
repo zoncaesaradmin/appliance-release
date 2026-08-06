@@ -262,7 +262,7 @@ csv_items_trimmed() {
 require_profile_supports_workflows() {
   local enabled_value="${1:-}"
   local profile="${2:-}"
-  local setting_name="${3:-verification.argo.enabled}"
+  local setting_name="${3:-verification.workflows.enabled}"
   if bool_true "${enabled_value}" && ! profile_supports_workflows "${profile}"; then
     fail "${setting_name}=true but install.appliance_profile=${profile} does not enable workflows; set ${setting_name}=false in config"
   fi
@@ -533,7 +533,7 @@ reject_removed_build_publish_path_keys() {
 }
 
 # Fail closed on knobs the skill no longer forwards. Product scripts own
-# Argo/Artifact Server/DNS/provisioner defaults; install-role owns verification.*.
+# workflows engine/Artifact Server/DNS/provisioner defaults; install-role owns verification.*.
 reject_removed_build_publish_packaging_keys() {
   local config_path="$1"
 
@@ -571,7 +571,7 @@ reject_removed_build_publish_packaging_keys() {
     || -n "$(config_get_optional "${config_path}" "build_flow.workspace_provisioner_image_archive_source" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.zot.image_archive_source" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.dns.image_archive_source" || true)" ]]; then
-    fail "offline/local archive path inputs under build_flow were removed; package always pulls from the network. Remove host_packages_dir_source, argo.*_archive_source, argo.crds_dir_source, zot/dns/workspace_provisioner image_archive_source keys"
+    fail "offline/local archive path inputs under build_flow were removed; package always pulls from the network. Remove host_packages_dir_source, legacy build_flow.argo.* archive/crds sources, and zot/dns/workspace_provisioner image_archive_source keys"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "build_flow.product_publish.registry" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.product_publish.image_repo" || true)" \
@@ -599,9 +599,9 @@ reject_removed_build_publish_packaging_keys() {
     || -n "$(config_get_optional "${config_path}" "build_flow.zot.image_pull_ref" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.dns.version" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.dns.image_pull_ref" || true)" ]]; then
-    fail "build_flow Argo/Zot/DNS/provisioner pin keys were removed from build-publish config; product scripts/build-full-bundle.sh owns those defaults"
+    fail "build_flow workflows engine/Zot/DNS/provisioner pin keys were removed from build-publish config; product scripts/build-full-bundle.sh owns those defaults"
   fi
-  if [[ -n "$(config_get_optional "${config_path}" "verification.argo.enabled" || true)" \
+  if [[ -n "$(config_get_optional "${config_path}" "verification.workflows.enabled" || true)" \
     || -n "$(config_get_optional "${config_path}" "install.appliance_profile" || true)" ]]; then
     fail "verification.* and install.* belong on the install-role config, not build-publish"
   fi

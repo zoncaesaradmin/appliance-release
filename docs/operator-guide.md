@@ -294,7 +294,7 @@ Common service log directories:
 ```text
 /data/zon/logs/api-server/
 /data/zon/logs/ui/
-/data/zon/logs/argo-controller/
+/data/zon/logs/workflow-controller/
 /data/zon/logs/artifactserver/
 /data/zon/logs/dns/
 ```
@@ -304,7 +304,7 @@ Kubernetes-native access remains important:
 ```bash
 sudo kubectl -n control logs deploy/api-server
 sudo kubectl -n control logs deploy/ui-server
-sudo kubectl -n workflows logs deploy/argo-workflows
+sudo kubectl -n workflows logs deploy/workflow-controller
 sudo kubectl -n appliance-builds logs <pod-name>
 sudo journalctl -u k3s -f
 ```

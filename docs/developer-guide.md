@@ -18,7 +18,7 @@ If you need to change the `zonctl` source, work in `appliance-ctl`, not here.
 ## Repo Boundary
 
 - `appliance-code` owns product artifacts such as the control-plane
-  chart, schema, optional Argo artifacts, and signed `release-input`
+  chart, schema, optional workflows engine artifacts, and signed `release-input`
 - `appliance-ctl` owns the `zonctl` source, tests, and binary
 - `appliance-release` owns packaging automation, bundle assembly
   workspace setup, signing material generation, and final bundle
@@ -135,7 +135,7 @@ Start from these templates if you want examples:
 ## Publish A Built Release
 
 One product sequence on the build host (after `DEV_*` and `RELEASE_WORK_ROOT`
-are set). For CI / Argo, prefer the Makefile trigger from the repo root:
+are set). For CI, prefer the Makefile trigger from the repo root:
 
 ```bash
 make build-and-publish

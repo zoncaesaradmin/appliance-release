@@ -53,8 +53,8 @@ def populate_positive_case(tmp: Path, *, include_host_packages: bool = True) -> 
     write(tmp / "release-input" / "tests" / "conformance.txt", "tests")
     write(tmp / "release-input" / "chart" / "argo-workflows-1.0.0.tgz", "chart")
     write(tmp / "release-input" / "crds" / "workflows.yaml", "crd")
-    write(tmp / "release-input" / "images" / "argo-controller.tar", "controller")
-    write(tmp / "release-input" / "images" / "argo-executor.tar", "executor")
+    write(tmp / "release-input" / "images" / "workflow-controller.tar", "controller")
+    write(tmp / "release-input" / "images" / "workflow-executor.tar", "executor")
     write(tmp / "release-input" / "images" / "buildah.tar", "buildah")
     write(tmp / "release-input" / "chart" / "appliance-registry-2.1.11.tgz", "artifact server chart")
     write_mismatched_oci_archive(
@@ -120,10 +120,10 @@ ingress:
     "provenance": {"path": "provenance", "manifestDigest": "sha256:provenance"},
     "notices": {"path": "notices", "manifestDigest": "sha256:notices"},
     "tests": {"path": "tests", "manifestDigest": "sha256:tests"},
-    "argoWorkflowsChart": {"path": "chart/argo-workflows-1.0.0.tgz", "digest": "sha256:chart", "sizeBytes": 5},
-    "argoCRDs": {"path": "crds", "manifestDigest": "sha256:crds"},
-    "argoControllerImage": {"path": "images/argo-controller.tar", "digest": "sha256:controller", "sizeBytes": 10, "imageReference": "quay.io/argoproj/workflow-controller:v3.5.10"},
-    "argoExecutorImage": {"path": "images/argo-executor.tar", "digest": "sha256:executor", "sizeBytes": 8, "imageReference": "quay.io/argoproj/argoexec:v3.5.10"},
+    "workflowsChart": {"path": "chart/argo-workflows-1.0.0.tgz", "digest": "sha256:chart", "sizeBytes": 5},
+    "workflowsCRDs": {"path": "crds", "manifestDigest": "sha256:crds"},
+    "workflowControllerImage": {"path": "images/workflow-controller.tar", "digest": "sha256:controller", "sizeBytes": 10, "imageReference": "quay.io/argoproj/workflow-controller:v3.5.10"},
+    "workflowExecutorImage": {"path": "images/workflow-executor.tar", "digest": "sha256:executor", "sizeBytes": 8, "imageReference": "quay.io/argoproj/argoexec:v3.5.10"},
     "extraOCIImages": [
       {"path": "images/buildah.tar", "digest": "sha256:buildah", "sizeBytes": 6, "imageReference": "registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
     ]
@@ -159,8 +159,8 @@ ingress:
     {"targetPath": "configuration/values.yaml", "digest": "sha256:values", "sizeBytes": 200},
     {"targetPath": "charts/argo-workflows-1.0.0.tgz", "digest": "sha256:chart", "sizeBytes": 5},
     {"targetPath": "kubernetes/crds/crds/workflows.yaml", "digest": "sha256:crd", "sizeBytes": 3},
-    {"targetPath": "oci-images/argo-controller.tar", "digest": "sha256:controller", "sizeBytes": 10, "imageReference": "quay.io/argoproj/workflow-controller:v3.5.10"},
-    {"targetPath": "oci-images/argo-executor.tar", "digest": "sha256:executor", "sizeBytes": 8, "imageReference": "quay.io/argoproj/argoexec:v3.5.10"},
+    {"targetPath": "oci-images/workflow-controller.tar", "digest": "sha256:controller", "sizeBytes": 10, "imageReference": "quay.io/argoproj/workflow-controller:v3.5.10"},
+    {"targetPath": "oci-images/workflow-executor.tar", "digest": "sha256:executor", "sizeBytes": 8, "imageReference": "quay.io/argoproj/argoexec:v3.5.10"},
     {"targetPath": "oci-images/buildah.tar", "digest": "sha256:buildah", "sizeBytes": 6, "imageReference": "registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
   ]
 }
@@ -192,7 +192,7 @@ def test_positive_case() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp)
-        result = run_validator(tmp, "--require-argo")
+        result = run_validator(tmp, "--require-workflows")
         if result.returncode != 0:
             raise AssertionError(result.stderr)
 
@@ -202,7 +202,7 @@ def test_rejects_missing_host_packages_when_flags_false() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp, include_host_packages=False)
-        result = run_validator(tmp, "--require-argo")
+        result = run_validator(tmp, "--require-workflows")
         if result.returncode == 0:
             raise AssertionError("missing host-packages were accepted when install flags are false")
         if "hostPackages" not in result.stderr and "host-packages" not in result.stderr.lower():
@@ -213,7 +213,7 @@ def test_positive_case_with_nested_bundle_root() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case_with_nested_bundle(tmp)
-        result = run_validator(tmp, "--require-argo")
+        result = run_validator(tmp, "--require-workflows")
         if result.returncode != 0:
             raise AssertionError(result.stderr)
 
@@ -227,7 +227,7 @@ def test_allows_empty_directory_artifacts() -> None:
             for child in list(directory.rglob("*")):
                 if child.is_file():
                     child.unlink()
-            result = run_validator(tmp, "--require-argo")
+            result = run_validator(tmp, "--require-workflows")
         if result.returncode != 0:
             raise AssertionError(result.stderr)
 
@@ -332,7 +332,7 @@ def test_accepts_host_packages_when_install_host_flags_false() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp, include_host_packages=True)
-        result = run_validator(tmp, "--require-argo")
+        result = run_validator(tmp, "--require-workflows")
         if result.returncode != 0:
             raise AssertionError(result.stderr)
 

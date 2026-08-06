@@ -36,7 +36,7 @@ Notes:
   best-effort seed).
 - Build packaging always pulls/packages from the network (or the automatic
   LAN build-cache flow above). Local build-host path inputs such as
-  `*_image_archive_source`, `argo.crds_dir_source`, and
+  `*_image_archive_source`, `workflows.crds_dir_source`, and
   `host_packages_dir_source` are rejected.
   K3s binary/images are downloaded by `build-full-bundle` from the appliance
   files API (`https://$DEV_REGISTRY/api/v1/files/k3s/$K3S_VERSION/…`). Seed
@@ -63,7 +63,7 @@ Notes:
   the UI. Install never requires a license file or online entitlement checks.
 - Set `install.appliance_profile` in the config, or omit it to default to `core`.
   Profile is **install-time only**: it selects which modules are activated on
-  the target. Packaging always produces the complete product super-set (Argo,
+  the target. Packaging always produces the complete product super-set (workflows engine,
   Artifact Server, DNS, host-packages for mdns+wifi-ap, workspace-provisioner, dev-build).
 - Day-to-day entry is `run-release-from-devhost.sh` with only
   `--config`, `--build-publish-config`, and `--install-config`. Stage selection
@@ -213,7 +213,7 @@ scripts → collect/validate artifacts. It does not SSH and does not own
 packaging pin defaults (those live in `scripts/build-full-bundle.sh`).
 
 After copied release-input and bundle metadata are available, the worker
-validates required product artifacts, Argo release artifacts, and
+validates required product artifacts, workflows engine release artifacts, and
 `extraOCIImages[]` entries against the final bundle manifest. Required runtime
 checks include the control-plane image, the separate appliance UI image, and
 the appliance Helm chart. For runtime OCI images, the copied release-input
@@ -285,12 +285,13 @@ This script checks:
 - the browser UI home route returning the expected appliance UI shell when `client_verification.base_url` or `verification.ui_home_command` is configured
 - support bundle collection on failure
 
-For workflow-capable profiles (`core` and `builder`), it also checks Argo by
-default, unless you explicitly disable `verification.argo.enabled`:
+For workflow-capable profiles (`core` and `builder`), it also checks the
+workflows engine by default, unless you explicitly disable
+`verification.workflows.enabled`:
 
 - `workflows` and `appliance-builds` namespaces
-- core Argo Workflow CRDs
-- the Argo controller deployment and pods
+- core workflow CRDs
+- the workflow controller deployment and pods
 
 If `install.appliance_profile` is a build-capable profile (`builder`,
 `builder-landns`, `builder-storage-landns`), it also checks that

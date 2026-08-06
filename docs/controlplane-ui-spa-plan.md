@@ -547,7 +547,7 @@ configuration-oriented features over time.
 
 `Analyze` should be structured for feature-specific drill-downs. For the
 current scope, it should anticipate workflow-centric analysis such as counts of
-successful and failed Argo-driven workflows and related summary views as that
+successful and failed workflows-engine-driven workflows and related summary views as that
 data surface becomes available.
 
 `Admin` should be structured as the appliance-wide operations and platform

@@ -166,25 +166,25 @@ CODE_VERSION=""
 CONTROL_PLANE_ARCHIVE_NAME=""
 UI_IMAGE_REF=""
 CHART_ARCHIVE_NAME=""
-ARGO_VERSION=""
-ARGO_CHART_ARCHIVE_NAME=""
-ARGO_CRDS_REL_PATH=""
-ARGO_CONTROLLER_ARCHIVE_NAME=""
-ARGO_CONTROLLER_IMAGE_REF=""
-ARGO_EXECUTOR_ARCHIVE_NAME=""
-ARGO_EXECUTOR_IMAGE_REF=""
+WORKFLOWS_VERSION=""
+WORKFLOWS_CHART_ARCHIVE_NAME=""
+WORKFLOWS_CRDS_REL_PATH=""
+WORKFLOW_CONTROLLER_ARCHIVE_NAME=""
+WORKFLOW_CONTROLLER_IMAGE_REF=""
+WORKFLOW_EXECUTOR_ARCHIVE_NAME=""
+WORKFLOW_EXECUTOR_IMAGE_REF=""
 if [[ -f "${RELEASE_INPUT_MANIFEST}" ]]; then
   CODE_VERSION="$(json_string "${RELEASE_INPUT_MANIFEST}" codeVersion)"
   CONTROL_PLANE_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" controlPlaneImage)"
   UI_IMAGE_REF="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" uiImage imageReference)"
   CHART_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" applianceChart)"
-  ARGO_VERSION="$(json_compatibility_string "${RELEASE_INPUT_MANIFEST}" argoVersion)"
-  ARGO_CHART_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" argoWorkflowsChart)"
-  ARGO_CRDS_REL_PATH="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" argoCRDs path)"
-  ARGO_CONTROLLER_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" argoControllerImage)"
-  ARGO_CONTROLLER_IMAGE_REF="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" argoControllerImage imageReference)"
-  ARGO_EXECUTOR_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" argoExecutorImage)"
-  ARGO_EXECUTOR_IMAGE_REF="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" argoExecutorImage imageReference)"
+  WORKFLOWS_VERSION="$(json_compatibility_string "${RELEASE_INPUT_MANIFEST}" workflowsVersion)"
+  WORKFLOWS_CHART_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" workflowsChart)"
+  WORKFLOWS_CRDS_REL_PATH="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" workflowsCRDs path)"
+  WORKFLOW_CONTROLLER_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" workflowControllerImage)"
+  WORKFLOW_CONTROLLER_IMAGE_REF="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" workflowControllerImage imageReference)"
+  WORKFLOW_EXECUTOR_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" workflowExecutorImage)"
+  WORKFLOW_EXECUTOR_IMAGE_REF="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" workflowExecutorImage imageReference)"
   if [[ -z "${CONTROL_PLANE_IMAGE_REF}" ]]; then
     CONTROL_PLANE_IMAGE_REF="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" controlPlaneImage imageReference)"
   fi
@@ -372,13 +372,13 @@ The \`release-input\` directory is produced by \`appliance-code\` and must conta
 - \`notices/\`
 - \`tests/\`
 
-If the product handoff includes Argo Workflows for Phase 1 bring-up, this
+If the product handoff includes the workflows engine for Phase 1 bring-up, this
 workspace also auto-packages the optional release-input artifacts when present:
 
-- \`${ARGO_CHART_ARCHIVE_NAME:-argo-workflows-<version>.tgz}\`
-- \`${ARGO_CRDS_REL_PATH:-argo-crds/}\`
-- \`${ARGO_CONTROLLER_ARCHIVE_NAME:-argo-controller.oci.tar.zst}\`
-- \`${ARGO_EXECUTOR_ARCHIVE_NAME:-argo-executor.oci.tar.zst}\`
+- \`${WORKFLOWS_CHART_ARCHIVE_NAME:-workflows-chart-<version>.tgz}\`
+- \`${WORKFLOWS_CRDS_REL_PATH:-workflows-crds/}\`
+- \`${WORKFLOW_CONTROLLER_ARCHIVE_NAME:-workflow-controller.oci.tar.zst}\`
+- \`${WORKFLOW_EXECUTOR_ARCHIVE_NAME:-workflow-executor.oci.tar.zst}\`
 
 Build-machine helper requirement:
 
@@ -521,7 +521,7 @@ def add_extra_oci_images():
 
 
 def add_crd_artifacts():
-    artifact = artifacts.get("argoCRDs")
+    artifact = artifacts.get("workflowsCRDs")
     if not isinstance(artifact, dict):
         return
     rel_path = artifact.get("path")
@@ -535,18 +535,18 @@ def add_crd_artifacts():
         raise SystemExit(f"init-bundle-workspace: release-input artifact is missing: {source_root}")
     files = sorted(path for path in source_root.rglob("*") if path.is_file())
     if not files:
-        raise SystemExit(f"init-bundle-workspace: argo CRD directory is empty: {source_root}")
+        raise SystemExit(f"init-bundle-workspace: workflow CRD directory is empty: {source_root}")
     for path in files:
         rel_file = path.relative_to(source_root).as_posix()
         append_file_entry(path, f"kubernetes/crds/{rel_path.rstrip('/')}/{rel_file}", "kubernetes-crds")
 
 
-add_artifact_file("argoWorkflowsChart", "charts", "chart")
+add_artifact_file("workflowsChart", "charts", "chart")
 add_artifact_file("uiImage", "oci-images", "oci-images", image_reference_field=True)
 add_artifact_file("hostAgentImage", "oci-images", "oci-images", image_reference_field=True)
 add_artifact_file("hostAgentBinary", "bin", "appliance")
-add_artifact_file("argoControllerImage", "oci-images", "oci-images", image_reference_field=True)
-add_artifact_file("argoExecutorImage", "oci-images", "oci-images", image_reference_field=True)
+add_artifact_file("workflowControllerImage", "oci-images", "oci-images", image_reference_field=True)
+add_artifact_file("workflowExecutorImage", "oci-images", "oci-images", image_reference_field=True)
 add_extra_oci_images()
 add_crd_artifacts()
 
@@ -566,15 +566,15 @@ This workspace is the handoff point between the two repos:
 4. \`appliance-release\` assembles the final bundle using:
    \`${CONFIG_PATH}\`
 
-If the release-input includes optional Argo Workflows Phase 1 artifacts, this
+If the release-input includes optional workflows engine Phase 1 artifacts, this
 workspace auto-detects them and adds them to the bundle config under:
 
-- \`charts/\` for the Argo chart
+- \`charts/\` for the workflows chart
 - \`oci-images/\` for the controller, executor, and extra capability image archives
 - \`kubernetes/crds/\` for the CRD YAML files
 
-That prepares the release bundle contract for installer-side Argo bring-up
-without introducing any target-specific values at build time.
+That prepares the release bundle contract for installer-side workflows engine
+bring-up without introducing any target-specific values at build time.
 
 Suggested flow:
 
@@ -603,6 +603,6 @@ echo "  release-input dir: ${RELEASE_INPUT_DIR}"
 echo "  staging dir: ${STAGING_DIR}"
 echo "  bundle output dir: ${BUNDLE_DIR}"
 echo "  public key: ${PUBLIC_KEY_PATH}"
-if [[ -n "${ARGO_VERSION}" ]]; then
-  echo "  detected optional argo version: ${ARGO_VERSION}"
+if [[ -n "${WORKFLOWS_VERSION}" ]]; then
+  echo "  detected optional workflows version: ${WORKFLOWS_VERSION}"
 fi

@@ -74,7 +74,7 @@ verification:
   allow_ingress_warning: true
   allow_verify_schema_bug: false
   ui_home_command: 'body="$(curl -kfsS https://artifact-dns-1.appliance.internal/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Appliance Control Plane UI|appliance-controlplane-ui|Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
-  argo:
+  workflows:
     enabled: false
   builder:
     enabled: false

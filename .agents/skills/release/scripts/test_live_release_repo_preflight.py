@@ -253,7 +253,7 @@ def test_csv_items_trimmed_and_workflow_guard_helpers() -> None:
                 f'source "{COMMON_SH}"; '
                 'joined="$(csv_items_trimmed \' one.example , two.example,, three.example \' | tr \'\\n\' \',\')"; '
                 '[[ "${joined}" == "one.example,two.example,three.example," ]]; '
-                'require_profile_supports_workflows true core verification.argo.enabled'
+                'require_profile_supports_workflows true core verification.workflows.enabled'
             ),
         ],
         check=False,
@@ -268,7 +268,7 @@ def test_csv_items_trimmed_and_workflow_guard_helpers() -> None:
             "-lc",
             (
                 f'source "{COMMON_SH}"; '
-                'require_profile_supports_workflows true storage verification.argo.enabled'
+                'require_profile_supports_workflows true storage verification.workflows.enabled'
             ),
         ],
         check=False,
@@ -276,7 +276,7 @@ def test_csv_items_trimmed_and_workflow_guard_helpers() -> None:
         capture_output=True,
     )
     assert fail_result.returncode != 0
-    assert "verification.argo.enabled=true but install.appliance_profile=storage does not enable workflows" in fail_result.stderr
+    assert "verification.workflows.enabled=true but install.appliance_profile=storage does not enable workflows" in fail_result.stderr
 
 
 def test_inject_env_path_after_sudo_helper() -> None:

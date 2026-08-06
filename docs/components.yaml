@@ -88,13 +88,13 @@ components:
       - release_input: artifacts.dnsChart / compatibility.dnsVersion
     depends_on: [coredns-image]
 
-  - id: argo-workflows
+  - id: workflows
     owner: appliance-code / appliance-release
     recipe: chart package + fetch CRDs + controller/executor OCI export
     required_for: BUILD_COMPLETE_PRODUCT
     outputs:
-      - argo chart + CRDs
-      - compatibility.argoVersion
+      - workflows chart + CRDs
+      - compatibility.workflowsVersion
       - controller + executor image archives
     depends_on: []
 
@@ -136,7 +136,7 @@ components:
       - registry-chart
       - coredns-image
       - dns-chart
-      - argo-workflows
+      - workflows
       - workspace-provisioner
       - dev-build
       - metadata-bundle

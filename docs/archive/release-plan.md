@@ -328,7 +328,7 @@ A release is complete only when:
 2. Every byte installed is selected by an immutable signed manifest and verifies offline.
 3. Fresh installs from the complete bundle pass with public egress denied on every supported host baseline.
 4. Re-running install is idempotent; interrupted operations resume or fail with safe, actionable recovery.
-5. K3s, Traefik, control plane, zot, Argo, workflow tasks, storage, and ingress pass health and security checks.
+5. K3s, Traefik, control plane, zot, the workflows engine, workflow tasks, storage, and ingress pass health and security checks.
 6. Product-supplied REST, MCP, OCI, authentication, authorization, and build conformance tests pass against the installed appliance.
 7. Backup and clean-node restore meet the published RPO/RTO.
 8. N-1 upgrade, failed-upgrade recovery, and restore-based rollback pass.
@@ -343,8 +343,8 @@ A release is complete only when:
 - Additional Linux distributions or architectures without full qualification (Ubuntu Desktop as an explicit advanced/unsupported mode is a candidate for a later phase, not v1)
 - Bootable ISO, VM image, or hardware image distribution
 - Automatic release-channel upgrades
-- Public Argo Server/UI
-- Argo workflow archive database
+- Public workflows-engine server/UI
+- Workflow archive database
 - External identity-provider installation
 - Package/profile variants of the complete v1 topology
 - Connected or alternate installer profiles

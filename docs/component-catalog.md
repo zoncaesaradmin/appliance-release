@@ -29,9 +29,9 @@ flowchart TB
     artifactServerChart[registry-chart]
     dnsImg[coredns-image]
     dnsChart[dns-chart]
-    argoChart[argo-chart-crds]
-    argoCtrl[argo-controller-image]
-    argoExec[argo-executor-image]
+    workflowsChart[workflows-chart-crds]
+    workflowsCtrl[workflow-controller-image]
+    workflowsExec[workflow-executor-image]
     prov[workspace-provisioner]
     devBuild[dev-build]
     hostPkgs[host-packages]
@@ -58,7 +58,7 @@ fingerprints can attach to the same units.
 | 1 | `clone-repos` | RELEASE_WORK_ROOT checkouts |
 | 2 | `host-packages` | `.run/host-packages/ubuntu/<VER>/amd64/*.deb` (mdns + wifi-ap) |
 | 3 | `artifact-server-image` / `dns-image` | first-class OCI archives + digest refs |
-| 4 | `argo-crds` / `argo-controller` / `argo-executor` | Argo offline set |
+| 4 | `workflows-crds` / `workflow-controller` / `workflow-executor` | workflows engine offline set |
 | 5 | `workspace-provisioner` + `dev-build` | bundled offline image archives |
 | 6 | `product-images` | control-plane, UI, host-agent OCI + host-agentd |
 | 7 | `archive-release-input` | release-input tar (super-set) |
@@ -69,7 +69,7 @@ stages 7–8 always re-run so the published artifact is one consistent release.
 
 ## Developer slim path
 
-`BUILD_COMPLETE_PRODUCT=false` (not used by the release skill) may omit Argo /
-dev-build for local fixtures. Production packaging defaults
-`BUILD_COMPLETE_PRODUCT=true` and fails closed if Argo or `registry.local/dev-build`
-is missing.
+`BUILD_COMPLETE_PRODUCT=false` (not used by the release skill) may omit the
+workflows engine / dev-build for local fixtures. Production packaging defaults
+`BUILD_COMPLETE_PRODUCT=true` and fails closed if the workflows engine or
+`registry.local/dev-build` is missing.

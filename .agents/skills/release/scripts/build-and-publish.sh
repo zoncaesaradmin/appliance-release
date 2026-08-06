@@ -144,7 +144,7 @@ BOOTSTRAP_REGISTRY_TOKEN="$(resolve_secret "${DEV_PULL_TOKEN_ENV}" "Dev image pu
 [[ -n "${BOOTSTRAP_REGISTRY_USER}" ]] || fail "empty ${DEV_PULL_USER_ENV}"
 [[ -n "${BOOTSTRAP_REGISTRY_TOKEN}" ]] || fail "empty ${DEV_PULL_TOKEN_ENV}"
 
-# Shared env for the three product scripts (they own Argo/Artifact Server/DNS/provisioner defaults).
+# Shared env for the three product scripts (they own workflows engine/Artifact Server/DNS/provisioner defaults).
 PRODUCT_ENV_PREFIX=""
 PRODUCT_ENV_PREFIX="$(append_env_assignments "${PRODUCT_ENV_PREFIX}" \
   "PRODUCT_VERSION" "${RELEASE_VERSION}" \
@@ -315,7 +315,7 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
   python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
     --release-input-root "${RUN_DIR}/artifacts/release-input" \
     --bundle-root "${RUN_DIR}/artifacts/bundle" \
-    --require-argo \
+    --require-workflows \
     --expected-extra-oci-image-refs "${BUILDER_LOCAL_REF}" \
     >"${RUN_DIR}/logs/release-artifact-validation.json"
 else
