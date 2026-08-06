@@ -49,7 +49,7 @@ flowchart TB
 
 ## Stages (named build steps)
 
-`scripts/ci/build-full-bundle.sh` still runs **all** product stages in order for
+`scripts/build-full-bundle.sh` still runs **all** product stages in order for
 a complete build. Named stage IDs match `components.yaml` `id` fields so Phase C
 fingerprints can attach to the same units.
 

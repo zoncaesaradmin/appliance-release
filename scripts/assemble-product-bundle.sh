@@ -3,22 +3,23 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: product-bundle-from-config.sh --config PATH
+usage: assemble-product-bundle.sh --config PATH
 
-Runs the complete product bundle flow from a single config file.
+Runs the complete product bundle flow from a single config file:
+init workspace → import release-input → assemble → verify.
 EOF
 }
 
 CONFIG_PATH=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config) CONFIG_PATH="${2:-}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *)
-      echo "product-bundle-from-config: unknown argument: $1" >&2
+      echo "assemble-product-bundle: unknown argument: $1" >&2
       usage >&2
       exit 2
       ;;
@@ -26,14 +27,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${CONFIG_PATH}" ]]; then
-  echo "product-bundle-from-config: --config is required" >&2
+  echo "assemble-product-bundle: --config is required" >&2
   usage >&2
   exit 2
 fi
 
 CONFIG_PATH="$(cd "$(dirname "${CONFIG_PATH}")" && pwd)/$(basename "${CONFIG_PATH}")"
 if [[ ! -f "${CONFIG_PATH}" ]]; then
-  echo "product-bundle-from-config: missing config: ${CONFIG_PATH}" >&2
+  echo "assemble-product-bundle: missing config: ${CONFIG_PATH}" >&2
   exit 1
 fi
 
@@ -45,7 +46,7 @@ set +a
 require_var() {
   local name="$1"
   if [[ -z "${!name:-}" ]]; then
-    echo "product-bundle-from-config: config must set ${name}" >&2
+    echo "assemble-product-bundle: config must set ${name}" >&2
     exit 1
   fi
 }
@@ -305,7 +306,7 @@ fi
 
 if [[ "${SAMPLE_MODE}" != "1" ]]; then
   if [[ -z "${RELEASE_INPUT_SOURCE}" && ( -z "${RELEASE_INPUT_VERSION}" || -z "${RELEASE_INPUT_FETCH_TEMPLATE}" ) ]]; then
-    echo "product-bundle-from-config: set RELEASE_INPUT_SOURCE or both RELEASE_INPUT_VERSION and RELEASE_INPUT_FETCH_TEMPLATE" >&2
+    echo "assemble-product-bundle: set RELEASE_INPUT_SOURCE or both RELEASE_INPUT_VERSION and RELEASE_INPUT_FETCH_TEMPLATE" >&2
     exit 1
   fi
 fi
@@ -314,7 +315,7 @@ require_file() {
   local path="$1"
   local label="$2"
   if [[ ! -f "${path}" ]]; then
-    echo "product-bundle-from-config: missing ${label}: ${path}" >&2
+    echo "assemble-product-bundle: missing ${label}: ${path}" >&2
     exit 1
   fi
 }
@@ -334,17 +335,17 @@ require_valid_k3s_airgap_images() {
     return 0
   fi
   if ! command -v zstd >/dev/null 2>&1; then
-    echo "product-bundle-from-config: warning: zstd not found on PATH, skipping k3s airgap images integrity check for ${path}" >&2
+    echo "assemble-product-bundle: warning: zstd not found on PATH, skipping k3s airgap images integrity check for ${path}" >&2
     return 0
   fi
   if ! zstd -t "${path}" >/dev/null 2>&1; then
-    echo "product-bundle-from-config: k3s airgap images file is not a valid zstd archive: ${path}" >&2
-    echo "product-bundle-from-config: re-check K3S_AIRGAP_IMAGES (files API seed: scripts/ci/fetch-k3s-inputs.sh) before rebuilding the bundle" >&2
+    echo "assemble-product-bundle: k3s airgap images file is not a valid zstd archive: ${path}" >&2
+    echo "assemble-product-bundle: re-check K3S_AIRGAP_IMAGES (files API seed: scripts/fetch-k3s-inputs.sh) before rebuilding the bundle" >&2
     exit 1
   fi
   if ! zstd -dc "${path}" 2>/dev/null | tar -tf - >/dev/null 2>&1; then
-    echo "product-bundle-from-config: k3s airgap images file decompresses but is not a valid tar archive: ${path}" >&2
-    echo "product-bundle-from-config: re-check K3S_AIRGAP_IMAGES (files API seed: scripts/ci/fetch-k3s-inputs.sh) before rebuilding the bundle" >&2
+    echo "assemble-product-bundle: k3s airgap images file decompresses but is not a valid tar archive: ${path}" >&2
+    echo "assemble-product-bundle: re-check K3S_AIRGAP_IMAGES (files API seed: scripts/fetch-k3s-inputs.sh) before rebuilding the bundle" >&2
     exit 1
   fi
 }
@@ -376,7 +377,7 @@ verify_sha256_file() {
     return 0
   fi
 
-  echo "product-bundle-from-config: need sha256sum or shasum to verify Helm download" >&2
+  echo "assemble-product-bundle: need sha256sum or shasum to verify Helm download" >&2
   exit 1
 }
 
@@ -418,7 +419,7 @@ EOF
   tar -xzf "${archive_path}" -C "${extract_dir}"
 
   if [[ ! -f "${extract_dir}/linux-amd64/helm" ]]; then
-    echo "product-bundle-from-config: downloaded Helm archive missing linux-amd64/helm: ${archive_path}" >&2
+    echo "assemble-product-bundle: downloaded Helm archive missing linux-amd64/helm: ${archive_path}" >&2
     exit 1
   fi
 
@@ -453,11 +454,11 @@ clone_repo() {
       if git -C "${source}" remote get-url origin >/dev/null 2>&1; then
         clone_source="$(git -C "${source}" remote get-url origin)"
       else
-        echo "product-bundle-from-config: local repo source ${source} has no origin remote configured" >&2
+        echo "assemble-product-bundle: local repo source ${source} has no origin remote configured" >&2
         exit 1
       fi
     else
-      echo "product-bundle-from-config: local source ${source} is not a git checkout with an origin remote" >&2
+      echo "assemble-product-bundle: local source ${source} is not a git checkout with an origin remote" >&2
       exit 1
     fi
   fi
@@ -472,6 +473,108 @@ clone_repo() {
 
 CTL_CLONE_DIR="${WORKDIR}/sources/appliance-ctl"
 
+init_bundle_workspace() {
+  local args=(
+    --workdir "${WORKDIR}"
+    --zonctl-binary "${ZONCTL_BINARY}"
+    --helm-binary "${HELM_BINARY}"
+    --product-version "${PRODUCT_VERSION}"
+  )
+  if [[ -n "${CONTROL_PLANE_IMAGE_REF}" ]]; then
+    args+=(--control-plane-image-ref "${CONTROL_PLANE_IMAGE_REF}")
+  fi
+  if [[ -n "${OS_VERSION}" ]]; then
+    args+=(--os-version "${OS_VERSION}")
+  fi
+  bash "${SCRIPT_DIR}/init-bundle-workspace.sh" "${args[@]}"
+}
+
+import_release_input() {
+  local source="${1:-}"
+  local version="${2:-}"
+  local template="${3:-}"
+  local cache_dir="${WORKDIR}/downloads"
+  local release_input_dir="${WORKDIR}/release-input"
+  local local_source=""
+  local filename=""
+
+  if [[ -n "${source}" && -n "${version}" ]]; then
+    echo "assemble-product-bundle: choose either RELEASE_INPUT_SOURCE or RELEASE_INPUT_VERSION/TEMPLATE, not both" >&2
+    exit 2
+  fi
+  if [[ -z "${source}" ]]; then
+    if [[ -z "${version}" || -z "${template}" ]]; then
+      echo "assemble-product-bundle: set RELEASE_INPUT_SOURCE or both RELEASE_INPUT_VERSION and RELEASE_INPUT_FETCH_TEMPLATE" >&2
+      exit 2
+    fi
+    if [[ "${template}" != *"{version}"* ]]; then
+      echo "assemble-product-bundle: RELEASE_INPUT_FETCH_TEMPLATE must contain {version}" >&2
+      exit 2
+    fi
+    source="${template//\{version\}/${version}}"
+  fi
+
+  mkdir -p "${cache_dir}"
+  if [[ "${source}" =~ ^https?:// || "${source}" =~ ^file:// ]]; then
+    filename="$(basename "${source}")"
+    if [[ -z "${filename}" || "${filename}" == "/" ]]; then
+      filename="release-input-${version:-fetched}.tar.gz"
+    fi
+    local_source="${cache_dir}/${filename}"
+    if [[ "${source}" =~ ^file:// ]]; then
+      cp "${source#file://}" "${local_source}"
+    else
+      curl -fsSL "${source}" -o "${local_source}"
+    fi
+  else
+    local_source="$(cd "$(dirname "${source}")" && pwd)/$(basename "${source}")"
+  fi
+
+  mkdir -p "${release_input_dir}"
+  find "${release_input_dir}" -mindepth 1 -delete
+  case "${local_source}" in
+    *.tar.gz|*.tgz) tar -xzf "${local_source}" -C "${release_input_dir}" ;;
+    *.tar) tar -xf "${local_source}" -C "${release_input_dir}" ;;
+    *)
+      if [[ -d "${local_source}" ]]; then
+        cp -R "${local_source}/." "${release_input_dir}/"
+      else
+        echo "assemble-product-bundle: unsupported release-input source: ${local_source}" >&2
+        exit 1
+      fi
+      ;;
+  esac
+  if [[ ! -f "${release_input_dir}/release-input.json" ]]; then
+    echo "assemble-product-bundle: imported content does not contain release-input.json at the root" >&2
+    exit 1
+  fi
+  echo "imported release-input into:"
+  echo "  ${release_input_dir}"
+}
+
+assemble_simple_bundle() {
+  local config_path="${WORKDIR}/bundle-assembly.simple.json"
+  local release_input_dir=""
+  if [[ ! -f "${config_path}" ]]; then
+    echo "assemble-product-bundle: missing config: ${config_path}" >&2
+    exit 1
+  fi
+  release_input_dir="$(sed -nE 's/.*"releaseInputDir"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "${config_path}" | head -n 1)"
+  if [[ -z "${release_input_dir}" ]]; then
+    echo "assemble-product-bundle: could not read releaseInputDir from ${config_path}" >&2
+    exit 1
+  fi
+  if [[ ! -f "${release_input_dir}/release-input.json" ]]; then
+    echo "assemble-product-bundle: missing ${release_input_dir}/release-input.json" >&2
+    exit 1
+  fi
+  if [[ ! -x "${ZONCTL_BINARY}" ]]; then
+    echo "assemble-product-bundle: zonctl binary is missing or not executable: ${ZONCTL_BINARY}" >&2
+    exit 1
+  fi
+  "${ZONCTL_BINARY}" assemble-bundle --config "${config_path}"
+}
+
 if [[ -d "${CTL_REPO_SOURCE}" ]]; then
   make -C "${CTL_REPO_SOURCE}" build
   ZONCTL_BINARY="$(cd "${CTL_REPO_SOURCE}" && pwd)/bin/zonctl"
@@ -483,32 +586,9 @@ else
 fi
 require_file "${ZONCTL_BINARY}" "zonctl binary"
 
-make -C "${REPO_ROOT}" init-simple-workspace \
-  WORKDIR="${WORKDIR}" \
-  ZONCTL_BINARY="${ZONCTL_BINARY}" \
-  HELM_BINARY="${HELM_BINARY}" \
-  PRODUCT_VERSION="${PRODUCT_VERSION}" \
-  CONTROL_PLANE_IMAGE_REF="${CONTROL_PLANE_IMAGE_REF}" \
-  OS_VERSION="${OS_VERSION}"
-
-if [[ -n "${RELEASE_INPUT_SOURCE}" ]]; then
-  make -C "${REPO_ROOT}" fetch-release-input \
-    WORKDIR="${WORKDIR}" \
-    RELEASE_INPUT_SOURCE="${RELEASE_INPUT_SOURCE}"
-else
-  make -C "${REPO_ROOT}" fetch-release-input \
-    WORKDIR="${WORKDIR}" \
-    RELEASE_INPUT_VERSION="${RELEASE_INPUT_VERSION}" \
-    RELEASE_INPUT_FETCH_TEMPLATE="${RELEASE_INPUT_FETCH_TEMPLATE}"
-fi
-
-make -C "${REPO_ROOT}" init-simple-workspace \
-  WORKDIR="${WORKDIR}" \
-  ZONCTL_BINARY="${ZONCTL_BINARY}" \
-  HELM_BINARY="${HELM_BINARY}" \
-  PRODUCT_VERSION="${PRODUCT_VERSION}" \
-  CONTROL_PLANE_IMAGE_REF="${CONTROL_PLANE_IMAGE_REF}" \
-  OS_VERSION="${OS_VERSION}"
+init_bundle_workspace
+import_release_input "${RELEASE_INPUT_SOURCE}" "${RELEASE_INPUT_VERSION}" "${RELEASE_INPUT_FETCH_TEMPLATE}"
+init_bundle_workspace
 
 if [[ -z "${CONTROL_PLANE_IMAGE}" ]]; then
   CONTROL_PLANE_IMAGE="${RELEASE_INPUT_DIR}/$(json_artifact_path "${RELEASE_INPUT_DIR}/release-input.json" controlPlaneImage)"
@@ -531,9 +611,7 @@ fi
 
 rm -rf "${BUNDLE_DIR}"
 
-make -C "${REPO_ROOT}" assemble-simple-bundle \
-  WORKDIR="${WORKDIR}" \
-  ZONCTL_BINARY="${ZONCTL_BINARY}"
+assemble_simple_bundle
 make -C "${REPO_ROOT}" verify-bundle \
   ZONCTL_BINARY="${ZONCTL_BINARY}" \
   BUNDLE_DIR="${BUNDLE_DIR}" \

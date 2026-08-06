@@ -15,9 +15,9 @@ Use this skill when we need to drive the repeatable Zon appliance release path f
 
 Product packaging and publish **implementation** is only this fixed sequence under repo `scripts/`:
 
-1. `scripts/ci/bootstrap-build-host.sh`
-2. `scripts/ci/build-full-bundle.sh`
-3. `scripts/publish/publish-release.sh`
+1. `scripts/bootstrap-build-host.sh`
+2. `scripts/build-full-bundle.sh`
+3. `scripts/publish-release.sh`
 
 This skill remotes that same sequence. It does not add a second product entrypoint.
 
@@ -31,7 +31,7 @@ tracked in git at one path:
 ## What This Skill Does Not Own
 
 - repository-specific architecture or coding rules
-- the product build/publish implementation (see `scripts/ci/` and `scripts/publish/`)
+- the product build/publish implementation (see `scripts/` and `scripts/`)
 - secrets, SSH keys, or stored passwords
 
 Read each participating repository's `AGENTS.md` before making code or command decisions. For the current Zon layout, that usually includes:
@@ -91,13 +91,14 @@ Publish/install download uses the appliance file API only:
 
 **Product (repo `scripts/` — only supported build-host sequence)**
 
-1. `scripts/ci/bootstrap-build-host.sh`
-2. `scripts/ci/build-full-bundle.sh`
-3. `scripts/publish/publish-release.sh`
+1. `scripts/bootstrap-build-host.sh`
+2. `scripts/build-full-bundle.sh`
+3. `scripts/publish-release.sh`
 
-Also skill-owned post-build check: `scripts/validate-release-artifacts.py`
+Also skill-owned post-build check:
+`.agents/skills/release/scripts/validate-release-artifacts.py`
 (release-input ↔ bundle OCI contract after the three product scripts).
-Product-owned install helper: `scripts/publish/install-http-release.sh`
+Product-owned install helper: `scripts/install-http-release.sh`
 (published with the release).
 
 **Skill entry / remote wrappers**

@@ -28,11 +28,10 @@ verify-help:
 	@for script in $$(find "$(RELEASE_SKILL_SCRIPT_DIR)" -type f -name '*.sh' | LC_ALL=C sort); do \
 		bash "$$script" --help >/dev/null; \
 	done
-	@bash scripts/publish/install-http-release.sh --help | grep -q -- '--appliance-name'
-	@bash scripts/publish/install-http-release.sh --help | grep -q -- 'BUILD_CATALOG_PATH'
-	@bash scripts/publish/publish-release.sh --help | grep -q -- 'DEV_REGISTRY'
-	@bash scripts/publish/publish-release.sh --help | grep -q -- 'appliance file API'
-	@bash scripts/publish/bundle-store-lib.sh --help | grep -q -- 'appliance_files'
+	@bash scripts/install-http-release.sh --help | grep -q -- '--appliance-name'
+	@bash scripts/install-http-release.sh --help | grep -q -- 'BUILD_CATALOG_PATH'
+	@bash scripts/publish-release.sh --help | grep -q -- 'DEV_REGISTRY'
+	@bash scripts/publish-release.sh --help | grep -q -- 'appliance file API'
 
 .PHONY: verify-json
 verify-json:
@@ -130,13 +129,13 @@ assemble-bundle:
 	fi
 	"$(ZONCTL_BINARY)" assemble-bundle --config "$${BUNDLE_CONFIG}"
 
-.PHONY: init-simple-workspace
-init-simple-workspace:
+.PHONY: init-bundle-workspace
+init-bundle-workspace:
 	@if [ -z "$${WORKDIR:-}" ]; then \
-		echo "init-simple-workspace: set WORKDIR=/abs/path/to/workspace" >&2; \
+		echo "init-bundle-workspace: set WORKDIR=/abs/path/to/workspace" >&2; \
 		exit 2; \
 	fi
-	bash ./scripts/package/init-simple-workspace.sh \
+	bash ./scripts/init-bundle-workspace.sh \
 		--workdir "$${WORKDIR}" \
 		--zonctl-binary "$${ZONCTL_BINARY:-$(ZONCTL_BINARY)}" \
 		--helm-binary "$${HELM_BINARY:-}" \
@@ -144,31 +143,9 @@ init-simple-workspace:
 		$${CONTROL_PLANE_IMAGE_REF:+--control-plane-image-ref "$${CONTROL_PLANE_IMAGE_REF}"} \
 		$${OS_VERSION:+--os-version "$${OS_VERSION}"}
 
-.PHONY: fetch-release-input
-fetch-release-input:
-	@if [ -z "$${WORKDIR:-}" ]; then \
-		echo "fetch-release-input: set WORKDIR=/abs/path/to/workspace" >&2; \
-		exit 2; \
-	fi
-	@if [ -z "$${RELEASE_INPUT_SOURCE:-}" ] && { [ -z "$${RELEASE_INPUT_VERSION:-}" ] || [ -z "$${RELEASE_INPUT_FETCH_TEMPLATE:-}" ]; }; then \
-		echo "fetch-release-input: set RELEASE_INPUT_SOURCE=/path-or-url or both RELEASE_INPUT_VERSION=... and RELEASE_INPUT_FETCH_TEMPLATE=..." >&2; \
-		exit 2; \
-	fi
-	bash ./scripts/package/fetch-release-input.sh \
-		--workdir "$${WORKDIR}" \
-		$${RELEASE_INPUT_SOURCE:+--source "$${RELEASE_INPUT_SOURCE}"} \
-		$${RELEASE_INPUT_VERSION:+--version "$${RELEASE_INPUT_VERSION}"} \
-		$${RELEASE_INPUT_FETCH_TEMPLATE:+--template "$${RELEASE_INPUT_FETCH_TEMPLATE}"}
-
-.PHONY: assemble-simple-bundle
-assemble-simple-bundle:
-	@if [ -z "$${WORKDIR:-}" ]; then \
-		echo "assemble-simple-bundle: set WORKDIR=/abs/path/to/workspace" >&2; \
-		exit 2; \
-	fi
-	bash ./scripts/package/assemble-simple-bundle.sh \
-		--workdir "$${WORKDIR}" \
-		--zonctl-binary "$${ZONCTL_BINARY:-$(ZONCTL_BINARY)}"
+# Deprecated alias.
+.PHONY: init-simple-workspace
+init-simple-workspace: init-bundle-workspace
 
 .PHONY: product-bundle
 product-bundle:
@@ -176,7 +153,7 @@ product-bundle:
 		echo "product-bundle: set CONFIG=/abs/path/to/product-bundle.env" >&2; \
 		exit 2; \
 	fi
-	bash ./scripts/package/product-bundle-from-config.sh --config "$${CONFIG}"
+	bash ./scripts/assemble-product-bundle.sh --config "$${CONFIG}"
 
 .PHONY: verify-bundle
 verify-bundle:

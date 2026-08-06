@@ -40,7 +40,7 @@ Notes:
   `host_packages_dir_source` are rejected.
   K3s binary/images are downloaded by `build-full-bundle` from the appliance
   files API (`https://$DEV_REGISTRY/api/v1/files/k3s/$K3S_VERSION/…`). Seed
-  that path once with `RELEASE_WORK_ROOT=<remote_build_root> scripts/ci/fetch-k3s-inputs.sh`
+  that path once with `RELEASE_WORK_ROOT=<remote_build_root> scripts/fetch-k3s-inputs.sh`
   (stages under `$RELEASE_WORK_ROOT/inputs/`, then uploads).
 - Do **not** put a `build_flow.product_publish` block in config. Signed-bundle
   distribution is the fixed product sequence
@@ -203,14 +203,14 @@ bash .agents/skills/release/scripts/build-and-publish.sh \
 Or run the product scripts directly (no skill YAML):
 
 ```bash
-bash scripts/ci/bootstrap-build-host.sh
-bash scripts/ci/build-full-bundle.sh
-bash scripts/publish/publish-release.sh
+bash scripts/bootstrap-build-host.sh
+bash scripts/build-full-bundle.sh
+bash scripts/publish-release.sh
 ```
 
 `build-and-publish.sh` is a thin local worker: resolve YAML → three product
 scripts → collect/validate artifacts. It does not SSH and does not own
-packaging pin defaults (those live in `scripts/ci/build-full-bundle.sh`).
+packaging pin defaults (those live in `scripts/build-full-bundle.sh`).
 
 After copied release-input and bundle metadata are available, the worker
 validates required product artifacts, Argo release artifacts, and

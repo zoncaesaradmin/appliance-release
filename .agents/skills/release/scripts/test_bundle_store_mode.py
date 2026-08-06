@@ -8,7 +8,6 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-MODE_LIB = REPO_ROOT / "scripts" / "publish" / "bundle-store-lib.sh"
 COMMON = Path(__file__).resolve().parent / "common.sh"
 
 
@@ -25,7 +24,7 @@ class BundleStoreModeTests(unittest.TestCase):
     def test_normalize_appliance_files_and_empty(self) -> None:
         script = f"""
 set -euo pipefail
-source {MODE_LIB.as_posix()!r}
+source {COMMON.as_posix()!r}
 normalize_bundle_store_mode appliance_files
 normalize_bundle_store_mode ''
 """
@@ -42,7 +41,7 @@ normalize_bundle_store_mode ''
     def test_normalize_rejects_static_http(self) -> None:
         script = f"""
 set -euo pipefail
-source {MODE_LIB.as_posix()!r}
+source {COMMON.as_posix()!r}
 normalize_bundle_store_mode static_http
 """
         proc = run_bash(script)
@@ -53,7 +52,7 @@ normalize_bundle_store_mode static_http
         for mode in ("oci", "s3"):
             script = f"""
 set -euo pipefail
-source {MODE_LIB.as_posix()!r}
+source {COMMON.as_posix()!r}
 normalize_bundle_store_mode {mode}
 """
             proc = run_bash(script)
@@ -107,7 +106,7 @@ resolve_bundle_store_mode {cfg.as_posix()!r}
 
     def test_publish_release_help_mentions_file_api_not_static_http(self) -> None:
         proc = subprocess.run(
-            ["bash", str(REPO_ROOT / "scripts" / "publish" / "publish-release.sh"), "--help"],
+            ["bash", str(REPO_ROOT / "scripts" / "publish-release.sh"), "--help"],
             check=False,
             capture_output=True,
             text=True,

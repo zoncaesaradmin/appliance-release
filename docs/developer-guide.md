@@ -28,7 +28,7 @@ If you need to change the `zonctl` source, work in `appliance-ctl`, not here.
 
 ```bash
 make verify
-bash ./scripts/ci/build-full-bundle.sh
+bash ./scripts/build-full-bundle.sh
 make product-bundle CONFIG=/abs/path/to/product-bundle.env
 make clean
 ```
@@ -61,7 +61,7 @@ DEV_REGISTRY=artifact-dns-1.appliance.internal \
 DEV_IMAGE_REPO=development-container \
 DEV_REGISTRY_TOKEN=... \
 DEV_REGISTRY_TLS_VERIFY=false \
-bash ./scripts/ci/build-full-bundle.sh
+bash ./scripts/build-full-bundle.sh
 ```
 
 `DEV_REGISTRY` (host) and `DEV_IMAGE_REPO` (registry-specific path) are required:
@@ -71,7 +71,7 @@ bash ./scripts/ci/build-full-bundle.sh
 Optional: `PRODUCT_VERSION=…` overrides `configs/default-product-version`.
 
 K3s binary and airgap images are downloaded during the build from the appliance
-files API (same layout seedable by `scripts/ci/fetch-k3s-inputs.sh`):
+files API (same layout seedable by `scripts/fetch-k3s-inputs.sh`):
 
 `https://$DEV_REGISTRY/api/v1/files/k3s/<K3S_VERSION>/…`
 
@@ -116,7 +116,7 @@ container, the Linux build host needs the Podman / registry bootstrap once:
 ```bash
 export DEV_REGISTRY_USER=<github-username>
 export DEV_REGISTRY_TOKEN=<PAT with read:packages>
-bash ./scripts/ci/bootstrap-build-host.sh
+bash ./scripts/bootstrap-build-host.sh
 ```
 
 ## Config-Driven Build Path
@@ -138,16 +138,16 @@ One product sequence on the build host (after `DEV_*` and `RELEASE_WORK_ROOT`
 are set):
 
 ```bash
-bash ./scripts/ci/bootstrap-build-host.sh   # once per host
-bash ./scripts/ci/build-full-bundle.sh
-bash ./scripts/publish/publish-release.sh
+bash ./scripts/bootstrap-build-host.sh   # once per host
+bash ./scripts/build-full-bundle.sh
+bash ./scripts/publish-release.sh
 ```
 
 Publish uploads to:
 
 `https://$DEV_REGISTRY/api/v1/files/appliance/<version>/`
 
-Optional: `bash ./scripts/publish/publish-release.sh --latest-alias` also
+Optional: `bash ./scripts/publish-release.sh --latest-alias` also
 uploads under `appliance/latest/`. `PRODUCT_VERSION` defaults from
 `configs/default-product-version`.
 
@@ -176,9 +176,7 @@ your binary lives elsewhere, set `ZONCTL_BINARY=/abs/path/to/zonctl`.
 
 If you need to debug a specific stage, these targets still exist:
 
-- `make init-simple-workspace`
-- `make fetch-release-input`
-- `make assemble-simple-bundle`
+- `make init-bundle-workspace`
 - `make verify-bundle`
 
 ## Before Merging Changes

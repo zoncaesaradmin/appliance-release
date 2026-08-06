@@ -11,9 +11,9 @@ release-input handoff come from `appliance-code`.
 - `make verify`
   Local checks for this repo.
 - Build-host release sequence (only supported product path):
-  1. `bash ./scripts/ci/bootstrap-build-host.sh` (once per host)
-  2. `bash ./scripts/ci/build-full-bundle.sh`
-  3. `bash ./scripts/publish/publish-release.sh`
+  1. `bash ./scripts/bootstrap-build-host.sh` (once per host)
+  2. `bash ./scripts/build-full-bundle.sh`
+  3. `bash ./scripts/publish-release.sh`
 
 The build flow exports:
 
@@ -28,7 +28,7 @@ Podman dev-container path:
 ```bash
 export DEV_REGISTRY_USER=<github-username>
 export DEV_REGISTRY_TOKEN=<PAT with read:packages>
-bash ./scripts/ci/bootstrap-build-host.sh
+bash ./scripts/bootstrap-build-host.sh
 ```
 
 ## Documentation By Machine / Use Case

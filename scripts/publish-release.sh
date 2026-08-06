@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RELEASE_REPO_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+RELEASE_REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Fixed layout under the appliance file API.
 readonly PUBLISH_PATH_PREFIX="appliance"
@@ -13,7 +13,7 @@ usage() {
 usage: publish-release.sh [options]
 
 Publish already-built customer delivery files from
-scripts/ci/build-full-bundle.sh to the appliance file API on the
+scripts/build-full-bundle.sh to the appliance file API on the
 artifact/dev registry host.
 
 Uploads to:
@@ -40,7 +40,7 @@ Example (after bootstrap + build-full-bundle on the build host):
   export DEV_REGISTRY_TOKEN=…
   export DEV_REGISTRY_TLS_VERIFY=false
   export RELEASE_WORK_ROOT=/home/zonsys/appliance-build
-  bash ./scripts/publish/publish-release.sh
+  bash ./scripts/publish-release.sh
 EOF
 }
 

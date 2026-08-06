@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: init-simple-workspace.sh --workdir DIR --zonctl-binary PATH --helm-binary PATH [options]
+usage: init-bundle-workspace.sh --workdir DIR --zonctl-binary PATH --helm-binary PATH [options]
 
 Creates a local workspace for the minimal amd64 appliance bundle flow.
 
@@ -64,7 +64,7 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     *)
-      echo "init-simple-workspace: unknown argument: $1" >&2
+      echo "init-bundle-workspace: unknown argument: $1" >&2
       usage >&2
       exit 2
       ;;
@@ -72,17 +72,17 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${WORKDIR}" ]]; then
-  echo "init-simple-workspace: --workdir is required" >&2
+  echo "init-bundle-workspace: --workdir is required" >&2
   usage >&2
   exit 2
 fi
 if [[ -z "${ZONCTL_BINARY}" ]]; then
-  echo "init-simple-workspace: --zonctl-binary is required" >&2
+  echo "init-bundle-workspace: --zonctl-binary is required" >&2
   usage >&2
   exit 2
 fi
 if [[ -z "${HELM_BINARY}" ]]; then
-  echo "init-simple-workspace: --helm-binary is required" >&2
+  echo "init-bundle-workspace: --helm-binary is required" >&2
   usage >&2
   exit 2
 fi
@@ -226,17 +226,17 @@ CTR_WRAPPER_PATH="${GENERATED_BIN_DIR}/ctr"
 mkdir -p "${WORKDIR}" "${RELEASE_INPUT_DIR}" "${STAGING_DIR}" "${OUT_DIR}" "${KEYS_DIR}" "${GENERATED_BIN_DIR}"
 
 if [[ ! -x "${ZONCTL_BINARY}" ]]; then
-  echo "init-simple-workspace: zonctl binary is missing or not executable: ${ZONCTL_BINARY}" >&2
+  echo "init-bundle-workspace: zonctl binary is missing or not executable: ${ZONCTL_BINARY}" >&2
   exit 1
 fi
 if [[ ! -x "${HELM_BINARY}" ]]; then
-  echo "init-simple-workspace: helm binary is missing or not executable: ${HELM_BINARY}" >&2
+  echo "init-bundle-workspace: helm binary is missing or not executable: ${HELM_BINARY}" >&2
   exit 1
 fi
 
 if [[ ! -f "${PRIVATE_KEY_PATH}" || ! -f "${PUBLIC_KEY_PATH}" ]]; then
   if ! command -v openssl >/dev/null 2>&1; then
-    echo "init-simple-workspace: openssl is required to generate ${PRIVATE_KEY_PATH}" >&2
+    echo "init-bundle-workspace: openssl is required to generate ${PRIVATE_KEY_PATH}" >&2
     exit 1
   fi
   openssl genpkey -algorithm Ed25519 -out "${PRIVATE_KEY_PATH}" >/dev/null 2>&1
@@ -481,7 +481,7 @@ entries = config.get("entries", [])
 
 def append_file_entry(source_path: Path, target_path: str, component: str, image_reference=None):
     if not source_path.is_file():
-        raise SystemExit(f"init-simple-workspace: release-input artifact is missing: {source_path}")
+        raise SystemExit(f"init-bundle-workspace: release-input artifact is missing: {source_path}")
     entry = {
         "sourcePath": str(source_path),
         "targetPath": target_path,
@@ -509,13 +509,13 @@ def add_extra_oci_images():
     if images is None:
         return
     if not isinstance(images, list):
-        raise SystemExit("init-simple-workspace: release-input extraOCIImages must be an array")
+        raise SystemExit("init-bundle-workspace: release-input extraOCIImages must be an array")
     for image in images:
         if not isinstance(image, dict):
-            raise SystemExit("init-simple-workspace: release-input extraOCIImages entries must be objects")
+            raise SystemExit("init-bundle-workspace: release-input extraOCIImages entries must be objects")
         rel_path = image.get("path")
         if not isinstance(rel_path, str) or not rel_path:
-            raise SystemExit("init-simple-workspace: release-input extraOCIImages entry is missing path")
+            raise SystemExit("init-bundle-workspace: release-input extraOCIImages entry is missing path")
         source_path = release_input_dir / rel_path
         append_file_entry(source_path, f"oci-images/{source_path.name}", "oci-images", image.get("imageReference"))
 
@@ -532,10 +532,10 @@ def add_crd_artifacts():
         append_file_entry(source_root, f"kubernetes/crds/{source_root.name}", "kubernetes-crds")
         return
     if not source_root.is_dir():
-        raise SystemExit(f"init-simple-workspace: release-input artifact is missing: {source_root}")
+        raise SystemExit(f"init-bundle-workspace: release-input artifact is missing: {source_root}")
     files = sorted(path for path in source_root.rglob("*") if path.is_file())
     if not files:
-        raise SystemExit(f"init-simple-workspace: argo CRD directory is empty: {source_root}")
+        raise SystemExit(f"init-bundle-workspace: argo CRD directory is empty: {source_root}")
     for path in files:
         rel_file = path.relative_to(source_root).as_posix()
         append_file_entry(path, f"kubernetes/crds/{rel_path.rstrip('/')}/{rel_file}", "kubernetes-crds")
@@ -580,8 +580,8 @@ Suggested flow:
 
 \`\`\`bash
 make -C ../appliance-ctl build
-make fetch-release-input WORKDIR=${WORKDIR} RELEASE_INPUT_SOURCE=/path/to/release-input-or-tarball
-scripts/package/assemble-simple-bundle.sh --workdir ${WORKDIR} --zonctl-binary /abs/path/to/zonctl
+# Prefer the config-driven path (init + import release-input + assemble + verify):
+bash scripts/assemble-product-bundle.sh --config /abs/path/to/product-bundle.env
 \`\`\`
 
 Public key for install-time verification:

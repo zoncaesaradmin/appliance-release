@@ -87,7 +87,7 @@ PY
 }
 
 # Fixed product appliance state directory (matches zonctl default and
-# scripts/publish/install-http-release.sh STATE_DIR). Not release config —
+# scripts/install-http-release.sh STATE_DIR). Not release config —
 # operators override only by editing that product install script after download.
 default_appliance_state_dir() {
   printf '%s\n' "/var/lib/zon/state"
@@ -493,9 +493,9 @@ skill_remote_build_root_layout_message() {
 Skill-fixed layout under release_workspace.remote_build_root:
   release/ — appliance-release git checkout (REMOTE_CWD)
   export/ — bundle export output ($RELEASE_WORK_ROOT/export)
-  inputs/ — local staging for scripts/ci/fetch-k3s-inputs.sh
+  inputs/ — local staging for scripts/fetch-k3s-inputs.sh
 K3s binary/airgap images used by the build are fetched during build-full-bundle
-from the appliance files API (seed that API with scripts/ci/fetch-k3s-inputs.sh).
+from the appliance files API (seed that API with scripts/fetch-k3s-inputs.sh).
 EOF
 }
 
@@ -538,11 +538,11 @@ reject_removed_build_publish_packaging_keys() {
   local config_path="$1"
 
   if [[ -n "$(config_get_optional "${config_path}" "build_flow.bootstrap_command" || true)" ]]; then
-    fail "build_flow.bootstrap_command was removed; skill always runs: bash scripts/ci/bootstrap-build-host.sh"
+    fail "build_flow.bootstrap_command was removed; skill always runs: bash scripts/bootstrap-build-host.sh"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "build_flow.build_command" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.publish_command" || true)" ]]; then
-    fail "build_flow.build_command and build_flow.publish_command were removed; skill always runs: bash scripts/ci/build-full-bundle.sh then bash scripts/publish/publish-release.sh"
+    fail "build_flow.build_command and build_flow.publish_command were removed; skill always runs: bash scripts/build-full-bundle.sh then bash scripts/publish-release.sh"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "build_flow.bootstrap_needs_sudo" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.build_needs_sudo" || true)" ]]; then
@@ -599,7 +599,7 @@ reject_removed_build_publish_packaging_keys() {
     || -n "$(config_get_optional "${config_path}" "build_flow.zot.image_pull_ref" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.dns.version" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.dns.image_pull_ref" || true)" ]]; then
-    fail "build_flow Argo/Zot/DNS/provisioner pin keys were removed from build-publish config; product scripts/ci/build-full-bundle.sh owns those defaults"
+    fail "build_flow Argo/Zot/DNS/provisioner pin keys were removed from build-publish config; product scripts/build-full-bundle.sh owns those defaults"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "verification.argo.enabled" || true)" \
     || -n "$(config_get_optional "${config_path}" "install.appliance_profile" || true)" ]]; then
@@ -989,13 +989,25 @@ expand_legacy_ui_home_command_for_spa() {
 }
 
 
-# Normalize bundle_store.mode: empty or appliance_files only.
-# static_http was removed; publish always uses the DEV_REGISTRY file API.
-_BUNDLE_STORE_LIB="$(cd "${SCRIPT_DIR}/../../../.." && pwd)/scripts/publish/bundle-store-lib.sh"
-[[ -f "${_BUNDLE_STORE_LIB}" ]] || fail "missing shared bundle store library: ${_BUNDLE_STORE_LIB}"
-# shellcheck source=/dev/null
-source "${_BUNDLE_STORE_LIB}"
-unset _BUNDLE_STORE_LIB
+# Normalize / accept only appliance_files. Empty → appliance_files.
+# static_http and other modes are rejected.
+normalize_bundle_store_mode() {
+  local mode
+  mode="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  case "${mode}" in
+    ""|appliance_files)
+      printf 'appliance_files\n'
+      ;;
+    static_http)
+      echo "bundle_store.mode=static_http was removed; only appliance_files (DEV_REGISTRY file API) is supported" >&2
+      return 2
+      ;;
+    *)
+      echo "bundle_store.mode must be appliance_files (got ${mode})" >&2
+      return 2
+      ;;
+  esac
+}
 
 bundle_store_get_optional() {
   local config_path="$1"

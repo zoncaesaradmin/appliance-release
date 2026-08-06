@@ -86,7 +86,7 @@ fi
 if [[ -z "${RELEASE_VERSION}" ]]; then
   RELEASE_VERSION="$(read_default_product_version "$(skill_release_repo_root "${SCRIPT_DIR}")")"
 fi
-# Matches scripts/publish/publish-release.sh PUBLISH_PATH_PREFIX.
+# Matches scripts/publish-release.sh PUBLISH_PATH_PREFIX.
 readonly PATH_PREFIX="appliance"
 BUNDLE_MODE="$(resolve_bundle_store_mode "${BUILD_PUBLISH_CONFIG}")"
 APPLIANCE_NAME="$(config_get "${INSTALL_CONFIG}" "install.appliance_name")"

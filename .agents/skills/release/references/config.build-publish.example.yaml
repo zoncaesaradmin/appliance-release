@@ -18,9 +18,9 @@
 #     --config ~/lab-devhost.yaml \
 #     --build-publish-config ~/lab-build-publish.yaml
 #   # Or already on the build host with DEV_* exported (no skill YAML):
-#   bash scripts/ci/bootstrap-build-host.sh   # once
-#   bash scripts/ci/build-full-bundle.sh
-#   bash scripts/publish/publish-release.sh
+#   bash scripts/bootstrap-build-host.sh   # once
+#   bash scripts/build-full-bundle.sh
+#   bash scripts/publish-release.sh
 #   # Or with skill YAML on the build host:
 #   bash …/build-and-publish.sh --local --build-publish-config ~/.config/appliance-release/build-publish.yaml
 #
@@ -49,7 +49,7 @@ release_workspace:
   # Single build-host root. Skill-managed layout under this path:
   #   release/ — appliance-release git checkout (clone/reset each run)
   #   export/ — bundle export output ($RELEASE_WORK_ROOT/export)
-  #   inputs/ — local staging for scripts/ci/fetch-k3s-inputs.sh
+  #   inputs/ — local staging for scripts/fetch-k3s-inputs.sh
   #            (seed the appliance files API once; build-full-bundle downloads
   #            K3s from that API during packaging)
   remote_build_root: /home/zonsys/appliance-build
@@ -74,9 +74,9 @@ release:
 build_flow:
   # Bootstrap/build/publish commands and sudo are skill-fixed (not config).
   # Product sequence (same as hand runs on the build host):
-  #   bash scripts/ci/bootstrap-build-host.sh
-  #   bash scripts/ci/build-full-bundle.sh
-  #   bash scripts/publish/publish-release.sh
+  #   bash scripts/bootstrap-build-host.sh
+  #   bash scripts/build-full-bundle.sh
+  #   bash scripts/publish-release.sh
   # Always wrapped with sudo → APPLIANCE_BUILD_SUDO_PASSWORD.
   # appliance-code / appliance-ctl git refs are fixed in those scripts (main).
 

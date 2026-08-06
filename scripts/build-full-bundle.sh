@@ -17,7 +17,7 @@ Expected model:
 
 Run this from the checked-out appliance-release repo root:
 
-  bash ./scripts/ci/build-full-bundle.sh
+  bash ./scripts/build-full-bundle.sh
 
 Configuration is taken from environment variables. The most common pattern is:
 
@@ -26,7 +26,7 @@ Configuration is taken from environment variables. The most common pattern is:
   DEV_REGISTRY_TOKEN=... \
   DEV_REGISTRY_USER=admin \
   DEV_REGISTRY_TLS_VERIFY=false \
-  bash ./scripts/ci/build-full-bundle.sh
+  bash ./scripts/build-full-bundle.sh
 
 Required: DEV_REGISTRY (host) + DEV_IMAGE_REPO (registry-specific path).
   GHCR example: DEV_REGISTRY=ghcr.io DEV_IMAGE_REPO=zoncaesaradmin/development-container
@@ -34,7 +34,7 @@ Required: DEV_REGISTRY (host) + DEV_IMAGE_REPO (registry-specific path).
 PRODUCT_VERSION defaults from configs/default-product-version.
 DEV_IMAGE_NAME/TAG default to dev-build/latest (exported into appliance-code make/dev-run).
 K3s binary + airgap images are downloaded at build time from the appliance
-files API (seed once with scripts/ci/fetch-k3s-inputs.sh). URL layout is fixed:
+files API (seed once with scripts/fetch-k3s-inputs.sh). URL layout is fixed:
   https://\$DEV_REGISTRY/api/v1/files/k3s/\$K3S_VERSION/k3s
   https://\$DEV_REGISTRY/api/v1/files/k3s/\$K3S_VERSION/k3s-airgap-images-amd64.tar.zst
 K3S_VERSION comes from configs/product-bundle.ci.env (or K3S_VERSION_OVERRIDE).
@@ -89,7 +89,7 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RELEASE_REPO_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+RELEASE_REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DEFAULTS_FILE="${RELEASE_REPO_DIR}/configs/product-bundle.ci.env"
 
 USER_PRODUCT_VERSION="${PRODUCT_VERSION-}"
@@ -225,10 +225,79 @@ if [[ -n "${K3S_VERSION_OVERRIDE}" ]]; then
   K3S_VERSION="${K3S_VERSION_OVERRIDE}"
 fi
 
-# Optional per-component cache for incremental rebuilds (Phase C).
+# Optional per-component cache for incremental rebuilds.
 COMPONENT_CACHE_DIR="${COMPONENT_CACHE_DIR:-}"
-# shellcheck disable=SC1091
-source "${SCRIPT_DIR}/component-cache.sh"
+
+component_fingerprint() {
+  local component_id="$1"
+  shift
+  local parts=("${component_id}")
+  local input digest
+  for input in "$@"; do
+    if [[ -f "${input}" ]]; then
+      if command -v sha256sum >/dev/null 2>&1; then
+        digest="$(sha256sum "${input}" | awk '{print $1}')"
+      else
+        digest="$(shasum -a 256 "${input}" | awk '{print $1}')"
+      fi
+      parts+=("file:${input}:${digest}")
+    elif [[ -d "${input}" ]]; then
+      if command -v sha256sum >/dev/null 2>&1; then
+        digest="$(find "${input}" -type f -print0 | sort -z | xargs -0 sha256sum 2>/dev/null | sha256sum | awk '{print $1}')"
+      else
+        digest="$(find "${input}" -type f -print0 | sort -z | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | awk '{print $1}')"
+      fi
+      parts+=("dir:${input}:${digest}")
+    else
+      parts+=("str:${input}")
+    fi
+  done
+  local joined
+  joined="$(printf '%s\n' "${parts[@]}")"
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "${joined}" | sha256sum | awk '{print $1}'
+  else
+    printf '%s' "${joined}" | shasum -a 256 | awk '{print $1}'
+  fi
+}
+
+component_cache_try_restore() {
+  local component_id="$1"
+  local dest="$2"
+  shift 2
+  [[ -n "${COMPONENT_CACHE_DIR:-}" ]] || return 1
+  local fp cache_root stamp payload
+  fp="$(component_fingerprint "${component_id}" "$@")"
+  cache_root="${COMPONENT_CACHE_DIR}/${component_id}/${fp}"
+  stamp="${cache_root}/.fingerprint"
+  payload="${cache_root}/payload"
+  [[ -f "${stamp}" && -d "${payload}" ]] || return 1
+  [[ "$(tr -d '[:space:]' <"${stamp}")" == "${fp}" ]] || return 1
+  rm -rf "${dest}"
+  mkdir -p "${dest}"
+  cp -a "${payload}/." "${dest}/"
+  echo "component-cache: hit ${component_id} (${fp:0:12}…)" >&2
+  return 0
+}
+
+component_cache_store() {
+  local component_id="$1"
+  local source="$2"
+  shift 2
+  [[ -n "${COMPONENT_CACHE_DIR:-}" ]] || return 0
+  if [[ ! -d "${source}" ]]; then
+    echo "component-cache: store skipped (not a directory): ${source}" >&2
+    return 0
+  fi
+  local fp cache_root
+  fp="$(component_fingerprint "${component_id}" "$@")"
+  cache_root="${COMPONENT_CACHE_DIR}/${component_id}/${fp}"
+  rm -rf "${cache_root}"
+  mkdir -p "${cache_root}/payload"
+  cp -a "${source}/." "${cache_root}/payload/"
+  printf '%s\n' "${fp}" >"${cache_root}/.fingerprint"
+  echo "component-cache: stored ${component_id} (${fp:0:12}…)" >&2
+}
 
 REPOS_DIR="${RELEASE_WORK_ROOT}/repos"
 ARTIFACTS_DIR="${RELEASE_WORK_ROOT}/artifacts"
@@ -344,7 +413,7 @@ stage_file() {
   exit 1
 }
 
-# Same layout as scripts/ci/fetch-k3s-inputs.sh: files API under k3s/$K3S_VERSION/.
+# Same layout as scripts/fetch-k3s-inputs.sh: files API under k3s/$K3S_VERSION/.
 # Requires DEV_REGISTRY + DEV_REGISTRY_TOKEN (existing registry/files auth vars).
 fetch_k3s_inputs_from_files_api() {
   local dest_dir="$1"
@@ -386,7 +455,7 @@ fetch_k3s_inputs_from_files_api() {
     -H "Authorization: Bearer ${token}" \
     -o "${bin_dest}" \
     "${remote_prefix}/k3s"; then
-    echo "build-full-bundle: failed to download k3s binary from ${remote_prefix}/k3s (seed with scripts/ci/fetch-k3s-inputs.sh)" >&2
+    echo "build-full-bundle: failed to download k3s binary from ${remote_prefix}/k3s (seed with scripts/fetch-k3s-inputs.sh)" >&2
     exit 1
   fi
   chmod +x "${bin_dest}"
@@ -394,7 +463,7 @@ fetch_k3s_inputs_from_files_api() {
     -H "Authorization: Bearer ${token}" \
     -o "${airgap_dest}" \
     "${remote_prefix}/k3s-airgap-images-amd64.tar.zst"; then
-    echo "build-full-bundle: failed to download airgap images from ${remote_prefix}/k3s-airgap-images-amd64.tar.zst (seed with scripts/ci/fetch-k3s-inputs.sh)" >&2
+    echo "build-full-bundle: failed to download airgap images from ${remote_prefix}/k3s-airgap-images-amd64.tar.zst (seed with scripts/fetch-k3s-inputs.sh)" >&2
     exit 1
   fi
   require_file "${bin_dest}" "k3s binary"
@@ -425,12 +494,12 @@ build-full-bundle:
 build-full-bundle: run this once on the build host:
 build-full-bundle:   export DEV_REGISTRY_USER=<github-username>
 build-full-bundle:   export DEV_REGISTRY_TOKEN=<PAT with read:packages>
-build-full-bundle:   bash ${RELEASE_REPO_DIR}/scripts/ci/bootstrap-build-host.sh
+build-full-bundle:   bash ${RELEASE_REPO_DIR}/scripts/bootstrap-build-host.sh
 build-full-bundle:
 build-full-bundle: if the registry token changes later, rerun the same bootstrap script with the new token.
 build-full-bundle:
 build-full-bundle: then rerun:
-build-full-bundle:   bash ${RELEASE_REPO_DIR}/scripts/ci/build-full-bundle.sh
+build-full-bundle:   bash ${RELEASE_REPO_DIR}/scripts/build-full-bundle.sh
 EOF
   exit 1
 }
@@ -1540,7 +1609,7 @@ echo "  # export dir is \$RELEASE_WORK_ROOT/export"
 echo "  # uploads to https://\$DEV_REGISTRY/api/v1/files/appliance/<version>/"
 echo "  export RELEASE_WORK_ROOT=${RELEASE_WORK_ROOT}"
 echo "  # DEV_REGISTRY + DEV_REGISTRY_TOKEN (+ DEV_IMAGE_REPO / TLS) from build"
-echo "  bash ./scripts/publish/publish-release.sh"
+echo "  bash ./scripts/publish-release.sh"
 echo "optional:"
-echo "  bash ./scripts/publish/publish-release.sh --latest-alias"
+echo "  bash ./scripts/publish-release.sh --latest-alias"
 echo "  PRODUCT_VERSION=<override>"

@@ -19,12 +19,12 @@
 #
 # Usage:
 #   export RELEASE_WORK_ROOT=... DEV_REGISTRY=... DEV_REGISTRY_TOKEN=...
-#   bash ./scripts/ci/fetch-k3s-inputs.sh
+#   bash ./scripts/fetch-k3s-inputs.sh
 set -euo pipefail
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   cat <<'EOF'
-usage: bash ./scripts/ci/fetch-k3s-inputs.sh
+usage: bash ./scripts/fetch-k3s-inputs.sh
 
 Required environment:
   RELEASE_WORK_ROOT   Build root; stages under $RELEASE_WORK_ROOT/inputs/

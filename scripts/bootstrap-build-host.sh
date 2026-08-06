@@ -8,7 +8,7 @@ usage: bootstrap-build-host.sh
 One-time interactive host bootstrap for appliance-code's dev-container flow.
 
 Run this once on each Linux build machine before using:
-  bash ./scripts/ci/build-full-bundle.sh
+  bash ./scripts/build-full-bundle.sh
 
 Required environment:
   DEV_REGISTRY_USER   Registry username for appliance-code dev-registry-login
@@ -21,7 +21,7 @@ Optional environment:
 Example:
   export DEV_REGISTRY_USER=myuser
   export DEV_REGISTRY_TOKEN=xxxxxxxx
-  bash ./scripts/ci/bootstrap-build-host.sh
+  bash ./scripts/bootstrap-build-host.sh
 EOF
 }
 
@@ -31,7 +31,7 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RELEASE_REPO_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+RELEASE_REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DEFAULTS_FILE="${RELEASE_REPO_DIR}/configs/product-bundle.ci.env"
 
 USER_CODE_REPO_SOURCE="${CODE_REPO_SOURCE-}"
@@ -123,4 +123,4 @@ make -C "${CODE_REPO_DIR}" dev-sudo-setup
 echo
 echo "bootstrap-build-host: host bootstrap completed"
 echo "bootstrap-build-host: next step:"
-echo "  bash ${RELEASE_REPO_DIR}/scripts/ci/build-full-bundle.sh"
+echo "  bash ${RELEASE_REPO_DIR}/scripts/build-full-bundle.sh"

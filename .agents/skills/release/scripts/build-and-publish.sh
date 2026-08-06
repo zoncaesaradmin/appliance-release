@@ -2,9 +2,9 @@
 # build-and-publish.sh — thin build-host worker (always local).
 #
 # Resolves build-publish YAML to env, then runs the fixed product sequence:
-#   scripts/ci/bootstrap-build-host.sh
-#   scripts/ci/build-full-bundle.sh
-#   scripts/publish/publish-release.sh
+#   scripts/bootstrap-build-host.sh
+#   scripts/build-full-bundle.sh
+#   scripts/publish-release.sh
 #
 # Mac e2e uses run-build-and-publish-on-build-host.sh (repo sync + SSH + env
 # inject) which invokes this script with --local on the build host.
@@ -20,7 +20,7 @@ usage() {
 usage: build-and-publish.sh --local --build-publish-config PATH [options]
 
 Run on the build host only (--local required). Product implementation is the
-three scripts under scripts/ci and scripts/publish.
+three product scripts under scripts/.
 
 Options:
   --build-publish-config PATH   Build-publish role file (required).
@@ -72,9 +72,9 @@ bool_true "${LOCAL_MODE}" || fail "requires --local (use run-build-and-publish-o
 
 CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
 
-readonly BOOTSTRAP_CMD="bash scripts/ci/bootstrap-build-host.sh"
-readonly BUILD_CMD="bash scripts/ci/build-full-bundle.sh"
-readonly PUBLISH_CMD="bash scripts/publish/publish-release.sh"
+readonly BOOTSTRAP_CMD="bash scripts/bootstrap-build-host.sh"
+readonly BUILD_CMD="bash scripts/build-full-bundle.sh"
+readonly PUBLISH_CMD="bash scripts/publish-release.sh"
 readonly BUILDER_LOCAL_REF="registry.local/dev-build"
 
 if [[ -z "${RUN_DIR}" ]]; then
