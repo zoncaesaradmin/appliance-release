@@ -58,13 +58,15 @@ This is the supported end-to-end release build flow.
 
 ```bash
 DEV_REGISTRY=artifact-dns-1.appliance.internal \
+DEV_IMAGE_REPO=development-container \
 DEV_REGISTRY_TOKEN=... \
 DEV_REGISTRY_TLS_VERIFY=false \
-DEV_IMAGE_REPO=development-container \
-DEV_IMAGE_NAME=dev-build \
-DEV_IMAGE_TAG=latest \
 bash ./scripts/ci/build-full-bundle.sh
 ```
+
+`DEV_REGISTRY` (host) and `DEV_IMAGE_REPO` (registry-specific path) are required:
+- GHCR: `DEV_REGISTRY=ghcr.io` + `DEV_IMAGE_REPO=zoncaesaradmin/development-container`
+- LAN: `DEV_REGISTRY=<host>` + `DEV_IMAGE_REPO=development-container`
 
 Optional: `PRODUCT_VERSION=…` overrides `configs/default-product-version`.
 

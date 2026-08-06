@@ -239,6 +239,7 @@ DEV_PULL_TLS_VERIFY_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_
 DEV_PULL_REGISTRY="$(resolve_env_value "${DEV_PULL_REGISTRY_ENV}" "Dev image pull registry env")"
 [[ -n "${DEV_PULL_IMAGE_REPO_ENV}" ]] || fail "build_flow.dev_image_pull.image_repo_env is required in config"
 [[ -n "${DEV_PULL_IMAGE_NAME_ENV}" ]] || fail "build_flow.dev_image_pull.image_name_env is required in config"
+# DEV_IMAGE_REPO is registry-specific (GHCR vs LAN) and must be set in the named env.
 DEV_PULL_IMAGE_REPO="$(resolve_env_value "${DEV_PULL_IMAGE_REPO_ENV}" "Dev image pull image repo env")"
 DEV_PULL_IMAGE_NAME="$(resolve_env_value "${DEV_PULL_IMAGE_NAME_ENV}" "Dev image pull image name env")"
 [[ -n "${DEV_PULL_IMAGE_TAG}" ]] || fail "build_flow.dev_image_pull.image_tag is required in config"

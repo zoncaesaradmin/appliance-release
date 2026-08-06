@@ -76,8 +76,9 @@ build_flow:
   # appliance-code / appliance-ctl git refs are fixed in those scripts (main).
 
   # Bundled offline name for the appliance is fixed: registry.local/dev-build.
-  # build-full-bundle.sh derives the upstream pull ref from the DEV_* env vars below
-  # and uses DEV_REGISTRY/build-cache as an automatic LAN OCI pull-through cache.
+  # Upstream pull uses host-only DEV_REGISTRY + required DEV_IMAGE_REPO
+  # (GHCR: zoncaesaradmin/development-container; LAN: development-container).
+  # LAN OCI build-cache uses DEV_REGISTRY/build-cache automatically.
   dev_image_pull:
     registry_env: DEV_REGISTRY
     image_repo_env: DEV_IMAGE_REPO

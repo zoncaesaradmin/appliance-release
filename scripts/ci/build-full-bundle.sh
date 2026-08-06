@@ -21,14 +21,18 @@ Run this from the checked-out appliance-release repo root:
 
 Configuration is taken from environment variables. The most common pattern is:
 
-  PRODUCT_VERSION=0.1.0 \
   DEV_REGISTRY=artifact-dns-1.appliance.internal \
-  DEV_REGISTRY_TOKEN=... \
   DEV_IMAGE_REPO=development-container \
-  DEV_IMAGE_NAME=dev-build \
-  DEV_IMAGE_TAG=latest \
+  DEV_REGISTRY_TOKEN=... \
+  DEV_REGISTRY_USER=admin \
+  DEV_REGISTRY_TLS_VERIFY=false \
   bash ./scripts/ci/build-full-bundle.sh
 
+Required: DEV_REGISTRY (host) + DEV_IMAGE_REPO (registry-specific path).
+  GHCR example: DEV_REGISTRY=ghcr.io DEV_IMAGE_REPO=zoncaesaradmin/development-container
+  LAN example:  DEV_REGISTRY=<host> DEV_IMAGE_REPO=development-container
+PRODUCT_VERSION defaults from configs/default-product-version.
+DEV_IMAGE_NAME/TAG default to dev-build/latest (exported into appliance-code make/dev-run).
 K3s binary + airgap images are downloaded at build time from the appliance
 files API (seed once with scripts/ci/fetch-k3s-inputs.sh). URL layout is fixed:
   https://\$DEV_REGISTRY/api/v1/files/k3s/\$K3S_VERSION/k3s
@@ -65,7 +69,8 @@ Optional overrides:
   # archive/dir paths are not supported.
   WORKSPACE_PROVISIONER_IMAGE_REF=docker.io/alpine/git:latest
   # Complete product packages registry.local/dev-build from
-  # DEV_REGISTRY + DEV_IMAGE_REPO/NAME/TAG (defaults: development-container/dev-build:latest).
+  # DEV_REGISTRY + required DEV_IMAGE_REPO + DEV_IMAGE_NAME/TAG
+  # (NAME/TAG default to dev-build/latest).
   # When DEV_REGISTRY is set, packaging auto-uses a LAN build-cache on that
   # host (prefix build-cache/, 15s probe): try LAN → miss/timeout → upstream →
   # best-effort push back to LAN. Auth/TLS reuse DEV_REGISTRY_USER/TOKEN/TLS_VERIFY.
@@ -189,9 +194,26 @@ if [[ -z "${ARGO_ENABLED}" ]]; then
 fi
 
 DEV_REGISTRY="${USER_DEV_REGISTRY:-${DEV_REGISTRY:-}}"
-DEV_IMAGE_REPO="${USER_DEV_IMAGE_REPO:-${DEV_IMAGE_REPO:-development-container}}"
+DEV_IMAGE_REPO="${USER_DEV_IMAGE_REPO:-${DEV_IMAGE_REPO:-}}"
 DEV_IMAGE_NAME="${USER_DEV_IMAGE_NAME:-${DEV_IMAGE_NAME:-dev-build}}"
 DEV_IMAGE_TAG="${USER_DEV_IMAGE_TAG:-${DEV_IMAGE_TAG:-latest}}"
+# DEV_IMAGE_REPO is registry-specific and required (host-only DEV_REGISTRY):
+#   GHCR:  zoncaesaradmin/development-container
+#   LAN:   development-container
+# Export so appliance-code make/dev-run sees the composed pull ref.
+if [[ -z "${DEV_REGISTRY}" ]]; then
+  echo "build-full-bundle: DEV_REGISTRY is required (registry host, e.g. ghcr.io or artifact-dns-1.appliance.internal)" >&2
+  exit 2
+fi
+if [[ -z "${DEV_IMAGE_REPO}" ]]; then
+  echo "build-full-bundle: DEV_IMAGE_REPO is required (e.g. zoncaesaradmin/development-container on GHCR, or development-container on LAN)" >&2
+  exit 2
+fi
+export PRODUCT_VERSION
+export DEV_REGISTRY DEV_IMAGE_REPO DEV_IMAGE_NAME DEV_IMAGE_TAG
+export DEV_REGISTRY_USER="${DEV_REGISTRY_USER:-}"
+export DEV_REGISTRY_TOKEN="${DEV_REGISTRY_TOKEN:-}"
+export DEV_REGISTRY_TLS_VERIFY="${DEV_REGISTRY_TLS_VERIFY:-true}"
 BUILDER_LOCAL_REF="registry.local/dev-build"
 BUILDER_PULL_REF=""
 
