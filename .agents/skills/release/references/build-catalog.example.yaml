@@ -17,8 +17,13 @@
 # - execution is `make` or `script`; mode-specific input is `args` (v1: one entry).
 #   Legacy `make_target`/`repo_script` + `makeTarget`/`scriptPath` are still
 #   accepted and normalized at load time.
+# - Optional `workingDirectory` is a repo-relative subdirectory the workflow
+#   cds into before running make/script (for example services/controlplane).
+#   Omit it or leave it empty for repo root. Do not set ".".
 # - script args must be repo-relative paths that exist in that checkout
 #   (for example `scripts/build.sh`, not a bare `build.sh` at repo root).
+#   When workingDirectory is set, script/containerfile paths are relative to
+#   that subdirectory after the workflow cds there.
 # - repo URLs must use HTTPS
 # - `defaultRef` is only for workspace prepare/sync (branch names are fine).
 #   Current-workspace builds do not clone and do not use defaultRef; they build
@@ -40,6 +45,22 @@
 #
 # Do not put private keys, tokens, or passwords in this file.
 workProfiles:
+  - name: appliance-dev
+    description: Appliance platform development multi-repo workspace profile.
+    repos:
+      - name: appliance-code
+        enabledByDefault: true
+      - name: appliance-ctl
+        enabledByDefault: true
+      - name: appliance-release
+        enabledByDefault: true
+
+  - name: appliance-dep-dev
+    description: Appliance dependencies development multi-repo workspace profile.
+    repos:
+      - name: development-container
+        enabledByDefault: true
+
   - name: platform-dev
     description: Platform development multi-repo workspace profile.
     repos:
@@ -68,6 +89,46 @@ workProfiles:
         enabledByDefault: true
 
 repos:
+  - name: appliance-code
+    url: https://github.com/zoncaesaradmin/appliance-code.git
+    defaultRef: main
+    buildTargets:
+      - name: controlplane
+        description: Build the control-plane service image (make image in services/controlplane).
+        execution: make
+        workingDirectory: services/controlplane
+        args: [image]
+        imageRepository: appliance-images/appliance-control-plane
+        builderImageDigest: dev-build
+
+  - name: appliance-ctl
+    url: https://github.com/zoncaesaradmin/appliance-ctl.git
+    defaultRef: main
+    buildTargets:
+      - name: appliance-ctl
+        description: Build the zonctl binary (make build).
+        execution: make
+        args: [build]
+        imageRepository: appliance-images/appliance-ctl
+        builderImageDigest: dev-build
+
+  - name: appliance-release
+    url: https://github.com/zoncaesaradmin/appliance-release.git
+    defaultRef: main
+    # Workspace/sync only for now; release assembly is host-driven, not a
+    # single in-tree make build target for appliance workflows.
+
+  - name: development-container
+    url: https://github.com/zoncaesaradmin/development-container.git
+    defaultRef: main
+    buildTargets:
+      - name: development-container
+        description: Build the local dev-build image (make build-dev).
+        execution: make
+        args: [build-dev]
+        imageRepository: appliance-images/development-container
+        builderImageDigest: dev-build
+
   - name: platformkit
     url: https://github.com/zoncaesaradmin/platformkit.git
     defaultRef: main

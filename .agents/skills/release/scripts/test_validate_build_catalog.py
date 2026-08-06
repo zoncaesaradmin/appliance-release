@@ -80,6 +80,76 @@ repos:
             raise AssertionError(payload)
 
 
+def test_accepts_nested_working_directory_make_target() -> None:
+    with tempfile.TemporaryDirectory(prefix="validate-build-catalog-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        catalog = tmp / "catalog.yaml"
+        write(
+            catalog,
+            """
+workProfiles:
+  - name: builder
+    repos:
+      - name: app
+repos:
+  - name: app
+    url: https://git.internal.example.com/team/app.git
+    buildTargets:
+      - name: controlplane
+        execution: make
+        workingDirectory: services/controlplane
+        args: [image]
+        imageRepository: users/example/controlplane
+""".lstrip(),
+        )
+        config = tmp / "config.yaml"
+        write(config, "build_flow: {}\n")
+        output = tmp / "validation.json"
+
+        result = run_validator(config, catalog, output)
+        if result.returncode != 0:
+            raise AssertionError(result.stderr or result.stdout)
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        if payload.get("valid") is not True or payload.get("validationErrors") != []:
+            raise AssertionError(payload)
+
+
+def test_rejects_invalid_working_directory() -> None:
+    with tempfile.TemporaryDirectory(prefix="validate-build-catalog-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        catalog = tmp / "catalog.yaml"
+        write(
+            catalog,
+            """
+workProfiles:
+  - name: builder
+    repos:
+      - name: app
+repos:
+  - name: app
+    url: https://git.internal.example.com/team/app.git
+    buildTargets:
+      - name: controlplane
+        execution: make
+        workingDirectory: ../outside
+        args: [image]
+        imageRepository: users/example/controlplane
+""".lstrip(),
+        )
+        config = tmp / "config.yaml"
+        write(config, "build_flow: {}\n")
+
+        result = run_validator(config, catalog)
+        if result.returncode == 0:
+            raise AssertionError("invalid workingDirectory was accepted")
+        payload = json.loads(result.stdout)
+        joined = "\n".join(payload["validationErrors"])
+        if "workingDirectory must be a relative path inside the repo" not in joined:
+            raise AssertionError(payload)
+
+
 if __name__ == "__main__":
     test_accepts_workspace_catalog_without_image_fields()
     test_rejects_ssh_repo_url_before_install()
+    test_accepts_nested_working_directory_make_target()
+    test_rejects_invalid_working_directory()

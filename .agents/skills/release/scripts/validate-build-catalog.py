@@ -104,6 +104,16 @@ def parse_source_credential_scalar(raw: str) -> str:
     return raw
 
 
+def parse_yaml_scalar_or_flow_list(raw: str) -> Any:
+    raw = raw.strip()
+    if raw.startswith("[") and raw.endswith("]"):
+        inner = raw[1:-1].strip()
+        if not inner:
+            return []
+        return [parse_source_credential_scalar(part) for part in inner.split(",") if part.strip()]
+    return parse_source_credential_scalar(raw)
+
+
 def parse_simple_list_manifest(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     stripped = text.lstrip()
@@ -154,7 +164,7 @@ def parse_simple_list_manifest(path: Path) -> dict[str, Any]:
             current_key = key.strip()
             value = value.strip()
             if value:
-                data[current_key] = parse_source_credential_scalar(value)
+                data[current_key] = parse_yaml_scalar_or_flow_list(value)
             else:
                 data.setdefault(current_key, [])
             continue
@@ -169,7 +179,7 @@ def parse_simple_list_manifest(path: Path) -> dict[str, Any]:
                 if remainder and ":" in remainder:
                     nested_item = {}
                     key, value = remainder.split(":", 1)
-                    nested_item[key.strip()] = parse_source_credential_scalar(value)
+                    nested_item[key.strip()] = parse_yaml_scalar_or_flow_list(value.strip()) if value.strip() else ""
                     continue
                 if remainder:
                     current_item.setdefault(pending_key, []).append(parse_source_credential_scalar(remainder))
@@ -180,7 +190,7 @@ def parse_simple_list_manifest(path: Path) -> dict[str, Any]:
                 if ":" not in remainder:
                     raise ValueError("expected key: value after '-'")
                 key, value = remainder.split(":", 1)
-                current_item[key.strip()] = parse_source_credential_scalar(value)
+                current_item[key.strip()] = parse_yaml_scalar_or_flow_list(value.strip()) if value.strip() else ""
             continue
         if current_item is None:
             continue
@@ -190,7 +200,7 @@ def parse_simple_list_manifest(path: Path) -> dict[str, Any]:
             key, value = stripped_line.split(":", 1)
             key = key.strip()
             value = value.strip()
-            nested_item[key] = parse_source_credential_scalar(value) if value else []
+            nested_item[key] = parse_yaml_scalar_or_flow_list(value) if value else []
             continue
         if ":" not in stripped_line:
             raise ValueError("expected key: value in list entry")
@@ -198,7 +208,7 @@ def parse_simple_list_manifest(path: Path) -> dict[str, Any]:
         key = key.strip()
         value = value.strip()
         if value:
-            current_item[key] = parse_source_credential_scalar(value)
+            current_item[key] = parse_yaml_scalar_or_flow_list(value)
             current_item.pop("__pending_lists__", None)
         else:
             flush_nested_item()
@@ -251,6 +261,14 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
     build_targets = object_items(catalog.get("buildTargets"))
     work_profiles = object_items(catalog.get("workProfiles"))
     repos = object_items(catalog.get("repos"))
+    # Lift repos[].buildTargets the same way zonctl / control-plane Normalize does.
+    for repo in repos:
+        repo_name = as_str(repo.get("name", ""))
+        for nested in object_items(repo.get("buildTargets")):
+            target = dict(nested)
+            if not as_str(target.get("repo", "")):
+                target["repo"] = repo_name
+            build_targets.append(target)
     if not work_profiles:
         errors.append("install.build_catalog_path must declare at least one workProfiles entry")
     if not repos:
@@ -326,6 +344,11 @@ def validate_build_catalog(config_path: Path, config: dict, build_catalog: str) 
                 errors.append(f"{prefix}.args must contain exactly one make target when execution is make")
             elif not MAKE_TARGET_RE.match(args[0]):
                 errors.append(f"{prefix}.args[0] contains unsupported characters: {args[0]}")
+        working_directory = as_str(target.get("workingDirectory", ""))
+        if working_directory in {".", "./"}:
+            working_directory = ""
+        elif working_directory and not valid_repo_relative_path(working_directory):
+            errors.append(f"{prefix}.workingDirectory must be a relative path inside the repo")
         containerfile_path = as_str(target.get("containerfilePath", ""))
         if containerfile_path and not valid_repo_relative_path(containerfile_path):
             errors.append(f"{prefix}.containerfilePath must be a relative path inside the repo")
