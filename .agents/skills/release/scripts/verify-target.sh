@@ -321,7 +321,7 @@ fi
 WORKFLOWS_NAMESPACES_CMD="$(rewrite_default_command_with_bundle_path "${WORKFLOWS_NAMESPACES_CMD}" "sudo kubectl get namespace workflows appliance-builds")"
 WORKFLOWS_CRDS_CMD="$(rewrite_default_command_with_bundle_path "${WORKFLOWS_CRDS_CMD}" "sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io")"
 WORKFLOW_CONTROLLER_CMD="$(rewrite_default_command_with_bundle_path "${WORKFLOW_CONTROLLER_CMD}" "sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods")"
-ARTIFACT_READINESS_CMD="$(rewrite_default_command_with_bundle_path "${ARTIFACT_READINESS_CMD}" "sudo kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data")"
+ARTIFACT_READINESS_CMD="$(rewrite_default_command_with_bundle_path "${ARTIFACT_READINESS_CMD}" "sudo kubectl -n artifacts wait --for=condition=Available deployment/artifact-server --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data")"
 
 status_code="0"
 verify_code="0"

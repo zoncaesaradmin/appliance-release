@@ -82,7 +82,7 @@ Optional overrides:
   # (existing install OCI contract name).
   DNS_VERSION=1.14.4
   DNS_IMAGE_PULL_REF=registry.k8s.io/coredns/coredns:v1.14.4
-  # CoreDNS: always wrap upstream via appliance-code package-coredns-image-archive
+  # DNS server: always wrap upstream CoreDNS via appliance-code package-dns-server-image-archive
   # (dev-run has buildah+skopeo); digest from index.json.
 EOF
 }
@@ -1437,7 +1437,7 @@ ensure_lan_build_cache_login
 ARTIFACT_SERVER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/artifact-server-image.tar"
 ARTIFACT_SERVER_IMAGE_REF=""
 
-DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/coredns-image.tar"
+DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/dns-server-image.tar"
 DNS_IMAGE_REF=""
 
 WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:latest}"
@@ -1506,14 +1506,14 @@ make package-artifact-server-image-archive \
 ARTIFACT_SERVER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/artifact-server-image.tar"
 ARTIFACT_SERVER_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/artifact-server-image.reference)"
 
-# Appliance-owned CoreDNS wrapper: tees stdout/stderr into /data/zon/logs/dns.
+# Appliance-owned dns-server wrapper (upstream CoreDNS): tees stdout/stderr into /data/zon/logs/dns.
 # Always package from upstream pull ref (no pre-supplied archive path).
-make package-coredns-image-archive \
-  OUT_FILE="/workspace/.run/coredns-image.tar" \
+make package-dns-server-image-archive \
+  OUT_FILE="/workspace/.run/dns-server-image.tar" \
   DNS_VERSION=$(shell_quote "${DNS_VERSION}") \
   DNS_SOURCE_IMAGE=$(shell_quote "${DNS_IMAGE_PULL_REF}")
-DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/coredns-image.tar"
-DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/coredns-image.reference)"
+DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/dns-server-image.tar"
+DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/dns-server-image.reference)"
 
 
 METADATA_BUNDLE_ARCHIVE_FOR_DEV="\$(bash ./scripts/package/generate-metadata-bundle.sh --software-version "\${CODE_VERSION}" --out-dir "/workspace/.run/metadata-bundle")"

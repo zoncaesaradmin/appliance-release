@@ -75,7 +75,7 @@ components:
 
   - id: coredns-image
     owner: appliance-code / appliance-release
-    recipe: scripts/package/export-coredns-image-archive.sh
+    recipe: scripts/package/export-dns-server-image-archive.sh
     outputs:
       - release_input: artifacts.dnsImage
       - reference: registry.local/coredns@sha256:...

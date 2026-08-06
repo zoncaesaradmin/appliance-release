@@ -80,7 +80,7 @@ verification:
     enabled: false
   artifact:
     enabled: true
-    readiness_command: sudo kubectl -n artifacts wait --for=condition=Available deployment/artifactserver --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data
+    readiness_command: sudo kubectl -n artifacts wait --for=condition=Available deployment/artifact-server --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data
   dns:
     enabled: true
     readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/dns-server --timeout=120s && dig +short @127.0.0.1 -p 53 SOA appliance.internal
