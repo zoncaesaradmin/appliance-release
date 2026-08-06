@@ -101,15 +101,12 @@ build_flow:
 # Distribution (publish destination + install download source)
 # ============================================================================
 
-# ============================================================================
-# Distribution (publish destination + install download source)
-# ============================================================================
-
 bundle_store:
   # Always the appliance file API on DEV_REGISTRY:
   #   https://$DEV_REGISTRY/api/v1/files/appliance/<version>/
   # Token/TLS reuse DEV_REGISTRY_TOKEN / DEV_REGISTRY_TLS_VERIFY (same as build).
   # Optional overrides only:
+  # mode: appliance_files always if set or not set
   #   registry_env / token_env / tls_verify_env
   #   files_path (default /api/v1/files)
   #   base_url (must already end in files_path)
