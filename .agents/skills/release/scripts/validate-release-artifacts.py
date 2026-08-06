@@ -412,9 +412,13 @@ def validate_zot(
             "release-input artifacts.zotImage.imageReference must be "
             "registry.local/zot@sha256:<64 lowercase hex>"
         )
-    if "zot" not in image_path.name.lower():
+    # Product archive basename is artifact-server-*. Legacy "zot" basenames are
+    # still accepted for older release-inputs; do not rename new archives to zot.
+    name_lower = image_path.name.lower()
+    if "artifact-server" not in name_lower and "artifactserver" not in name_lower and "zot" not in name_lower:
         raise ValueError(
-            f"release-input artifacts.zotImage.path must identify zot, got {image['path']!r}"
+            "release-input artifacts.zotImage.path must identify Artifact Server "
+            f"(expected artifact-server in the basename), got {image['path']!r}"
         )
     require_oci_archive_reference_matches_content(image_path, image_ref, "zotImage")
     index = load_oci_archive_index(image_path)
