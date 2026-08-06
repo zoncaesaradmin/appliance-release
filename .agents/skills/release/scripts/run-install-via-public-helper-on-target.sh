@@ -7,6 +7,10 @@
 # settings if needed, and runs:
 #   install-http-release.sh --appliance-name … --appliance-profile …
 #
+# For builder* profiles, copies install.build_catalog_path onto the target and
+# stamps BUILD_CATALOG_PATH into the helper so zonctl receives --build-catalog
+# (chart default buildCatalog:{} fails Helm schema for build-capable profiles).
+#
 # Lab policy: always uninstall then fresh install (no in-place upgrade).
 # Target needs no permanent env. Sudo for zonctl is non-interactive: Mac
 # APPLIANCE_TARGET_SUDO_PASSWORD is injected for this SSH job only.
@@ -73,6 +77,7 @@ BUILD_PUBLISH_CONFIG="$(require_config_path "${BUILD_PUBLISH_CONFIG}")"
 INSTALL_CONFIG="$(require_config_path "${INSTALL_CONFIG}")"
 
 require_cmd ssh
+require_cmd scp
 require_cmd python3
 
 TARGET_HOST="$(config_get "${DEVHOST_CONFIG}" "target_host.alias")"
@@ -124,9 +129,28 @@ fi
 ensure_release_run_dirs "${RUN_DIR}"
 install_log="${RUN_DIR}/logs/target-public-install.log"
 
+# Builder profiles require a real catalog; chart default buildCatalog:{} fails Helm schema.
+BUILD_CATALOG_PATH="$(resolve_build_catalog_path "${INSTALL_CONFIG}" "")"
+require_builder_build_catalog_path "${APPLIANCE_PROFILE}" "${BUILD_CATALOG_PATH}"
+validate_builder_build_catalog \
+  "${SCRIPT_DIR}" \
+  "${INSTALL_CONFIG}" \
+  "${APPLIANCE_PROFILE}" \
+  "${BUILD_CATALOG_PATH}" \
+  "${RUN_DIR}" \
+  "build-catalog validation ok"
+TARGET_BUILD_CATALOG_PATH=""
+if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
+  # Keep outside OUT_DIR (/tmp/appliance-<version>/) so extract/cleanup cannot remove it.
+  TARGET_BUILD_CATALOG_PATH="/tmp/appliance-${RELEASE_VERSION}-build-catalog.yaml"
+fi
+
 log "target-host=${TARGET_HOST}"
 log "helper-url=${HELPER_URL}"
 log "appliance-name=${APPLIANCE_NAME} profile=${APPLIANCE_PROFILE}"
+if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
+  log "build-catalog=${BUILD_CATALOG_PATH} -> ${TARGET_HOST}:${TARGET_BUILD_CATALOG_PATH}"
+fi
 
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 quoted_sudo_password="$(shell_quote "${target_sudo_password}")"
@@ -142,6 +166,13 @@ fi
 
 # Lab policy: clean uninstall then fresh public install (no in-place upgrade).
 # Nested sudo under one non-interactive sudo so zonctl does not wait on a TTY.
+if [[ -n "${TARGET_BUILD_CATALOG_PATH}" ]]; then
+  log "copying build catalog to ${TARGET_HOST}:${TARGET_BUILD_CATALOG_PATH}"
+  if ! scp -q "${BUILD_CATALOG_PATH}" "${TARGET_HOST}:${TARGET_BUILD_CATALOG_PATH}"; then
+    fail "failed to copy build catalog to ${TARGET_HOST}:${TARGET_BUILD_CATALOG_PATH}"
+  fi
+fi
+
 remote_cmd="set -euo pipefail
 helper_url=$(shell_quote "${HELPER_URL}")
 script_path=$(shell_quote "${SCRIPT_PATH}")
@@ -152,6 +183,7 @@ version=$(shell_quote "${RELEASE_VERSION}")
 prefix=$(shell_quote "${PATH_PREFIX}")
 name=$(shell_quote "${APPLIANCE_NAME}")
 profile=$(shell_quote "${APPLIANCE_PROFILE}")
+build_catalog_path=$(shell_quote "${TARGET_BUILD_CATALOG_PATH}")
 
 if command -v zonctl >/dev/null 2>&1; then
   echo \"uninstalling existing appliance before reinstall (lab clean install)\"
@@ -167,13 +199,13 @@ echo \"downloading \${helper_url}\"
 curl -fsSL -o \"\${script_path}\"${curl_extra} \"\${helper_url}\"
 chmod +x \"\${script_path}\"
 
-python3 - \"\${script_path}\" \"\${base_url}\" \"\${bearer}\" \"\${tls_insecure}\" \"\${version}\" \"\${prefix}\" <<'PY'
+python3 - \"\${script_path}\" \"\${base_url}\" \"\${bearer}\" \"\${tls_insecure}\" \"\${version}\" \"\${prefix}\" \"\${build_catalog_path}\" <<'PY'
 from pathlib import Path
 import json
 import re
 import sys
 
-path, base_url, bearer, tls_insecure, version, prefix = sys.argv[1:7]
+path, base_url, bearer, tls_insecure, version, prefix, build_catalog_path = sys.argv[1:8]
 text = Path(path).read_text(encoding=\"utf-8\")
 
 def set_assign(text, name, value):
@@ -181,7 +213,7 @@ def set_assign(text, name, value):
     repl = f\"{name}={json.dumps(value)}\"
     if pat.search(text):
         return pat.sub(repl, text, count=1)
-    return text
+    return text + (\"\" if text.endswith(\"\\n\") else \"\\n\") + repl + \"\\n\"
 
 text = set_assign(text, \"BASE_URL_EMBEDDED\", base_url)
 text = set_assign(text, \"BASE_URL\", base_url)
@@ -191,6 +223,11 @@ text = set_assign(text, \"PATH_PREFIX_EMBEDDED\", prefix)
 text = set_assign(text, \"PATH_PREFIX\", prefix)
 text = set_assign(text, \"BEARER_TOKEN\", bearer)
 text = set_assign(text, \"TLS_INSECURE\", tls_insecure)
+text = set_assign(text, \"BUILD_CATALOG_PATH\", build_catalog_path)
+if build_catalog_path:
+    expected = f\"BUILD_CATALOG_PATH={json.dumps(build_catalog_path)}\"
+    if expected not in text.splitlines():
+        raise SystemExit(\"failed to stamp BUILD_CATALOG_PATH into install-http-release.sh\")
 Path(path).write_text(text, encoding=\"utf-8\")
 PY
 
@@ -214,6 +251,8 @@ python3 - "${RUN_DIR}/metadata/install.json" \
   "$(default_appliance_state_dir)" \
   "${APPLIANCE_PROFILE}" \
   "${APPLIANCE_NAME}" \
+  "${BUILD_CATALOG_PATH}" \
+  "${TARGET_BUILD_CATALOG_PATH}" \
   "${install_log}" <<'PY'
 import json
 import sys
@@ -231,8 +270,10 @@ from pathlib import Path
     state_dir,
     appliance_profile,
     appliance_name,
+    build_catalog_path,
+    target_build_catalog_path,
     install_log,
-) = sys.argv[1:13]
+) = sys.argv[1:15]
 
 payload = {
     "configPath": config_path,
@@ -247,6 +288,8 @@ payload = {
     "bundleDir": f"/tmp/appliance-{release_version}/appliance-{release_version}-bundle",
     "applianceProfile": appliance_profile,
     "applianceName": appliance_name,
+    "buildCatalogPath": build_catalog_path or None,
+    "targetBuildCatalogPath": target_build_catalog_path or None,
     "installMode": "public-helper",
     "log": install_log,
     "status": "passed",

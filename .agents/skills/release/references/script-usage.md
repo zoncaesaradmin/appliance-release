@@ -101,12 +101,13 @@ Notes:
   that already ends in the files path. `static_http` / SSH publish was removed.
 - For advanced extra SANs beyond the derived FQDN and the automatic
   `hostname.local` SAN, use `install.additional_tls_sans_csv` in the config.
-- For the `builder` profile, set `install.build_catalog_path` or pass
-  `--build-catalog PATH` when the bundle does not already include a
-  `config.buildCatalog` value with workspace profiles, HTTPS repo URLs, and a
-  digest-pinned workspace provisioner image. The file is copied to the target
-  install temp dir and passed to `zonctl`; it should contain only product
-  config, never private keys or tokens.
+- For builder* profiles (`builder`, `builder-landns`, `builder-storage-landns`),
+  set `install.build_catalog_path` to an appliance-native catalog (see
+  `build-catalog.example.yaml`). The public install helper copies that file to
+  the target and stamps `BUILD_CATALOG_PATH` into `install-http-release.sh` so
+  `zonctl install --build-catalog` injects `config.buildCatalog`. Without it,
+  Helm rejects the chart default `buildCatalog: {}`. The catalog must declare
+  `workProfiles` and HTTPS `repos`; never put private keys or tokens in it.
 - If the build catalog references a workspace provisioner image, ensure
   `build_flow.dev_image_pull` is configured so `registry.local/dev-build`
   is bundled and preloaded on the target.
