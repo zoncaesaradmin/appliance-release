@@ -60,7 +60,7 @@ components:
 
   - id: zot-image
     owner: appliance-code / appliance-release
-    recipe: scripts/package/export-zot-image-archive.sh
+    recipe: scripts/package/export-artifact-server-image-archive.sh
     outputs:
       - release_input: artifacts.zotImage
       - reference: registry.local/zot@sha256:...

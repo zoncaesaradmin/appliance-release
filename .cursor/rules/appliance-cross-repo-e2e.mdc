@@ -21,8 +21,9 @@ Runtime:             config.*ImageDigest == digest pin → Argo pod image (IfNot
 ```
 
 Names today: `workspace-provisioner` (alpine/git), `dev-build` (builder),
-first-class `zot` (artifact service), and first-class `coredns` (LAN DNS).
-Zot archives use `registry.local/zot:bundled` plus
+first-class artifact-server (OCI registry; wire name still `registry.local/zot`),
+and first-class `coredns` (LAN DNS).
+Artifact-server archives use `registry.local/zot:bundled` plus
 `registry.local/zot@sha256:<platform-digest>`; CoreDNS uses
 `registry.local/coredns:bundled` plus
 `registry.local/coredns@sha256:<platform-digest>`. Neither is an anonymous
@@ -52,8 +53,9 @@ Never trust `skopeo inspect` alone for pins (multi-arch index ≠ platform manif
    - `ResolveBuilderImage("dev-build", …)` → dev-build digest pin
 9. **Artifact service** (`appliance-ctl` registry release + `appliance-code` chart/control-plane)
    - `artifacts.zotImage` + `artifacts.zotChart` + `compatibility.zotVersion`
-   - preload/tag zot before Helm; install registry only for `artifact` capability
-   - registry chart/PVC/public verification key → internal zot URL → Traefik `/v2`
+     (existing release-input field names; product name is artifact-server)
+   - preload/tag `registry.local/zot` before Helm; install registry only for `artifact` capability
+   - registry chart/PVC/public verification key → internal artifact-server URL → Traefik `/v2`
    - storage and builder prove challenge/token/catalog/OCI/ORAS; core proves routes absent
 
 Online pulls happen **only on the build host** during bundle assembly. Target install/runtime must not need Docker Hub/GHCR.
@@ -68,7 +70,7 @@ Online pulls happen **only on the build host** during bundle assembly. Target in
 | Digests in Helm values | `PrepareValuesFile` | chart ConfigMap, `config.Load`, chart schema |
 | Catalog `dev-build` alias | catalog / examples | `ResolveBuilderImage`, `builderImageReference` |
 | Offline images present | preload/tag | Argo `IfNotPresent` pods |
-| Zot image/chart/version | `build-full-bundle.sh` + `archive-release-input.sh` | release-input schema, bundle assembly, source resolution, registry Helm release, release validator |
+| Artifact-server image/chart/version | `build-full-bundle.sh` + `archive-release-input.sh` | release-input schema, bundle assembly, source resolution, registry Helm release, release validator |
 | Artifact capability | profile map | zot preload/deploy, control-plane adapter/routes, `/v2`, profile-matrix evidence |
 | Builder Git HTTPS access | UI `PUT /builder/git-access` → CP secret `builder-git-access` | `resolveWorkspaceGitCredential` → Argo mount + `GIT_ASKPASS` clone |
 | Writable tool home for builds | Argo `HOME`/`GOPATH`/`GOCACHE` under `/tmp/appliance-home` | dev-build image ENV (`/home/devcontainer/...`) must be overridden |
@@ -83,7 +85,7 @@ Online pulls happen **only on the build host** during bundle assembly. Target in
 - **Tag/import algorithm** → `preload.go` / tests; install+upgrade fake-ctr tests
 - **PrepareValuesFile keys** → chart `configmap.yaml` env names; config Load; chart_test
 - **Argo image / pullPolicy** → offline contract; preload completeness
-- **Zot version/image/chart** → archive-first platform digest, `:bundled` annotation, first-class release-input fields, bundle compatibility, registry chart install, validator fixtures
+- **Artifact-server version/image/chart** → archive-first platform digest, `:bundled` annotation, first-class release-input fields, bundle compatibility, registry chart install, validator fixtures
 - **Artifact profile behavior** → storage/builder positive zot pod/PVC + token/catalog/OCI/ORAS evidence; core negative artifact routes; storage negative build routes
 - **Git clone / credential mount** → `buildergit` secret shape (`host`/`username`/`token`); `argo.gitAuthPreamble` + workspace-prepare tests; UI git-access form; docs/developer-workflows-v1.md
 - **Builder HOME/GOPATH** → `argo.workflowToolHomeEnv` + build preamble mkdir; dev-build image ENV; platformkit/forgeline make targets

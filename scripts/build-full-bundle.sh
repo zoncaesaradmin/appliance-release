@@ -75,8 +75,11 @@ Optional overrides:
   # best-effort push back to LAN. Auth/TLS reuse DEV_REGISTRY_USER/TOKEN/TLS_VERIFY.
   ZOT_VERSION=2.1.8
   ZOT_IMAGE_PULL_REF=ghcr.io/project-zot/zot-linux-amd64:v2.1.8
-  # Zot is a first-class release artifact: always pull/copy linux/amd64 and derive
-  # registry.local/zot@sha256:<platform-digest> from index.json.
+  # Artifact server: always wrap upstream via appliance-code
+  # package-artifact-server-image-archive (dev-run has buildah+skopeo);
+  # annotate registry.local/zot:bundled and derive
+  # registry.local/zot@sha256:<platform-digest> from index.json
+  # (existing install OCI contract name).
   DNS_VERSION=1.14.4
   DNS_IMAGE_PULL_REF=registry.k8s.io/coredns/coredns:v1.14.4
   # CoreDNS: always wrap upstream via appliance-code package-coredns-image-archive
@@ -1429,8 +1432,8 @@ BUNDLED_IMAGE_REFS=()
 
 ensure_lan_build_cache_login
 
-ZOT_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/zot-image.tar"
-ZOT_IMAGE_REF="$(export_bundled_oci_archive "${ZOT_IMAGE_PULL_REF}" "registry.local/zot" "${CODE_REPO_DIR}/.run/zot-image.tar")"
+ZOT_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/artifact-server-image.tar"
+ZOT_IMAGE_REF=""
 
 DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/coredns-image.tar"
 DNS_IMAGE_REF=""
@@ -1491,6 +1494,16 @@ HOST_PACKAGES_ARGS=(
   --host-packages-os-version "\${HOST_PACKAGES_OS_VERSION}"
 )
 
+# Appliance-owned artifact-server wrapper: upstream registry binary + thin
+# entrypoint; native application.log under /data/zon/logs/artifactserver via
+# chart config. Always package from upstream pull ref (no pre-supplied archive).
+make package-artifact-server-image-archive \
+  OUT_FILE="/workspace/.run/artifact-server-image.tar" \
+  ARTIFACT_SERVER_VERSION=$(shell_quote "${ZOT_VERSION}") \
+  ARTIFACT_SERVER_SOURCE_IMAGE=$(shell_quote "${ZOT_IMAGE_PULL_REF}")
+ZOT_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/artifact-server-image.tar"
+ZOT_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/artifact-server-image.reference)"
+
 # Appliance-owned CoreDNS wrapper: tees stdout/stderr into /data/zon/logs/dns.
 # Always package from upstream pull ref (no pre-supplied archive path).
 make package-coredns-image-archive \
@@ -1538,8 +1551,8 @@ bash ./scripts/package/archive-release-input.sh \
   "\${HOST_PACKAGES_ARGS[@]}" \
   --k3s-version $(shell_quote "${K3S_VERSION}") \
   --zot-version $(shell_quote "${ZOT_VERSION}") \
-  --zot-image $(shell_quote "${ZOT_IMAGE_ARCHIVE_FOR_DEV}") \
-  --zot-image-reference $(shell_quote "${ZOT_IMAGE_REF}") \
+  --zot-image "\${ZOT_IMAGE_ARCHIVE_FOR_DEV}" \
+  --zot-image-reference "\${ZOT_IMAGE_REF}" \
   --dns-version $(shell_quote "${DNS_VERSION}") \
   --dns-image "\${DNS_IMAGE_ARCHIVE_FOR_DEV}" \
   --dns-image-reference "\${DNS_IMAGE_REF}" \
@@ -1551,6 +1564,7 @@ chmod +x "${CODE_DEV_SCRIPT_PATH}"
 
 make -C "${CODE_REPO_DIR}" dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}"
 cp "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"
+ZOT_IMAGE_REF="$(tr -d '\r\n' < "${CODE_REPO_DIR}/.run/artifact-server-image.reference")"
 
 fetch_k3s_inputs_from_files_api "${INPUTS_DIR}"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
@@ -1593,7 +1607,7 @@ echo
 echo "final bundle:"
 echo "  ${BUNDLE_DIR}"
 echo
-echo "bundled zot image:"
+echo "bundled artifact-server image:"
 echo "  ${ZOT_IMAGE_REF}"
 echo
 echo "generated bundle config:"
