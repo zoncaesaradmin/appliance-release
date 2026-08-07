@@ -96,8 +96,11 @@ atomically and returns `overwritten: true`.
 
 ## Download A File
 
+Prefer HTTP/1.1 for large files (multi-GB appliance bundles). Traefik HTTP/2
+can abort mid-stream with `curl: (92) PROTOCOL_ERROR`.
+
 ```bash
-curl -ksS \
+curl -ksS --http1.1 \
   -H "Authorization: Bearer ${ACCESS_TOKEN}" \
   -o /tmp/hello.txt \
   "${APPLIANCE}/api/v1/files/shared/hello.txt"

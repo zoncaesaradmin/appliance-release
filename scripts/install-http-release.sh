@@ -330,7 +330,12 @@ RELEASE_PAYLOAD_FILES=(
 curl_download() {
   local out_file="$1"
   local url="$2"
-  local -a curl_args=(-fLo "${out_file}")
+  local -a curl_args=(
+    -fLo "${out_file}"
+    # Force HTTP/1.1. Large multi-GB GETs over Traefik HTTP/2 fail mid-stream
+    # with: curl: (92) HTTP/2 stream 1 was not closed cleanly: PROTOCOL_ERROR.
+    --http1.1
+  )
   if [[ -n "${TLS_CACERT}" ]]; then
     curl_args+=(--cacert "${TLS_CACERT}")
   elif [[ "${TLS_INSECURE}" == "1" || "${TLS_INSECURE}" == "true" ]]; then
