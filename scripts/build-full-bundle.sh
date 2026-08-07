@@ -97,7 +97,7 @@ Optional overrides:
   # DNS server: always wrap upstream CoreDNS via appliance-code package-dns-server-image-archive
   # (dev-run has buildah+skopeo); digest from index.json.
   INFERENCE_VERSION=0.6.5
-  INFERENCE_IMAGE_PULL_REF=ollama/ollama:0.6.5
+  INFERENCE_IMAGE_PULL_REF=docker.io/ollama/ollama:0.6.5
   # Inference runtime: always re-export via appliance-code
   # package-inference-runtime-image-archive; digest from index.json.
 EOF
@@ -260,10 +260,11 @@ DNS_VERSION="${USER_DNS_VERSION:-${DNS_VERSION:-1.14.4}}"
 DNS_VERSION="${DNS_VERSION#v}"
 DNS_IMAGE_PULL_REF="${USER_DNS_IMAGE_PULL_REF:-${DNS_IMAGE_PULL_REF:-registry.k8s.io/coredns/coredns:v${DNS_VERSION}}}"
 # compatibility.inferenceVersion is unprefixed (0.6.5). Chart appVersion and
-# the upstream ollama/ollama tag are unprefixed as well.
+# the upstream docker.io/ollama/ollama tag are unprefixed as well.
+# Use a fully qualified registry host so podman short-name resolution is not required.
 INFERENCE_VERSION="${USER_INFERENCE_VERSION:-${INFERENCE_VERSION:-0.6.5}}"
 INFERENCE_VERSION="${INFERENCE_VERSION#v}"
-INFERENCE_IMAGE_PULL_REF="${USER_INFERENCE_IMAGE_PULL_REF:-${INFERENCE_IMAGE_PULL_REF:-ollama/ollama:${INFERENCE_VERSION}}}"
+INFERENCE_IMAGE_PULL_REF="${USER_INFERENCE_IMAGE_PULL_REF:-${INFERENCE_IMAGE_PULL_REF:-docker.io/ollama/ollama:${INFERENCE_VERSION}}}"
 
 # The workflows engine is a mandatory component of the complete product
 # super-set (ADR 0011). BUILD_COMPLETE_PRODUCT defaults true and forces WORKFLOWS_ENABLED.
