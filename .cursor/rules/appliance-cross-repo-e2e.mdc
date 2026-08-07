@@ -21,12 +21,15 @@ Runtime:             config.*ImageDigest == digest pin → workflow pod image (I
 ```
 
 Names today: `workspace-provisioner` (alpine/git), `dev-build` (builder),
-first-class `artifact-server` (OCI registry), and first-class `coredns` (LAN DNS).
+first-class `artifact-server` (OCI registry), first-class `coredns` (LAN DNS),
+and first-class `inference-runtime` (Ollama wrap for the `inference` capability).
 Artifact-server archives use `registry.local/artifact-server:bundled` plus
 `registry.local/artifact-server@sha256:<platform-digest>`; CoreDNS uses
 `registry.local/coredns:bundled` plus
-`registry.local/coredns@sha256:<platform-digest>`. Neither is an anonymous
-`extraOCIImages` entry.
+`registry.local/coredns@sha256:<platform-digest>`; inference-runtime uses
+`registry.local/inference-runtime:bundled` plus
+`registry.local/inference-runtime@sha256:<platform-digest>`. None of these are
+anonymous `extraOCIImages` entries.
 
 Never trust `skopeo inspect` alone for pins (multi-arch index ≠ platform manifest).
 
@@ -89,6 +92,8 @@ Online pulls happen **only on the build host** during bundle assembly. Target in
 - **Builder HOME/GOPATH** → `engine.workflowToolHomeEnv` + build preamble mkdir; dev-build image ENV; platformkit/forgeline make targets
 - **Build catalog targets** → real Makefile/script paths in each product repo; `build-catalog.example.yaml`; operator `build-catalog.yaml`
 - **Workspace UID/path** → install EnsureOwnedDir; chart PVC; argo pod patch; storage invariants in all three AGENTS.md
+- **New third-party packaging input** → `deps/<name>` seed + offline `lan_cache_ref`/files remap + online upstream pin + `docs/offline-build-deps.md` (both modes must work)
+- **Inference runtime image/version** → `deps/inference` (ollama pin), offline remap in `build-full-bundle.sh`, export script, release-input fields, chart install for `inference` capability
 - **Only one repo** → insufficient; re-check sibling contract consumers
 
 ## Gate before saying “done”

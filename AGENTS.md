@@ -60,7 +60,7 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 - There are exactly **two** build-host modes — not a mix per dependency:
   - **Online:** every third-party / tooling input is fetched from the public internet (or the configured public registry path such as GHCR). No LAN Artifact Server seed is required; do not probe LAN build-cache and fall back upstream per image.
   - **Offline:** every such input is fetched only from the LAN Artifact Server (`DEV_REGISTRY` OCI + files API) after `make seed-build-deps` (or equivalent). Misses fail closed; no public upstream fallback.
-- One flag / mode selects the policy for **all** dependencies together (dev-build, git-runtime, Argo, zot, CoreDNS, build bases, Helm, K3s, CRDs, host-packages, …). Do not keep separate “this one from GHCR, that one from LAN, that one from Docker Hub with cache” paths.
+- One flag / mode selects the policy for **all** dependencies together (dev-build, git-runtime, Argo, zot, CoreDNS, Ollama/inference-runtime, build bases, Helm, K3s, CRDs, host-packages, …). Do not keep separate “this one from GHCR, that one from LAN, that one from Docker Hub with cache” paths.
 - Unify early: config may expose `ONLINE_*` (online tooling) and `DEV_*` (LAN).
   After mode selection, map the active pull into one fixed `DEV_*` identity for
   bootstrap/build. Offline pull already *is* `DEV_*` — do not invent a parallel
@@ -69,6 +69,12 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 - Prefer one implementation path for resolving and packaging a dependency. Online vs offline differs only in **source policy** (upstream vs LAN via `OFFLINE_BUILD`), not in duplicated packaging steps or per-case special cases.
 - Do not add “offline-only” and “online-only” forks of the same script when a common function with a single source policy switch can serve both.
 - New dependency seeding under `deps/` must feed the offline mode of that shared path. Seed helpers and packaging consumers share code (for example `scripts/deps-common.sh`) rather than re-implementing pull/push/upload separately.
+- **Whenever you add a new third-party / upstream image or file input to packaging** (export script, `build-full-bundle`, release-input, chart wrap, etc.), you **must** also:
+  1. Add or extend a `deps/<name>/` seed package (`pins.env`, `scripts/build.sh`, `scripts/push.sh`, Makefile, README) so `make seed-build-deps` publishes it to LAN `build-cache` / files API.
+  2. Remap that input in the offline branch of the shared packaging path (`lan_cache_ref` / files API) so `OFFLINE_BUILD=1` never pulls public upstream.
+  3. Keep the online path pulling the same pinned upstream directly.
+  4. Update `docs/offline-build-deps.md`, example configs / comments that list seeded packages, and any validator that asserts pairing.
+  A change that only wires the online export without the `deps/` seed + offline remap is incomplete.
 - When changing packaging, converge on the shared path and remove hybrid LAN-then-internet leftovers from older flows.
 
 ## Local Verification Discipline

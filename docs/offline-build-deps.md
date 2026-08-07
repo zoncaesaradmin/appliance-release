@@ -70,11 +70,23 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | `workflows` | `build-cache/argoexec` / `workflow-controller`; files `argo-workflows/…` | executor + CRDs |
 | `artifact-server-bases` | `build-cache/zot-…`, `debian-bookworm-slim-runtime` | artifact-server wrap |
 | `dns` | `build-cache/coredns:…` | dns wrap |
+| `inference` | `build-cache/ollama:…` | inference-runtime wrap (`export-inference-runtime-image-archive.sh`) |
 | `service-build-bases` | golang/node/alpine/ui-npm cache images | CP/UI/hostagent build-args |
 | `host-packages` | files `host-packages/ubuntu-…` | host-packages unpack |
 | `platform-inputs` | files `k3s/…`, `helm/…` | K3s + Helm |
 
 Pins live in each package’s `pins.env`. Bump the pin, then `make -C deps/<name> release`.
+
+## Adding a new packaging dependency
+
+Whenever packaging gains a new third-party image or file input:
+
+1. Add `deps/<name>/` (`pins.env`, `scripts/build.sh`, `scripts/push.sh`, Makefile, README).
+2. Remap the input in the offline branch of `scripts/build-full-bundle.sh` (or the shared consumer) via `lan_cache_ref` / files API.
+3. Keep online packaging on the same pinned public upstream.
+4. Document the row in this table and mention the seed in example configs / AGENTS.md invariants.
+
+`make seed-build-deps` auto-discovers every `deps/*` directory. A new package that is only wired for online pulls is incomplete.
 
 ## Commands
 

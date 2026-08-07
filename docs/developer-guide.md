@@ -65,6 +65,10 @@ See [offline-build-deps.md](offline-build-deps.md) and
 
 ### Offline seed (prerequisite for offline mode)
 
+Seeds every `deps/*` package into the LAN Artifact Server (including
+`dns`/coredns and `inference`/ollama). Both online and offline packaging
+must work for each of those pins.
+
 ```bash
 export DEV_REGISTRY=artifact-dns-1.appliance.internal
 export DEV_REGISTRY_USER=admin

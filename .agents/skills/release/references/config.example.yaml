@@ -24,5 +24,8 @@
 # - Secrets never live in these files — only env *names* under *_env keys.
 # - Packaging always produces the complete product super-set; install.appliance_profile
 #   only selects what the target turns on.
+# - Offline builds require make seed-build-deps first (every deps/* package, including
+#   dns/coredns and inference/ollama). Online builds pull the same pins from upstream.
+#   New packaging deps must update deps/ + offline remap; see docs/offline-build-deps.md.
 # - Appliance state dir is product-fixed /var/lib/zon/state (not config).
 # - Host mDNS / Wi-Fi AP enablement is day-2 Admin UI/API only.

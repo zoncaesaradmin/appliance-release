@@ -34,6 +34,13 @@
 #      (offline already is DEV_*; online copies ONLINE_* → DEV_*)
 #   3) Remap bundle_store (also DEV_*) into DEV_* for publish-release
 #
+# Offline seed coverage (make seed-build-deps → every deps/* package), including:
+#   development-container, git-runtime-container, workflows, artifact-server-bases,
+#   dns (coredns), inference (ollama), service-build-bases, host-packages,
+#   platform-inputs (k3s/helm).
+# New packaging deps must add deps/<name> + offline lan_cache_ref/files remap;
+# see docs/offline-build-deps.md and AGENTS.md "Packaging Code Reuse".
+#
 # Runtime secrets (export on the Mac for full flow, or on the build host):
 #   Always (LAN via DEV_* / bundle_store):
 #     DEV_REGISTRY, DEV_REGISTRY_USER, DEV_REGISTRY_TOKEN, DEV_REGISTRY_TLS_VERIFY

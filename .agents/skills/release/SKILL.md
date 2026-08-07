@@ -55,6 +55,11 @@ Exactly two bundle modes (config `build_flow.mode` / env `OFFLINE_BUILD`):
 After that mapping, bootstrap/build use only `DEV_*` + `OFFLINE_BUILD`.
 Publish uses `bundle_store` (also `DEV_*`) for `publish-release.sh`.
 
+Both modes must work for every packaging dependency (including `deps/inference`
+/ Ollama). Adding a new third-party input requires a matching `deps/<name>`
+seed package and an offline `lan_cache_ref` / files remap — see AGENTS.md and
+`docs/offline-build-deps.md`.
+
 Seed (offline prerequisite):
 
 ```bash
