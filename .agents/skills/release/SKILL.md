@@ -60,6 +60,11 @@ Both modes must work for every packaging dependency (including `deps/inference`
 seed package and an offline `lan_cache_ref` / files remap — see AGENTS.md and
 `docs/offline-build-deps.md`.
 
+`deps/development-container` (`dev-build`) is special: it is also the tooling
+image for local `appliance-code` service builds. `make seed-build-deps` updates
+LAN only; after changing that package, also publish manually to GHCR — see
+`deps/development-container/PACKAGE.md` and AGENTS.md “Shared `dev-build`”.
+
 Seed (offline prerequisite):
 
 ```bash

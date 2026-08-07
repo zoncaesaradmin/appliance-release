@@ -86,13 +86,15 @@ deps_files_upload() {
   local url
   url="$(deps_files_api_base)/${remote_path#/}"
   local code
+  # Stream with -T + -X POST. --data-binary @file loads the whole payload into
+  # memory and OOMs on multi-GB files (host-packages archives, release bundles).
   # shellcheck disable=SC2086
   code="$(
     curl -sS ${insecure} -X POST \
       -o /dev/null -w "%{http_code}" \
       -H "Authorization: Bearer ${DEV_REGISTRY_TOKEN}" \
       -H "Content-Type: application/octet-stream" \
-      --data-binary @"${src}" \
+      -T "${src}" \
       "${url}"
   )"
   case "${code}" in

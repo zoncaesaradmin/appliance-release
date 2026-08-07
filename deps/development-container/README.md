@@ -105,6 +105,18 @@ make TAG=dev build-all
 
 Build locally, then publish with the same targets every time: `login`, `publish`, or `release` (build + publish). Destination is only env values.
 
+**Important — dual publish:** this image is not only a full-bundle packaging
+input. `appliance-code` also pulls it for local / day-2 builds (`make
+dev-shell`, control-plane image, control-plane UI image, and related service
+images). `make seed-build-deps` updates the **LAN Artifact Server only**.
+Whenever you rebuild `dev-build`, publish to **both**:
+
+1. **LAN** (offline packaging / seed) — covered by `make seed-build-deps` or Way 2 below.
+2. **GHCR** (online packaging + local service builds) — Way 1 below; this is a **manual** second publish.
+
+Shipping only the LAN copy leaves online/`make dev-shell` on a stale GHCR tag.
+See [PACKAGE.md](PACKAGE.md) for the short operator checklist.
+
 | Variable | Role |
 | --- | --- |
 | `DEV_REGISTRY` | Registry host (`ghcr.io` or LAN OCI FQDN) |
@@ -119,9 +131,9 @@ appliance control-plane UI.
 
 Path: `$(DEV_REGISTRY)/$(DEV_IMAGE_REPO)/$(DEV_IMAGE_NAME)`
 
-Set `VERSION` explicitly for real releases (also pushes `:latest`). After publish, set appliance-release `build_flow.dev_image_pull` fields (`registry`, `image_repo`, `image_name`, `image_tag`) to this same image reference.
+Set `VERSION` explicitly for real releases (also pushes `:latest`). After publish, set appliance-release online tooling (`ONLINE_*` / `online_image_pull`) and any local `appliance-code` `DEV_*` defaults to this same image reference.
 
-### Way 1 — GHCR
+### Way 1 — GHCR (required for online + local service builds)
 
 ```bash
 export DEV_REGISTRY=ghcr.io
@@ -141,7 +153,7 @@ Or: `make VERSION=v0.1.0 release`
 
 Auth details: [docs/PUBLISHING_AUTH.md](docs/PUBLISHING_AUTH.md).
 
-### Way 2 — LAN OCI registry
+### Way 2 — LAN OCI registry (required for offline seed / packaging)
 
 Until the appliance CA is trusted on the build host, skip TLS verify:
 
@@ -161,6 +173,8 @@ make VERSION=v0.1.0 publish
 Or: `make DEV_REGISTRY_TLS_VERIFY=false VERSION=v0.1.0 release`
 
 → `artifact-dns-1.appliance.internal/development-container/dev-build:v0.1.0`
+
+`make seed-build-deps` from the repo root runs this LAN publish as part of seeding every `deps/*` package. It does **not** push GHCR — run Way 1 after (or before) when the image content changed.
 
 ## Dev container config
 

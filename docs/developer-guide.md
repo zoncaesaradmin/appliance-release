@@ -66,8 +66,14 @@ See [offline-build-deps.md](offline-build-deps.md) and
 ### Offline seed (prerequisite for offline mode)
 
 Seeds every `deps/*` package into the LAN Artifact Server (including
-`dns`/coredns and `inference`/ollama). Both online and offline packaging
-must work for each of those pins.
+`dns`/coredns, `inference`/ollama, and `development-container`/`dev-build`).
+Both online and offline packaging must work for each of those pins.
+
+**`dev-build` dual publish:** `make seed-build-deps` updates the LAN copy only.
+After changing `deps/development-container`, also publish manually to GHCR so
+online packaging and `appliance-code` local service builds (`make dev-shell`,
+control-plane / UI images, …) stay current. Exact commands:
+[`deps/development-container/PACKAGE.md`](../deps/development-container/PACKAGE.md).
 
 ```bash
 export DEV_REGISTRY=artifact-dns-1.appliance.internal

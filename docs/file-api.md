@@ -72,12 +72,16 @@ echo "${API_TOKEN}"
 
 ## Upload A File
 
+Small files may use either form. Prefer `-T` (stream from disk) for any
+non-trivial payload — `--data-binary @file` loads the whole file into memory
+and will OOM on multi-GB release bundles.
+
 ```bash
 curl -ksS \
   -X POST \
   -H "Authorization: Bearer ${ACCESS_TOKEN}" \
   -H 'Content-Type: application/octet-stream' \
-  --data-binary @./hello.txt \
+  -T ./hello.txt \
   "${APPLIANCE}/api/v1/files/shared/hello.txt"
 ```
 
@@ -111,16 +115,20 @@ api/v1/files/appliance/<version>/
   install-http-release.sh
 ```
 
-Upload the standard release bundle files:
+Upload the standard release bundle files (always stream with `-T`):
 
 ```bash
 VERSION=0.1.0
 BASE="${APPLIANCE}/api/v1/files/appliance/${VERSION}"
 
-curl -ksS -X POST -H "Authorization: Bearer ${ACCESS_TOKEN}" --data-binary @./appliance-${VERSION}-bundle.tar.gz "${BASE}/appliance-${VERSION}-bundle.tar.gz"
-curl -ksS -X POST -H "Authorization: Bearer ${ACCESS_TOKEN}" --data-binary @./release-signing.pub "${BASE}/release-signing.pub"
-curl -ksS -X POST -H "Authorization: Bearer ${ACCESS_TOKEN}" --data-binary @./sha256sum.txt "${BASE}/sha256sum.txt"
-curl -ksS -X POST -H "Authorization: Bearer ${ACCESS_TOKEN}" --data-binary @./install-http-release.sh "${BASE}/install-http-release.sh"
+curl -ksS -X POST -H "Authorization: Bearer ${ACCESS_TOKEN}" -H 'Content-Type: application/octet-stream' \
+  -T "./appliance-${VERSION}-bundle.tar.gz" "${BASE}/appliance-${VERSION}-bundle.tar.gz"
+curl -ksS -X POST -H "Authorization: Bearer ${ACCESS_TOKEN}" -H 'Content-Type: application/octet-stream' \
+  -T ./release-signing.pub "${BASE}/release-signing.pub"
+curl -ksS -X POST -H "Authorization: Bearer ${ACCESS_TOKEN}" -H 'Content-Type: application/octet-stream' \
+  -T ./sha256sum.txt "${BASE}/sha256sum.txt"
+curl -ksS -X POST -H "Authorization: Bearer ${ACCESS_TOKEN}" -H 'Content-Type: application/octet-stream' \
+  -T ./install-http-release.sh "${BASE}/install-http-release.sh"
 ```
 
 Download the helper:

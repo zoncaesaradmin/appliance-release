@@ -41,6 +41,11 @@
 # New packaging deps must add deps/<name> + offline lan_cache_ref/files remap;
 # see docs/offline-build-deps.md and AGENTS.md "Packaging Code Reuse".
 #
+# Special: development-container / dev-build is also used for local appliance-code
+# service builds (make dev-shell, control-plane / UI images). seed-build-deps only
+# updates LAN — after changing that package, also publish manually to GHCR
+# (see deps/development-container/PACKAGE.md and AGENTS.md "Shared dev-build").
+#
 # Runtime secrets (export on the Mac for full flow, or on the build host):
 #   Always (LAN via DEV_* / bundle_store):
 #     DEV_REGISTRY, DEV_REGISTRY_USER, DEV_REGISTRY_TOKEN, DEV_REGISTRY_TLS_VERIFY

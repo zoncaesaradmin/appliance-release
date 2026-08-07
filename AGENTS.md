@@ -77,6 +77,26 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
   A change that only wires the online export without the `deps/` seed + offline remap is incomplete.
 - When changing packaging, converge on the shared path and remove hybrid LAN-then-internet leftovers from older flows.
 
+## Shared `dev-build` tooling image (LAN + GHCR)
+
+- Canonical sources live in `deps/development-container/` (not a separate git repo).
+- The published image name is `dev-build`. It is used for:
+  - full-bundle packaging (online pull from GHCR; offline pull from LAN after seed)
+  - **local / day-2 service builds** outside the full bundle flow — `appliance-code`
+    `make dev-shell`, control-plane image, control-plane UI image, host-agent
+    image, and similar tooling-container builds
+- `make seed-build-deps` publishes `dev-build` to the **LAN Artifact Server only**.
+  That does **not** update GHCR.
+- Whenever `deps/development-container` content changes (Containerfiles, pins,
+  toolchain versions), operators must publish the **same** image to **both**:
+  1. LAN — `make seed-build-deps` or `make -C deps/development-container release` with LAN `DEV_*`
+  2. GHCR — **manual** second publish with `DEV_REGISTRY=ghcr.io` and
+     `DEV_IMAGE_REPO=<owner>/development-container` (see
+     `deps/development-container/PACKAGE.md`)
+- Leaving only the LAN copy updated breaks online packaging and local
+  `appliance-code` image builds that still pull from GHCR. Do not skip the GHCR
+  push after a tooling-image change.
+
 ## Local Verification Discipline
 
 - Any time you edit this repository, run `make verify` in this repository before considering the work complete.

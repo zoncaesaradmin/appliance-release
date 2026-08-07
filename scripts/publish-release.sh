@@ -211,12 +211,14 @@ curl_upload_file() {
     curl_args+=(--cacert "${PUBLISH_CACERT}")
   fi
   body="$(mktemp)"
+  # Stream with -T. Do not use --data-binary @file: curl loads the whole
+  # payload into memory and OOMs on multi-GB appliance bundles.
   http_code="$(
     curl "${curl_args[@]}" \
       -o "${body}" -w "%{http_code}" \
       -H "Authorization: Bearer ${DEV_REGISTRY_TOKEN}" \
       -H "Content-Type: application/octet-stream" \
-      --data-binary "@${src}" \
+      -T "${src}" \
       "${url}"
   )"
   if [[ "${http_code}" != 200 && "${http_code}" != 201 ]]; then

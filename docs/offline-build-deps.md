@@ -65,7 +65,7 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 
 | Package | LAN artifact | Consumed by |
 |---|---|---|
-| `development-container` | `$DEV_REGISTRY/$DEV_IMAGE_REPO/dev-build:<tag>` | EXTRA_OCI `registry.local/dev-build` |
+| `development-container` | `$DEV_REGISTRY/$DEV_IMAGE_REPO/dev-build:<tag>` | EXTRA_OCI `registry.local/dev-build`; also online GHCR tooling + `appliance-code` local service builds |
 | `git-runtime-container` | `$DEV_REGISTRY/build-cache/alpine-git:2.49.0` | workspace-provisioner |
 | `workflows` | `build-cache/argoexec` / `workflow-controller`; files `argo-workflows/…` | executor + CRDs |
 | `artifact-server-bases` | `build-cache/zot-…`, `debian-bookworm-slim-runtime` | artifact-server wrap |
@@ -76,6 +76,20 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | `platform-inputs` | files `k3s/…`, `helm/…` | K3s + Helm |
 
 Pins live in each package’s `pins.env`. Bump the pin, then `make -C deps/<name> release`.
+
+### Special case: `development-container` / `dev-build` (LAN + GHCR)
+
+Unlike most `deps/*` packages (LAN seed is enough for offline packaging, while
+online pulls public upstream), `dev-build` is also the shared tooling image for
+**local** `appliance-code` builds (`make dev-shell`, control-plane / UI /
+host-agent images). Those default to **GHCR**.
+
+So after changing `deps/development-container`:
+
+1. Publish to **LAN** via `make seed-build-deps` (or `make -C deps/development-container release` with LAN `DEV_*`).
+2. Separately publish the **same** image to **GHCR** (manual — seed does not do this). See [`deps/development-container/PACKAGE.md`](../deps/development-container/PACKAGE.md).
+
+Skipping GHCR leaves online packaging and day-2 local builds on a stale image.
 
 ## Adding a new packaging dependency
 
