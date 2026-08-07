@@ -16,14 +16,20 @@ release_workspace:
 release:
   publish_latest_alias: false
 build_flow:
-  dev_image_pull:
-    registry_env: DEV_REGISTRY
-    image_repo_env: DEV_IMAGE_REPO
-    image_name_env: DEV_IMAGE_NAME
-    image_tag: latest
-    username_env: DEV_REGISTRY_USER
-    token_env: DEV_REGISTRY_TOKEN
-    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
+  mode: online
+  online_image_pull:
+    registry_env: ONLINE_REGISTRY
+    image_repo_env: ONLINE_IMAGE_REPO
+    image_name_env: ONLINE_IMAGE_NAME
+    image_tag_env: ONLINE_IMAGE_TAG
+    username_env: ONLINE_REGISTRY_USER
+    token_env: ONLINE_REGISTRY_TOKEN
+    tls_verify_env: ONLINE_REGISTRY_TLS_VERIFY
+bundle_store:
+  registry_env: DEV_REGISTRY
+  username_env: DEV_REGISTRY_USER
+  token_env: DEV_REGISTRY_TOKEN
+  tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 """.lstrip()
 
 
@@ -69,22 +75,51 @@ def test_requires_local() -> None:
             raise AssertionError(result.stdout)
 
 
-def test_rejects_literal_dev_image_repo_and_name() -> None:
+def test_rejects_legacy_dev_image_pull() -> None:
     with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
         tmp = Path(tmp_dir)
         config = tmp / "config.yaml"
         run_dir = tmp / "run"
         write(
             config,
-            MINIMAL_VALID_CONFIG.replace(
-                "    image_repo_env: DEV_IMAGE_REPO",
-                "    image_repo: example\n    image_name: dev-build",
-            ),
+            """
+release_workspace:
+  remote_build_root: /tmp/appliance-build
+  remote_repo_ref: main
+release:
+  publish_latest_alias: false
+build_flow:
+  mode: online
+  dev_image_pull:
+    registry_env: DEV_REGISTRY
+    image_repo_env: DEV_IMAGE_REPO
+    image_name_env: DEV_IMAGE_NAME
+    image_tag: latest
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
+""".lstrip(),
         )
         result = run_build_publish_config(config, run_dir)
         if result.returncode == 0:
-            raise AssertionError("literal dev_image_pull.image_repo/image_name was accepted")
-        if "image_repo and image_name were removed" not in result.stdout:
+            raise AssertionError("legacy build_flow.dev_image_pull was accepted")
+        if "dev_image_pull.* was removed" not in result.stdout and "dev_image_pull" not in result.stdout:
+            raise AssertionError(result.stdout)
+
+
+def test_rejects_missing_mode() -> None:
+    with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        config = tmp / "config.yaml"
+        run_dir = tmp / "run"
+        write(
+            config,
+            MINIMAL_VALID_CONFIG.replace("  mode: online\n", ""),
+        )
+        result = run_build_publish_config(config, run_dir)
+        if result.returncode == 0:
+            raise AssertionError("missing build_flow.mode was accepted")
+        if "build_flow.mode is required" not in result.stdout:
             raise AssertionError(result.stdout)
 
 
@@ -199,9 +234,30 @@ def test_rejects_removed_build_publish_path_keys() -> None:
                 raise AssertionError(f"expected layout hint for remote_build_root; got:\n{result.stdout}")
 
 
+def test_rejects_literal_image_tag() -> None:
+    with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        config = tmp / "config.yaml"
+        run_dir = tmp / "run"
+        write(
+            config,
+            MINIMAL_VALID_CONFIG.replace(
+                "    image_tag_env: ONLINE_IMAGE_TAG",
+                "    image_tag: latest",
+            ),
+        )
+        result = run_build_publish_config(config, run_dir)
+        if result.returncode == 0:
+            raise AssertionError("literal image_tag was accepted")
+        if "image_tag literal was removed" not in result.stdout:
+            raise AssertionError(result.stdout)
+
+
 def main() -> None:
     test_requires_local()
-    test_rejects_literal_dev_image_repo_and_name()
+    test_rejects_legacy_dev_image_pull()
+    test_rejects_literal_image_tag()
+    test_rejects_missing_mode()
     test_rejects_removed_remote_release_input_and_bundle_overrides()
     test_rejects_offline_archive_path_inputs()
     test_rejects_skill_fixed_build_commands_and_sudo_flags()

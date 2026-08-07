@@ -54,6 +54,23 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 - Installer, verification, reports, and diagnostics must include storage ownership and writeability checks for appliance-owned writable paths, including service log directories and builder workspace storage.
 - Test fresh install, upgrade, rollback, backup restore, and machine migration paths when changing UID/GID, storage, PVC, hostPath, or ownership behavior.
 
+## Packaging Code Reuse (Online And Offline)
+
+- Core packaging must stay **minimal and shared**. Online and offline build-host flows must not grow parallel copies of the same logic.
+- There are exactly **two** build-host modes — not a mix per dependency:
+  - **Online:** every third-party / tooling input is fetched from the public internet (or the configured public registry path such as GHCR). No LAN Artifact Server seed is required; do not probe LAN build-cache and fall back upstream per image.
+  - **Offline:** every such input is fetched only from the LAN Artifact Server (`DEV_REGISTRY` OCI + files API) after `make seed-build-deps` (or equivalent). Misses fail closed; no public upstream fallback.
+- One flag / mode selects the policy for **all** dependencies together (dev-build, git-runtime, Argo, zot, CoreDNS, build bases, Helm, K3s, CRDs, host-packages, …). Do not keep separate “this one from GHCR, that one from LAN, that one from Docker Hub with cache” paths.
+- Unify early: config may expose `ONLINE_*` (online tooling) and `DEV_*` (LAN).
+  After mode selection, map the active pull into one fixed `DEV_*` identity for
+  bootstrap/build. Offline pull already *is* `DEV_*` — do not invent a parallel
+  `OFFLINE_*` family. Publish uses `bundle_store` (also `DEV_*`). Packaging
+  scripts must not branch on `ONLINE_*`.
+- Prefer one implementation path for resolving and packaging a dependency. Online vs offline differs only in **source policy** (upstream vs LAN via `OFFLINE_BUILD`), not in duplicated packaging steps or per-case special cases.
+- Do not add “offline-only” and “online-only” forks of the same script when a common function with a single source policy switch can serve both.
+- New dependency seeding under `deps/` must feed the offline mode of that shared path. Seed helpers and packaging consumers share code (for example `scripts/deps-common.sh`) rather than re-implementing pull/push/upload separately.
+- When changing packaging, converge on the shared path and remove hybrid LAN-then-internet leftovers from older flows.
+
 ## Local Verification Discipline
 
 - Any time you edit this repository, run `make verify` in this repository before considering the work complete.

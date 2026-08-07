@@ -33,8 +33,14 @@ go.work.sum
 .run/
 bin/
 
-# Offline deps package staging
+# Offline deps package staging / seed leftovers
 deps/*/.staging/
+deps/**/*.log
+deps/**/*.tar
+deps/**/*.tar.gz
+deps/**/*.tar.zst
+deps/**/*.oci.tar
+deps/**/*.oci.tar.zst
 
 # Editor/IDE
 # .idea/

@@ -411,9 +411,14 @@ EOF
   local extract_dir="${DOWNLOADS_DIR}/helm-extract-${HELM_VERSION}"
   local offline="${OFFLINE_BUILD:-0}"
   local files_ok=0
+  local offline_on=0
 
-  # Prefer appliance files API (seeded by make seed-build-deps platform-inputs).
-  if [[ -n "${DEV_REGISTRY:-}" && -n "${DEV_REGISTRY_TOKEN:-}" ]]; then
+  case "$(printf '%s' "${offline}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) offline_on=1 ;;
+  esac
+
+  # Offline: Helm from LAN files API. Online: get.helm.sh (do not probe DEV_*).
+  if [[ "${offline_on}" -eq 1 && -n "${DEV_REGISTRY:-}" && -n "${DEV_REGISTRY_TOKEN:-}" ]]; then
     local registry token insecure=()
     registry="$(printf '%s' "${DEV_REGISTRY}" | sed 's#^https\?://##; s#/*$##')"
     token="$(printf '%s' "${DEV_REGISTRY_TOKEN}" | tr -d '[:space:]')"
@@ -434,13 +439,11 @@ EOF
   fi
 
   if [[ "${files_ok}" -ne 1 ]]; then
-    case "$(printf '%s' "${offline}" | tr '[:upper:]' '[:lower:]')" in
-      1|true|yes|on)
-        echo "assemble-product-bundle: OFFLINE_BUILD=1 and Helm files API miss for ${HELM_VERSION}" >&2
-        echo "assemble-product-bundle: seed deps/platform-inputs (make -C deps/platform-inputs release)" >&2
-        exit 1
-        ;;
-    esac
+    if [[ "${offline_on}" -eq 1 ]]; then
+      echo "assemble-product-bundle: OFFLINE_BUILD=1 and Helm files API miss for ${HELM_VERSION}" >&2
+      echo "assemble-product-bundle: seed deps/platform-inputs (make -C deps/platform-inputs release)" >&2
+      exit 1
+    fi
     curl -fsSL "${HELM_DOWNLOAD_BASE_URL}/${archive_name}" -o "${archive_path}"
     curl -fsSL "${HELM_DOWNLOAD_BASE_URL}/${archive_name}.sha256sum" -o "${checksum_path}"
   fi

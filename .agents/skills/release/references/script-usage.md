@@ -4,8 +4,22 @@ Okay these exports you enable first and then run the script with the three confi
 files:
 
 ```bash
-export DEV_REGISTRY_USER=zoncaesaradmin
+# LAN Artifact Server (offline tooling + publish / install / seed — DEV_*)
+export DEV_REGISTRY=artifact-dns-1.appliance.internal
+export DEV_REGISTRY_USER=admin
 export DEV_REGISTRY_TOKEN='...'
+export DEV_REGISTRY_TLS_VERIFY=false
+export DEV_IMAGE_REPO=development-container
+export DEV_IMAGE_NAME=dev-build
+export DEV_IMAGE_TAG=latest
+# Online tooling inputs (skill maps ONLINE_* → DEV_* when mode=online)
+export ONLINE_REGISTRY=ghcr.io
+export ONLINE_IMAGE_REPO=zoncaesaradmin/development-container
+export ONLINE_IMAGE_NAME=dev-build
+export ONLINE_IMAGE_TAG=latest
+export ONLINE_REGISTRY_USER=zoncaesaradmin
+export ONLINE_REGISTRY_TOKEN='...'
+export ONLINE_REGISTRY_TLS_VERIFY=true
 export APPLIANCE_BUILD_SUDO_PASSWORD='caesar'
 export APPLIANCE_TARGET_SUDO_PASSWORD='caesar'
 export APPLIANCE_FIRST_ADMIN_PASSWORD='ins3965!'
@@ -20,32 +34,20 @@ Notes:
   `references/config.install.example.yaml` (see `references/config.example.yaml`
   for the overview). Scripts do **not** invent operational defaults — required
   keys must appear in their role file (fixed lab values are fine in YAML).
-- Pull credentials for the dev container image are named by
-  `build_flow.dev_image_pull.username_env` /
-  `build_flow.dev_image_pull.token_env` and must be exported in the shell
-  (for example `DEV_REGISTRY_USER` / `DEV_REGISTRY_TOKEN`).
-- Pull TLS verification is also named by
-  `build_flow.dev_image_pull.tls_verify_env` and must resolve to `true` or
-  `false` in the shell.
-- Set `build_flow.dev_image_pull` (registry/repo/name env names, `image_tag`,
-  username/token/TLS env names). That block is only for pulling the
-  development-container used as build tooling. The bundled offline name is
-  fixed as `registry.local/dev-build`. The same `DEV_REGISTRY*` credentials
-  also drive an automatic LAN OCI build-cache inside `build-full-bundle.sh`
-  (`DEV_REGISTRY/build-cache/...`, short probe → upstream fallback →
-  best-effort seed).
-- Build packaging always pulls/packages from the network (or the automatic
-  LAN build-cache flow above). Local build-host path inputs such as
-  `*_image_archive_source`, `workflows.crds_dir_source`, and
-  `host_packages_dir_source` are rejected.
-  K3s binary/images are downloaded by `build-full-bundle` from the appliance
-  files API (`https://$DEV_REGISTRY/api/v1/files/k3s/$K3S_VERSION/…`). Seed
-  that path once with `RELEASE_WORK_ROOT=<remote_build_root> scripts/fetch-k3s-inputs.sh`
-  (stages under `$RELEASE_WORK_ROOT/inputs/`, then uploads).
+- `build_flow.mode` must be `online` or `offline` (exactly one source policy).
+  Keep both pull blocks; the inactive one is ignored.
+  - Online: `online_image_pull` names `ONLINE_*` env vars (skill maps → `DEV_*`).
+  - Offline: `offline_image_pull` names the same `DEV_*` LAN vars as `bundle_store`
+    (no separate `OFFLINE_*` family — offline and LAN are identical).
+  - Packaging never branches on `ONLINE_*`; only `DEV_*` + `OFFLINE_BUILD`.
+- Bundled offline name for the tooling image is fixed as `registry.local/dev-build`.
+- Local build-host path inputs such as `*_image_archive_source` are rejected.
+  K3s: online from GitHub releases; offline from the LAN files API
+  (`https://$DEV_REGISTRY/api/v1/files/k3s/$K3S_VERSION/…`).
 - Do **not** put a `build_flow.product_publish` block in config. Signed-bundle
   distribution is the fixed product sequence
   `bootstrap-build-host.sh` → `build-full-bundle.sh` → `publish-release.sh`
-  (DEV_REGISTRY file API). Service image push defaults live in appliance-code
+  (LAN files API via `bundle_store`). Service image push defaults live in appliance-code
   `build/service-image.mk` (`SERVICE_IMAGE_*` / `DEV_REGISTRY`).
 - On the build host (product), that is the only sequence. The skill remotes the
   same three scripts. Bootstrap and build always use sudo via the skill
@@ -94,7 +96,7 @@ Notes:
   `zonctl install --image-pull-registry*`) applies this when set. Lab installs
   use the local repo helper so this wiring cannot silently lag a stale
   published copy; the signed bundle still downloads from the distributor.
-  Typical shape reuses the same env names as `dev_image_pull`:
+  Typical shape reuses LAN `DEV_*`:
   `registry_env: DEV_REGISTRY`, `username_env: DEV_REGISTRY_USER`,
   `token_env: DEV_REGISTRY_TOKEN`, `tls_verify_env: DEV_REGISTRY_TLS_VERIFY`.
   Export those env vars on the Mac before install. Do not set literal
@@ -114,8 +116,8 @@ Notes:
   appliance-native document (see `build-catalog.example.yaml`). Never put
   private keys or tokens in it.
 - If the build catalog references a workspace provisioner image, ensure
-  `build_flow.dev_image_pull` is configured so `registry.local/dev-build`
-  is bundled and preloaded on the target.
+  `build_flow.mode` + the matching image-pull block are configured so
+  `registry.local/dev-build` is bundled and preloaded on the target.
 - The bundle flow always packages the complete offline host package super-set
   (`mdns` + `wifi-ap` capabilities) by exporting debs on the build host for the
   selected OS baseline (`ubuntu/24.04/amd64/*.deb`, etc.). The signed tree is

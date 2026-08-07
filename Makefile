@@ -201,7 +201,14 @@ verify-bundle:
 	fi
 	"$(ZONCTL_BINARY)" verify-bundle --bundle-dir "$${BUNDLE_DIR}" --public-key "$${PUBLIC_KEY}"
 
-.PHONY: clean
-clean:
+.PHONY: clean seed-build-deps-clean
+seed-build-deps-clean:
+	@for d in $(DEPS); do \
+		echo "==> clean deps/$$d"; \
+		$(MAKE) -C deps/$$d clean || true; \
+	done
+	@rm -rf deps/*/.staging
+
+clean: seed-build-deps-clean
 	rm -rf bin .run
 	rm -rf bin .agents/.DS_Store

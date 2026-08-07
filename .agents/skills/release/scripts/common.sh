@@ -526,7 +526,7 @@ product_control_plane_deployment() {
   printf '%s\n' "${PRODUCT_CONTROL_PLANE_DEPLOYMENT}"
 }
 
-# Env names referenced by a build-publish config (dev_image_pull, bundle_store).
+# Env names referenced by a build-publish config (mode + image pull + bundle_store).
 # Deduped. Always includes APPLIANCE_BUILD_SUDO_PASSWORD.
 # Skill-fixed layout under release_workspace.remote_build_root (build host only).
 SKILL_REMOTE_BUILD_ROOT_CHECKOUT_SUBDIR="release"
@@ -538,9 +538,31 @@ Skill-fixed layout under release_workspace.remote_build_root:
   release/ — appliance-release git checkout (REMOTE_CWD)
   export/ — bundle export output ($RELEASE_WORK_ROOT/export)
   inputs/ — local staging for scripts/fetch-k3s-inputs.sh
-K3s binary/airgap images used by the build are fetched during build-full-bundle
-from the appliance files API (seed that API with scripts/fetch-k3s-inputs.sh).
+Packaging mode (build_flow.mode) selects which pull block to read:
+  online  — online_image_pull (ONLINE_*) → unified to DEV_* for packaging
+  offline — offline_image_pull (DEV_* LAN; same as publish — no OFFLINE_* family)
+After that mapping, bootstrap/build use only DEV_* + OFFLINE_BUILD.
+Publish uses bundle_store (also DEV_*) for publish-release.sh.
 EOF
+}
+
+# Normalize build_flow.mode → online|offline (fail closed).
+resolve_build_flow_mode() {
+  local config_path="$1"
+  local mode=""
+  mode="$(config_get_optional "${config_path}" "build_flow.mode" || true)"
+  mode="$(printf '%s' "${mode}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  case "${mode}" in
+    online|offline)
+      printf '%s\n' "${mode}"
+      ;;
+    "")
+      fail "build_flow.mode is required (online|offline). Exactly one packaging source policy — no mix of LAN and public pulls."
+      ;;
+    *)
+      fail "build_flow.mode must be online or offline (got: ${mode:-empty})"
+      ;;
+  esac
 }
 
 # Repo-owned default product version (configs/default-product-version).
@@ -600,13 +622,28 @@ reject_removed_build_publish_packaging_keys() {
     || -n "$(config_get_optional "${config_path}" "build_flow.dev_container_image_registry.registry_user_env" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.dev_container_image_registry.registry_token_env" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.dev_container_image_registry.tls_insecure" || true)" ]]; then
-    fail "build_flow.dev_container_image_registry.* was removed; use build_flow.dev_image_pull.*"
+    fail "build_flow.dev_container_image_registry.* was removed; use build_flow.mode plus online_image_pull or offline_image_pull"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "build_flow.registry_user_env" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.registry_token_env" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.registry_user" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.registry_token" || true)" ]]; then
-    fail "legacy build_flow.registry_* keys are no longer supported; use build_flow.dev_image_pull.*"
+    fail "legacy build_flow.registry_* keys are no longer supported; use build_flow.mode plus online_image_pull or offline_image_pull"
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.dev_image_pull.registry_env" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dev_image_pull.image_repo_env" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dev_image_pull.image_name_env" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dev_image_pull.image_tag" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dev_image_pull.username_env" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dev_image_pull.token_env" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dev_image_pull.tls_verify_env" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dev_image_pull.image_repo" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.dev_image_pull.image_name" || true)" ]]; then
+    fail "build_flow.dev_image_pull.* was removed; set build_flow.mode (online|offline) and use online_image_pull / offline_image_pull (skill unifies to DEV_* for packaging)"
+  fi
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.online_image_pull.image_tag" || true)" \
+    || -n "$(config_get_optional "${config_path}" "build_flow.offline_image_pull.image_tag" || true)" ]]; then
+    fail "build_flow.*.image_tag literal was removed; use image_tag_env (ONLINE_IMAGE_TAG or DEV_IMAGE_TAG)"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "build_flow.host_packages_dir_source" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.argo.crds_dir_source" || true)" \
@@ -626,11 +663,7 @@ reject_removed_build_publish_packaging_keys() {
     || -n "$(config_get_optional "${config_path}" "build_flow.product_publish.username_env" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.product_publish.token_env" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.product_publish.tls_verify_env" || true)" ]]; then
-    fail "build_flow.product_publish.* was removed (destination fields were unused). Use build_flow.dev_image_pull.* for registry login; remove the product_publish block from config"
-  fi
-  if [[ -n "$(config_get_optional "${config_path}" "build_flow.dev_image_pull.image_repo" || true)" \
-    || -n "$(config_get_optional "${config_path}" "build_flow.dev_image_pull.image_name" || true)" ]]; then
-    fail "build_flow.dev_image_pull.image_repo and image_name were removed; use image_repo_env and image_name_env"
+    fail "build_flow.product_publish.* was removed (destination fields were unused). Publish uses bundle_store / DEV_* (LAN Artifact Server); remove the product_publish block from config"
   fi
   # Packaging pins / install-role keys must not appear on build-publish YAML.
   if [[ -n "$(config_get_optional "${config_path}" "build_flow.argo.enabled" || true)" \
@@ -671,15 +704,46 @@ derive_remote_export_dir_from_build_root() {
 collect_build_publish_env_names() {
   local config_path="$1"
   local names=()
-  local key candidate boot needs seen="|" n
+  local key candidate seen="|" n
+  local mode=""
+  mode="$(resolve_build_flow_mode "${config_path}")"
+
+  # Collect *_env names from the active pull block + bundle_store (no hardcoded family).
+  if [[ "${mode}" == "online" ]]; then
+    for key in \
+      "build_flow.online_image_pull.registry_env" \
+      "build_flow.online_image_pull.image_repo_env" \
+      "build_flow.online_image_pull.image_name_env" \
+      "build_flow.online_image_pull.image_tag_env" \
+      "build_flow.online_image_pull.username_env" \
+      "build_flow.online_image_pull.token_env" \
+      "build_flow.online_image_pull.tls_verify_env"
+    do
+      candidate="$(config_get_optional "${config_path}" "${key}" || true)"
+      if [[ -n "${candidate}" ]]; then
+        names+=("${candidate}")
+      fi
+    done
+  else
+    for key in \
+      "build_flow.offline_image_pull.registry_env" \
+      "build_flow.offline_image_pull.image_repo_env" \
+      "build_flow.offline_image_pull.image_name_env" \
+      "build_flow.offline_image_pull.image_tag_env" \
+      "build_flow.offline_image_pull.username_env" \
+      "build_flow.offline_image_pull.token_env" \
+      "build_flow.offline_image_pull.tls_verify_env"
+    do
+      candidate="$(config_get_optional "${config_path}" "${key}" || true)"
+      if [[ -n "${candidate}" ]]; then
+        names+=("${candidate}")
+      fi
+    done
+  fi
+
   for key in \
-    "build_flow.dev_image_pull.registry_env" \
-    "build_flow.dev_image_pull.image_repo_env" \
-    "build_flow.dev_image_pull.image_name_env" \
-    "build_flow.dev_image_pull.username_env" \
-    "build_flow.dev_image_pull.token_env" \
-    "build_flow.dev_image_pull.tls_verify_env" \
     "bundle_store.registry_env" \
+    "bundle_store.username_env" \
     "bundle_store.token_env" \
     "bundle_store.tls_verify_env"
   do

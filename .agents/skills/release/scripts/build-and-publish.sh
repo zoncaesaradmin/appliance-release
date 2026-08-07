@@ -108,56 +108,115 @@ EFFECTIVE_REMOTE_REPO_SOURCE="$(normalize_readonly_git_source "${REMOTE_REPO_SOU
 reject_removed_build_publish_packaging_keys "${CONFIG_PATH}"
 resolve_bundle_store_mode "${CONFIG_PATH}" >/dev/null
 
-DEV_PULL_REGISTRY_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.registry_env" || true)"
-DEV_PULL_IMAGE_REPO_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.image_repo_env" || true)"
-DEV_PULL_IMAGE_NAME_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.image_name_env" || true)"
-DEV_PULL_IMAGE_TAG="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.image_tag" || true)"
-DEV_PULL_USER_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.username_env" || true)"
-DEV_PULL_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.token_env" || true)"
-DEV_PULL_TLS_VERIFY_ENV="$(config_get_optional "${CONFIG_PATH}" "build_flow.dev_image_pull.tls_verify_env" || true)"
-[[ -n "${DEV_PULL_REGISTRY_ENV}" ]] || fail "build_flow.dev_image_pull.registry_env is required"
-[[ -n "${DEV_PULL_IMAGE_REPO_ENV}" ]] || fail "build_flow.dev_image_pull.image_repo_env is required"
-[[ -n "${DEV_PULL_IMAGE_NAME_ENV}" ]] || fail "build_flow.dev_image_pull.image_name_env is required"
-[[ -n "${DEV_PULL_IMAGE_TAG}" ]] || fail "build_flow.dev_image_pull.image_tag is required"
-[[ -n "${DEV_PULL_USER_ENV}" ]] || fail "build_flow.dev_image_pull.username_env is required"
-[[ -n "${DEV_PULL_TOKEN_ENV}" ]] || fail "build_flow.dev_image_pull.token_env is required"
-[[ -n "${DEV_PULL_TLS_VERIFY_ENV}" ]] || fail "build_flow.dev_image_pull.tls_verify_env is required"
+BUILD_FLOW_MODE="$(resolve_build_flow_mode "${CONFIG_PATH}")"
+OFFLINE_BUILD="0"
+if [[ "${BUILD_FLOW_MODE}" == "offline" ]]; then
+  OFFLINE_BUILD="1"
+fi
 
-DEV_PULL_REGISTRY="$(resolve_env_value "${DEV_PULL_REGISTRY_ENV}" "Dev image pull registry")"
-DEV_PULL_IMAGE_REPO="$(resolve_env_value "${DEV_PULL_IMAGE_REPO_ENV}" "Dev image pull image repo")"
-DEV_PULL_IMAGE_NAME="$(resolve_env_value "${DEV_PULL_IMAGE_NAME_ENV}" "Dev image pull image name")"
-DEV_PULL_TLS_VERIFY="$(normalize_bool_value "$(resolve_env_value "${DEV_PULL_TLS_VERIFY_ENV}" "TLS verify")")"
-if bool_true "${DEV_PULL_TLS_VERIFY}"; then
+# -----------------------------------------------------------------------------
+# 1) Resolve inputs from config (mode-specific pull + bundle_store).
+# 2) Unify tooling pull into DEV_* once.
+#    online  → ONLINE_* values copied into DEV_*
+#    offline → already DEV_* (same LAN identity as bundle_store)
+# 3) After that, bootstrap/build only see DEV_* + OFFLINE_BUILD.
+# 4) Publish uses bundle_store → DEV_* (LAN files API).
+# -----------------------------------------------------------------------------
+
+# --- bundle_store → publish/LAN identity (always) ---
+BUNDLE_REGISTRY_ENV="$(config_get_optional "${CONFIG_PATH}" "bundle_store.registry_env" || true)"
+BUNDLE_USERNAME_ENV="$(config_get_optional "${CONFIG_PATH}" "bundle_store.username_env" || true)"
+BUNDLE_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "bundle_store.token_env" || true)"
+BUNDLE_TLS_VERIFY_ENV="$(config_get_optional "${CONFIG_PATH}" "bundle_store.tls_verify_env" || true)"
+[[ -n "${BUNDLE_REGISTRY_ENV}" ]] || fail "bundle_store.registry_env is required"
+[[ -n "${BUNDLE_USERNAME_ENV}" ]] || fail "bundle_store.username_env is required"
+[[ -n "${BUNDLE_TOKEN_ENV}" ]] || fail "bundle_store.token_env is required"
+[[ -n "${BUNDLE_TLS_VERIFY_ENV}" ]] || fail "bundle_store.tls_verify_env is required"
+PUBLISH_REGISTRY="$(resolve_env_value "${BUNDLE_REGISTRY_ENV}" "bundle_store registry")"
+PUBLISH_USER="$(resolve_secret "${BUNDLE_USERNAME_ENV}" "bundle_store username")"
+PUBLISH_TOKEN="$(resolve_secret "${BUNDLE_TOKEN_ENV}" "bundle_store token")"
+PUBLISH_TLS_VERIFY="$(normalize_bool_value "$(resolve_env_value "${BUNDLE_TLS_VERIFY_ENV}" "bundle_store TLS verify")")"
+[[ -n "${PUBLISH_USER}" ]] || fail "empty ${BUNDLE_USERNAME_ENV}"
+[[ -n "${PUBLISH_TOKEN}" ]] || fail "empty ${BUNDLE_TOKEN_ENV}"
+if bool_true "${PUBLISH_TLS_VERIFY}"; then
+  PUBLISH_TLS_VERIFY="true"
+else
+  PUBLISH_TLS_VERIFY="false"
+fi
+
+# --- active image_pull block → temporary pull_* → unify into DEV_* ---
+PULL_PREFIX=""
+if [[ "${BUILD_FLOW_MODE}" == "online" ]]; then
+  PULL_PREFIX="build_flow.online_image_pull"
+else
+  PULL_PREFIX="build_flow.offline_image_pull"
+fi
+
+PULL_REGISTRY_ENV="$(config_get_optional "${CONFIG_PATH}" "${PULL_PREFIX}.registry_env" || true)"
+PULL_IMAGE_REPO_ENV="$(config_get_optional "${CONFIG_PATH}" "${PULL_PREFIX}.image_repo_env" || true)"
+PULL_IMAGE_NAME_ENV="$(config_get_optional "${CONFIG_PATH}" "${PULL_PREFIX}.image_name_env" || true)"
+PULL_IMAGE_TAG_ENV="$(config_get_optional "${CONFIG_PATH}" "${PULL_PREFIX}.image_tag_env" || true)"
+PULL_USER_ENV="$(config_get_optional "${CONFIG_PATH}" "${PULL_PREFIX}.username_env" || true)"
+PULL_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "${PULL_PREFIX}.token_env" || true)"
+PULL_TLS_VERIFY_ENV="$(config_get_optional "${CONFIG_PATH}" "${PULL_PREFIX}.tls_verify_env" || true)"
+[[ -n "${PULL_REGISTRY_ENV}" ]] || fail "${PULL_PREFIX}.registry_env is required when mode=${BUILD_FLOW_MODE}"
+[[ -n "${PULL_IMAGE_REPO_ENV}" ]] || fail "${PULL_PREFIX}.image_repo_env is required when mode=${BUILD_FLOW_MODE}"
+[[ -n "${PULL_IMAGE_NAME_ENV}" ]] || fail "${PULL_PREFIX}.image_name_env is required when mode=${BUILD_FLOW_MODE}"
+[[ -n "${PULL_IMAGE_TAG_ENV}" ]] || fail "${PULL_PREFIX}.image_tag_env is required when mode=${BUILD_FLOW_MODE}"
+[[ -n "${PULL_USER_ENV}" ]] || fail "${PULL_PREFIX}.username_env is required when mode=${BUILD_FLOW_MODE}"
+[[ -n "${PULL_TOKEN_ENV}" ]] || fail "${PULL_PREFIX}.token_env is required when mode=${BUILD_FLOW_MODE}"
+[[ -n "${PULL_TLS_VERIFY_ENV}" ]] || fail "${PULL_PREFIX}.tls_verify_env is required when mode=${BUILD_FLOW_MODE}"
+
+# Unify: one DEV_* set for all packaging after this point.
+DEV_REGISTRY="$(resolve_env_value "${PULL_REGISTRY_ENV}" "tooling registry")"
+DEV_IMAGE_REPO="$(resolve_env_value "${PULL_IMAGE_REPO_ENV}" "tooling image repo")"
+DEV_IMAGE_NAME="$(resolve_env_value "${PULL_IMAGE_NAME_ENV}" "tooling image name")"
+DEV_IMAGE_TAG="$(resolve_env_value "${PULL_IMAGE_TAG_ENV}" "tooling image tag")"
+DEV_REGISTRY_USER="$(resolve_secret "${PULL_USER_ENV}" "tooling registry username")"
+DEV_REGISTRY_TOKEN="$(resolve_secret "${PULL_TOKEN_ENV}" "tooling registry token")"
+DEV_REGISTRY_TLS_VERIFY="$(normalize_bool_value "$(resolve_env_value "${PULL_TLS_VERIFY_ENV}" "tooling TLS verify")")"
+[[ -n "${DEV_REGISTRY_USER}" ]] || fail "empty ${PULL_USER_ENV}"
+[[ -n "${DEV_REGISTRY_TOKEN}" ]] || fail "empty ${PULL_TOKEN_ENV}"
+if bool_true "${DEV_REGISTRY_TLS_VERIFY}"; then
   DEV_REGISTRY_TLS_VERIFY="true"
 else
   DEV_REGISTRY_TLS_VERIFY="false"
 fi
-IMAGE_REGISTRY_PULL_REF="${DEV_PULL_REGISTRY}/${DEV_PULL_IMAGE_REPO}/${DEV_PULL_IMAGE_NAME}:${DEV_PULL_IMAGE_TAG}"
+DEV_IMAGE="${DEV_REGISTRY}/${DEV_IMAGE_REPO}/${DEV_IMAGE_NAME}:${DEV_IMAGE_TAG}"
+DEV_REGISTRY_HOST="${DEV_REGISTRY}"
+
+log "build mode=${BUILD_FLOW_MODE} OFFLINE_BUILD=${OFFLINE_BUILD} tooling=${DEV_IMAGE}"
 
 PUBLISH_LATEST_ALIAS="$(config_get_optional "${CONFIG_PATH}" "release.publish_latest_alias" || true)"
 if [[ -z "${PUBLISH_LATEST_ALIAS}" ]]; then
   PUBLISH_LATEST_ALIAS="false"
 fi
 
-BOOTSTRAP_REGISTRY_USER="$(resolve_secret "${DEV_PULL_USER_ENV}" "Dev image pull username")"
-BOOTSTRAP_REGISTRY_TOKEN="$(resolve_secret "${DEV_PULL_TOKEN_ENV}" "Dev image pull token")"
-[[ -n "${BOOTSTRAP_REGISTRY_USER}" ]] || fail "empty ${DEV_PULL_USER_ENV}"
-[[ -n "${BOOTSTRAP_REGISTRY_TOKEN}" ]] || fail "empty ${DEV_PULL_TOKEN_ENV}"
-
-# Shared env for the three product scripts (they own workflows engine/Artifact Server/DNS/provisioner defaults).
-PRODUCT_ENV_PREFIX=""
-PRODUCT_ENV_PREFIX="$(append_env_assignments "${PRODUCT_ENV_PREFIX}" \
+# Bootstrap + build: unified DEV_* only (no ONLINE_* past this point).
+BUILD_PRODUCT_ENV_PREFIX=""
+BUILD_PRODUCT_ENV_PREFIX="$(append_env_assignments "${BUILD_PRODUCT_ENV_PREFIX}" \
   "PRODUCT_VERSION" "${RELEASE_VERSION}" \
   "RELEASE_WORK_ROOT" "${REMOTE_BUILD_ROOT}" \
-  "DEV_IMAGE" "${IMAGE_REGISTRY_PULL_REF}" \
-  "DEV_REGISTRY_HOST" "${DEV_PULL_REGISTRY}" \
+  "OFFLINE_BUILD" "${OFFLINE_BUILD}" \
+  "DEV_IMAGE" "${DEV_IMAGE}" \
+  "DEV_REGISTRY" "${DEV_REGISTRY}" \
+  "DEV_REGISTRY_HOST" "${DEV_REGISTRY_HOST}" \
   "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}" \
-  "DEV_REGISTRY" "${DEV_PULL_REGISTRY}" \
-  "DEV_IMAGE_REPO" "${DEV_PULL_IMAGE_REPO}" \
-  "DEV_IMAGE_NAME" "${DEV_PULL_IMAGE_NAME}" \
-  "DEV_IMAGE_TAG" "${DEV_PULL_IMAGE_TAG}" \
-  "DEV_REGISTRY_USER" "${BOOTSTRAP_REGISTRY_USER}" \
-  "DEV_REGISTRY_TOKEN" "${BOOTSTRAP_REGISTRY_TOKEN}")"
+  "DEV_REGISTRY_USER" "${DEV_REGISTRY_USER}" \
+  "DEV_REGISTRY_TOKEN" "${DEV_REGISTRY_TOKEN}" \
+  "DEV_IMAGE_REPO" "${DEV_IMAGE_REPO}" \
+  "DEV_IMAGE_NAME" "${DEV_IMAGE_NAME}" \
+  "DEV_IMAGE_TAG" "${DEV_IMAGE_TAG}")"
+
+# Publish: LAN files API from bundle_store, still under DEV_* names publish-release expects.
+PUBLISH_PRODUCT_ENV_PREFIX=""
+PUBLISH_PRODUCT_ENV_PREFIX="$(append_env_assignments "${PUBLISH_PRODUCT_ENV_PREFIX}" \
+  "PRODUCT_VERSION" "${RELEASE_VERSION}" \
+  "RELEASE_WORK_ROOT" "${REMOTE_BUILD_ROOT}" \
+  "DEV_REGISTRY" "${PUBLISH_REGISTRY}" \
+  "DEV_REGISTRY_USER" "${PUBLISH_USER}" \
+  "DEV_REGISTRY_TOKEN" "${PUBLISH_TOKEN}" \
+  "DEV_REGISTRY_TLS_VERIFY" "${PUBLISH_TLS_VERIFY}")"
 
 EFFECTIVE_PUBLISH_CMD="${PUBLISH_CMD}"
 if bool_true "${PUBLISH_LATEST_ALIAS}"; then
@@ -184,9 +243,9 @@ run_step() {
   run_local_logged "${log_file}" "${command}"
 }
 
-bootstrap_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PRODUCT_ENV_PREFIX}${BOOTSTRAP_CMD}"
-build_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PRODUCT_ENV_PREFIX}${BUILD_CMD}"
-publish_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PRODUCT_ENV_PREFIX}${EFFECTIVE_PUBLISH_CMD}"
+bootstrap_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BUILD_PRODUCT_ENV_PREFIX}${BOOTSTRAP_CMD}"
+build_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${BUILD_PRODUCT_ENV_PREFIX}${BUILD_CMD}"
+publish_cmd="cd $(shell_quote "${REMOTE_CWD}") && set -euo pipefail && ${PUBLISH_PRODUCT_ENV_PREFIX}${EFFECTIVE_PUBLISH_CMD}"
 
 run_step "bootstrap" "${bootstrap_log}" "$(wrap_with_sudo "${bootstrap_cmd}")"
 run_step "build" "${build_log}" "$(wrap_with_sudo "${build_cmd}")"

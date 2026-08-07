@@ -42,11 +42,20 @@ Read each participating repository's `AGENTS.md` before making code or command d
 
 ## Offline build-host dependencies
 
-Third-party inputs for packaging (dev-build, git-runtime / alpine/git, Argo
-images/CRDs, zot/debian bases, CoreDNS, golang/node/alpine bases, UI npm deps,
-Ubuntu host debs, Helm, K3s) live under **`appliance-release/deps/`**.
+Third-party inputs for packaging live under **`appliance-release/deps/`**.
 
-Seed the LAN Artifact Server once (or after pin bumps):
+Exactly two bundle modes (config `build_flow.mode` / env `OFFLINE_BUILD`):
+
+- **Online:** all third-party pulls from the public internet. Skill maps
+  `online_image_pull` (`ONLINE_*`) → unified `DEV_*` for packaging.
+- **Offline:** all third-party pulls only from the LAN Artifact Server after
+  `make seed-build-deps`. `offline_image_pull` already names `DEV_*` (same
+  LAN identity as publish/seed — no separate `OFFLINE_*` family).
+
+After that mapping, bootstrap/build use only `DEV_*` + `OFFLINE_BUILD`.
+Publish uses `bundle_store` (also `DEV_*`) for `publish-release.sh`.
+
+Seed (offline prerequisite):
 
 ```bash
 cd /path/to/appliance-release
@@ -54,11 +63,10 @@ export DEV_REGISTRY=... DEV_REGISTRY_USER=... DEV_REGISTRY_TOKEN=...
 export DEV_REGISTRY_TLS_VERIFY=false
 export DEV_IMAGE_REPO=development-container
 make seed-build-deps
-# or: make -C deps/<name> release
 ```
 
-Then run packaging with `OFFLINE_BUILD=1` so `build-full-bundle.sh` fails closed
-on LAN misses (no Docker Hub / GHCR / Quay / npm / GitHub / get.helm.sh).
+Skill config: see `references/config.build-publish.example.yaml`
+(`mode: online` + `online_image_pull` / `mode: offline` + `offline_image_pull`).
 
 Product source (`appliance-code` / `appliance-ctl`) is **not** under `deps/` —
 this skill's workspace sync provides local trees; with `OFFLINE_BUILD=1` or

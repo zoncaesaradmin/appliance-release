@@ -19,29 +19,42 @@ Run this from the checked-out appliance-release repo root:
 
   bash ./scripts/build-full-bundle.sh
 
-Configuration is taken from environment variables. The most common pattern is:
+Configuration is taken from environment variables. Exactly one mode — online or
+offline — selects every third-party source together (no LAN+internet mix).
 
-  DEV_REGISTRY=artifact-dns-1.appliance.internal \
-  DEV_IMAGE_REPO=development-container \
-  DEV_REGISTRY_TOKEN=... \
-  DEV_REGISTRY_USER=admin \
-  DEV_REGISTRY_TLS_VERIFY=false \
+Two build-host modes (one policy for all third-party inputs — not a mix):
+  Online (default, OFFLINE_BUILD unset/0): public internet for third-party inputs.
+  Offline (OFFLINE_BUILD=1): LAN Artifact Server only after make seed-build-deps.
+
+After the release skill (or the operator) chooses online vs offline inputs, packaging
+uses one fixed DEV_* set for the tooling image / registry login. Do not pass
+ONLINE_* into this script — unify first (offline already uses DEV_*).
+
+  DEV_REGISTRY / DEV_IMAGE_REPO / DEV_IMAGE_NAME / DEV_IMAGE_TAG
+  DEV_REGISTRY_USER / DEV_REGISTRY_TOKEN / DEV_REGISTRY_TLS_VERIFY
+  OFFLINE_BUILD=0|1
+
+Example online (DEV_* already pointed at GHCR):
+  DEV_REGISTRY=ghcr.io \
+  DEV_IMAGE_REPO=zoncaesaradmin/development-container \
+  DEV_IMAGE_NAME=dev-build DEV_IMAGE_TAG=latest \
+  DEV_REGISTRY_USER=... DEV_REGISTRY_TOKEN=... \
   bash ./scripts/build-full-bundle.sh
 
-Required: DEV_REGISTRY (host) + DEV_IMAGE_REPO (registry-specific path).
-  GHCR example: DEV_REGISTRY=ghcr.io DEV_IMAGE_REPO=zoncaesaradmin/development-container
-  LAN example:  DEV_REGISTRY=<host> DEV_IMAGE_REPO=development-container
+Example offline (after make seed-build-deps; DEV_* = LAN):
+  OFFLINE_BUILD=1 \
+  DEV_REGISTRY=artifact-dns-1.appliance.internal \
+  DEV_IMAGE_REPO=development-container \
+  DEV_REGISTRY_USER=... DEV_REGISTRY_TOKEN=... DEV_REGISTRY_TLS_VERIFY=false \
+  bash ./scripts/build-full-bundle.sh
+
 PRODUCT_VERSION defaults from configs/default-product-version.
-DEV_IMAGE_NAME/TAG default to dev-build/latest (exported into appliance-code make/dev-run).
-K3s binary + airgap images are downloaded at build time from the appliance
-files API (seed once with: make -C deps/platform-inputs release). URL layout:
-  https://\$DEV_REGISTRY/api/v1/files/k3s/\$K3S_VERSION/k3s
-  https://\$DEV_REGISTRY/api/v1/files/k3s/\$K3S_VERSION/k3s-airgap-images-amd64.tar.zst
+DEV_IMAGE_NAME/TAG default to dev-build/latest.
+K3s: online from GitHub releases; offline from LAN files API
+  https://\$DEV_REGISTRY/api/v1/files/k3s/\$K3S_VERSION/…
 K3S_VERSION comes from configs/product-bundle.ci.env (or K3S_VERSION_OVERRIDE).
 
-Offline packaging (after make seed-build-deps):
-  OFFLINE_BUILD=1 bash ./scripts/build-full-bundle.sh
-Fail-closed on LAN misses; no public upstream fallback. See docs/offline-build-deps.md.
+See docs/offline-build-deps.md.
 
 The workflows engine is on by default (it is a mandatory component of the
 complete v1 appliance per ADR 0011) and needs no configuration: its
@@ -67,15 +80,11 @@ Optional overrides:
   WORKFLOWS_VERSION=v3.5.10              # pin a different workflows engine version than the chart's appVersion
   WORKFLOW_CONTROLLER_IMAGE_REF=localhost/appliance-workflow-controller:v3.5.10
   WORKFLOW_EXECUTOR_IMAGE_REF=quay.io/argoproj/argoexec:v3.5.10
-  # Workflow CRDs and controller/executor images prefer LAN build-cache
-  # (seeded by make seed-build-deps). OFFLINE_BUILD=1 fails closed on miss.
+  # Offline: Workflow CRDs/images from LAN build-cache (seeded by make seed-build-deps).
+  # Online: public upstreams only (GitHub / Quay / Docker Hub / GHCR public).
   WORKSPACE_PROVISIONER_IMAGE_REF=docker.io/alpine/git:2.49.0
-  # Complete product packages registry.local/dev-build from
-  # DEV_REGISTRY + required DEV_IMAGE_REPO + DEV_IMAGE_NAME/TAG
-  # (NAME/TAG default to dev-build/latest).
-  # When DEV_REGISTRY is set, packaging auto-uses a LAN build-cache on that
-  # host (prefix build-cache/, 15s probe): try LAN → miss/timeout → upstream →
-  # best-effort push back to LAN. Auth/TLS reuse DEV_REGISTRY_USER/TOKEN/TLS_VERIFY.
+  # Complete product packages registry.local/dev-build from DEV_* tooling pull.
+  # LAN build-cache is offline-only.
   ARTIFACT_SERVER_VERSION=2.1.8
   ARTIFACT_SERVER_SOURCE_IMAGE=ghcr.io/project-zot/zot-linux-amd64:v2.1.8
   # Artifact server: always wrap upstream via appliance-code
@@ -127,8 +136,7 @@ set -a
 source "${DEFAULTS_FILE}"
 set +a
 
-# Reject removed offline/local archive path knobs (build always pulls/packages
-# from the network, with an automatic LAN build-cache when DEV_REGISTRY is set).
+# Reject removed offline/local archive path knobs.
 _removed_offline_build_inputs=(
   WORKFLOWS_CRDS_DIR_SOURCE
   WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_SOURCE
@@ -141,7 +149,7 @@ _removed_offline_build_inputs=(
 for _var in "${_removed_offline_build_inputs[@]}"; do
   if [[ -n "${!_var-}" ]]; then
     echo "build-full-bundle: ${_var} is no longer supported (no offline/local archive path inputs)." >&2
-    echo "build-full-bundle: use network packaging (LAN build-cache is automatic from DEV_REGISTRY)." >&2
+    echo "build-full-bundle: use build_flow.mode online (public) or offline (LAN after seed-build-deps)." >&2
     exit 2
   fi
 done
@@ -153,12 +161,14 @@ if [[ -n "${EXPORT_DIR-}" ]]; then
   exit 2
 fi
 
-# Fixed LAN build-cache policy.
+# Fixed LAN build-cache policy (offline mode only).
 LAN_BUILD_CACHE_PREFIX="build-cache"
 LAN_BUILD_CACHE_TIMEOUT_SECONDS="15"
 # When OFFLINE_BUILD=1, packaging must not fall back to public upstreams
 # (Docker Hub/GHCR/Quay/GitHub/get.helm.sh/apt). Seeds come from
 # deps/* → DEV_REGISTRY (OCI build-cache + files API).
+# When OFFLINE_BUILD=0 (online), DEV_* is the public tooling registry only;
+# files API / LAN build-cache paths stay disabled.
 OFFLINE_BUILD="${OFFLINE_BUILD:-0}"
 export OFFLINE_BUILD
 HOST_PACKAGES_FINGERPRINT="${HOST_PACKAGES_FINGERPRINT:-mdns-wifi-ap-v1}"
@@ -171,10 +181,14 @@ offline_build_enabled() {
   esac
 }
 
+# files API is offline-only (OFFLINE_BUILD=1). Online packaging never probes it.
 files_api_download() {
   local remote_path="$1"
   local dest="$2"
   local registry token tls_verify insecure=()
+  if ! offline_build_enabled; then
+    return 1
+  fi
   registry="$(printf '%s' "${DEV_REGISTRY:-}" | tr -d '[:space:]')"
   registry="${registry#https://}"
   registry="${registry#http://}"
@@ -248,20 +262,39 @@ if [[ -z "${WORKFLOWS_ENABLED}" ]]; then
   WORKFLOWS_ENABLED="true"
 fi
 
+# Unified tooling identity.
+# Skill already maps ONLINE_* → DEV_* before invoke. For hand-run online with both
+# families exported, refuse a hybrid (LAN DEV_* + public third-party).
 DEV_REGISTRY="${USER_DEV_REGISTRY:-${DEV_REGISTRY:-}}"
 DEV_IMAGE_REPO="${USER_DEV_IMAGE_REPO:-${DEV_IMAGE_REPO:-}}"
 DEV_IMAGE_NAME="${USER_DEV_IMAGE_NAME:-${DEV_IMAGE_NAME:-dev-build}}"
 DEV_IMAGE_TAG="${USER_DEV_IMAGE_TAG:-${DEV_IMAGE_TAG:-latest}}"
-# DEV_IMAGE_REPO is registry-specific and required (host-only DEV_REGISTRY):
-#   GHCR:  zoncaesaradmin/development-container
-#   LAN:   development-container
-# Export so appliance-code make/dev-run sees the composed pull ref.
+
+if ! offline_build_enabled; then
+  if [[ -n "${ONLINE_REGISTRY:-}" ]]; then
+    if [[ -z "${DEV_REGISTRY}" ]]; then
+      DEV_REGISTRY="${ONLINE_REGISTRY}"
+      DEV_IMAGE_REPO="${ONLINE_IMAGE_REPO:-${DEV_IMAGE_REPO}}"
+      DEV_IMAGE_NAME="${ONLINE_IMAGE_NAME:-${DEV_IMAGE_NAME}}"
+      DEV_IMAGE_TAG="${ONLINE_IMAGE_TAG:-${DEV_IMAGE_TAG}}"
+      DEV_REGISTRY_USER="${ONLINE_REGISTRY_USER:-${DEV_REGISTRY_USER:-}}"
+      DEV_REGISTRY_TOKEN="${ONLINE_REGISTRY_TOKEN:-${DEV_REGISTRY_TOKEN:-}}"
+      DEV_REGISTRY_TLS_VERIFY="${ONLINE_REGISTRY_TLS_VERIFY:-${DEV_REGISTRY_TLS_VERIFY:-true}}"
+    elif [[ "${DEV_REGISTRY}" != "${ONLINE_REGISTRY}" ]] \
+      || [[ -n "${ONLINE_IMAGE_REPO:-}" && "${DEV_IMAGE_REPO}" != "${ONLINE_IMAGE_REPO}" ]]; then
+      echo "build-full-bundle: online mode env clash: DEV_* is '${DEV_REGISTRY}/${DEV_IMAGE_REPO}' but ONLINE_* is '${ONLINE_REGISTRY}/${ONLINE_IMAGE_REPO:-}'" >&2
+      echo "build-full-bundle: unify first (export DEV_*=ONLINE_* values), or use the release skill which maps online_image_pull → DEV_*." >&2
+      exit 2
+    fi
+  fi
+fi
+
 if [[ -z "${DEV_REGISTRY}" ]]; then
-  echo "build-full-bundle: DEV_REGISTRY is required (registry host, e.g. ghcr.io or artifact-dns-1.appliance.internal)" >&2
+  echo "build-full-bundle: DEV_REGISTRY is required (unified tooling registry after mode selection)" >&2
   exit 2
 fi
 if [[ -z "${DEV_IMAGE_REPO}" ]]; then
-  echo "build-full-bundle: DEV_IMAGE_REPO is required (e.g. zoncaesaradmin/development-container on GHCR, or development-container on LAN)" >&2
+  echo "build-full-bundle: DEV_IMAGE_REPO is required (e.g. zoncaesaradmin/development-container or development-container)" >&2
   exit 2
 fi
 export PRODUCT_VERSION
@@ -380,10 +413,6 @@ if bool_true "${BUILD_COMPLETE_PRODUCT}" && ! bool_true "${WORKFLOWS_ENABLED}"; 
   exit 2
 fi
 if bool_true "${BUILD_COMPLETE_PRODUCT}"; then
-  if [[ -z "${DEV_REGISTRY}" ]]; then
-    echo "build-full-bundle: DEV_REGISTRY is required to package ${BUILDER_LOCAL_REF}" >&2
-    exit 2
-  fi
   BUILDER_PULL_REF="${DEV_REGISTRY}/${DEV_IMAGE_REPO}/${DEV_IMAGE_NAME}:${DEV_IMAGE_TAG}"
 fi
 
@@ -465,7 +494,7 @@ stage_file() {
 }
 
 # Same layout as scripts/fetch-k3s-inputs.sh: files API under k3s/$K3S_VERSION/.
-# Requires DEV_REGISTRY + DEV_REGISTRY_TOKEN (existing registry/files auth vars).
+# Offline only (DEV_* LAN Artifact Server).
 fetch_k3s_inputs_from_files_api() {
   local dest_dir="$1"
   local registry=""
@@ -506,7 +535,7 @@ fetch_k3s_inputs_from_files_api() {
     -H "Authorization: Bearer ${token}" \
     -o "${bin_dest}" \
     "${remote_prefix}/k3s"; then
-    echo "build-full-bundle: failed to download k3s binary from ${remote_prefix}/k3s (seed with scripts/fetch-k3s-inputs.sh)" >&2
+    echo "build-full-bundle: failed to download k3s binary from ${remote_prefix}/k3s (seed with make -C deps/platform-inputs release)" >&2
     exit 1
   fi
   chmod +x "${bin_dest}"
@@ -514,11 +543,50 @@ fetch_k3s_inputs_from_files_api() {
     -H "Authorization: Bearer ${token}" \
     -o "${airgap_dest}" \
     "${remote_prefix}/k3s-airgap-images-amd64.tar.zst"; then
-    echo "build-full-bundle: failed to download airgap images from ${remote_prefix}/k3s-airgap-images-amd64.tar.zst (seed with scripts/fetch-k3s-inputs.sh)" >&2
+    echo "build-full-bundle: failed to download airgap images from ${remote_prefix}/k3s-airgap-images-amd64.tar.zst (seed with make -C deps/platform-inputs release)" >&2
     exit 1
   fi
   require_file "${bin_dest}" "k3s binary"
   require_file "${airgap_dest}" "k3s airgap images"
+}
+
+# Online mode: public GitHub releases (same URLs as deps/platform-inputs).
+fetch_k3s_inputs_from_github() {
+  local dest_dir="$1"
+  local ver_enc=""
+  local k3s_base=""
+  local bin_dest=""
+  local airgap_dest=""
+
+  require_var K3S_VERSION
+  ver_enc="${K3S_VERSION//+/%2B}"
+  k3s_base="https://github.com/k3s-io/k3s/releases/download/${ver_enc}"
+  bin_dest="${dest_dir}/k3s"
+  airgap_dest="${dest_dir}/k3s-airgap-images-amd64.tar.zst"
+  mkdir -p "${dest_dir}"
+  rm -f "${bin_dest}" "${airgap_dest}"
+
+  echo "build-full-bundle: downloading K3s ${K3S_VERSION} from ${k3s_base}/" >&2
+  if ! curl -fsSL -o "${bin_dest}" "${k3s_base}/k3s"; then
+    echo "build-full-bundle: failed to download k3s binary from ${k3s_base}/k3s" >&2
+    exit 1
+  fi
+  chmod +x "${bin_dest}"
+  if ! curl -fsSL -o "${airgap_dest}" "${k3s_base}/k3s-airgap-images-amd64.tar.zst"; then
+    echo "build-full-bundle: failed to download airgap images from ${k3s_base}/k3s-airgap-images-amd64.tar.zst" >&2
+    exit 1
+  fi
+  require_file "${bin_dest}" "k3s binary"
+  require_file "${airgap_dest}" "k3s airgap images"
+}
+
+fetch_k3s_inputs() {
+  local dest_dir="$1"
+  if offline_build_enabled; then
+    fetch_k3s_inputs_from_files_api "${dest_dir}"
+  else
+    fetch_k3s_inputs_from_github "${dest_dir}"
+  fi
 }
 
 require_appliance_code_bootstrap() {
@@ -542,12 +610,16 @@ require_appliance_code_bootstrap() {
 build-full-bundle: appliance-code host bootstrap is missing for non-interactive CI
 build-full-bundle: this script will not prompt for sudo in CI
 build-full-bundle:
-build-full-bundle: run this once on the build host:
-build-full-bundle:   export DEV_REGISTRY_USER=<github-username>
-build-full-bundle:   export DEV_REGISTRY_TOKEN=<PAT with read:packages>
+build-full-bundle: run this once on the build host (DEV_* already unified for the mode):
+build-full-bundle:   export DEV_REGISTRY=<tooling-registry-host>
+build-full-bundle:   export DEV_IMAGE_REPO=<tooling-image-repo>
+build-full-bundle:   export DEV_IMAGE_NAME=dev-build
+build-full-bundle:   export DEV_IMAGE_TAG=latest
+build-full-bundle:   export DEV_REGISTRY_USER=<username>
+build-full-bundle:   export DEV_REGISTRY_TOKEN=<token>
+build-full-bundle:   export DEV_REGISTRY_TLS_VERIFY=true   # false for typical LAN
+build-full-bundle:   # offline packaging also needs: export OFFLINE_BUILD=1
 build-full-bundle:   bash ${RELEASE_REPO_DIR}/scripts/bootstrap-build-host.sh
-build-full-bundle:
-build-full-bundle: if the registry token changes later, rerun the same bootstrap script with the new token.
 build-full-bundle:
 build-full-bundle: then rerun:
 build-full-bundle:   bash ${RELEASE_REPO_DIR}/scripts/build-full-bundle.sh
@@ -776,10 +848,10 @@ lan_build_cache_ref_for() {
   printf '%s/%s/%s:%s' "${registry}" "${prefix}" "${name}" "${tag}"
 }
 
-# LAN build-cache is on whenever packaging already has DEV_REGISTRY (required
-# for K3s files API and builder pull). Miss/timeout falls back to upstream.
+# LAN build-cache is offline-only. Online mode never probes or seeds LAN
+# even when DEV_REGISTRY is set for publish.
 lan_build_cache_enabled() {
-  [[ -n "${DEV_REGISTRY:-}" ]]
+  offline_build_enabled
 }
 
 # Parse oci-archive:path[:reference] (first colon after transport separates
@@ -983,14 +1055,9 @@ ensure_lan_build_cache_login() {
 }
 
 skopeo_copy_oci_archive() {
-  # Pull-through to local LAN appliance Artifact Server (build-cache on DEV_REGISTRY):
-  #   1) If DEV_REGISTRY is set: try LAN first (short timeout). Hit → done.
-  #   2) Else (miss / timeout / unreachable / no DEV_REGISTRY): pull upstream
-  #      (internet or configured pull ref). Upstream TLS is independent of the
-  #      LAN TLS/insecure settings used for Artifact Server (self-signed lab cert).
-  #   3) If (2) succeeded and DEV_REGISTRY is set: best-effort push the just-fetched
-  #      archive to the LAN Artifact Server so the next build is a hit.
-  # Bundle output always lands in output_path; fail closed only if (2) fails.
+  # Offline mode: try LAN build-cache on DEV_REGISTRY first; miss fails closed
+  # (no public upstream). Online mode: pull source_ref from public upstream only
+  # (never probes LAN even if DEV_REGISTRY is set for publish).
   local source_ref="$1"
   local output_path="$2"
   local dest_name="$3"
@@ -1733,11 +1800,14 @@ bash ./scripts/package/archive-release-input.sh \
 EOF
 chmod +x "${CODE_DEV_SCRIPT_PATH}"
 
-make -C "${CODE_REPO_DIR}" dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}"
+# Tooling image for make/dev-run (DEV_* / OFFLINE_BUILD already exported above).
+export DEV_IMAGE="${BUILDER_PULL_REF:-${DEV_IMAGE:-}}"
+make -C "${CODE_REPO_DIR}" DEV_IMAGE="${DEV_IMAGE}" OFFLINE_BUILD="${OFFLINE_BUILD}" \
+  dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}"
 cp "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"
 ARTIFACT_SERVER_IMAGE_REF="$(tr -d '\r\n' < "${CODE_REPO_DIR}/.run/artifact-server-image.reference")"
 
-fetch_k3s_inputs_from_files_api "${INPUTS_DIR}"
+fetch_k3s_inputs "${INPUTS_DIR}"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   stage_file "${VALUES_FILE_SOURCE}" "${INPUTS_DIR}/values-minimal.yaml" "values file"
 fi
@@ -1758,9 +1828,17 @@ set_env_var "${CONFIG_OUT}" HELM_VERSION "${HELM_VERSION}"
 set_env_var "${CONFIG_OUT}" K3S_BINARY "${INPUTS_DIR}/k3s"
 set_env_var "${CONFIG_OUT}" K3S_AIRGAP_IMAGES "${INPUTS_DIR}/k3s-airgap-images-amd64.tar.zst"
 set_env_var "${CONFIG_OUT}" OFFLINE_BUILD "${OFFLINE_BUILD}"
-set_env_var "${CONFIG_OUT}" DEV_REGISTRY "${DEV_REGISTRY}"
-set_env_var "${CONFIG_OUT}" DEV_REGISTRY_TOKEN "${DEV_REGISTRY_TOKEN}"
-set_env_var "${CONFIG_OUT}" DEV_REGISTRY_TLS_VERIFY "${DEV_REGISTRY_TLS_VERIFY:-true}"
+# Assemble only needs DEV_* for offline files API. Online tooling registry must
+# not be written here — it is not the LAN Artifact Server.
+if offline_build_enabled; then
+  set_env_var "${CONFIG_OUT}" DEV_REGISTRY "${DEV_REGISTRY}"
+  set_env_var "${CONFIG_OUT}" DEV_REGISTRY_TOKEN "${DEV_REGISTRY_TOKEN}"
+  set_env_var "${CONFIG_OUT}" DEV_REGISTRY_TLS_VERIFY "${DEV_REGISTRY_TLS_VERIFY:-true}"
+else
+  set_env_var "${CONFIG_OUT}" DEV_REGISTRY ""
+  set_env_var "${CONFIG_OUT}" DEV_REGISTRY_TOKEN ""
+  set_env_var "${CONFIG_OUT}" DEV_REGISTRY_TLS_VERIFY "true"
+fi
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   set_env_var "${CONFIG_OUT}" VALUES_FILE "${INPUTS_DIR}/values-minimal.yaml"
 else

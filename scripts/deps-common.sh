@@ -3,6 +3,8 @@
 # Source from package scripts:
 #   source "$(cd "$(dirname "$0")/../../.." && pwd)/scripts/deps-common.sh"
 #
+# OCI tooling: podman only (pull / build / tag / push / login).
+#
 # Not a standalone CLI. When executed directly:
 if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
   if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -10,6 +12,7 @@ if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
 usage: source scripts/deps-common.sh
 
 Shared helpers for deps/* packages (OCI login, files API upload, image mirror).
+Requires podman on PATH.
 EOF
     exit 0
   fi
@@ -24,6 +27,13 @@ deps_require_var() {
   if [[ -z "${!n:-}" ]]; then
     echo "deps: ${n} is required" >&2
     exit 2
+  fi
+}
+
+deps_require_podman() {
+  if ! command -v podman >/dev/null 2>&1; then
+    echo "deps: podman is required on PATH" >&2
+    exit 1
   fi
 }
 
@@ -42,18 +52,19 @@ deps_tls_insecure_curl() {
   esac
 }
 
-deps_buildah_tls_flag() {
+deps_tls_verify_false() {
   case "$(printf '%s' "${DEV_REGISTRY_TLS_VERIFY:-true}" | tr '[:upper:]' '[:lower:]')" in
-    0|false|no|off) printf '%s' "--tls-verify=false" ;;
-    *) printf '%s' "" ;;
+    0|false|no|off) return 0 ;;
+    *) return 1 ;;
   esac
 }
 
-deps_skopeo_tls_flag() {
-  case "$(printf '%s' "${DEV_REGISTRY_TLS_VERIFY:-true}" | tr '[:upper:]' '[:lower:]')" in
-    0|false|no|off) printf '%s' "--dest-tls-verify=false --src-tls-verify=false" ;;
-    *) printf '%s' "" ;;
-  esac
+deps_podman_tls_flag() {
+  if deps_tls_verify_false; then
+    printf '%s' "--tls-verify=false"
+  else
+    printf '%s' ""
+  fi
 }
 
 deps_files_api_base() {
@@ -93,40 +104,62 @@ deps_files_upload() {
   esac
 }
 
+deps_default_build_cmd() {
+  deps_require_podman
+  printf '%s' "podman build"
+}
+
 deps_oci_login() {
+  deps_require_podman
   deps_require_var DEV_REGISTRY
   deps_require_var DEV_REGISTRY_USER
   deps_require_var DEV_REGISTRY_TOKEN
   local host tls
   host="$(deps_registry_host)"
-  tls="$(deps_buildah_tls_flag)"
+  tls="$(deps_podman_tls_flag)"
   # shellcheck disable=SC2086
-  echo "${DEV_REGISTRY_TOKEN}" | buildah login ${tls} --username "${DEV_REGISTRY_USER}" --password-stdin "${host}"
+  echo "${DEV_REGISTRY_TOKEN}" | podman login ${tls} --username "${DEV_REGISTRY_USER}" --password-stdin "${host}"
 }
 
-# Pull docker://SRC and tag as containers-storage LOCAL, then optionally push to DEST.
+# Pull upstream SRC into local storage as LOCAL_REF; optionally push to DEST.
 deps_mirror_oci() {
   local src="$1"
   local local_ref="$2"
   local dest="${3:-}"
-  local tls
-  tls="$(deps_skopeo_tls_flag)"
-  if ! command -v skopeo >/dev/null 2>&1; then
-    echo "deps: skopeo is required on PATH" >&2
-    exit 1
-  fi
+  local tls pull_tls=()
+  local bare host
+
+  deps_require_podman
   echo "mirror: ${src} -> ${local_ref}"
-  # shellcheck disable=SC2086
-  skopeo copy --override-os linux --override-arch amd64 \
-    ${tls} \
-    "docker://${src}" "containers-storage:${local_ref}"
-  if [[ -n "${dest}" ]]; then
-    echo "push: ${local_ref} -> ${dest}"
-    # shellcheck disable=SC2086
-    skopeo copy --override-os linux --override-arch amd64 \
-      ${tls} \
-      "containers-storage:${local_ref}" "docker://${dest}"
+  tls="$(deps_podman_tls_flag)"
+  bare="${src}"
+  host="$(deps_registry_host)"
+  # Public pulls verify TLS; LAN registry pulls honor DEV_REGISTRY_TLS_VERIFY.
+  if [[ -n "${host}" && ( "${bare}" == "${host}/"* || "${bare}" == "${host}:"* ) ]]; then
+    # shellcheck disable=SC2206
+    pull_tls=(${tls})
   fi
+  # shellcheck disable=SC2086
+  podman pull --arch amd64 ${pull_tls[@]+"${pull_tls[@]}"} "${src}"
+  podman tag "${src}" "${local_ref}"
+
+  if [[ -n "${dest}" ]]; then
+    deps_push_oci "${local_ref}" "${dest}"
+  fi
+}
+
+# Push a local image reference to a remote docker registry ref.
+deps_push_oci() {
+  local local_ref="$1"
+  local dest="$2"
+  local tls
+
+  deps_require_podman
+  echo "push: ${local_ref} -> ${dest}"
+  tls="$(deps_podman_tls_flag)"
+  podman tag "${local_ref}" "${dest}"
+  # shellcheck disable=SC2086
+  podman push ${tls} "${dest}"
 }
 
 deps_build_cache_ref() {

@@ -5,7 +5,7 @@
 #
 # Cross-step contract for install (must match values the target will download):
 #   product version (release.version optional override, else configs/default-product-version)
-#   bundle_store download base (DEV_REGISTRY file API)
+#   bundle_store download base (LAN Artifact Server files API)
 #
 # Example (full flow from Mac):
 #   bash .agents/skills/release/scripts/run-release-from-devhost.sh \
@@ -13,33 +13,35 @@
 #     --build-publish-config ~/lab-build-publish.yaml \
 #     --install-config ~/lab-install.yaml
 #
-# Example (build+publish only):
-#   bash .agents/skills/release/scripts/run-release-from-devhost.sh \
-#     --config ~/lab-devhost.yaml \
-#     --build-publish-config ~/lab-build-publish.yaml
-#   # Or already on the build host with DEV_* exported (no skill YAML):
-#   bash scripts/bootstrap-build-host.sh   # once
-#   bash scripts/build-full-bundle.sh
-#   bash scripts/publish-release.sh
-#   # Or with skill YAML on the build host:
-#   bash …/build-and-publish.sh --local --build-publish-config ~/.config/appliance-release/build-publish.yaml
-#
 # Rules:
 # - Only top-level keys: release_workspace, release, build_flow, bundle_store.
 # - Absolute paths on the build host only (no ~/...).
 # - Secrets never live here — only env *names* under *_env keys.
 # - Path layout under remote_build_root is skill-fixed (see below).
 #
-# Runtime secrets:
-#   Full flow from Mac: export DEV_* / APPLIANCE_BUILD_SUDO_PASSWORD on the Mac
-#     (then SSH injects them into remote steps).
-#   Build-host worker path: export the same vars on the *build* host only
-#     (e.g. ~/.bashrc).
-#   Values named by build_flow.dev_image_pull.*_env:
-#     DEV_REGISTRY, DEV_IMAGE_REPO, DEV_IMAGE_NAME,
-#     DEV_REGISTRY_USER, DEV_REGISTRY_TOKEN, DEV_REGISTRY_TLS_VERIFY
-#   Plus APPLIANCE_BUILD_SUDO_PASSWORD (bootstrap/build always use sudo).
-#   Packaging pins (workflows engine/Artifact Server/DNS/provisioner) live in product scripts, not here.
+# Build-host modes (exactly one — no mix):
+#   mode: online  — all third-party inputs from the public internet / GHCR
+#   mode: offline — all third-party inputs from the LAN Artifact Server
+#                   (after make seed-build-deps)
+#
+# Env families (only two — do not invent OFFLINE_*):
+#   ONLINE_*  — public/GHCR tooling when mode=online
+#   DEV_*     — LAN Artifact Server (offline tooling, publish, install, seed)
+#
+# Unification (skill does this once, then packaging is identical):
+#   1) Read online_image_pull OR offline_image_pull based on mode
+#   2) Map that set into DEV_* for bootstrap + build-full-bundle
+#      (offline already is DEV_*; online copies ONLINE_* → DEV_*)
+#   3) Remap bundle_store (also DEV_*) into DEV_* for publish-release
+#
+# Runtime secrets (export on the Mac for full flow, or on the build host):
+#   Always (LAN via DEV_* / bundle_store):
+#     DEV_REGISTRY, DEV_REGISTRY_USER, DEV_REGISTRY_TOKEN, DEV_REGISTRY_TLS_VERIFY
+#     DEV_IMAGE_REPO, DEV_IMAGE_NAME, DEV_IMAGE_TAG   # offline tooling path
+#   Online mode also:
+#     ONLINE_REGISTRY, ONLINE_IMAGE_REPO, ONLINE_IMAGE_NAME, ONLINE_IMAGE_TAG,
+#     ONLINE_REGISTRY_USER, ONLINE_REGISTRY_TOKEN, ONLINE_REGISTRY_TLS_VERIFY
+#   Plus APPLIANCE_BUILD_SUDO_PASSWORD.
 
 # ============================================================================
 # Release workspace on the build host
@@ -50,8 +52,6 @@ release_workspace:
   #   release/ — appliance-release git checkout (clone/reset each run)
   #   export/ — bundle export output ($RELEASE_WORK_ROOT/export)
   #   inputs/ — local staging for scripts/fetch-k3s-inputs.sh
-  #            (seed the appliance files API once; build-full-bundle downloads
-  #            K3s from that API during packaging)
   remote_build_root: /home/zonsys/appliance-build
   remote_repo_source: https://github.com/zoncaesaradmin/appliance-release.git
   remote_repo_ref: main
@@ -64,7 +64,6 @@ release:
   # Optional. Overrides configs/default-product-version for this workflow.
   # PRODUCT_VERSION in the shell also overrides (takes precedence over this key).
   # version: 0.1.0
-  # Whether publish writes/updates a “latest” alias.
   publish_latest_alias: false
 
 # ============================================================================
@@ -72,42 +71,38 @@ release:
 # ============================================================================
 
 build_flow:
-  # Bootstrap/build/publish commands and sudo are skill-fixed (not config).
-  # Product sequence (same as hand runs on the build host):
-  #   bash scripts/bootstrap-build-host.sh
-  #   bash scripts/build-full-bundle.sh
-  #   bash scripts/publish-release.sh
-  # Always wrapped with sudo → APPLIANCE_BUILD_SUDO_PASSWORD.
-  # appliance-code / appliance-ctl git refs are fixed in those scripts (main).
+  # Flip this only: online | offline. Keep both pull sections below;
+  # the inactive one is ignored. Skill unifies the active block → DEV_*.
+  mode: online
 
-  # Bundled offline name for the appliance is fixed: registry.local/dev-build.
-  # Upstream pull uses host-only DEV_REGISTRY + required DEV_IMAGE_REPO
-  # (GHCR: zoncaesaradmin/development-container; LAN: development-container).
-  # LAN OCI build-cache uses DEV_REGISTRY/build-cache automatically.
-  dev_image_pull:
+  # Used when mode: online (ONLINE_* env vars) — all seven required
+  online_image_pull:
+    registry_env: ONLINE_REGISTRY
+    image_repo_env: ONLINE_IMAGE_REPO
+    image_name_env: ONLINE_IMAGE_NAME
+    image_tag_env: ONLINE_IMAGE_TAG
+    username_env: ONLINE_REGISTRY_USER
+    token_env: ONLINE_REGISTRY_TOKEN
+    tls_verify_env: ONLINE_REGISTRY_TLS_VERIFY
+
+  # Used when mode: offline — same seven roles, LAN DEV_* (no separate OFFLINE_*)
+  offline_image_pull:
     registry_env: DEV_REGISTRY
     image_repo_env: DEV_IMAGE_REPO
     image_name_env: DEV_IMAGE_NAME
-    image_tag: latest
+    image_tag_env: DEV_IMAGE_TAG
     username_env: DEV_REGISTRY_USER
     token_env: DEV_REGISTRY_TOKEN
     tls_verify_env: DEV_REGISTRY_TLS_VERIFY
-
-  # RELEASE_WORK_ROOT injected by the skill from remote_build_root
-  # (export dir is always $RELEASE_WORK_ROOT/export).
-  # Product version comes from configs/default-product-version unless
-  # PRODUCT_VERSION or release.version overrides it.
 
 # ============================================================================
 # Distribution (publish destination + install download source)
 # ============================================================================
 
 bundle_store:
-  # Always the appliance file API on DEV_REGISTRY:
+  # Always the LAN Artifact Server files API (same DEV_* as offline tooling):
   #   https://$DEV_REGISTRY/api/v1/files/appliance/<version>/
-  # Token/TLS reuse DEV_REGISTRY_TOKEN / DEV_REGISTRY_TLS_VERIFY (same as build).
-  # Optional overrides only:
-  # mode: appliance_files always if set or not set
-  #   registry_env / token_env / tls_verify_env
-  #   files_path (default /api/v1/files)
-  #   base_url (must already end in files_path)
+  registry_env: DEV_REGISTRY
+  username_env: DEV_REGISTRY_USER
+  token_env: DEV_REGISTRY_TOKEN
+  tls_verify_env: DEV_REGISTRY_TLS_VERIFY

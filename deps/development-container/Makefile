@@ -1,4 +1,5 @@
-BUILD ?= buildah bud
+BUILD ?= podman build
+OCI_TOOL ?= podman
 RUN ?= podman run
 TAG ?= latest
 DEBIAN_VARIANT ?= bookworm
@@ -23,7 +24,7 @@ DEV_REGISTRY_TLS_VERIFY ?= true
 
 REMOTE_IMAGE := $(DEV_REGISTRY)/$(DEV_IMAGE_REPO)/$(DEV_IMAGE_NAME)
 
-# buildah login/push: --tls-verify=false when DEV_REGISTRY_TLS_VERIFY is false/0/no.
+# podman login/push: --tls-verify=false when DEV_REGISTRY_TLS_VERIFY is false/0/no.
 TLS_VERIFY_FLAG :=
 ifeq ($(filter false 0 no FALSE NO,$(DEV_REGISTRY_TLS_VERIFY)),$(DEV_REGISTRY_TLS_VERIFY))
 TLS_VERIFY_FLAG := --tls-verify=false
@@ -62,15 +63,16 @@ login:
 	@test -n "$(DEV_REGISTRY)" || (echo "DEV_REGISTRY is not set" >&2 && exit 1)
 	@test -n "$(DEV_REGISTRY_USER)" || (echo "DEV_REGISTRY_USER is not set" >&2 && exit 1)
 	@test -n "$(DEV_REGISTRY_TOKEN)" || (echo "DEV_REGISTRY_TOKEN is not set" >&2 && exit 1)
-	echo "$(DEV_REGISTRY_TOKEN)" | buildah login $(TLS_VERIFY_FLAG) --username "$(DEV_REGISTRY_USER)" --password-stdin $(DEV_REGISTRY)
+	@command -v podman >/dev/null 2>&1 || (echo "podman is required on PATH" >&2 && exit 1)
+	echo "$(DEV_REGISTRY_TOKEN)" | $(OCI_TOOL) login $(TLS_VERIFY_FLAG) --username "$(DEV_REGISTRY_USER)" --password-stdin $(DEV_REGISTRY)
 
 tag-dev:
-	buildah tag $(DEV_IMAGE) $(REMOTE_IMAGE):$(VERSION)
-	buildah tag $(DEV_IMAGE) $(REMOTE_IMAGE):latest
+	$(OCI_TOOL) tag $(DEV_IMAGE) $(REMOTE_IMAGE):$(VERSION)
+	$(OCI_TOOL) tag $(DEV_IMAGE) $(REMOTE_IMAGE):latest
 
 push-dev: tag-dev
-	buildah push $(TLS_VERIFY_FLAG) $(REMOTE_IMAGE):$(VERSION)
-	buildah push $(TLS_VERIFY_FLAG) $(REMOTE_IMAGE):latest
+	$(OCI_TOOL) push $(TLS_VERIFY_FLAG) $(REMOTE_IMAGE):$(VERSION)
+	$(OCI_TOOL) push $(TLS_VERIFY_FLAG) $(REMOTE_IMAGE):latest
 
 publish: login
 	$(MAKE) push-dev

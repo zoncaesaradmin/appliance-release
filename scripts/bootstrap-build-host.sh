@@ -10,15 +10,18 @@ One-time interactive host bootstrap for appliance-code's dev-container flow.
 Run this once on each Linux build machine before using:
   bash ./scripts/build-full-bundle.sh
 
-Required environment:
-  DEV_REGISTRY_USER   Registry username for appliance-code dev-registry-login
-  DEV_REGISTRY_TOKEN  Registry token/PAT for appliance-code dev-registry-login
+Required environment (unified DEV_* tooling identity):
+  DEV_REGISTRY / DEV_IMAGE_REPO / DEV_REGISTRY_USER / DEV_REGISTRY_TOKEN
+  Optional: DEV_IMAGE_NAME (default dev-build), DEV_IMAGE_TAG (default latest),
+            DEV_REGISTRY_TLS_VERIFY (default true)
 
 Optional environment:
   CODE_REPO_SOURCE        Source repo/URL for appliance-code
   RELEASE_WORK_ROOT        Build root. Default: ${TMPDIR:-/tmp}/appliance-build
 
 Example:
+  export DEV_REGISTRY=ghcr.io
+  export DEV_IMAGE_REPO=zoncaesaradmin/development-container
   export DEV_REGISTRY_USER=myuser
   export DEV_REGISTRY_TOKEN=xxxxxxxx
   bash ./scripts/bootstrap-build-host.sh
@@ -67,10 +70,8 @@ normalize_clone_source() {
         git -C "${source}" remote get-url origin
         return 0
       fi
-      echo "bootstrap-build-host: local repo source ${source} has no origin remote configured" >&2
-      exit 1
     fi
-    echo "bootstrap-build-host: local source ${source} is not a git checkout with an origin remote" >&2
+    echo "bootstrap-build-host: local repo source ${source} has no origin remote configured" >&2
     exit 1
   else
     printf '%s\n' "${source}"
@@ -106,9 +107,16 @@ clone_repo() {
   fi
 }
 
+require_var CODE_REPO_SOURCE
+require_var DEV_REGISTRY
+require_var DEV_IMAGE_REPO
 require_var DEV_REGISTRY_USER
 require_var DEV_REGISTRY_TOKEN
-require_var CODE_REPO_SOURCE
+DEV_IMAGE_NAME="${DEV_IMAGE_NAME:-dev-build}"
+DEV_IMAGE_TAG="${DEV_IMAGE_TAG:-latest}"
+DEV_REGISTRY_TLS_VERIFY="${DEV_REGISTRY_TLS_VERIFY:-true}"
+export DEV_REGISTRY DEV_IMAGE_REPO DEV_IMAGE_NAME DEV_IMAGE_TAG
+export DEV_REGISTRY_USER DEV_REGISTRY_TOKEN DEV_REGISTRY_TLS_VERIFY
 
 mkdir -p "${REPOS_DIR}"
 clone_repo "${CODE_REPO_SOURCE}" "${code_git_ref}" "${CODE_REPO_DIR}"

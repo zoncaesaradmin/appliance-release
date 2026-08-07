@@ -43,11 +43,27 @@ For a completely local non-production smoke run with generated placeholders:
 make product-bundle CONFIG="$(pwd)/configs/product-bundle.sample.env"
 ```
 
-## Offline build-host dependency seeds
+## Build-host modes: fully online or fully offline
 
-Third-party inputs (tooling image, git runtime, Argo, zot/debian bases, CoreDNS,
-golang/node/alpine bases, UI npm deps, Ubuntu host debs, Helm, K3s) live under
-`deps/`. Seed them to the LAN Artifact Server once (or after pin bumps):
+Exactly **two** modes for third-party / tooling inputs — one policy for *all*
+of them. Not a mix of GHCR-here / LAN-there.
+
+| Mode | Config / flag | Inputs |
+|---|---|---|
+| Online | `build_flow.mode: online` / `OFFLINE_BUILD=0` | Public internet; tooling via unified `DEV_*` (mapped from `ONLINE_*`) |
+| Offline | `build_flow.mode: offline` / `OFFLINE_BUILD=1` | LAN only after `make seed-build-deps`; tooling is already `DEV_*` |
+
+The skill (or hand-run) **unifies once** into `DEV_*` + `OFFLINE_BUILD`. After
+that, `build-full-bundle.sh` / `bootstrap-build-host.sh` / appliance-code
+`Makefile` share one path — no `ONLINE_*` branching in packaging. There is no
+separate `OFFLINE_*` env family: offline and LAN are the same `DEV_*` values.
+
+Publish remaps `bundle_store` (LAN `DEV_*`) for `publish-release.sh` only.
+
+See [offline-build-deps.md](offline-build-deps.md) and
+`references/config.build-publish.example.yaml`.
+
+### Offline seed (prerequisite for offline mode)
 
 ```bash
 export DEV_REGISTRY=artifact-dns-1.appliance.internal
@@ -56,24 +72,27 @@ export DEV_REGISTRY_TOKEN=...
 export DEV_REGISTRY_TLS_VERIFY=false
 export DEV_IMAGE_REPO=development-container
 make seed-build-deps
-# or one package: make -C deps/platform-inputs release
 ```
 
-Details: [offline-build-deps.md](offline-build-deps.md).
+### Online bundle (hand-run — DEV_* already unified to GHCR)
 
-Then assemble without public internet:
+```bash
+DEV_REGISTRY=ghcr.io \
+DEV_IMAGE_REPO=zoncaesaradmin/development-container \
+DEV_IMAGE_NAME=dev-build DEV_IMAGE_TAG=latest \
+DEV_REGISTRY_USER=... DEV_REGISTRY_TOKEN=... \
+bash ./scripts/build-full-bundle.sh
+# For publish-release.sh, point DEV_* at the LAN Artifact Server (bundle_store).
+```
+
+### Offline bundle (hand-run — DEV_* already unified to LAN)
 
 ```bash
 OFFLINE_BUILD=1 \
 DEV_REGISTRY=... DEV_IMAGE_REPO=development-container \
-DEV_REGISTRY_TOKEN=... DEV_REGISTRY_TLS_VERIFY=false \
+DEV_REGISTRY_USER=... DEV_REGISTRY_TOKEN=... DEV_REGISTRY_TLS_VERIFY=false \
 bash ./scripts/build-full-bundle.sh
 ```
-
-`OFFLINE_BUILD=1` makes packaging fail closed on LAN misses (no Docker Hub /
-GHCR / Quay / npm / GitHub / get.helm.sh fallback). It still builds first-party
-product images from `appliance-code` and assembles the signed bundle; it only
-changes where third-party inputs come from.
 
 ## Which Workflow To Use
 
@@ -86,32 +105,41 @@ changes where third-party inputs come from.
 
 ## Normal Build / CI Path
 
-This is the supported end-to-end release build flow.
+This is the supported end-to-end release build flow. Prefer the skill config
+`build_flow.mode: online|offline` (see
+`.agents/skills/release/references/config.build-publish.example.yaml`).
+
+**Online** (hand-run; unify to DEV_* first):
 
 ```bash
+DEV_REGISTRY=ghcr.io \
+DEV_IMAGE_REPO=zoncaesaradmin/development-container \
+DEV_IMAGE_NAME=dev-build DEV_IMAGE_TAG=latest \
+DEV_REGISTRY_USER=<github-username> \
+DEV_REGISTRY_TOKEN=<PAT with read:packages> \
+bash ./scripts/build-full-bundle.sh
+```
+
+**Offline** (after seed; DEV_* = LAN):
+
+```bash
+OFFLINE_BUILD=1 \
 DEV_REGISTRY=artifact-dns-1.appliance.internal \
 DEV_IMAGE_REPO=development-container \
+DEV_REGISTRY_USER=... \
 DEV_REGISTRY_TOKEN=... \
 DEV_REGISTRY_TLS_VERIFY=false \
 bash ./scripts/build-full-bundle.sh
 ```
 
-`DEV_REGISTRY` (host) and `DEV_IMAGE_REPO` (registry-specific path) are required:
-- GHCR: `DEV_REGISTRY=ghcr.io` + `DEV_IMAGE_REPO=zoncaesaradmin/development-container`
-- LAN: `DEV_REGISTRY=<host>` + `DEV_IMAGE_REPO=development-container`
-
 Optional: `PRODUCT_VERSION=…` overrides `configs/default-product-version`.
 
-K3s binary and airgap images are downloaded during the build from the appliance
-files API (same layout seedable by `make -C deps/platform-inputs release` or
-`scripts/fetch-k3s-inputs.sh`):
-
-`https://$DEV_REGISTRY/api/v1/files/k3s/<K3S_VERSION>/…`
-
-`K3S_VERSION` defaults from `configs/product-bundle.ci.env`.
+In offline mode, K3s / Helm / CRDs / host-packages come from the LAN files API.
+Online mode uses public upstreams for those same pins (K3s from GitHub, Helm
+from get.helm.sh). Files API / LAN build-cache stay off when `OFFLINE_BUILD=0`.
 
 For the complete product (default), the build packages `registry.local/dev-build`
-from `${DEV_REGISTRY}/${DEV_IMAGE_REPO}/${DEV_IMAGE_NAME}:${DEV_IMAGE_TAG}`.
+from the unified `DEV_*` tooling pull.
 
 That script:
 
@@ -119,9 +147,8 @@ That script:
 - uses the current `appliance-release` checkout as the driver repo
 - clones or refreshes `appliance-code` and `appliance-ctl`
   (with `OFFLINE_BUILD=1` / `USE_LOCAL_CHECKOUTS=1`, uses synced local trees)
-- packages OCI/host payloads from the network or LAN build-cache / files API
-  (`OFFLINE_BUILD=1` refuses public upstream fallback; seed with
-  `make seed-build-deps` first)
+- packages OCI/host payloads under one source policy: public upstreams (online)
+  or LAN only (offline; seed with `make seed-build-deps` first)
 - asks `appliance-code` to build `release-input-${PRODUCT_VERSION}.tar.gz`
 - assembles and verifies the final signed bundle
 - exports the delivery files into `RELEASE_WORK_ROOT/export`
