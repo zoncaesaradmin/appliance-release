@@ -1,0 +1,23 @@
+ARG BASE_IMAGE=localhost/automation-base:latest
+FROM ${BASE_IMAGE}
+
+ARG USERNAME=devcontainer
+
+ENV USERNAME=${USERNAME}
+ENV USER_HOME=/home/${USERNAME}
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PIP_ROOT_USER_ACTION=ignore
+
+USER root
+
+COPY scripts/install-python.sh /tmp/scripts/install-python.sh
+COPY scripts/cleanup.sh /tmp/scripts/cleanup.sh
+
+RUN chmod +x /tmp/scripts/install-python.sh /tmp/scripts/cleanup.sh \
+    && /tmp/scripts/install-python.sh \
+    && /tmp/scripts/cleanup.sh \
+    && rm -rf /tmp/scripts
+
+USER ${USERNAME}
+WORKDIR /workspaces
+

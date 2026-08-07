@@ -1,0 +1,5 @@
+ARG BASE_IMAGE=docker.io/library/node:22-alpine
+FROM ${BASE_IMAGE}
+WORKDIR /deps
+COPY ui-npm/package.json ui-npm/package-lock.json ./
+RUN npm ci --ignore-scripts

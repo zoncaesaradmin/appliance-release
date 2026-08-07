@@ -43,6 +43,38 @@ For a completely local non-production smoke run with generated placeholders:
 make product-bundle CONFIG="$(pwd)/configs/product-bundle.sample.env"
 ```
 
+## Offline build-host dependency seeds
+
+Third-party inputs (tooling image, git runtime, Argo, zot/debian bases, CoreDNS,
+golang/node/alpine bases, UI npm deps, Ubuntu host debs, Helm, K3s) live under
+`deps/`. Seed them to the LAN Artifact Server once (or after pin bumps):
+
+```bash
+export DEV_REGISTRY=artifact-dns-1.appliance.internal
+export DEV_REGISTRY_USER=admin
+export DEV_REGISTRY_TOKEN=...
+export DEV_REGISTRY_TLS_VERIFY=false
+export DEV_IMAGE_REPO=development-container
+make seed-build-deps
+# or one package: make -C deps/platform-inputs release
+```
+
+Details: [offline-build-deps.md](offline-build-deps.md).
+
+Then assemble without public internet:
+
+```bash
+OFFLINE_BUILD=1 \
+DEV_REGISTRY=... DEV_IMAGE_REPO=development-container \
+DEV_REGISTRY_TOKEN=... DEV_REGISTRY_TLS_VERIFY=false \
+bash ./scripts/build-full-bundle.sh
+```
+
+`OFFLINE_BUILD=1` makes packaging fail closed on LAN misses (no Docker Hub /
+GHCR / Quay / npm / GitHub / get.helm.sh fallback). It still builds first-party
+product images from `appliance-code` and assembles the signed bundle; it only
+changes where third-party inputs come from.
+
 ## Which Workflow To Use
 
 - Normal CI/build-machine path:
@@ -71,7 +103,8 @@ bash ./scripts/build-full-bundle.sh
 Optional: `PRODUCT_VERSION=…` overrides `configs/default-product-version`.
 
 K3s binary and airgap images are downloaded during the build from the appliance
-files API (same layout seedable by `scripts/fetch-k3s-inputs.sh`):
+files API (same layout seedable by `make -C deps/platform-inputs release` or
+`scripts/fetch-k3s-inputs.sh`):
 
 `https://$DEV_REGISTRY/api/v1/files/k3s/<K3S_VERSION>/…`
 
@@ -85,10 +118,10 @@ That script:
 - sources stable defaults from `configs/product-bundle.ci.env`
 - uses the current `appliance-release` checkout as the driver repo
 - clones or refreshes `appliance-code` and `appliance-ctl`
-- always packages OCI/host payloads by export/pull on the build host
-  (network, with an automatic LAN build-cache on `DEV_REGISTRY` when set).
-  Local pre-supplied image archive / CRD / host-packages dir knobs are not
-  supported
+  (with `OFFLINE_BUILD=1` / `USE_LOCAL_CHECKOUTS=1`, uses synced local trees)
+- packages OCI/host payloads from the network or LAN build-cache / files API
+  (`OFFLINE_BUILD=1` refuses public upstream fallback; seed with
+  `make seed-build-deps` first)
 - asks `appliance-code` to build `release-input-${PRODUCT_VERSION}.tar.gz`
 - assembles and verifies the final signed bundle
 - exports the delivery files into `RELEASE_WORK_ROOT/export`

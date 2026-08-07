@@ -1,0 +1,93 @@
+{
+	"version": "2.1.9",
+	"variants": [
+		"trixie",
+		"bookworm",
+		"noble",
+		"jammy"
+	],
+	"build": {
+		"latest": "trixie",
+		"parent": {
+			"trixie": "base-debian",
+			"bookworm": "base-debian",
+			"noble": "base-ubuntu",
+			"jammy": "base-ubuntu"
+		},
+		"rootDistro": "debian",
+		"architectures": {
+			"trixie": [
+				"linux/amd64",
+				"linux/arm64"
+			],
+			"bookworm": [
+				"linux/amd64",
+				"linux/arm64"
+			],
+			"noble": [
+				"linux/amd64",
+				"linux/arm64"
+			],
+			"jammy": [
+				"linux/amd64",
+				"linux/arm64"
+			]
+		},
+		"tags": [
+			"cpp:${VERSION}-${VARIANT}"
+		],
+		"variantTags": {
+			"trixie": [
+				"cpp:${VERSION}-debian13",
+				"cpp:${VERSION}-debian",
+				"cpp:${VERSION}"
+			],
+			"bookworm": [
+				"cpp:${VERSION}-debian12"
+			],
+			"noble": [
+				"cpp:${VERSION}-ubuntu24.04",
+				"cpp:${VERSION}-ubuntu"
+			],
+			"jammy": [
+				"cpp:${VERSION}-ubuntu22.04"
+			]
+		}
+	},
+	"dependencies": {
+		"image": "buildpack-deps:${VARIANT}-curl",
+		"imageLink": "https://hub.docker.com/_/buildpack-deps",
+		"apt": [
+			"build-essential",
+			"cmake",
+			"cppcheck",
+			"valgrind",
+			"clang",
+			"lldb",
+			"llvm",
+			"gdb",
+			"tar",
+			"curl",
+			"zip",
+			"unzip",
+			"pkg-config",
+			"bash-completion",
+			"ninja-build"
+		],
+		"git": {
+			"Oh My Zsh!": "/home/vscode/.oh-my-zsh",
+			"vcpkg": "/usr/local/vcpkg"
+		},
+		"languages": {
+			"GCC": {
+				"cgIgnore": true
+			},
+			"Clang": {
+				"cgIgnore": true
+			}
+		},
+		"other": {
+			"git": {}
+		}
+	}
+}

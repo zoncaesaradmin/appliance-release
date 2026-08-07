@@ -409,9 +409,41 @@ EOF
   local archive_path="${DOWNLOADS_DIR}/${archive_name}"
   local checksum_path="${archive_path}.sha256sum"
   local extract_dir="${DOWNLOADS_DIR}/helm-extract-${HELM_VERSION}"
+  local offline="${OFFLINE_BUILD:-0}"
+  local files_ok=0
 
-  curl -fsSL "${HELM_DOWNLOAD_BASE_URL}/${archive_name}" -o "${archive_path}"
-  curl -fsSL "${HELM_DOWNLOAD_BASE_URL}/${archive_name}.sha256sum" -o "${checksum_path}"
+  # Prefer appliance files API (seeded by make seed-build-deps platform-inputs).
+  if [[ -n "${DEV_REGISTRY:-}" && -n "${DEV_REGISTRY_TOKEN:-}" ]]; then
+    local registry token insecure=()
+    registry="$(printf '%s' "${DEV_REGISTRY}" | sed 's#^https\?://##; s#/*$##')"
+    token="$(printf '%s' "${DEV_REGISTRY_TOKEN}" | tr -d '[:space:]')"
+    case "$(printf '%s' "${DEV_REGISTRY_TLS_VERIFY:-true}" | tr '[:upper:]' '[:lower:]')" in
+      0|false|no|off) insecure=(-k) ;;
+    esac
+    if curl -fsSL "${insecure[@]}" \
+        -H "Authorization: Bearer ${token}" \
+        -o "${archive_path}" \
+        "https://${registry}/api/v1/files/helm/${HELM_VERSION}/${archive_name}" \
+      && curl -fsSL "${insecure[@]}" \
+        -H "Authorization: Bearer ${token}" \
+        -o "${checksum_path}" \
+        "https://${registry}/api/v1/files/helm/${HELM_VERSION}/${archive_name}.sha256sum"; then
+      files_ok=1
+      echo "assemble-product-bundle: fetched Helm ${HELM_VERSION} from files API" >&2
+    fi
+  fi
+
+  if [[ "${files_ok}" -ne 1 ]]; then
+    case "$(printf '%s' "${offline}" | tr '[:upper:]' '[:lower:]')" in
+      1|true|yes|on)
+        echo "assemble-product-bundle: OFFLINE_BUILD=1 and Helm files API miss for ${HELM_VERSION}" >&2
+        echo "assemble-product-bundle: seed deps/platform-inputs (make -C deps/platform-inputs release)" >&2
+        exit 1
+        ;;
+    esac
+    curl -fsSL "${HELM_DOWNLOAD_BASE_URL}/${archive_name}" -o "${archive_path}"
+    curl -fsSL "${HELM_DOWNLOAD_BASE_URL}/${archive_name}.sha256sum" -o "${checksum_path}"
+  fi
   verify_sha256_file "${archive_path}" "${checksum_path}"
 
   rm -rf "${extract_dir}"

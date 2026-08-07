@@ -1,0 +1,26 @@
+{
+  "name": "dev-build",
+  "build": {
+    "context": "..",
+    "dockerfile": "../Containerfile.dev"
+  },
+  "runArgs": [
+    "--privileged",
+    "--device=/dev/fuse"
+  ],
+  "containerEnv": {
+    "BUILDAH_ISOLATION": "chroot",
+    "STORAGE_DRIVER": "vfs",
+    "XDG_RUNTIME_DIR": "/run/user/1000"
+  },
+  "remoteUser": "devcontainer",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "ms-python.python"
+      ]
+    }
+  },
+  "postCreateCommand": "go version && python3 --version && podman --version && buildah --version && skopeo --version"
+}

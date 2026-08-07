@@ -40,6 +40,33 @@ Read each participating repository's `AGENTS.md` before making code or command d
 - `appliance-ctl`
 - `appliance-code`
 
+## Offline build-host dependencies
+
+Third-party inputs for packaging (dev-build, git-runtime / alpine/git, Argo
+images/CRDs, zot/debian bases, CoreDNS, golang/node/alpine bases, UI npm deps,
+Ubuntu host debs, Helm, K3s) live under **`appliance-release/deps/`**.
+
+Seed the LAN Artifact Server once (or after pin bumps):
+
+```bash
+cd /path/to/appliance-release
+export DEV_REGISTRY=... DEV_REGISTRY_USER=... DEV_REGISTRY_TOKEN=...
+export DEV_REGISTRY_TLS_VERIFY=false
+export DEV_IMAGE_REPO=development-container
+make seed-build-deps
+# or: make -C deps/<name> release
+```
+
+Then run packaging with `OFFLINE_BUILD=1` so `build-full-bundle.sh` fails closed
+on LAN misses (no Docker Hub / GHCR / Quay / npm / GitHub / get.helm.sh).
+
+Product source (`appliance-code` / `appliance-ctl`) is **not** under `deps/` —
+this skill's workspace sync provides local trees; with `OFFLINE_BUILD=1` or
+`USE_LOCAL_CHECKOUTS=1`, packaging uses those trees without fetching remotes.
+
+See [docs/offline-build-deps.md](../../../docs/offline-build-deps.md).
+
+
 ## Configuration
 
 Configs are **three YAML/JSON files** (one role each). Start from:

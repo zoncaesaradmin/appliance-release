@@ -21,6 +21,8 @@ Use this index to find the one canonical document for your task.
 - Complete product component super-set and build stages:
   [component-catalog.md](component-catalog.md)
   ([components.yaml](components.yaml))
+- Offline build-host dependency seeding (sibling repo):
+  [offline-build-deps.md](offline-build-deps.md)
 - Running the lower-level manual bundle assembly path:
   [manual-bundle-assembly.md](manual-bundle-assembly.md)
 

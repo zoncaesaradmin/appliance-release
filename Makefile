@@ -21,9 +21,37 @@ build-and-publish:
 	bash ./scripts/build-full-bundle.sh
 	bash ./scripts/publish-release.sh
 
+# Offline build-host dependency seeds (deps/*). Online machine → LAN Artifact Server.
+DEPS := $(sort $(notdir $(wildcard deps/*)))
+
+.PHONY: list-deps seed-build-deps seed-build-deps-build seed-build-deps-push seed-build-deps-login
+list-deps:
+	@for d in $(DEPS); do echo "$$d"; done
+
+seed-build-deps-login:
+	@bash -c 'source ./scripts/deps-common.sh && deps_oci_login'
+
+seed-build-deps-build:
+	@for d in $(DEPS); do \
+		echo "==> build deps/$$d"; \
+		$(MAKE) -C deps/$$d build; \
+	done
+
+seed-build-deps-push:
+	@for d in $(DEPS); do \
+		echo "==> push deps/$$d"; \
+		$(MAKE) -C deps/$$d push; \
+	done
+
+# Build every deps package then publish to DEV_REGISTRY (OCI + files API).
+seed-build-deps: seed-build-deps-build
+	$(MAKE) seed-build-deps-login
+	$(MAKE) seed-build-deps-push
+
 .PHONY: verify-shell
 verify-shell:
 	@bash -n $$(find scripts -type f -name '*.sh' | LC_ALL=C sort)
+	@bash -n $$(find deps -type f -name '*.sh' | LC_ALL=C sort)
 	@bash -n $$(find "$(RELEASE_SKILL_SCRIPT_DIR)" -type f -name '*.sh' | LC_ALL=C sort)
 	@bash -n configs/product-bundle.sample.env
 	@bash -n configs/product-bundle.ci.env

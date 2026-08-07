@@ -1,0 +1,39 @@
+ARG DEBIAN_VARIANT=bookworm
+FROM debian:${DEBIAN_VARIANT}-slim
+
+ARG USERNAME=devcontainer
+ARG USER_UID=1000
+ARG USER_GID=1000
+ARG GO_VERSION=1.26.0
+ARG NODE_VERSION=22.19.0
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV USERNAME=${USERNAME}
+ENV USER_HOME=/home/${USERNAME}
+ENV XDG_RUNTIME_DIR=/run/user/${USER_UID}
+ENV BUILDAH_ISOLATION=chroot
+ENV STORAGE_DRIVER=vfs
+ENV GOROOT=/usr/local/go
+ENV GOPATH=${USER_HOME}/go
+ENV PATH=/usr/local/node/bin:${GOROOT}/bin:${GOPATH}/bin:${PATH}
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PIP_ROOT_USER_ACTION=ignore
+
+COPY scripts/install-common.sh /tmp/scripts/install-common.sh
+COPY scripts/install-go.sh /tmp/scripts/install-go.sh
+COPY scripts/install-python.sh /tmp/scripts/install-python.sh
+COPY scripts/install-node.sh /tmp/scripts/install-node.sh
+COPY scripts/cleanup.sh /tmp/scripts/cleanup.sh
+
+RUN chmod +x /tmp/scripts/install-common.sh /tmp/scripts/install-go.sh /tmp/scripts/install-python.sh /tmp/scripts/install-node.sh /tmp/scripts/cleanup.sh \
+    && /tmp/scripts/install-common.sh \
+    && /tmp/scripts/install-go.sh \
+    && /tmp/scripts/install-python.sh \
+    && NODE_VERSION="${NODE_VERSION}" /tmp/scripts/install-node.sh \
+    && /tmp/scripts/cleanup.sh \
+    && rm -rf /tmp/scripts
+
+USER ${USERNAME}
+WORKDIR /workspaces

@@ -34,10 +34,14 @@ Required: DEV_REGISTRY (host) + DEV_IMAGE_REPO (registry-specific path).
 PRODUCT_VERSION defaults from configs/default-product-version.
 DEV_IMAGE_NAME/TAG default to dev-build/latest (exported into appliance-code make/dev-run).
 K3s binary + airgap images are downloaded at build time from the appliance
-files API (seed once with scripts/fetch-k3s-inputs.sh). URL layout is fixed:
+files API (seed once with: make -C deps/platform-inputs release). URL layout:
   https://\$DEV_REGISTRY/api/v1/files/k3s/\$K3S_VERSION/k3s
   https://\$DEV_REGISTRY/api/v1/files/k3s/\$K3S_VERSION/k3s-airgap-images-amd64.tar.zst
 K3S_VERSION comes from configs/product-bundle.ci.env (or K3S_VERSION_OVERRIDE).
+
+Offline packaging (after make seed-build-deps):
+  OFFLINE_BUILD=1 bash ./scripts/build-full-bundle.sh
+Fail-closed on LAN misses; no public upstream fallback. See docs/offline-build-deps.md.
 
 The workflows engine is on by default (it is a mandatory component of the
 complete v1 appliance per ADR 0011) and needs no configuration: its
@@ -63,10 +67,9 @@ Optional overrides:
   WORKFLOWS_VERSION=v3.5.10              # pin a different workflows engine version than the chart's appVersion
   WORKFLOW_CONTROLLER_IMAGE_REF=localhost/appliance-workflow-controller:v3.5.10
   WORKFLOW_EXECUTOR_IMAGE_REF=quay.io/argoproj/argoexec:v3.5.10
-  # Workflow CRDs and controller/executor images are always fetched/packaged online
-  # (or via the automatic LAN build-cache on DEV_REGISTRY). Pre-supplied local
-  # archive/dir paths are not supported.
-  WORKSPACE_PROVISIONER_IMAGE_REF=docker.io/alpine/git:latest
+  # Workflow CRDs and controller/executor images prefer LAN build-cache
+  # (seeded by make seed-build-deps). OFFLINE_BUILD=1 fails closed on miss.
+  WORKSPACE_PROVISIONER_IMAGE_REF=docker.io/alpine/git:2.49.0
   # Complete product packages registry.local/dev-build from
   # DEV_REGISTRY + required DEV_IMAGE_REPO + DEV_IMAGE_NAME/TAG
   # (NAME/TAG default to dev-build/latest).
@@ -153,6 +156,50 @@ fi
 # Fixed LAN build-cache policy.
 LAN_BUILD_CACHE_PREFIX="build-cache"
 LAN_BUILD_CACHE_TIMEOUT_SECONDS="15"
+# When OFFLINE_BUILD=1, packaging must not fall back to public upstreams
+# (Docker Hub/GHCR/Quay/GitHub/get.helm.sh/apt). Seeds come from
+# deps/* → DEV_REGISTRY (OCI build-cache + files API).
+OFFLINE_BUILD="${OFFLINE_BUILD:-0}"
+export OFFLINE_BUILD
+HOST_PACKAGES_FINGERPRINT="${HOST_PACKAGES_FINGERPRINT:-mdns-wifi-ap-v1}"
+ALPINE_GIT_CACHE_TAG="${ALPINE_GIT_CACHE_TAG:-2.49.0}"
+
+offline_build_enabled() {
+  case "$(printf '%s' "${OFFLINE_BUILD}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+files_api_download() {
+  local remote_path="$1"
+  local dest="$2"
+  local registry token tls_verify insecure=()
+  registry="$(printf '%s' "${DEV_REGISTRY:-}" | tr -d '[:space:]')"
+  registry="${registry#https://}"
+  registry="${registry#http://}"
+  registry="${registry%/}"
+  token="$(printf '%s' "${DEV_REGISTRY_TOKEN:-}" | tr -d '[:space:]')"
+  if [[ -z "${registry}" || -z "${token}" ]]; then
+    return 1
+  fi
+  case "$(printf '%s' "${DEV_REGISTRY_TLS_VERIFY:-true}" | tr '[:upper:]' '[:lower:]')" in
+    0|false|no|off) insecure=(-k) ;;
+  esac
+  mkdir -p "$(dirname "${dest}")"
+  curl -fsSL "${insecure[@]}" \
+    -H "Authorization: Bearer ${token}" \
+    -o "${dest}" \
+    "https://${registry}/api/v1/files/${remote_path#/}"
+}
+
+lan_cache_ref() {
+  local short_name="$1"
+  local tag="$2"
+  local host
+  host="$(printf '%s' "${DEV_REGISTRY:-}" | sed 's#/*$##; s#^https\?://##')"
+  printf '%s/%s/%s:%s' "${host}" "${LAN_BUILD_CACHE_PREFIX}" "${short_name}" "${tag}"
+}
 
 # Fixed dependent-repo git refs (edit this script to pin a different branch).
 code_git_ref="main"
@@ -179,7 +226,7 @@ WORKFLOWS_REQUIRED="${USER_WORKFLOWS_REQUIRED:-${WORKFLOWS_REQUIRED:-}}"
 WORKFLOWS_VERSION="${USER_WORKFLOWS_VERSION:-${WORKFLOWS_VERSION:-}}"
 WORKFLOW_CONTROLLER_IMAGE_REF="${USER_WORKFLOW_CONTROLLER_IMAGE_REF:-${WORKFLOW_CONTROLLER_IMAGE_REF:-}}"
 WORKFLOW_EXECUTOR_IMAGE_REF="${USER_WORKFLOW_EXECUTOR_IMAGE_REF:-${WORKFLOW_EXECUTOR_IMAGE_REF:-}}"
-WORKSPACE_PROVISIONER_IMAGE_REF="${USER_WORKSPACE_PROVISIONER_IMAGE_REF:-${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:latest}}"
+WORKSPACE_PROVISIONER_IMAGE_REF="${USER_WORKSPACE_PROVISIONER_IMAGE_REF:-${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:2.49.0}}"
 # compatibility.artifactServerVersion is unprefixed (2.1.8). Chart appVersion
 # and GHCR tags use a leading v (v2.1.8). Normalize before constructing the
 # pull ref.
@@ -511,14 +558,10 @@ EOF
 export_container_image_archive() {
   local image_ref="$1"
   local output_path="$2"
-  local podman_bin
+  local dest_name="${3:-$(basename "${image_ref%%:*}")}"
 
-  podman_bin="$(command -v podman)"
-  mkdir -p "$(dirname "${output_path}")"
-  rm -f "${output_path}"
-
-  sudo -n "${podman_bin}" pull "${image_ref}" >/dev/null
-  sudo -n "${podman_bin}" save --format oci-archive -o "${output_path}" "${image_ref}" >/dev/null
+  # Prefer the same LAN build-cache path as other OCI exports.
+  skopeo_copy_oci_archive "docker://${image_ref#docker://}" "${output_path}" "${dest_name}"
 }
 
 # Target platform for bundled OCI images. The appliance ships amd64 only.
@@ -992,8 +1035,25 @@ skopeo_copy_oci_archive() {
         echo "build-full-bundle: LAN build-cache miss/timeout/unreachable for ${mirror_ref}" >&2
         rm -f "${output_path}"
       fi
+      if offline_build_enabled; then
+        cat >&2 <<EOF
+build-full-bundle: OFFLINE_BUILD=1 and LAN build-cache miss for ${dest_name}
+build-full-bundle: seed with make -C deps/<pkg> release then retry
+build-full-bundle: expected mirror: ${mirror_ref}
+EOF
+        exit 1
+      fi
       echo "build-full-bundle: falling back to upstream (internet/pull-ref) ${source_ref}" >&2
     fi
+  fi
+
+  if offline_build_enabled; then
+    cat >&2 <<EOF
+build-full-bundle: OFFLINE_BUILD=1 refuses upstream pull for ${dest_name}
+build-full-bundle: source_ref=${source_ref}
+build-full-bundle: seed LAN build-cache via make seed-build-deps and ensure DEV_REGISTRY is set
+EOF
+    exit 1
   fi
 
   # Upstream: show skopeo errors (do not swallow 2>&1). Optional podman
@@ -1168,12 +1228,25 @@ derive_workflows_version_from_code_repo() {
 fetch_workflows_crds_from_release() {
   local workflows_version="$1"
   local output_dir="$2"
-  local manifest_url="https://github.com/argoproj/argo-workflows/releases/download/${workflows_version}/namespace-install.yaml"
   local tmp_manifest
+  local files_ok=0
 
   tmp_manifest="$(mktemp)"
   trap 'rm -f "${tmp_manifest}"' RETURN
-  curl -fsSL "${manifest_url}" -o "${tmp_manifest}"
+
+  if files_api_download "argo-workflows/${workflows_version}/namespace-install.yaml" "${tmp_manifest}"; then
+    echo "build-full-bundle: fetched Argo CRDs from files API argo-workflows/${workflows_version}/" >&2
+    files_ok=1
+  elif offline_build_enabled; then
+    echo "build-full-bundle: OFFLINE_BUILD=1 and files API miss for argo-workflows/${workflows_version}/namespace-install.yaml" >&2
+    echo "build-full-bundle: seed deps/workflows (make -C deps/workflows release)" >&2
+    exit 1
+  else
+    local manifest_url="https://github.com/argoproj/argo-workflows/releases/download/${workflows_version}/namespace-install.yaml"
+    curl -fsSL "${manifest_url}" -o "${tmp_manifest}"
+  fi
+  # silence unused when files path taken
+  : "${files_ok}"
 
   rm -rf "${output_dir}"
   mkdir -p "${output_dir}"
@@ -1233,6 +1306,11 @@ set_env_var() {
 normalize_clone_source() {
   local source="$1"
   if [[ -d "${source}" ]]; then
+    if offline_build_enabled || [[ "${USE_LOCAL_CHECKOUTS:-0}" == "1" ]]; then
+      # Offline / explicit: use the synced working tree as-is (no remote fetch).
+      printf '%s\n' "${source}"
+      return 0
+    fi
     if [[ -d "${source}/.git" ]]; then
       if git -C "${source}" remote get-url origin >/dev/null 2>&1; then
         git -C "${source}" remote get-url origin
@@ -1253,6 +1331,14 @@ warn_if_local_repo_source() {
   local label="$2"
 
   if [[ -d "${source}" ]]; then
+    if offline_build_enabled || [[ "${USE_LOCAL_CHECKOUTS:-0}" == "1" ]]; then
+      cat >&2 <<EOF
+build-full-bundle: ${label} source is a local directory (OFFLINE_BUILD/USE_LOCAL_CHECKOUTS):
+build-full-bundle:   ${source}
+build-full-bundle: using the local working tree contents as the bundle input source
+EOF
+      return 0
+    fi
     cat >&2 <<EOF
 build-full-bundle: ${label} source is a local directory:
 build-full-bundle:   ${source}
@@ -1298,6 +1384,23 @@ clone_repo() {
 
   clone_source="$(normalize_clone_source "${source}")"
   mkdir -p "$(dirname "${dest}")"
+
+  # Offline / local checkouts: copy or reuse the synced tree without fetching.
+  if [[ -d "${clone_source}" ]] && { offline_build_enabled || [[ "${USE_LOCAL_CHECKOUTS:-0}" == "1" ]]; }; then
+    if [[ "${clone_source}" == "${dest}" ]]; then
+      echo "build-full-bundle: using local checkout in place at ${dest}" >&2
+      return 0
+    fi
+    rm -rf "${dest}"
+    if command -v rsync >/dev/null 2>&1; then
+      mkdir -p "${dest}"
+      rsync -a --delete "${clone_source}/" "${dest}/"
+    else
+      cp -a "${clone_source}" "${dest}"
+    fi
+    echo "build-full-bundle: copied local checkout ${clone_source} -> ${dest}" >&2
+    return 0
+  fi
 
   if [[ -d "${dest}/.git" ]]; then
     git -C "${dest}" remote set-url origin "${clone_source}"
@@ -1347,7 +1450,7 @@ if [[ "${DNS_IMAGE_PULL_REF}" == *:latest || "${DNS_IMAGE_PULL_REF}" == registry
   exit 2
 fi
 if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner || "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner@sha256:* ]]; then
-  echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be an upstream pull ref (default docker.io/alpine/git:latest); got ${WORKSPACE_PROVISIONER_IMAGE_REF}" >&2
+  echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be an upstream or LAN build-cache pull ref (default docker.io/alpine/git:2.49.0); got ${WORKSPACE_PROVISIONER_IMAGE_REF}" >&2
   exit 2
 fi
 
@@ -1391,6 +1494,38 @@ if bool_true "${WORKFLOWS_ENABLED}"; then
   fi
 fi
 
+# When offline (or when DEV_REGISTRY is available and refs still point at
+# public upstreams), prefer LAN build-cache (deps/*) names.
+if offline_build_enabled; then
+  require_var DEV_REGISTRY
+  WORKSPACE_PROVISIONER_IMAGE_REF="$(lan_cache_ref alpine-git "${ALPINE_GIT_CACHE_TAG}")"
+  ARTIFACT_SERVER_SOURCE_IMAGE="$(lan_cache_ref zot-linux-amd64 "v${ARTIFACT_SERVER_VERSION}")"
+  DNS_IMAGE_PULL_REF="$(lan_cache_ref coredns "v${DNS_VERSION}")"
+  if bool_true "${WORKFLOWS_ENABLED}"; then
+    WORKFLOW_EXECUTOR_IMAGE_REF="$(lan_cache_ref argoexec "${WORKFLOWS_VERSION}")"
+    WORKFLOW_CONTROLLER_BASE_IMAGE="$(lan_cache_ref workflow-controller "${WORKFLOWS_VERSION}")"
+  fi
+  CP_GO_IMAGE="$(lan_cache_ref golang 1.26)"
+  CP_RUNTIME_IMAGE="$(lan_cache_ref alpine-3.24.1-runtime 3.24.1)"
+  UI_NODE_IMAGE="$(lan_cache_ref node 22-alpine)"
+  UI_GO_IMAGE="$(lan_cache_ref golang 1.26)"
+  UI_RUNTIME_IMAGE="$(lan_cache_ref alpine-3.24.1-runtime 3.24.1)"
+  UI_WEB_DEPS_IMAGE="$(lan_cache_ref controlplane-ui-web-deps lockfile)"
+  ARTIFACT_RUNTIME_SOURCE_IMAGE="$(lan_cache_ref debian-bookworm-slim-runtime bookworm-slim)"
+  RUNTIME_PACKAGES_INSTALLED=1
+  echo "build-full-bundle: OFFLINE_BUILD=1 using LAN build-cache refs on ${DEV_REGISTRY}" >&2
+else
+  WORKFLOW_CONTROLLER_BASE_IMAGE="${WORKFLOW_CONTROLLER_BASE_IMAGE:-quay.io/argoproj/workflow-controller:${WORKFLOWS_VERSION:-v3.5.10}}"
+  CP_GO_IMAGE="${CP_GO_IMAGE:-}"
+  CP_RUNTIME_IMAGE="${CP_RUNTIME_IMAGE:-}"
+  UI_NODE_IMAGE="${UI_NODE_IMAGE:-}"
+  UI_GO_IMAGE="${UI_GO_IMAGE:-}"
+  UI_RUNTIME_IMAGE="${UI_RUNTIME_IMAGE:-}"
+  UI_WEB_DEPS_IMAGE="${UI_WEB_DEPS_IMAGE:-}"
+  ARTIFACT_RUNTIME_SOURCE_IMAGE="${RUNTIME_SOURCE_IMAGE:-debian:bookworm-slim}"
+  RUNTIME_PACKAGES_INSTALLED="${RUNTIME_PACKAGES_INSTALLED:-0}"
+fi
+
 mkdir -p "${CODE_REPO_DIR}/.run"
 
 WORKFLOWS_CRDS_DIR_FOR_DEV=""
@@ -1402,16 +1537,32 @@ rm -rf "${CODE_REPO_DIR}/.run/host-packages"
 HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
 HOST_CAPABILITIES=(mdns wifi-ap)
 mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
-host_packages_fingerprint_inputs=("${OS_VERSION}" "mdns" "wifi-ap")
+host_packages_fingerprint_inputs=("${OS_VERSION}" "mdns" "wifi-ap" "${HOST_PACKAGES_FINGERPRINT}")
 if ! component_cache_try_restore "host-packages" "${CODE_REPO_DIR}/.run/host-packages" "${host_packages_fingerprint_inputs[@]}"; then
-  CAP_ARGS=()
-  for cap in "${HOST_CAPABILITIES[@]}"; do
-    CAP_ARGS+=(--capability "${cap}")
-  done
-  bash "${CODE_REPO_DIR}/scripts/package/export-host-packages.sh" \
-    --out-dir "${CODE_REPO_DIR}/.run/host-packages" \
-    --os-version "${OS_VERSION}" \
-    "${CAP_ARGS[@]}"
+  host_pkg_archive="${CODE_REPO_DIR}/.run/host-packages-seed.tar.zst"
+  host_pkg_remote="host-packages/ubuntu-${OS_VERSION}/${HOST_PACKAGES_FINGERPRINT}/host-packages.tar.zst"
+  if files_api_download "${host_pkg_remote}" "${host_pkg_archive}"; then
+    echo "build-full-bundle: unpacking host-packages from files API ${host_pkg_remote}" >&2
+    if tar --help 2>&1 | grep -q zstd; then
+      tar --zstd -xf "${host_pkg_archive}" -C "${CODE_REPO_DIR}/.run/host-packages"
+    else
+      zstd -dc "${host_pkg_archive}" | tar -xf - -C "${CODE_REPO_DIR}/.run/host-packages"
+    fi
+    rm -f "${host_pkg_archive}"
+  elif offline_build_enabled; then
+    echo "build-full-bundle: OFFLINE_BUILD=1 and files API miss for ${host_pkg_remote}" >&2
+    echo "build-full-bundle: seed deps/host-packages (make -C deps/host-packages release)" >&2
+    exit 1
+  else
+    CAP_ARGS=()
+    for cap in "${HOST_CAPABILITIES[@]}"; do
+      CAP_ARGS+=(--capability "${cap}")
+    done
+    bash "${CODE_REPO_DIR}/scripts/package/export-host-packages.sh" \
+      --out-dir "${CODE_REPO_DIR}/.run/host-packages" \
+      --os-version "${OS_VERSION}" \
+      "${CAP_ARGS[@]}"
+  fi
   component_cache_store "host-packages" "${CODE_REPO_DIR}/.run/host-packages" "${host_packages_fingerprint_inputs[@]}"
 fi
 
@@ -1440,7 +1591,7 @@ ARTIFACT_SERVER_IMAGE_REF=""
 DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/dns-server-image.tar"
 DNS_IMAGE_REF=""
 
-WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:latest}"
+WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:2.49.0}"
 WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
 WORKSPACE_PROVISIONER_IMAGE_REF="$(export_bundled_oci_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "registry.local/workspace-provisioner" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
 BUNDLED_IMAGE_ARCHIVES+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
@@ -1483,12 +1634,24 @@ bool_true() {
   esac
 }
 
-make package-control-plane-image-archive OUT_FILE="\${CONTROL_PLANE_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}"
-make package-ui-image-archive OUT_FILE="\${UI_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}"
+make package-control-plane-image-archive OUT_FILE="\${CONTROL_PLANE_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}" \
+  GO_IMAGE=$(shell_quote "${CP_GO_IMAGE}") \
+  RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \
+  RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
+make package-ui-image-archive OUT_FILE="\${UI_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}" \
+  UI_NODE_IMAGE=$(shell_quote "${UI_NODE_IMAGE}") \
+  UI_GO_IMAGE=$(shell_quote "${UI_GO_IMAGE}") \
+  UI_RUNTIME_IMAGE=$(shell_quote "${UI_RUNTIME_IMAGE}") \
+  UI_WEB_DEPS_IMAGE=$(shell_quote "${UI_WEB_DEPS_IMAGE}") \
+  USE_PREBAKED_NPM=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}") \
+  RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
 make package-host-agent-image-archive \
   OUT_FILE="\${HOST_AGENT_IMAGE_OUT}" \
   REFERENCE_OUT_FILE="\${HOST_AGENT_IMAGE_REF_FILE}" \
-  IMAGE_TAG="\${CODE_VERSION}"
+  IMAGE_TAG="\${CODE_VERSION}" \
+  GO_IMAGE=$(shell_quote "${CP_GO_IMAGE}") \
+  RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \
+  RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
 HOST_AGENT_IMAGE_REF="\$(tr -d '\r\n' < "\${HOST_AGENT_IMAGE_REF_FILE}")"
 # Super-set: always pass host-packages (packages staged at install; services off).
 HOST_PACKAGES_ARGS=(
@@ -1502,7 +1665,9 @@ HOST_PACKAGES_ARGS=(
 make package-artifact-server-image-archive \
   OUT_FILE="/workspace/.run/artifact-server-image.tar" \
   ARTIFACT_SERVER_VERSION=$(shell_quote "${ARTIFACT_SERVER_VERSION}") \
-  ARTIFACT_SERVER_SOURCE_IMAGE=$(shell_quote "${ARTIFACT_SERVER_SOURCE_IMAGE}")
+  ARTIFACT_SERVER_SOURCE_IMAGE=$(shell_quote "${ARTIFACT_SERVER_SOURCE_IMAGE}") \
+  RUNTIME_SOURCE_IMAGE=$(shell_quote "${ARTIFACT_RUNTIME_SOURCE_IMAGE}") \
+  RUNTIME_PACKAGES_INSTALLED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
 ARTIFACT_SERVER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/artifact-server-image.tar"
 ARTIFACT_SERVER_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/artifact-server-image.reference)"
 
@@ -1511,7 +1676,9 @@ ARTIFACT_SERVER_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/artifact-server-imag
 make package-dns-server-image-archive \
   OUT_FILE="/workspace/.run/dns-server-image.tar" \
   DNS_VERSION=$(shell_quote "${DNS_VERSION}") \
-  DNS_SOURCE_IMAGE=$(shell_quote "${DNS_IMAGE_PULL_REF}")
+  DNS_SOURCE_IMAGE=$(shell_quote "${DNS_IMAGE_PULL_REF}") \
+  RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \
+  RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
 DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/dns-server-image.tar"
 DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/dns-server-image.reference)"
 
@@ -1529,7 +1696,9 @@ if bool_true $(shell_quote "${WORKFLOWS_ENABLED}"); then
   make package-workflow-controller-image-archive \
     OUT_FILE="/workspace/.run/workflow-controller-image.tar" \
     WORKFLOWS_VERSION=$(shell_quote "${WORKFLOWS_VERSION}") \
-    WORKFLOW_CONTROLLER_BASE_IMAGE=$(shell_quote "quay.io/argoproj/workflow-controller:${WORKFLOWS_VERSION}")
+    WORKFLOW_CONTROLLER_BASE_IMAGE=$(shell_quote "${WORKFLOW_CONTROLLER_BASE_IMAGE}") \
+    RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \
+    RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
   WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workflow-controller-image.tar"
 
   WORKFLOWS_ARGS+=(--workflow-controller-image "\${WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}")
@@ -1588,6 +1757,10 @@ set_env_var "${CONFIG_OUT}" HELM_BINARY "${HELM_BINARY}"
 set_env_var "${CONFIG_OUT}" HELM_VERSION "${HELM_VERSION}"
 set_env_var "${CONFIG_OUT}" K3S_BINARY "${INPUTS_DIR}/k3s"
 set_env_var "${CONFIG_OUT}" K3S_AIRGAP_IMAGES "${INPUTS_DIR}/k3s-airgap-images-amd64.tar.zst"
+set_env_var "${CONFIG_OUT}" OFFLINE_BUILD "${OFFLINE_BUILD}"
+set_env_var "${CONFIG_OUT}" DEV_REGISTRY "${DEV_REGISTRY}"
+set_env_var "${CONFIG_OUT}" DEV_REGISTRY_TOKEN "${DEV_REGISTRY_TOKEN}"
+set_env_var "${CONFIG_OUT}" DEV_REGISTRY_TLS_VERIFY "${DEV_REGISTRY_TLS_VERIFY:-true}"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   set_env_var "${CONFIG_OUT}" VALUES_FILE "${INPUTS_DIR}/values-minimal.yaml"
 else
