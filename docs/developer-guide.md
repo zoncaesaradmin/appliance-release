@@ -161,7 +161,7 @@ uploads under `appliance/latest/`. `PRODUCT_VERSION` defaults from
 The published `install-http-release.sh` helper takes a required
 `--appliance-name` and optional `--appliance-profile` (default `core`). Other
 values are product defaults stamped at publish or set near the top of the
-script for rare overrides (including `BUILD_CATALOG_PATH` for builder).
+script for rare overrides.
 
 For the target-host runbook itself, see
 [operator-guide.md](operator-guide.md).

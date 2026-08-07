@@ -2,14 +2,15 @@
 #
 # This example is intentionally modeled from the multi-repo Forgeline-style
 # catalog at /Users/zoncaesar/build-catalog.yaml, but translated into the
-# appliance builder product-config format expected by appliance-code and zonctl.
+# appliance-native schema expected by the control-plane catalog API.
 #
 # Important differences from the older Forgeline schema:
 # - `workProfiles` replaces top-level `profiles`
 # - each workspace profile explicitly lists its repos
 # - each repo has one canonical `url` plus optional `defaultRef`
 # - build targets are authored under `repos[].buildTargets` (preferred).
-#   zonctl and the control plane flatten them to a top-level list at load time.
+#   The control plane flattens them to a top-level list when the catalog is
+#   uploaded via PUT /api/v1/builder/catalog.
 #   Top-level `buildTargets` with an explicit `repo` field remain accepted.
 # - A target whose `name` equals the parent repo name is the whole-repo entry
 #   and maps to one explicit execution + args list. There is no ForgeLine

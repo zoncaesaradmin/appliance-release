@@ -116,7 +116,6 @@ Product-owned install helper: `scripts/install-http-release.sh`
 **Shared + report**
 
 - `scripts/common.sh` / `scripts/config_query.py`
-- `scripts/validate-build-catalog.py`
 - `scripts/summarize-release-run.py`
 
 ## Workflow

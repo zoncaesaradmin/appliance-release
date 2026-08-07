@@ -210,39 +210,6 @@ def test_profile_capability_helpers() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_require_builder_build_catalog_helper() -> None:
-    with tempfile.TemporaryDirectory(prefix="builder-catalog-helper-") as tmp:
-        catalog = Path(tmp) / "catalog.yaml"
-        catalog.write_text("buildTargets: []\n", encoding="utf-8")
-        pass_result = subprocess.run(
-            [
-                "bash",
-                "-lc",
-                (
-                    f'source "{COMMON_SH}"; '
-                    f'require_builder_build_catalog_path core ""; '
-                    f'require_builder_build_catalog_path builder "{catalog}"'
-                ),
-            ],
-            check=False,
-            text=True,
-            capture_output=True,
-        )
-        assert pass_result.returncode == 0, pass_result.stderr
-
-        fail_result = subprocess.run(
-            [
-                "bash",
-                "-lc",
-                f'source "{COMMON_SH}"; require_builder_build_catalog_path builder ""',
-            ],
-            check=False,
-            text=True,
-            capture_output=True,
-        )
-        assert fail_result.returncode != 0
-        assert "builder appliance profile requires install.build_catalog_path" in fail_result.stderr
-
 
 def test_csv_items_trimmed_and_workflow_guard_helpers() -> None:
     result = subprocess.run(
@@ -398,43 +365,6 @@ def test_require_appliance_profile_helper() -> None:
         assert default_result.returncode == 0, default_result.stderr
 
 
-def test_resolve_build_catalog_path_helper() -> None:
-    with tempfile.TemporaryDirectory(prefix="build-catalog-helper-") as tmp:
-        catalog = Path(tmp) / "catalog.yaml"
-        catalog.write_text("buildTargets: []\n", encoding="utf-8")
-        config = Path(tmp) / "appliance-release.config.yaml"
-        config.write_text(f"install:\n  build_catalog_path: {catalog}\n", encoding="utf-8")
-        pass_result = subprocess.run(
-            [
-                "bash",
-                "-lc",
-                (
-                    f'source "{COMMON_SH}"; '
-                    f'from_config="$(resolve_build_catalog_path "{config}" "")"; '
-                    f'override="$(resolve_build_catalog_path "{config}" "{catalog}")"; '
-                    f'[[ "${{from_config}}" == "{catalog}" && "${{override}}" == "{catalog}" ]]'
-                ),
-            ],
-            check=False,
-            text=True,
-            capture_output=True,
-        )
-        assert pass_result.returncode == 0, pass_result.stderr
-
-        missing = Path(tmp) / "missing.yaml"
-        fail_result = subprocess.run(
-            [
-                "bash",
-                "-lc",
-                f'source "{COMMON_SH}"; resolve_build_catalog_path "{config}" "{missing}"',
-            ],
-            check=False,
-            text=True,
-            capture_output=True,
-        )
-        assert fail_result.returncode != 0
-        assert "required file not found" in fail_result.stderr
-
 
 def test_product_control_plane_identity_helpers() -> None:
     result = subprocess.run(
@@ -500,13 +430,11 @@ def main() -> None:
     test_rewrite_command_url_path_to_base()
     test_derive_mdns_tls_san_from_hostname()
     test_profile_capability_helpers()
-    test_require_builder_build_catalog_helper()
     test_csv_items_trimmed_and_workflow_guard_helpers()
     test_inject_env_path_after_sudo_helper()
     test_require_config_path_helper()
     test_release_run_dir_helpers()
     test_require_appliance_profile_helper()
-    test_resolve_build_catalog_path_helper()
     test_product_control_plane_identity_helpers()
     print("live release repo preflight tests passed")
 

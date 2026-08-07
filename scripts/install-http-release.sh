@@ -52,10 +52,9 @@ Optional:
                                builder-storage-landns.
   --help, -h                   Show this help
 
-Rare site overrides (authenticated private store TLS, builder catalog path
-`BUILD_CATALOG_PATH`, state dir) are product defaults near the top of this
-file after download — edit those variables if needed. Not public CLI flags
-and not release-orchestrator config.
+Rare site overrides (authenticated private store TLS, state dir) are product
+defaults near the top of this file after download — edit those variables if
+needed. Not public CLI flags and not release-orchestrator config.
 
 Does not create the first administrator or accept a license (UI or later).
 
@@ -90,7 +89,6 @@ BEARER_TOKEN=""
 TLS_INSECURE="0"
 TLS_CACERT=""
 
-BUILD_CATALOG_PATH=""
 NODE_NAME=""
 EXTRA_TLS_SANS=""
 DRY_RUN="0"
@@ -283,7 +281,6 @@ echo "  use-latest:        ${USE_LATEST}"
 echo "  bearer-token:      $([[ -n "${BEARER_TOKEN}" ]] && echo set || echo empty)"
 echo "  tls-insecure:      ${TLS_INSECURE}"
 echo "  tls-cacert:        ${TLS_CACERT:-empty}"
-echo "  build-catalog:     ${BUILD_CATALOG_PATH:-empty}"
 
 mkdir -p "${OUT_DIR}"
 
@@ -362,9 +359,6 @@ lifecycle_args=(
   --appliance-name "${APPLIANCE_NAME}"
   --dns-zone "${DNS_ZONE}"
 )
-if [[ -n "${BUILD_CATALOG_PATH}" ]]; then
-  lifecycle_args+=(--build-catalog "${BUILD_CATALOG_PATH}")
-fi
 if [[ -n "${NODE_NAME}" ]]; then
   lifecycle_args+=(--node-name "${NODE_NAME}")
 fi

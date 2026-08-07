@@ -38,7 +38,7 @@ verify-help:
 		bash "$$script" --help >/dev/null; \
 	done
 	@bash scripts/install-http-release.sh --help | grep -q -- '--appliance-name'
-	@bash scripts/install-http-release.sh --help | grep -q -- 'BUILD_CATALOG_PATH'
+	@bash scripts/install-http-release.sh --help | grep -q -- 'appliance-name'
 	@bash scripts/publish-release.sh --help | grep -q -- 'DEV_REGISTRY'
 	@bash scripts/publish-release.sh --help | grep -q -- 'appliance file API'
 
@@ -49,35 +49,30 @@ verify-json:
 .PHONY: verify-client-config
 verify-client-config:
 	@mkdir -p "$(VERIFY_LOG_DIR)"
-	@config_file="$(VERIFY_LOG_DIR)/client-invalid-source-ref.yaml"; \
-	run_dir="$(VERIFY_LOG_DIR)/client-invalid-source-ref-run"; \
+	@config_file="$(VERIFY_LOG_DIR)/client-removed-workflow.yaml"; \
+	run_dir="$(VERIFY_LOG_DIR)/client-removed-workflow-run"; \
 	printf '%s\n' \
 		'install:' \
 		'  appliance_profile: core' \
 		'client_verification:' \
 		'  builder:' \
+		'    enabled: true' \
 		'    workflow:' \
 		'      enabled: true' \
-		'      workspace_name: release-smoke' \
-		'      work_profile: builder' \
-		'      repo: app' \
-		'      source_ref: main' \
-		'      target_name: app' \
 		> "$$config_file"; \
 	set +e; \
 	APPLIANCE_FIRST_ADMIN_PASSWORD=test bash "$(RELEASE_SKILL_SCRIPT_DIR)/verify-client-access.sh" --config "$$config_file" --run-dir "$$run_dir" --appliance-profile builder >"$(VERIFY_CLIENT_CONFIG_CASE_LOG)" 2>&1; \
 	status="$$?"; \
 	set -e; \
 	if [ "$$status" -eq 0 ]; then \
-		echo "verify-client-config: mutable source_ref was accepted"; \
+		echo "verify-client-config: removed builder.workflow block was accepted"; \
 		exit 1; \
 	fi; \
-	grep -q 'source_ref must be a 40-character lowercase commit SHA' "$(VERIFY_CLIENT_CONFIG_CASE_LOG)"
+	grep -q 'client_verification.builder.workflow was removed' "$(VERIFY_CLIENT_CONFIG_CASE_LOG)"
 
 .PHONY: verify-release-artifacts
 verify-release-artifacts:
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_validate_release_artifacts.py"
-	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_validate_build_catalog.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_summarize_release_run.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_verify_client_access.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_live_release_repo_preflight.py"

@@ -102,12 +102,10 @@ Notes:
 - For advanced extra SANs beyond the derived FQDN and the automatic
   `hostname.local` SAN, use `install.additional_tls_sans_csv` in the config.
 - For builder* profiles (`builder`, `builder-landns`, `builder-storage-landns`),
-  set `install.build_catalog_path` to an appliance-native catalog (see
-  `build-catalog.example.yaml`). The public install helper copies that file to
-  the target and stamps `BUILD_CATALOG_PATH` into `install-http-release.sh` so
-  `zonctl install --build-catalog` injects `config.buildCatalog`. Without it,
-  Helm rejects the chart default `buildCatalog: {}`. The catalog must declare
-  `workProfiles` and HTTPS `repos`; never put private keys or tokens in it.
+  the build catalog is **runtime state**: upload it after install via
+  `PUT /api/v1/builder/catalog` (Builder Base Settings in the UI) using an
+  appliance-native document (see `build-catalog.example.yaml`). Never put
+  private keys or tokens in it.
 - If the build catalog references a workspace provisioner image, ensure
   `build_flow.dev_image_pull` is configured so `registry.local/dev-build`
   is bundled and preloaded on the target.
@@ -326,8 +324,9 @@ This script checks:
 - `GET /api/v1/auth/session`
 - `GET /api/v1/users`
 - for the `builder` profile, authenticated `GET /api/v1/work-profiles`
+  (may return an empty list until an operator uploads a runtime catalog)
 - for the `builder` profile, authenticated MCP `initialize` and `tools/list`
-  with `submit_build` present
+  with builder workflow tool names present
 - for non-builder profiles, authenticated `GET /api/v1/work-profiles` returns
   `404` by default, proving build routes are not registered when the build
   capability is disabled
@@ -336,14 +335,6 @@ This script checks:
 - for non-builder profiles, direct authenticated MCP `tools/call` for
   `submit_build` returns JSON-RPC tool-not-found, proving disabled build tools
   cannot be invoked by name
-- when `client_verification.builder.workflow.enabled: true`, an actual
-  REST-only builder workflow smoke: create workspace, list build targets,
-  submit build, poll job status, fetch steps, and fetch logs
-- for that workflow smoke, submit and job responses must both include the same
-  non-empty `artifactRef`; this resolved image reference is copied into the
-  final release report
-- for that workflow smoke, a returned-evidence leak check that fails if job,
-  step, or log output contains private-key markers
 - writes a clear request log for each API call with method, full URL, sanitized headers, and sanitized POST body fields
 - keeps the response body and response headers in separate log files
 
@@ -358,13 +349,6 @@ Notes about MCP access:
   its own local proxy instead of calling the appliance `/mcp` URL directly
   from a `localhost` page.
 
-The real workflow smoke is intentionally opt-in because it runs a build. Use
-it for final builder-profile evidence after the build catalog, Git host
-reachability, builder image, and appliance registry are ready. For v1, set
-`client_verification.builder.workflow.source_ref` to an immutable lowercase
-40-character commit SHA; branch and tag resolution belongs in the control
-plane/workflow layer later.
-
 ## 6. Config Files
 
 Start from the three role examples linked from:
@@ -376,13 +360,6 @@ Start from the three role examples linked from:
 Day-to-day paths are usually home-dir copies such as `~/lab-devhost.yaml`,
 `~/lab-build-publish.yaml`, and `~/lab-install.yaml` — not a single merged
 repo config file.
-
-For final builder-profile evidence, also start from these local templates and
-replace every host, repo, image, and target path with your real product values:
-
-```bash
-.agents/skills/release/references/build-catalog.example.yaml
-```
 
 Do not use a global skill symlink here. The single place to look is the
 repo-local skill path: `.agents/skills/release/scripts`.

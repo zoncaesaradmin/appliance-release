@@ -37,7 +37,7 @@ install:
   appliance_name: artifact-dns-1
   dns_zone: appliance.internal
   # core | builder | storage | landns | storage-landns | builder-landns | builder-storage-landns
-  appliance_profile: storage-landns
+  appliance_profile: builder-landns
 
   # Bundle extract dir on the target (version should match the published release)
   bundle_download_dir: /tmp/appliance-0.1.0
@@ -47,11 +47,6 @@ install:
   # kubernetes_namespace / control_plane_deployment are product-fixed
   # (control / api-server; zonctl defaultChartNamespace + chart name) — do not set
 
-  # builder* profiles (required): public helper copies this to the target and
-  # stamps BUILD_CATALOG_PATH so zonctl install --build-catalog injects
-  # config.buildCatalog (chart default {} fails Helm schema for build profiles).
-  # build_catalog_path: /Users/you/build-catalog.yaml
-  #
   # additional_tls_sans_csv: 192.168.1.101
   #
   # image_pull_registry:

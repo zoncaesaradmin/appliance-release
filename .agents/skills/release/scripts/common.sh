@@ -180,18 +180,6 @@ require_appliance_profile() {
   printf '%s\n' "${appliance_profile}"
 }
 
-resolve_build_catalog_path() {
-  local config_path="$1"
-  local build_catalog_path="${2:-}"
-  if [[ -z "${build_catalog_path}" ]]; then
-    build_catalog_path="$(config_get_optional "${config_path}" "install.build_catalog_path" || true)"
-  fi
-  if [[ -n "${build_catalog_path}" ]]; then
-    ensure_file "${build_catalog_path}"
-  fi
-  printf '%s\n' "${build_catalog_path}"
-}
-
 bool_true() {
   local value="${1:-}"
   local normalized
@@ -304,41 +292,6 @@ inject_env_path_after_sudo() {
     return 0
   fi
   printf '%s\n' "${command//sudo /sudo env PATH=${env_path} }"
-}
-
-require_builder_build_catalog_path() {
-  local profile="${1:-}"
-  local build_catalog_path="${2:-}"
-  if [[ -n "${build_catalog_path}" ]]; then
-    ensure_file "${build_catalog_path}"
-  fi
-  if profile_supports_builder "${profile}" && [[ -z "${build_catalog_path}" ]]; then
-    fail "builder appliance profile requires install.build_catalog_path or --build-catalog; start from .agents/skills/release/references/build-catalog.example.yaml"
-  fi
-}
-
-validate_builder_build_catalog() {
-  local script_dir="$1"
-  local config_path="$2"
-  local profile="$3"
-  local build_catalog_path="$4"
-  local run_dir="$5"
-  local success_message="${6:-build-catalog validation ok}"
-  local catalog_validation_log=""
-
-  if ! profile_supports_builder "${profile}" || [[ -z "${build_catalog_path}" ]]; then
-    return 0
-  fi
-
-  catalog_validation_log="${run_dir}/logs/build-catalog-validation.json"
-  if ! python3 "${script_dir}/validate-build-catalog.py" \
-    --config "${config_path}" \
-    --build-catalog "${build_catalog_path}" \
-    --output-json "${catalog_validation_log}" \
-    >"${catalog_validation_log}.stdout" 2>"${catalog_validation_log}.stderr"; then
-    fail "builder build catalog validation failed; see ${catalog_validation_log}"
-  fi
-  log "${success_message}"
 }
 
 run_ssh_logged() {

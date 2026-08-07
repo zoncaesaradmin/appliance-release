@@ -110,7 +110,6 @@ def summarize_client_verify(client: Optional[dict], skipped: bool) -> dict:
     checks = client.get("checks") if isinstance(client.get("checks"), dict) else {}
     builder = checks.get("builder") if isinstance(checks.get("builder"), dict) else None
     disabled = checks.get("disabledBuildRoutes") if isinstance(checks.get("disabledBuildRoutes"), dict) else None
-    workflow = builder.get("workflow") if isinstance(builder, dict) and isinstance(builder.get("workflow"), dict) else None
     artifact = checks.get("artifact") if isinstance(checks.get("artifact"), dict) else {}
     out.update(
         {
@@ -141,15 +140,6 @@ def summarize_client_verify(client: Optional[dict], skipped: bool) -> dict:
             }
             if disabled
             else None,
-            "workflow": {
-                "enabled": workflow is not None,
-                "jobId": workflow.get("jobId") if workflow else None,
-                "finalStatus": workflow.get("finalStatus") if workflow else None,
-                "artifactRef": ((workflow.get("artifactRef") or {}).get("job") if workflow else None),
-                "secretLeakCheckPassed": (workflow.get("secretLeakCheck") or {}).get("passed")
-                if workflow
-                else None,
-            },
             "artifact": {
                 "enabled": artifact.get("enabled"),
                 "catalogStatusCode": artifact.get("catalogStatusCode"),
@@ -237,7 +227,6 @@ def main() -> int:
         client_skipped = bool(steps.get("clientVerifySkipped"))
         release_version = flow.get("releaseVersion")
         appliance_profile = flow.get("applianceProfile")
-        build_catalog = flow.get("buildCatalogPath")
         config_path = flow.get("configPath")
         wrapper_status = flow.get("status")
         wrapper_exit = flow.get("exitCode")
@@ -255,7 +244,6 @@ def main() -> int:
         client_skipped = client_verify is None
         release_version = (build or {}).get("releaseVersion") or (install or {}).get("releaseVersion")
         appliance_profile = (install or {}).get("applianceProfile")
-        build_catalog = (install or {}).get("buildCatalogPath")
         config_path = None
         wrapper_status = "passed" if args.exit_code == 0 else "failed"
         wrapper_exit = args.exit_code
@@ -266,7 +254,6 @@ def main() -> int:
         "runDir": str(run_dir),
         "releaseVersion": release_version,
         "applianceProfile": appliance_profile or "default/core",
-        "buildCatalogPath": build_catalog,
         "wrapperStatus": wrapper_status,
         "wrapperExitCode": wrapper_exit,
         "steps": {

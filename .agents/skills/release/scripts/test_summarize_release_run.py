@@ -29,7 +29,6 @@ def test_complete_report() -> None:
                 "applianceProfile": "builder",
                 "status": "passed",
                 "exitCode": 0,
-                "buildCatalogPath": "/tmp/build-catalog.yaml",
                 "steps": {
                     "buildPublishSkipped": False,
                     "installSkipped": False,
@@ -107,16 +106,6 @@ def test_complete_report() -> None:
                                 "toolNames": ["list_work_profiles", "submit_build"],
                             }
                         },
-                        "workflow": {
-                            "jobId": "job-1",
-                            "finalStatus": "succeeded",
-                            "artifactRef": {
-                                "submitBuild": "users/alice/app:v1",
-                                "job": "users/alice/app:v1",
-                                "matched": True,
-                            },
-                            "secretLeakCheck": {"passed": True},
-                        },
                     },
                     "disabledBuildRoutes": {
                         "workProfiles": {"statusCode": 404},
@@ -145,10 +134,6 @@ def test_complete_report() -> None:
         if not str(report.get("generatedAt", "")).endswith("Z"):
             raise AssertionError(report)
         if report["steps"]["targetVerify"]["warningCount"] != 1:
-            raise AssertionError(report)
-        if report["steps"]["clientVerify"]["workflow"]["secretLeakCheckPassed"] is not True:
-            raise AssertionError(report)
-        if report["steps"]["clientVerify"]["workflow"]["artifactRef"] != "users/alice/app:v1":
             raise AssertionError(report)
         if "submit_build" not in report["steps"]["clientVerify"]["builderToolsPresent"]:
             raise AssertionError(report)
