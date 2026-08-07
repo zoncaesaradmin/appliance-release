@@ -103,7 +103,7 @@ Notes:
   `hostname.local` SAN, use `install.additional_tls_sans_csv` in the config.
 - For builder* profiles (`builder`, `builder-landns`, `builder-storage-landns`),
   the build catalog is **runtime state**: upload it after install via
-  `PUT /api/v1/builder/catalog` (Builder Base Settings in the UI) using an
+  `PUT /api/v1/builder/catalog` (Builder Settings in the UI) using an
   appliance-native document (see `build-catalog.example.yaml`). Never put
   private keys or tokens in it.
 - If the build catalog references a workspace provisioner image, ensure
