@@ -510,6 +510,76 @@ def validate_dns(
     return ["dnsChart", "dnsImage", f"dnsVersion={dns_version}"]
 
 
+def validate_inference(
+    release_input: dict,
+    bundle_manifest: dict,
+    artifacts: dict,
+    release_input_dir: Path,
+    entries_by_path: dict[str, dict],
+) -> list:
+    compatibility = release_input.get("compatibility")
+    if not isinstance(compatibility, dict):
+        raise ValueError("release-input compatibility must be an object")
+    inference_version = str(compatibility.get("inferenceVersion") or "").strip()
+    if not inference_version or inference_version.lower() == "latest":
+        raise ValueError("release-input compatibility.inferenceVersion must be an exact non-latest version")
+    bundle_compatibility = bundle_manifest.get("compatibility")
+    if not isinstance(bundle_compatibility, dict):
+        raise ValueError("bundle manifest compatibility must be an object")
+    bundle_inference_version = str(bundle_compatibility.get("inferenceVersion") or "").strip()
+    if bundle_inference_version != inference_version:
+        raise ValueError(
+            "bundle manifest compatibility.inferenceVersion mismatch: "
+            f"expected {inference_version}, got {bundle_inference_version}"
+        )
+
+    chart = require_artifact(artifacts, "inferenceChart")
+    chart_path = require_file_artifact(artifacts, "inferenceChart", release_input_dir)
+    chart_candidates = (
+        f"charts/{chart_path.name}",
+        f"chart/{chart_path.name}",
+        f"chart/appliance-inference-{chart_path.name}",
+    )
+    chart_bundle_path = next((path for path in chart_candidates if path in entries_by_path), "")
+    if not chart_bundle_path:
+        raise ValueError(
+            "bundle manifest is missing inferenceChart; expected one of: "
+            + ", ".join(chart_candidates)
+        )
+    chart_entry = require_bundle_entry(entries_by_path, chart_bundle_path, "inferenceChart")
+    require_matching_bundle_digest(chart_entry, chart, chart_bundle_path, "inferenceChart")
+
+    image = require_artifact(artifacts, "inferenceRuntimeImage")
+    image_path = require_file_artifact(artifacts, "inferenceRuntimeImage", release_input_dir)
+    image_ref = require_image_reference(image, "inferenceRuntimeImage")
+    if not re.fullmatch(r"registry\.local/inference-runtime@sha256:[0-9a-f]{64}", image_ref):
+        raise ValueError(
+            "release-input artifacts.inferenceRuntimeImage.imageReference must be "
+            "registry.local/inference-runtime@sha256:<64 lowercase hex>"
+        )
+    if "inference" not in image_path.name.lower():
+        raise ValueError(
+            f"release-input artifacts.inferenceRuntimeImage.path must identify inference-runtime, got {image['path']!r}"
+        )
+    require_oci_archive_reference_matches_content(image_path, image_ref, "inferenceRuntimeImage")
+    index = load_oci_archive_index(image_path)
+    if index is None:
+        raise ValueError(f"inferenceRuntimeImage OCI archive {image_path} is missing index.json")
+    annotation = (
+        (index.get("manifests") or [{}])[0].get("annotations") or {}
+    ).get("org.opencontainers.image.ref.name")
+    if annotation != "registry.local/inference-runtime:bundled":
+        raise ValueError(
+            "inferenceRuntimeImage OCI archive annotation must be 'registry.local/inference-runtime:bundled', "
+            f"got {annotation!r}"
+        )
+    image_bundle_path = f"oci-images/{image_path.name}"
+    image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "inferenceRuntimeImage")
+    require_matching_bundle_digest(image_entry, image, image_bundle_path, "inferenceRuntimeImage")
+    require_matching_bundle_image_reference(image_entry, image_ref, image_bundle_path, "inferenceRuntimeImage")
+    return ["inferenceChart", "inferenceRuntimeImage", f"inferenceVersion={inference_version}"]
+
+
 def validate_host_agent(
     artifacts: dict,
     release_input_dir: Path,
@@ -749,6 +819,13 @@ def main() -> int:
             entries_by_path,
         ),
         "dns": validate_dns(
+            release_input,
+            bundle_manifest,
+            artifacts,
+            release_input_path.parent,
+            entries_by_path,
+        ),
+        "inference": validate_inference(
             release_input,
             bundle_manifest,
             artifacts,

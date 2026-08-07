@@ -39,6 +39,7 @@ def populate_positive_case(tmp: Path, *, include_host_packages: bool = True) -> 
     artifact_server_digest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     dns_digest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     host_agent_digest = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    inference_digest = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     write(tmp / "release-input" / "images" / "control-plane.tar", "control")
     write(tmp / "release-input" / "images" / "appliance-ui.tar", "ui")
     write(tmp / "release-input" / "chart" / "appliance-chart-1.0.0.tgz", "appliance chart")
@@ -67,6 +68,12 @@ def populate_positive_case(tmp: Path, *, include_host_packages: bool = True) -> 
         tmp / "release-input" / "images" / "coredns-image.tar",
         "registry.local/coredns:bundled",
         dns_digest,
+    )
+    write(tmp / "release-input" / "chart" / "appliance-inference-0.6.5.tgz", "inference chart")
+    write_mismatched_oci_archive(
+        tmp / "release-input" / "images" / "inference-runtime-image.tar",
+        "registry.local/inference-runtime:bundled",
+        inference_digest,
     )
     write_mismatched_oci_archive(
         tmp / "release-input" / "images" / "appliance-host-agent.tar",
@@ -112,6 +119,8 @@ ingress:
     "artifactServerChart": {"path": "chart/appliance-registry-2.1.11.tgz", "digest": "sha256:artifact-server-chart", "sizeBytes": 9},
     "dnsImage": {"path": "images/coredns-image.tar", "digest": "sha256:dns-archive", "sizeBytes": 512, "imageReference": "registry.local/coredns@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
     "dnsChart": {"path": "chart/appliance-dns-1.14.4.tgz", "digest": "sha256:dns-chart", "sizeBytes": 11},
+    "inferenceRuntimeImage": {"path": "images/inference-runtime-image.tar", "digest": "sha256:inference-archive", "sizeBytes": 512, "imageReference": "registry.local/inference-runtime@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+    "inferenceChart": {"path": "chart/appliance-inference-0.6.5.tgz", "digest": "sha256:inference-chart", "sizeBytes": 15},
     "metadataBundle": {"path": "artifacts/appliance-metadata-bundle-1.0.0.0.tar.zst", "digest": "sha256:policy", "sizeBytes": 6},
     "configurationSchema": {"path": "schemas/configuration.schema.json", "digest": "sha256:configuration", "sizeBytes": 2},
     "compatibility": {"path": "compatibility.json", "digest": "sha256:compatibility", "sizeBytes": 2},
@@ -128,7 +137,7 @@ ingress:
       {"path": "images/buildah.tar", "digest": "sha256:buildah", "sizeBytes": 6, "imageReference": "registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
     ]
   },
-  "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "artifactServerVersion": "2.1.11", "dnsVersion": "1.14.4"}
+  "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "artifactServerVersion": "2.1.11", "dnsVersion": "1.14.4", "inferenceVersion": "0.6.5"}
 }
 """.lstrip(),
     )
@@ -144,7 +153,7 @@ ingress:
         tmp / "bundle" / "release-manifest.json",
         """
 {
-  "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "artifactServerVersion": "2.1.11", "dnsVersion": "1.14.4"},
+  "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "artifactServerVersion": "2.1.11", "dnsVersion": "1.14.4", "inferenceVersion": "0.6.5"},
   "entries": [
     {"targetPath": "oci-images/control-plane.tar", "digest": "sha256:control", "sizeBytes": 7, "imageReference": "internal/control-plane:1.0.0"},
     {"targetPath": "oci-images/appliance-ui.tar", "digest": "sha256:ui", "sizeBytes": 2, "imageReference": "internal/appliance-ui:1.0.0"},
@@ -155,6 +164,8 @@ ingress:
     {"targetPath": "charts/appliance-registry-2.1.11.tgz", "digest": "sha256:artifact-server-chart", "sizeBytes": 9},
     {"targetPath": "oci-images/coredns-image.tar", "digest": "sha256:dns-archive", "sizeBytes": 512, "imageReference": "registry.local/coredns@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
     {"targetPath": "charts/appliance-dns-1.14.4.tgz", "digest": "sha256:dns-chart", "sizeBytes": 11},
+    {"targetPath": "oci-images/inference-runtime-image.tar", "digest": "sha256:inference-archive", "sizeBytes": 512, "imageReference": "registry.local/inference-runtime@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+    {"targetPath": "charts/appliance-inference-0.6.5.tgz", "digest": "sha256:inference-chart", "sizeBytes": 15},
     {"targetPath": "artifacts/appliance-metadata-bundle-1.0.0.0.tar.zst", "digest": "sha256:policy", "sizeBytes": 6},
     {"targetPath": "configuration/values.yaml", "digest": "sha256:values", "sizeBytes": 200},
     {"targetPath": "charts/argo-workflows-1.0.0.tgz", "digest": "sha256:chart", "sizeBytes": 5},
@@ -543,6 +554,29 @@ def test_rejects_dns_annotation_and_version_mismatch() -> None:
             raise AssertionError(result.stderr or "wrong dns version accepted")
 
 
+def test_rejects_inference_annotation_and_version_mismatch() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        write_mismatched_oci_archive(
+            tmp / "release-input" / "images" / "inference-runtime-image.tar",
+            "registry.local/inference-runtime:wrong",
+            "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        )
+        result = run_validator(tmp)
+        if result.returncode == 0 or "annotation must be" not in result.stderr:
+            raise AssertionError(result.stderr or "wrong inference annotation accepted")
+
+        populate_positive_case(tmp)
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["compatibility"]["inferenceVersion"] = "0.6.6"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = run_validator(tmp)
+        if result.returncode == 0 or "inferenceVersion mismatch" not in result.stderr:
+            raise AssertionError(result.stderr or "wrong inference version accepted")
+
+
 def test_rejects_legacy_zot_image_path_name() -> None:
     """Hard-cut rename: plain "zot" basenames are no longer accepted."""
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
@@ -602,6 +636,7 @@ def main() -> None:
     test_accepts_dot_slash_prefixed_dns_oci_archive()
     test_rejects_artifact_server_annotation_and_version_mismatch()
     test_rejects_dns_annotation_and_version_mismatch()
+    test_rejects_inference_annotation_and_version_mismatch()
     test_rejects_legacy_zot_image_path_name()
     test_rejects_unidentified_artifact_server_image_path()
     test_rejects_missing_ui_bundle_entry()

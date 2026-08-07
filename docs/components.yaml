@@ -88,6 +88,21 @@ components:
       - release_input: artifacts.dnsChart / compatibility.dnsVersion
     depends_on: [coredns-image]
 
+  - id: inference-runtime-image
+    owner: appliance-code / appliance-release
+    recipe: scripts/package/export-inference-runtime-image-archive.sh
+    outputs:
+      - release_input: artifacts.inferenceRuntimeImage
+      - reference: registry.local/inference-runtime@sha256:...
+    depends_on: []
+
+  - id: appliance-inference-chart
+    owner: appliance-code
+    recipe: archive-release-input
+    outputs:
+      - release_input: artifacts.inferenceChart / compatibility.inferenceVersion
+    depends_on: [inference-runtime-image]
+
   - id: workflows
     owner: appliance-code / appliance-release
     recipe: chart package + fetch CRDs + controller/executor OCI export
@@ -136,6 +151,8 @@ components:
       - registry-chart
       - coredns-image
       - dns-chart
+      - inference-runtime-image
+      - appliance-inference-chart
       - workflows
       - workspace-provisioner
       - dev-build

@@ -96,6 +96,10 @@ Optional overrides:
   DNS_IMAGE_PULL_REF=registry.k8s.io/coredns/coredns:v1.14.4
   # DNS server: always wrap upstream CoreDNS via appliance-code package-dns-server-image-archive
   # (dev-run has buildah+skopeo); digest from index.json.
+  INFERENCE_VERSION=0.6.5
+  INFERENCE_IMAGE_PULL_REF=ollama/ollama:0.6.5
+  # Inference runtime: always re-export via appliance-code
+  # package-inference-runtime-image-archive; digest from index.json.
 EOF
 }
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -126,6 +130,8 @@ USER_ARTIFACT_SERVER_VERSION="${ARTIFACT_SERVER_VERSION-}"
 USER_ARTIFACT_SERVER_SOURCE_IMAGE="${ARTIFACT_SERVER_SOURCE_IMAGE-}"
 USER_DNS_VERSION="${DNS_VERSION-}"
 USER_DNS_IMAGE_PULL_REF="${DNS_IMAGE_PULL_REF-}"
+USER_INFERENCE_VERSION="${INFERENCE_VERSION-}"
+USER_INFERENCE_IMAGE_PULL_REF="${INFERENCE_IMAGE_PULL_REF-}"
 USER_DEV_REGISTRY="${DEV_REGISTRY-}"
 USER_DEV_IMAGE_REPO="${DEV_IMAGE_REPO-}"
 USER_DEV_IMAGE_NAME="${DEV_IMAGE_NAME-}"
@@ -253,6 +259,11 @@ ARTIFACT_SERVER_SOURCE_IMAGE="${USER_ARTIFACT_SERVER_SOURCE_IMAGE:-${ARTIFACT_SE
 DNS_VERSION="${USER_DNS_VERSION:-${DNS_VERSION:-1.14.4}}"
 DNS_VERSION="${DNS_VERSION#v}"
 DNS_IMAGE_PULL_REF="${USER_DNS_IMAGE_PULL_REF:-${DNS_IMAGE_PULL_REF:-registry.k8s.io/coredns/coredns:v${DNS_VERSION}}}"
+# compatibility.inferenceVersion is unprefixed (0.6.5). Chart appVersion and
+# the upstream ollama/ollama tag are unprefixed as well.
+INFERENCE_VERSION="${USER_INFERENCE_VERSION:-${INFERENCE_VERSION:-0.6.5}}"
+INFERENCE_VERSION="${INFERENCE_VERSION#v}"
+INFERENCE_IMAGE_PULL_REF="${USER_INFERENCE_IMAGE_PULL_REF:-${INFERENCE_IMAGE_PULL_REF:-ollama/ollama:${INFERENCE_VERSION}}}"
 
 # The workflows engine is a mandatory component of the complete product
 # super-set (ADR 0011). BUILD_COMPLETE_PRODUCT defaults true and forces WORKFLOWS_ENABLED.
@@ -1516,6 +1527,14 @@ if [[ "${DNS_IMAGE_PULL_REF}" == *:latest || "${DNS_IMAGE_PULL_REF}" == registry
   echo "build-full-bundle: DNS_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
   exit 2
 fi
+if [[ -z "${INFERENCE_VERSION}" || "${INFERENCE_VERSION}" == *latest* ]]; then
+  echo "build-full-bundle: INFERENCE_VERSION must be an exact non-latest version" >&2
+  exit 2
+fi
+if [[ "${INFERENCE_IMAGE_PULL_REF}" == *:latest || "${INFERENCE_IMAGE_PULL_REF}" == registry.local/* ]]; then
+  echo "build-full-bundle: INFERENCE_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
+  exit 2
+fi
 if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner || "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner@sha256:* ]]; then
   echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be an upstream or LAN build-cache pull ref (default docker.io/alpine/git:2.49.0); got ${WORKSPACE_PROVISIONER_IMAGE_REF}" >&2
   exit 2
@@ -1544,6 +1563,13 @@ DNS_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,
 # Chart.yaml may use Helm/upstream form v1.14.4 while DNS_VERSION is 1.14.4.
 if [[ -z "${DNS_CHART_APP_VERSION}" || "${DNS_CHART_APP_VERSION#v}" != "${DNS_VERSION}" ]]; then
   echo "build-full-bundle: DNS_VERSION ${DNS_VERSION} must match appliance-dns chart appVersion ${DNS_CHART_APP_VERSION:-<missing>}" >&2
+  exit 2
+fi
+
+INFERENCE_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-inference/Chart.yaml")"
+# Chart.yaml may use Helm/upstream form v0.6.5 while INFERENCE_VERSION is 0.6.5.
+if [[ -z "${INFERENCE_CHART_APP_VERSION}" || "${INFERENCE_CHART_APP_VERSION#v}" != "${INFERENCE_VERSION}" ]]; then
+  echo "build-full-bundle: INFERENCE_VERSION ${INFERENCE_VERSION} must match appliance-inference chart appVersion ${INFERENCE_CHART_APP_VERSION:-<missing>}" >&2
   exit 2
 fi
 
@@ -1658,6 +1684,9 @@ ARTIFACT_SERVER_IMAGE_REF=""
 DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/dns-server-image.tar"
 DNS_IMAGE_REF=""
 
+INFERENCE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/inference-runtime-image.tar"
+INFERENCE_IMAGE_REF=""
+
 WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:2.49.0}"
 WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
 WORKSPACE_PROVISIONER_IMAGE_REF="$(export_bundled_oci_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "registry.local/workspace-provisioner" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
@@ -1749,6 +1778,14 @@ make package-dns-server-image-archive \
 DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/dns-server-image.tar"
 DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/dns-server-image.reference)"
 
+# Appliance inference runtime (upstream Ollama-compatible image re-export).
+make package-inference-runtime-image-archive \
+  OUT_FILE="/workspace/.run/inference-runtime-image.tar" \
+  INFERENCE_VERSION=$(shell_quote "${INFERENCE_VERSION}") \
+  INFERENCE_SOURCE_IMAGE=$(shell_quote "${INFERENCE_IMAGE_PULL_REF}")
+INFERENCE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/inference-runtime-image.tar"
+INFERENCE_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)"
+
 
 METADATA_BUNDLE_ARCHIVE_FOR_DEV="\$(bash ./scripts/package/generate-metadata-bundle.sh --software-version "\${CODE_VERSION}" --out-dir "/workspace/.run/metadata-bundle")"
 
@@ -1794,6 +1831,9 @@ bash ./scripts/package/archive-release-input.sh \
   --dns-version $(shell_quote "${DNS_VERSION}") \
   --dns-image "\${DNS_IMAGE_ARCHIVE_FOR_DEV}" \
   --dns-image-reference "\${DNS_IMAGE_REF}" \
+  --inference-version $(shell_quote "${INFERENCE_VERSION}") \
+  --inference-runtime-image "\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}" \
+  --inference-runtime-image-reference "\${INFERENCE_IMAGE_REF}" \
   --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \
   "\${WORKFLOWS_ARGS[@]}" \
   "\${BUNDLED_IMAGE_ARGS[@]}"
