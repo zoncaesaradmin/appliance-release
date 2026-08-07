@@ -91,6 +91,13 @@ TLS_CACERT=""
 
 NODE_NAME=""
 EXTRA_TLS_SANS=""
+# Optional lab LAN image-pull (K3s registries.yaml). Empty = preload-only.
+# The release skill patches host + *_ENV names and preserves credential env
+# into sudo; public operators leave these empty.
+IMAGE_PULL_REGISTRY=""
+IMAGE_PULL_USERNAME_ENV=""
+IMAGE_PULL_TOKEN_ENV=""
+IMAGE_PULL_TLS_VERIFY_ENV=""
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
 # =============================================================================
@@ -268,6 +275,23 @@ if [[ -n "${EXTRA_TLS_SANS}" ]]; then
   TLS_SANS=(${EXTRA_TLS_SANS})
 fi
 
+if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
+  require_nonempty "IMAGE_PULL_USERNAME_ENV (when IMAGE_PULL_REGISTRY is set)" "${IMAGE_PULL_USERNAME_ENV}"
+  require_nonempty "IMAGE_PULL_TOKEN_ENV (when IMAGE_PULL_REGISTRY is set)" "${IMAGE_PULL_TOKEN_ENV}"
+  if [[ -z "${!IMAGE_PULL_USERNAME_ENV}" ]]; then
+    echo "install-http-release: image pull username env ${IMAGE_PULL_USERNAME_ENV} is empty" >&2
+    exit 2
+  fi
+  if [[ -z "${!IMAGE_PULL_TOKEN_ENV}" ]]; then
+    echo "install-http-release: image pull token env ${IMAGE_PULL_TOKEN_ENV} is empty" >&2
+    exit 2
+  fi
+  if [[ -n "${IMAGE_PULL_TLS_VERIFY_ENV}" && -z "${!IMAGE_PULL_TLS_VERIFY_ENV}" ]]; then
+    echo "install-http-release: image pull TLS verify env ${IMAGE_PULL_TLS_VERIFY_ENV} is empty" >&2
+    exit 2
+  fi
+fi
+
 echo "install-http-release: using settings"
 echo "  appliance-name:    ${APPLIANCE_NAME}"
 echo "  appliance-profile: ${APPLIANCE_PROFILE}"
@@ -281,6 +305,8 @@ echo "  use-latest:        ${USE_LATEST}"
 echo "  bearer-token:      $([[ -n "${BEARER_TOKEN}" ]] && echo set || echo empty)"
 echo "  tls-insecure:      ${TLS_INSECURE}"
 echo "  tls-cacert:        ${TLS_CACERT:-empty}"
+echo "  image-pull-registry: ${IMAGE_PULL_REGISTRY:-disabled}"
+echo "  extra-tls-sans:    ${EXTRA_TLS_SANS:-none}"
 
 mkdir -p "${OUT_DIR}"
 
@@ -367,15 +393,32 @@ if ((${#TLS_SANS[@]} > 0)); then
     lifecycle_args+=(--tls-san "${tls_san}")
   done
 fi
+if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
+  lifecycle_args+=(--image-pull-registry "${IMAGE_PULL_REGISTRY}")
+  lifecycle_args+=(--image-pull-registry-username-env "${IMAGE_PULL_USERNAME_ENV}")
+  lifecycle_args+=(--image-pull-registry-token-env "${IMAGE_PULL_TOKEN_ENV}")
+  if [[ -n "${IMAGE_PULL_TLS_VERIFY_ENV}" ]]; then
+    lifecycle_args+=(--image-pull-registry-tls-verify-env "${IMAGE_PULL_TLS_VERIFY_ENV}")
+  fi
+fi
 if [[ "${DRY_RUN}" == "1" ]]; then
   lifecycle_args+=(--dry-run)
+fi
+
+zonctl_sudo=(sudo)
+if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
+  preserve_env="${IMAGE_PULL_USERNAME_ENV},${IMAGE_PULL_TOKEN_ENV}"
+  if [[ -n "${IMAGE_PULL_TLS_VERIFY_ENV}" ]]; then
+    preserve_env="${preserve_env},${IMAGE_PULL_TLS_VERIFY_ENV}"
+  fi
+  zonctl_sudo+=(--preserve-env="${preserve_env}")
 fi
 
 install_stdout="$(mktemp "${OUT_DIR}/.zonctl-install-stdout.XXXXXX")"
 install_stderr="$(mktemp "${OUT_DIR}/.zonctl-install-stderr.XXXXXX")"
 
 echo "[5/5] Installing appliance platform. This can take several minutes."
-if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" sudo "${ZONCTL}" install "${lifecycle_args[@]}"; then
+if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${ZONCTL}" install "${lifecycle_args[@]}"; then
   echo "[5/5] Appliance installation completed."
   rm -f "${install_stdout}" "${install_stderr}"
   announce_zonctl_ready

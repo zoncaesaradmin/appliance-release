@@ -49,6 +49,10 @@ install:
 
   # additional_tls_sans_csv: 192.168.1.101
   #
+  # Optional: teach target K3s/containerd to pull from the LAN registry
+  # (writes /etc/rancher/k3s/registries.yaml). Bundle preload stays primary.
+  # Applied by the public-helper install path when set. Host comes only from
+  # registry_env (no literal registry key). Export the named env vars on the Mac.
   # image_pull_registry:
   #   registry_env: DEV_REGISTRY
   #   username_env: DEV_REGISTRY_USER

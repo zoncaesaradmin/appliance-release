@@ -80,6 +80,7 @@ verify-release-artifacts:
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_bundle_store_mode.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_appliance_files_bundle_store.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_shell_quote_env.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_install_public_helper_config.py"
 
 .PHONY: verify
 verify:

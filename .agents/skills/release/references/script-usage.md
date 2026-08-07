@@ -89,10 +89,17 @@ Notes:
   `install.appliance_name`.
 - Optional `install.image_pull_registry` teaches K3s/containerd to pull from a
   private LAN registry (`registries.yaml`). Bundle preload stays primary.
+  The public-helper install path (`run-install-via-public-helper-on-target.sh`
+  → local `scripts/install-http-release.sh` scp'd to the target →
+  `zonctl install --image-pull-registry*`) applies this when set. Lab installs
+  use the local repo helper so this wiring cannot silently lag a stale
+  published copy; the signed bundle still downloads from the distributor.
   Typical shape reuses the same env names as `dev_image_pull`:
   `registry_env: DEV_REGISTRY`, `username_env: DEV_REGISTRY_USER`,
   `token_env: DEV_REGISTRY_TOKEN`, `tls_verify_env: DEV_REGISTRY_TLS_VERIFY`.
-  Do not set literal `install.image_pull_registry.registry` (rejected).
+  Export those env vars on the Mac before install. Do not set literal
+  `install.image_pull_registry.registry` (rejected). Also applied from install
+  YAML: `dns_zone`, `additional_tls_sans_csv`, and `bundle_download_dir`.
   Omit the block for preload-only.
 - Publish always uses the appliance file API on `DEV_REGISTRY`
   (`https://$DEV_REGISTRY/api/v1/files/appliance/<version>/`). Token/TLS reuse

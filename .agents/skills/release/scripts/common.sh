@@ -438,6 +438,86 @@ reject_removed_verification_argo_keys() {
   fi
 }
 
+# Literal install.image_pull_registry.registry was removed; host comes from registry_env.
+reject_removed_install_image_pull_literal_registry() {
+  local config_path="$1"
+  if [[ -n "$(config_get_optional "${config_path}" "install.image_pull_registry.registry" || true)" ]]; then
+    fail "install.image_pull_registry.registry was removed; use install.image_pull_registry.registry_env (for example DEV_REGISTRY)"
+  fi
+}
+
+# Optional K3s image-pull registry for public-helper install.
+# Sets globals (empty IMAGE_PULL_REGISTRY = disabled / preload-only):
+#   IMAGE_PULL_REGISTRY, IMAGE_PULL_USERNAME_ENV, IMAGE_PULL_TOKEN_ENV,
+#   IMAGE_PULL_TLS_VERIFY_ENV, IMAGE_PULL_USERNAME, IMAGE_PULL_TOKEN,
+#   IMAGE_PULL_TLS_VERIFY, IMAGE_PULL_PRESERVE_ENV
+resolve_install_image_pull_registry() {
+  local config_path="$1"
+  local registry_env=""
+  local username_env=""
+  local token_env=""
+  local tls_verify_env=""
+
+  reject_removed_install_image_pull_literal_registry "${config_path}"
+
+  IMAGE_PULL_REGISTRY=""
+  IMAGE_PULL_USERNAME_ENV=""
+  IMAGE_PULL_TOKEN_ENV=""
+  IMAGE_PULL_TLS_VERIFY_ENV=""
+  IMAGE_PULL_USERNAME=""
+  IMAGE_PULL_TOKEN=""
+  IMAGE_PULL_TLS_VERIFY=""
+  IMAGE_PULL_PRESERVE_ENV=""
+
+  registry_env="$(config_get_optional "${config_path}" "install.image_pull_registry.registry_env" || true)"
+  username_env="$(config_get_optional "${config_path}" "install.image_pull_registry.username_env" || true)"
+  token_env="$(config_get_optional "${config_path}" "install.image_pull_registry.token_env" || true)"
+  tls_verify_env="$(config_get_optional "${config_path}" "install.image_pull_registry.tls_verify_env" || true)"
+  registry_env="$(printf '%s' "${registry_env}" | tr -d '[:space:]')"
+  username_env="$(printf '%s' "${username_env}" | tr -d '[:space:]')"
+  token_env="$(printf '%s' "${token_env}" | tr -d '[:space:]')"
+  tls_verify_env="$(printf '%s' "${tls_verify_env}" | tr -d '[:space:]')"
+
+  if [[ -z "${registry_env}" ]]; then
+    if [[ -n "${username_env}" || -n "${token_env}" || -n "${tls_verify_env}" ]]; then
+      fail "install.image_pull_registry.registry_env is required when username_env/token_env/tls_verify_env are set"
+    fi
+    return 0
+  fi
+
+  [[ -n "${username_env}" ]] || fail "install.image_pull_registry.username_env is required when registry_env is set"
+  [[ -n "${token_env}" ]] || fail "install.image_pull_registry.token_env is required when registry_env is set"
+
+  IMAGE_PULL_REGISTRY="$(resolve_env_value "${registry_env}" "Image pull registry env")"
+  IMAGE_PULL_USERNAME="$(resolve_env_value "${username_env}" "Image pull registry username env")"
+  IMAGE_PULL_TOKEN="$(resolve_secret "${token_env}" "Image pull registry token env")"
+  IMAGE_PULL_USERNAME_ENV="${username_env}"
+  IMAGE_PULL_TOKEN_ENV="${token_env}"
+  IMAGE_PULL_PRESERVE_ENV="${username_env},${token_env}"
+  if [[ -n "${tls_verify_env}" ]]; then
+    IMAGE_PULL_TLS_VERIFY="$(resolve_env_value "${tls_verify_env}" "Image pull registry TLS verify env")"
+    IMAGE_PULL_TLS_VERIFY_ENV="${tls_verify_env}"
+    IMAGE_PULL_PRESERVE_ENV="${IMAGE_PULL_PRESERVE_ENV},${tls_verify_env}"
+  fi
+}
+
+# Space-separated EXTRA_TLS_SANS from install.additional_tls_sans_csv (empty OK).
+resolve_install_extra_tls_sans() {
+  local config_path="$1"
+  local csv=""
+  local -a items=()
+  local item=""
+  EXTRA_TLS_SANS=""
+  csv="$(config_get_optional "${config_path}" "install.additional_tls_sans_csv" || true)"
+  while IFS= read -r item; do
+    [[ -n "${item}" ]] || continue
+    items+=("${item}")
+  done < <(csv_items_trimmed "${csv}")
+  if ((${#items[@]} > 0)); then
+    EXTRA_TLS_SANS="${items[*]}"
+  fi
+}
+
 product_control_plane_namespace() {
   printf '%s\n' "${PRODUCT_CONTROL_PLANE_NAMESPACE}"
 }

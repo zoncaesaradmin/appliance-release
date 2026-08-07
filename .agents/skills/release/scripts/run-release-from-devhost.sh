@@ -85,6 +85,7 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
   # Fail closed before install if operator still supplies product-fixed keys.
   reject_removed_install_control_plane_identity_keys "${INSTALL_CONFIG}"
   reject_removed_verification_argo_keys "${INSTALL_CONFIG}"
+  reject_removed_install_image_pull_literal_registry "${INSTALL_CONFIG}"
 fi
 
 RUN_DIR="$(config_get_optional "${DEVHOST_CONFIG}" "report.run_dir" || true)"

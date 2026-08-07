@@ -3,9 +3,14 @@
 #
 # Builds the full curl URL and auth flags on *this* machine (using config +
 # devhost DEV_* env), SSHs to the target, runs a clean uninstall when zonctl
-# is already present, downloads install-http-release.sh, patches stamped
-# settings if needed, and runs:
+# is already present, scp's the local scripts/install-http-release.sh, patches
+# stamped settings + optional lab install knobs (dns_zone, TLS SANs, image-pull
+# registry, out dir), and runs:
 #   install-http-release.sh --appliance-name … --appliance-profile …
+#
+# Bundle/charts/images still download from the distributor; only the helper
+# script itself comes from the local release checkout so lab wiring cannot
+# silently lag a stale published copy.
 #
 # Lab policy: always uninstall then fresh install (no in-place upgrade).
 # Target needs no permanent env. Sudo for zonctl is non-interactive: Mac
@@ -24,10 +29,14 @@ usage: run-install-via-public-helper-on-target.sh \
   --build-publish-config PATH \
   --install-config PATH
 
-Devhost builds curl + name/profile; target uninstalls any owned appliance
-(when zonctl is present), then fetches and runs the public install helper.
+Devhost builds curl + name/profile + optional install.image_pull_registry /
+dns_zone / additional_tls_sans_csv / bundle_download_dir; target uninstalls
+any owned appliance (when zonctl is present), then fetches and runs the
+public install helper.
 
 Export APPLIANCE_TARGET_SUDO_PASSWORD on the Mac (same as other install paths).
+When install.image_pull_registry is set, also export the named DEV_REGISTRY*
+credential env vars.
 EOF
 }
 
@@ -96,6 +105,19 @@ if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="core"
 fi
 
+DNS_ZONE="$(config_get_optional "${INSTALL_CONFIG}" "install.dns_zone" || true)"
+DNS_ZONE="$(printf '%s' "${DNS_ZONE}" | tr -d '[:space:]')"
+[[ -n "${DNS_ZONE}" ]] || fail "install.dns_zone is required in install config"
+
+resolve_install_extra_tls_sans "${INSTALL_CONFIG}"
+resolve_install_image_pull_registry "${INSTALL_CONFIG}"
+
+OUT_DIR="$(config_get_optional "${INSTALL_CONFIG}" "install.bundle_download_dir" || true)"
+OUT_DIR="$(printf '%s' "${OUT_DIR}" | tr -d '[:space:]')"
+if [[ -z "${OUT_DIR}" ]]; then
+  OUT_DIR="/tmp/appliance-${RELEASE_VERSION}"
+fi
+
 BASE_URL=""
 BEARER_TOKEN=""
 TLS_INSECURE="0"
@@ -118,6 +140,8 @@ esac
 
 HELPER_URL="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-http-release.sh"
 SCRIPT_PATH="/tmp/install-http-release-${RELEASE_VERSION}.sh"
+LOCAL_HELPER="$(skill_release_repo_root "${SCRIPT_DIR}")/scripts/install-http-release.sh"
+[[ -f "${LOCAL_HELPER}" ]] || fail "local install helper missing: ${LOCAL_HELPER}"
 
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"
@@ -126,25 +150,40 @@ ensure_release_run_dirs "${RUN_DIR}"
 install_log="${RUN_DIR}/logs/target-public-install.log"
 
 log "target-host=${TARGET_HOST}"
-log "helper-url=${HELPER_URL}"
-log "appliance-name=${APPLIANCE_NAME} profile=${APPLIANCE_PROFILE}"
+log "helper-url=${HELPER_URL} (bundle artifacts); lab uses local helper ${LOCAL_HELPER}"
+log "appliance-name=${APPLIANCE_NAME} profile=${APPLIANCE_PROFILE} dns-zone=${DNS_ZONE}"
+if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
+  log "image-pull-registry=${IMAGE_PULL_REGISTRY}"
+fi
+if [[ -n "${EXTRA_TLS_SANS}" ]]; then
+  log "extra-tls-sans=${EXTRA_TLS_SANS}"
+fi
 
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 quoted_sudo_password="$(shell_quote "${target_sudo_password}")"
 
 # Fully concrete remote command: no permanent target env; sudo auth from this job only.
-curl_extra=""
-if [[ -n "${BEARER_TOKEN}" ]]; then
-  curl_extra+=" -H $(shell_quote "Authorization: Bearer ${BEARER_TOKEN}")"
+image_pull_exports=""
+sudo_preserve=""
+if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
+  # Env *names* must be bare identifiers; only values are shell-quoted.
+  image_pull_exports+="${IMAGE_PULL_USERNAME_ENV}=$(shell_quote "${IMAGE_PULL_USERNAME}") export ${IMAGE_PULL_USERNAME_ENV}; "
+  image_pull_exports+="${IMAGE_PULL_TOKEN_ENV}=$(shell_quote "${IMAGE_PULL_TOKEN}") export ${IMAGE_PULL_TOKEN_ENV}; "
+  if [[ -n "${IMAGE_PULL_TLS_VERIFY_ENV}" ]]; then
+    image_pull_exports+="${IMAGE_PULL_TLS_VERIFY_ENV}=$(shell_quote "${IMAGE_PULL_TLS_VERIFY}") export ${IMAGE_PULL_TLS_VERIFY_ENV}; "
+  fi
+  sudo_preserve=" --preserve-env=$(shell_quote "${IMAGE_PULL_PRESERVE_ENV}")"
 fi
-if [[ "${TLS_INSECURE}" == "1" ]]; then
-  curl_extra+=" -k"
-fi
+
+log "uploading local install helper to ${TARGET_HOST}:${SCRIPT_PATH}"
+scp -q "${LOCAL_HELPER}" "${TARGET_HOST}:${SCRIPT_PATH}"
 
 # Lab policy: clean uninstall then fresh public install (no in-place upgrade).
 # Nested sudo under one non-interactive sudo so zonctl does not wait on a TTY.
+# Lab installs use the local repo helper (scp above) so skill-side wiring
+# (image-pull, dns_zone, TLS SANs) cannot silently lag a stale published copy.
+# Bundle/charts/images still download from HELPER_URL's distributor base.
 remote_cmd="set -euo pipefail
-helper_url=$(shell_quote "${HELPER_URL}")
 script_path=$(shell_quote "${SCRIPT_PATH}")
 base_url=$(shell_quote "${BASE_URL}")
 bearer=$(shell_quote "${BEARER_TOKEN}")
@@ -153,6 +192,14 @@ version=$(shell_quote "${RELEASE_VERSION}")
 prefix=$(shell_quote "${PATH_PREFIX}")
 name=$(shell_quote "${APPLIANCE_NAME}")
 profile=$(shell_quote "${APPLIANCE_PROFILE}")
+dns_zone=$(shell_quote "${DNS_ZONE}")
+extra_tls_sans=$(shell_quote "${EXTRA_TLS_SANS}")
+out_dir=$(shell_quote "${OUT_DIR}")
+image_pull_registry=$(shell_quote "${IMAGE_PULL_REGISTRY}")
+image_pull_username_env=$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")
+image_pull_token_env=$(shell_quote "${IMAGE_PULL_TOKEN_ENV}")
+image_pull_tls_verify_env=$(shell_quote "${IMAGE_PULL_TLS_VERIFY_ENV}")
+${image_pull_exports}
 
 if command -v zonctl >/dev/null 2>&1; then
   echo \"uninstalling existing appliance before reinstall (lab clean install)\"
@@ -164,17 +211,29 @@ else
   echo \"no zonctl on target; skipping uninstall (fresh host)\"
 fi
 
-echo \"downloading \${helper_url}\"
-curl -fsSL -o \"\${script_path}\"${curl_extra} \"\${helper_url}\"
 chmod +x \"\${script_path}\"
 
-python3 - \"\${script_path}\" \"\${base_url}\" \"\${bearer}\" \"\${tls_insecure}\" \"\${version}\" \"\${prefix}\" <<'PY'
+python3 - \"\${script_path}\" \"\${base_url}\" \"\${bearer}\" \"\${tls_insecure}\" \"\${version}\" \"\${prefix}\" \"\${dns_zone}\" \"\${extra_tls_sans}\" \"\${out_dir}\" \"\${image_pull_registry}\" \"\${image_pull_username_env}\" \"\${image_pull_token_env}\" \"\${image_pull_tls_verify_env}\" <<'PY'
 from pathlib import Path
 import json
 import re
 import sys
 
-path, base_url, bearer, tls_insecure, version, prefix = sys.argv[1:7]
+(
+    path,
+    base_url,
+    bearer,
+    tls_insecure,
+    version,
+    prefix,
+    dns_zone,
+    extra_tls_sans,
+    out_dir,
+    image_pull_registry,
+    image_pull_username_env,
+    image_pull_token_env,
+    image_pull_tls_verify_env,
+) = sys.argv[1:14]
 text = Path(path).read_text(encoding=\"utf-8\")
 
 def set_assign(text, name, value):
@@ -192,11 +251,18 @@ text = set_assign(text, \"PATH_PREFIX_EMBEDDED\", prefix)
 text = set_assign(text, \"PATH_PREFIX\", prefix)
 text = set_assign(text, \"BEARER_TOKEN\", bearer)
 text = set_assign(text, \"TLS_INSECURE\", tls_insecure)
+text = set_assign(text, \"DNS_ZONE\", dns_zone)
+text = set_assign(text, \"EXTRA_TLS_SANS\", extra_tls_sans)
+text = set_assign(text, \"OUT_DIR\", out_dir)
+text = set_assign(text, \"IMAGE_PULL_REGISTRY\", image_pull_registry)
+text = set_assign(text, \"IMAGE_PULL_USERNAME_ENV\", image_pull_username_env)
+text = set_assign(text, \"IMAGE_PULL_TOKEN_ENV\", image_pull_token_env)
+text = set_assign(text, \"IMAGE_PULL_TLS_VERIFY_ENV\", image_pull_tls_verify_env)
 Path(path).write_text(text, encoding=\"utf-8\")
 PY
 
 echo \"running install-http-release.sh --appliance-name \${name} --appliance-profile \${profile} (via non-interactive sudo)\"
-printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' bash \"\${script_path}\" --appliance-name \"\${name}\" --appliance-profile \"\${profile}\"
+printf '%s\\n' ${quoted_sudo_password} | sudo -S -p ''${sudo_preserve} bash \"\${script_path}\" --appliance-name \"\${name}\" --appliance-profile \"\${profile}\"
 "
 
 log "running public install helper on ${TARGET_HOST}"
@@ -213,8 +279,12 @@ python3 - "${RUN_DIR}/metadata/install.json" \
   "${BASE_URL}" \
   "${PATH_PREFIX}" \
   "$(default_appliance_state_dir)" \
+  "${OUT_DIR}" \
   "${APPLIANCE_PROFILE}" \
   "${APPLIANCE_NAME}" \
+  "${DNS_ZONE}" \
+  "${IMAGE_PULL_REGISTRY}" \
+  "${EXTRA_TLS_SANS}" \
   "${install_log}" <<'PY'
 import json
 import sys
@@ -230,10 +300,14 @@ from pathlib import Path
     base_url,
     path_prefix,
     state_dir,
+    out_dir,
     appliance_profile,
     appliance_name,
+    dns_zone,
+    image_pull_registry,
+    extra_tls_sans,
     install_log,
-) = sys.argv[1:13]
+) = sys.argv[1:17]
 
 payload = {
     "configPath": config_path,
@@ -244,10 +318,13 @@ payload = {
     "baseUrl": base_url or None,
     "pathPrefix": path_prefix,
     "stateDir": state_dir,
-    "outDir": f"/tmp/appliance-{release_version}",
-    "bundleDir": f"/tmp/appliance-{release_version}/appliance-{release_version}-bundle",
+    "outDir": out_dir,
+    "bundleDir": f"{out_dir.rstrip('/')}/appliance-{release_version}-bundle",
     "applianceProfile": appliance_profile,
     "applianceName": appliance_name,
+    "dnsZone": dns_zone,
+    "imagePullRegistry": image_pull_registry or None,
+    "extraTlsSans": extra_tls_sans or None,
     "installMode": "public-helper",
     "log": install_log,
     "status": "passed",
