@@ -91,7 +91,14 @@ require_cmd scp
 require_cmd python3
 
 if [[ -z "${RUN_DIR}" ]]; then
+  prune_appliance_release_run_root "$(default_release_run_root)" "" "fresh build/publish"
   RUN_DIR="$(default_release_run_dir)"
+else
+  _run_root="$(appliance_release_run_root_from_run_dir "${RUN_DIR}" || true)"
+  if [[ -n "${_run_root}" ]]; then
+    # Parent may already have created this run dir; drop only older siblings.
+    prune_appliance_release_run_root "${_run_root}" "${RUN_DIR}" "fresh build/publish"
+  fi
 fi
 ensure_release_run_dirs "${RUN_DIR}"
 
@@ -129,6 +136,19 @@ worker_log="${RUN_DIR}/logs/build-and-publish-remote.log"
 
 REMOTE_HOME="$(ssh -q -T "${BUILD_HOST}" 'printf %s "$HOME"')"
 [[ -n "${REMOTE_HOME}" ]] || fail "could not resolve remote HOME on ${BUILD_HOST}"
+
+# Build-host SSH sessions typically start in $HOME, so build-and-publish.sh
+# parks multi-GB validation copies under $HOME/.run/appliance-release. Clear
+# that tree before every fresh build so prior runs cannot fill the disk.
+remote_run_root="${REMOTE_HOME}/.run/appliance-release"
+if [[ -n "${REMOTE_RUN_DIR}" ]]; then
+  _remote_from_override="$(appliance_release_run_root_from_run_dir "${REMOTE_RUN_DIR}" || true)"
+  if [[ -n "${_remote_from_override}" ]]; then
+    remote_run_root="${_remote_from_override}"
+  fi
+fi
+log "pruning remote release run artifacts on ${BUILD_HOST}:${remote_run_root}"
+ssh -q -T "${BUILD_HOST}" "rm -rf $(shell_quote "${remote_run_root}")"
 
 if [[ -z "${REMOTE_CONFIG_PATH}" ]]; then
   REMOTE_CONFIG_PATH="${REMOTE_HOME}/.config/appliance-release/build-publish.yaml"

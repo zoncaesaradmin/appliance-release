@@ -325,6 +325,39 @@ def test_release_run_dir_helpers() -> None:
         assert result.returncode == 0, result.stderr
 
 
+def test_prune_appliance_release_run_root() -> None:
+    with tempfile.TemporaryDirectory(prefix="run-dir-prune-") as tmp:
+        root = Path(tmp) / ".run" / "appliance-release"
+        old = root / "20260101T000000Z"
+        keep = root / "20260102T000000Z"
+        old.mkdir(parents=True)
+        keep.mkdir(parents=True)
+        (old / "artifacts").mkdir()
+        (old / "artifacts" / "big.tar").write_bytes(b"x" * 16)
+        (keep / "logs").mkdir()
+        result = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                (
+                    f'source "{COMMON_SH}"; '
+                    f'root="$(appliance_release_run_root_from_run_dir "{keep}")"; '
+                    f'[[ "${{root}}" == "{root}" ]]; '
+                    f'prune_appliance_release_run_root "{root}" "{keep}" "test"; '
+                    f'[[ ! -e "{old}" ]]; '
+                    f'[[ -d "{keep}/logs" ]]; '
+                    f'if (prune_appliance_release_run_root "{tmp}/not-appliance-release" "" "test"); then exit 1; fi'
+                ),
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert not old.exists()
+        assert keep.is_dir()
+
+
 def test_require_appliance_profile_helper() -> None:
     with tempfile.TemporaryDirectory(prefix="appliance-profile-helper-") as tmp:
         config = Path(tmp) / "appliance-release.config.yaml"

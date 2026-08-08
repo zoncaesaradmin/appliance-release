@@ -155,6 +155,63 @@ default_release_run_dir() {
   printf '%s/.run/appliance-release/%s\n' "${PWD}" "$(date -u +%Y%m%dT%H%M%SZ)"
 }
 
+default_release_run_root() {
+  printf '%s/.run/appliance-release\n' "${PWD}"
+}
+
+# Return the .../.run/appliance-release root for a run dir, or empty if the path
+# is not under that fixed layout (refuse to rm -rf arbitrary trees).
+appliance_release_run_root_from_run_dir() {
+  local run_dir="${1:-}"
+  [[ -n "${run_dir}" ]] || return 0
+  local resolved
+  resolved="$(cd "$(dirname "${run_dir}")" 2>/dev/null && pwd)/$(basename "${run_dir}")" || resolved="${run_dir}"
+  case "${resolved}" in
+    */.run/appliance-release)
+      printf '%s\n' "${resolved}"
+      ;;
+    */.run/appliance-release/*)
+      printf '%s\n' "${resolved%/.run/appliance-release/*}/.run/appliance-release"
+      ;;
+  esac
+}
+
+# Delete prior skill run artifacts under .../.run/appliance-release.
+# Optional keep_run_dir is preserved (used when a parent already created this run).
+prune_appliance_release_run_root() {
+  local root="${1:-}"
+  local keep_run_dir="${2:-}"
+  local reason="${3:-fresh build}"
+  [[ -n "${root}" ]] || return 0
+  case "${root}" in
+    */.run/appliance-release) ;;
+    *)
+      fail "refusing to prune unexpected release run root: ${root}"
+      ;;
+  esac
+  if [[ ! -d "${root}" ]]; then
+    return 0
+  fi
+  local keep_resolved=""
+  if [[ -n "${keep_run_dir}" && -e "${keep_run_dir}" ]]; then
+    keep_resolved="$(cd "${keep_run_dir}" && pwd)"
+  fi
+  log "pruning prior release run artifacts under ${root} (${reason})"
+  local child child_resolved
+  shopt -s nullglob
+  for child in "${root}"/*; do
+    [[ -e "${child}" ]] || continue
+    if [[ -n "${keep_resolved}" ]]; then
+      child_resolved="$(cd "${child}" && pwd)"
+      if [[ "${child_resolved}" == "${keep_resolved}" ]]; then
+        continue
+      fi
+    fi
+    rm -rf "${child}"
+  done
+  shopt -u nullglob
+}
+
 ensure_release_run_dirs() {
   local run_dir="$1"
   shift

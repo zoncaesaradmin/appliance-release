@@ -183,6 +183,11 @@ can later use separate configs without rewriting the orchestrator.
   `.run/appliance-release/<timestamp>/metadata/release-report.json` and
   `.run/appliance-release/<timestamp>/release-report.md`
 
+At the start of every fresh build/publish, the skill prunes prior directories under
+`.run/appliance-release` on the Mac (cwd) and `$HOME/.run/appliance-release` on
+the build host so multi-GB validation copies from earlier runs cannot fill the
+disk. The current run directory is created after that prune.
+
 The wrapper writes the release-flow metadata and report on success and also
 best-effort on phase failure, so failed runs should still leave a useful
 handoff report in the run directory.

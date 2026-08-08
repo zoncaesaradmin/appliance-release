@@ -89,6 +89,19 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
 fi
 
 RUN_DIR="$(config_get_optional "${DEVHOST_CONFIG}" "report.run_dir" || true)"
+# Full build/publish leaves multi-GB OCI copies under .run/appliance-release.
+# Wipe prior runs before creating this run's directory so disk does not grow
+# across retries (build host HOME/.run is cleaned separately over SSH).
+if [[ -n "${BUILD_PUBLISH_CONFIG}" ]]; then
+  if [[ -n "${RUN_DIR}" ]]; then
+    _run_root="$(appliance_release_run_root_from_run_dir "${RUN_DIR}" || true)"
+    if [[ -n "${_run_root}" ]]; then
+      prune_appliance_release_run_root "${_run_root}" "" "fresh build/publish"
+    fi
+  else
+    prune_appliance_release_run_root "$(default_release_run_root)" "" "fresh build/publish"
+  fi
+fi
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"
 fi

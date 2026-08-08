@@ -79,7 +79,13 @@ readonly BUILDER_LOCAL_REF="registry.local/dev-build"
 readonly WORKSPACE_PROVISIONER_LOCAL_REF="registry.local/workspace-provisioner"
 
 if [[ -z "${RUN_DIR}" ]]; then
+  prune_appliance_release_run_root "$(default_release_run_root)" "" "fresh build/publish"
   RUN_DIR="$(default_release_run_dir)"
+else
+  _run_root="$(appliance_release_run_root_from_run_dir "${RUN_DIR}" || true)"
+  if [[ -n "${_run_root}" ]]; then
+    prune_appliance_release_run_root "${_run_root}" "${RUN_DIR}" "fresh build/publish"
+  fi
 fi
 ensure_release_run_dirs "${RUN_DIR}" "artifacts"
 
