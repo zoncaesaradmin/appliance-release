@@ -135,6 +135,9 @@ PATH_PREFIX="${PUBLISH_PATH_PREFIX}"
 RELEASE_WORK_ROOT="$(cd "$(dirname "${RELEASE_WORK_ROOT}")" && pwd)/$(basename "${RELEASE_WORK_ROOT}")"
 EXPORT_DIR="${RELEASE_WORK_ROOT}/export"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-bundle.tar.gz"
+DEVELOPER_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-developer.tar.gz"
+INFERENCE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-inference.tar.gz"
+RELEASE_INDEX="${EXPORT_DIR}/release-index.yaml"
 PUBLIC_KEY_FILE="${EXPORT_DIR}/release-signing.pub"
 CHECKSUM_FILE="${EXPORT_DIR}/sha256sum.txt"
 INSTALL_HELPER_HTTP="${SCRIPT_DIR}/install-http-release.sh"
@@ -146,18 +149,28 @@ if [[ ! -d "${EXPORT_DIR}" ]]; then
 fi
 
 require_file "${BUNDLE_ARCHIVE}" "bundle archive"
+require_file "${DEVELOPER_ARCHIVE}" "developer pack archive"
+require_file "${INFERENCE_ARCHIVE}" "inference pack archive"
+require_file "${RELEASE_INDEX}" "release index"
 require_file "${PUBLIC_KEY_FILE}" "release signing public key"
 require_file "${INSTALL_HELPER_HTTP}" "HTTP install helper script"
 
+CHECKSUM_TARGETS=(
+  "$(basename "${BUNDLE_ARCHIVE}")"
+  "$(basename "${DEVELOPER_ARCHIVE}")"
+  "$(basename "${INFERENCE_ARCHIVE}")"
+  "$(basename "${RELEASE_INDEX}")"
+  "$(basename "${PUBLIC_KEY_FILE}")"
+)
 if command -v shasum >/dev/null 2>&1; then
   (
     cd "${EXPORT_DIR}"
-    shasum -a 256 "$(basename "${BUNDLE_ARCHIVE}")" "$(basename "${PUBLIC_KEY_FILE}")"
+    shasum -a 256 "${CHECKSUM_TARGETS[@]}"
   ) > "${CHECKSUM_FILE}"
 else
   (
     cd "${EXPORT_DIR}"
-    sha256sum "$(basename "${BUNDLE_ARCHIVE}")" "$(basename "${PUBLIC_KEY_FILE}")"
+    sha256sum "${CHECKSUM_TARGETS[@]}"
   ) > "${CHECKSUM_FILE}"
 fi
 
@@ -249,6 +262,9 @@ PUBLISHED_INSTALL_HELPER="${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
 stamp_helper "${INSTALL_HELPER_HTTP}" "${PUBLISHED_INSTALL_HELPER}"
 RELEASE_FILE_PAYLOADS=(
   "${BUNDLE_ARCHIVE}"
+  "${DEVELOPER_ARCHIVE}"
+  "${INFERENCE_ARCHIVE}"
+  "${RELEASE_INDEX}"
   "${PUBLIC_KEY_FILE}"
   "${CHECKSUM_FILE}"
 )

@@ -76,6 +76,7 @@ readonly BOOTSTRAP_CMD="bash scripts/bootstrap-build-host.sh"
 readonly BUILD_CMD="bash scripts/build-full-bundle.sh"
 readonly PUBLISH_CMD="bash scripts/publish-release.sh"
 readonly BUILDER_LOCAL_REF="registry.local/dev-build"
+readonly WORKSPACE_PROVISIONER_LOCAL_REF="registry.local/workspace-provisioner"
 
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"
@@ -375,7 +376,7 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
     --release-input-root "${RUN_DIR}/artifacts/release-input" \
     --bundle-root "${RUN_DIR}/artifacts/bundle" \
     --require-workflows \
-    --expected-extra-oci-image-refs "${BUILDER_LOCAL_REF}" \
+    --expected-extra-oci-image-refs "${WORKSPACE_PROVISIONER_LOCAL_REF}" \
     >"${RUN_DIR}/logs/release-artifact-validation.json"
 else
   fail "missing release-input or bundle artifacts for validation under ${RUN_DIR}/artifacts"

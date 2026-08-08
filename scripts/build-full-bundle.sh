@@ -74,17 +74,17 @@ Optional overrides:
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
   # Host packages: always export-host-packages for mdns + wifi-ap under OS_VERSION
   # (ubuntu/<version>/amd64/*.deb). Install stages debs; enablement is day-2 only.
-  # BUILD_COMPLETE_PRODUCT=false  # developer slim path only; default true requires workflows + dev-build
+  # BUILD_COMPLETE_PRODUCT=false  # developer slim path only; default true requires workflows
   # COMPONENT_CACHE_DIR=/var/cache/appliance-build/components  # optional dirty-only rebuild cache
   WORKFLOWS_ENABLED=true                 # complete product always packages the workflows engine (set BUILD_COMPLETE_PRODUCT=false to allow opt-out)
   WORKFLOWS_VERSION=v3.5.10              # pin a different workflows engine version than the chart's appVersion
   WORKFLOW_CONTROLLER_IMAGE_REF=localhost/appliance-workflow-controller:v3.5.10
   WORKFLOW_EXECUTOR_IMAGE_REF=quay.io/argoproj/argoexec:v3.5.10
   # Offline: Workflow CRDs/images from LAN build-cache (seeded by make seed-build-deps).
-  # Online: public upstreams only (GitHub / Quay / Docker Hub / GHCR public).
+  # Online: public upstreams (GitHub / Quay / Docker Hub / GHCR public).
   WORKSPACE_PROVISIONER_IMAGE_REF=docker.io/alpine/git:2.49.0
-  # Complete product packages registry.local/dev-build from DEV_* tooling pull.
-  # LAN build-cache is offline-only.
+  # DEV_* tooling image (dev-build) builds product images on the build host only.
+  # It is NOT packaged into the appliance bundle; operators supply builder images.
   ARTIFACT_SERVER_VERSION=2.1.8
   ARTIFACT_SERVER_SOURCE_IMAGE=ghcr.io/project-zot/zot-linux-amd64:v2.1.8
   # Artifact server: always wrap upstream via appliance-code
@@ -315,6 +315,7 @@ export DEV_REGISTRY_USER="${DEV_REGISTRY_USER:-}"
 export DEV_REGISTRY_TOKEN="${DEV_REGISTRY_TOKEN:-}"
 export DEV_REGISTRY_TLS_VERIFY="${DEV_REGISTRY_TLS_VERIFY:-true}"
 BUILDER_LOCAL_REF="registry.local/dev-build"
+# Tooling pull for build-host product image builds only (not packaged).
 BUILDER_PULL_REF=""
 
 if [[ -n "${K3S_VERSION_OVERRIDE}" ]]; then
@@ -402,7 +403,12 @@ INPUTS_DIR="${WORKSPACE}/inputs"
 GENERATED_DIR="${WORKSPACE}/generated"
 CONFIG_OUT="${GENERATED_DIR}/product-bundle.env"
 BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-bundle"
+DEVELOPER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-developer"
+INFERENCE_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-inference"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-bundle.tar.gz"
+DEVELOPER_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-developer.tar.gz"
+INFERENCE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-inference.tar.gz"
+RELEASE_INDEX="${EXPORT_DIR}/release-index.yaml"
 PUBLIC_KEY_EXPORT="${EXPORT_DIR}/release-signing.pub"
 
 CODE_REPO_DIR="${REPOS_DIR}/appliance-code"
@@ -424,9 +430,10 @@ if bool_true "${BUILD_COMPLETE_PRODUCT}" && ! bool_true "${WORKFLOWS_ENABLED}"; 
   echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires WORKFLOWS_ENABLED=true (developer slim builds: BUILD_COMPLETE_PRODUCT=false)" >&2
   exit 2
 fi
-if bool_true "${BUILD_COMPLETE_PRODUCT}"; then
-  BUILDER_PULL_REF="${DEV_REGISTRY}/${DEV_IMAGE_REPO}/${DEV_IMAGE_NAME}:${DEV_IMAGE_TAG}"
-fi
+# Always resolve the build-host tooling image from DEV_*. This image builds
+# control-plane/UI/etc. on the packaging host and is never exported into the
+# signed appliance bundle (operator-supplied builder images at runtime).
+BUILDER_PULL_REF="${DEV_REGISTRY}/${DEV_IMAGE_REPO}/${DEV_IMAGE_NAME}:${DEV_IMAGE_TAG}"
 
 shell_quote() {
   printf '%q' "${1:-}"
@@ -1695,13 +1702,8 @@ WORKSPACE_PROVISIONER_IMAGE_REF="$(export_bundled_oci_archive "${WORKSPACE_PROVI
 BUNDLED_IMAGE_ARCHIVES+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
 BUNDLED_IMAGE_REFS+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
 
-if bool_true "${BUILD_COMPLETE_PRODUCT}"; then
-  mkdir -p "${CODE_REPO_DIR}/.run/builder-image"
-  dest="${CODE_REPO_DIR}/.run/builder-image/dev-build.tar"
-  derived_ref="$(export_bundled_oci_archive "${BUILDER_PULL_REF}" "${BUILDER_LOCAL_REF}" "${dest}")"
-  BUNDLED_IMAGE_ARCHIVES+=("/workspace/.run/builder-image/dev-build.tar")
-  BUNDLED_IMAGE_REFS+=("${derived_ref}")
-fi
+# Note: registry.local/dev-build is intentionally NOT packaged. The DEV_* image
+# remains build-host tooling only; runtime builder images are operator-supplied.
 
 BUNDLED_IMAGE_ARG_LINES=""
 for idx in "${!BUNDLED_IMAGE_ARCHIVES[@]}"; do
@@ -1893,14 +1895,47 @@ echo "  ${CONFIG_OUT}"
 make -C "${RELEASE_REPO_DIR}" product-bundle CONFIG="${CONFIG_OUT}"
 
 tar -C "$(dirname "${BUNDLE_DIR}")" -czf "${BUNDLE_ARCHIVE}" "$(basename "${BUNDLE_DIR}")"
+tar -C "$(dirname "${DEVELOPER_BUNDLE_DIR}")" -czf "${DEVELOPER_ARCHIVE}" "$(basename "${DEVELOPER_BUNDLE_DIR}")"
+tar -C "$(dirname "${INFERENCE_BUNDLE_DIR}")" -czf "${INFERENCE_ARCHIVE}" "$(basename "${INFERENCE_BUNDLE_DIR}")"
 cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
+
+python3 - "${RELEASE_INDEX}" "${PRODUCT_VERSION}" \
+  "$(basename "${BUNDLE_ARCHIVE}")" \
+  "$(basename "${DEVELOPER_ARCHIVE}")" \
+  "$(basename "${INFERENCE_ARCHIVE}")" <<'PY'
+from pathlib import Path
+import sys
+
+index_path = Path(sys.argv[1])
+version = sys.argv[2]
+base_name, workflow_name, inference_name = sys.argv[3:6]
+text = f"""version: {version}
+packs:
+  - id: base
+    filename: {base_name}
+    capabilities: [base, host, artifact, dns]
+  - id: developer
+    filename: {workflow_name}
+    capabilities: [workflows, build]
+  - id: inference
+    filename: {inference_name}
+    capabilities: [inference]
+capabilityPacks:
+  workflows: developer
+  build: developer
+  inference: inference
+"""
+index_path.write_text(text, encoding="utf-8")
+PY
 
 echo
 echo "release-input tarball:"
 echo "  ${RELEASE_INPUT_TAR}"
 echo
-echo "final bundle:"
+echo "final packs:"
 echo "  ${BUNDLE_DIR}"
+echo "  ${DEVELOPER_BUNDLE_DIR}"
+echo "  ${INFERENCE_BUNDLE_DIR}"
 echo
 echo "bundled artifact-server image:"
 echo "  ${ARTIFACT_SERVER_IMAGE_REF}"
@@ -1910,6 +1945,9 @@ echo "  ${WORKSPACE}/generated/product-bundle.env"
 echo
 echo "exported customer delivery files:"
 echo "  ${BUNDLE_ARCHIVE}"
+echo "  ${DEVELOPER_ARCHIVE}"
+echo "  ${INFERENCE_ARCHIVE}"
+echo "  ${RELEASE_INDEX}"
 echo "  ${PUBLIC_KEY_EXPORT}"
 echo
 echo "next step on the build machine:"

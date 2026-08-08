@@ -20,9 +20,9 @@ Install:             ctr import (gets :bundled or import-DATE) → ctr image tag
 Runtime:             config.*ImageDigest == digest pin → workflow pod image (IfNotPresent)
 ```
 
-Names today: `workspace-provisioner` (alpine/git), `dev-build` (builder),
-first-class `artifact-server` (OCI registry), first-class `coredns` (LAN DNS),
-and first-class `inference-runtime` (Ollama wrap for the `inference` capability).
+Names today (product packs): `workspace-provisioner` (developer pack),
+first-class `artifact-server` / `coredns` (base), first-class `inference-runtime`
+(inference pack). `dev-build` is build-host tooling only and is **not** packaged.
 Artifact-server archives use `registry.local/artifact-server:bundled` plus
 `registry.local/artifact-server@sha256:<platform-digest>`; CoreDNS uses
 `registry.local/coredns:bundled` plus
@@ -52,7 +52,7 @@ Never trust `skopeo inspect` alone for pins (multi-arch index ≠ platform manif
 7. **Workspace create** → workflow `workspace-prepare` (`engine.workflowContainerSpec`)
    - Pod `image:` = provisioner digest pin
 8. **Build submit** → workflow build pod
-   - `ResolveBuilderImage("dev-build", …)` → dev-build digest pin
+   - `ResolveBuilderImage` → explicit catalog `@sha256` (operator-supplied builder image)
 9. **Artifact service** (`appliance-ctl` registry release + `appliance-code` chart/control-plane)
    - `artifacts.artifactServerImage` + `artifacts.artifactServerChart` + `compatibility.artifactServerVersion`
    - preload/tag `registry.local/artifact-server` before Helm; install registry only for `artifact` capability
@@ -69,7 +69,7 @@ Online pulls happen **only on the build host** during bundle assembly. Target in
 | Bundled image archive/ref pairing | `build-full-bundle.sh` (provisioner + builder pairings separate) | path↔token checks in validator |
 | `RequireReference` + tag | Bundle entry `imageReference` | `install/source.go` `imageName`, `PreloadAll` |
 | Digests in Helm values | `PrepareValuesFile` | chart ConfigMap, `config.Load`, chart schema |
-| Catalog `dev-build` alias | catalog / examples | `ResolveBuilderImage`, `builderImageReference` |
+| Catalog builder digests | operator-supplied `@sha256` in build catalog | `ResolveBuilderImage`, optional day-2 default |
 | Offline images present | preload/tag | workflow `IfNotPresent` pods |
 | Artifact-server image/chart/version | `build-full-bundle.sh` + `archive-release-input.sh` | release-input schema, bundle assembly, source resolution, registry Helm release, release validator |
 | Artifact capability | profile map | artifact-server preload/deploy, control-plane adapter/routes, `/v2`, profile-matrix evidence |
@@ -81,7 +81,7 @@ Online pulls happen **only on the build host** during bundle assembly. Target in
 
 - **Annotation scheme** → ctl `ValidateOCIArchiveReference` + preload tag tests; release finalize + `validate-release-artifacts.py`; config.example docs
 - **Digest derivation** → finalize (archive wins); never reintroduce inspect-first pins
-- **Bundled image refs/order** → path/token validator; both provisioner and dev-build in bundle
+- **Bundled image refs/order** → path/token validator; workspace-provisioner in developer pack
 - **Builder image name** → `source.go`, `catalog.go` DefaultBuilderImageRef, chart schema, examples, tests
 - **Tag/import algorithm** → `preload.go` / tests; install+upgrade fake-ctr tests
 - **PrepareValuesFile keys** → chart `configmap.yaml` env names; config Load; chart_test

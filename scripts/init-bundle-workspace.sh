@@ -552,6 +552,21 @@ add_crd_artifacts()
 
 config["entries"] = entries
 config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+
+# Split signed pack assembly configs (base / developer / inference).
+out_dir = Path(config["bundleDir"]).parent
+product_version = str(config.get("bundleVersion", "0.0.0"))
+pack_specs = (
+    ("base", f"appliance-{product_version}-bundle", "base"),
+    ("developer", f"appliance-{product_version}-developer", "developer"),
+    ("inference", f"appliance-{product_version}-inference", "inference"),
+)
+for pack_id, bundle_name, pack_value in pack_specs:
+    pack_config = json.loads(json.dumps(config))
+    pack_config["pack"] = pack_value
+    pack_config["bundleDir"] = str(out_dir / bundle_name)
+    pack_path = config_path.parent / f"bundle-assembly.{pack_id}.json"
+    pack_path.write_text(json.dumps(pack_config, indent=2) + "\n", encoding="utf-8")
 PY
 
 cat >"${WORKSPACE_README}" <<EOF
@@ -563,8 +578,11 @@ This workspace is the handoff point between the two repos:
 2. \`appliance-release\` stages host/bundle artifacts in \`${STAGING_DIR}\`
 3. this low-level workspace flow is given a concrete Helm binary path so the
    bundle can include bundle-local operator tooling
-4. \`appliance-release\` assembles the final bundle using:
-   \`${CONFIG_PATH}\`
+4. \`appliance-release\` assembles signed packs using:
+   \`${WORKDIR}/bundle-assembly.base.json\`
+   \`${WORKDIR}/bundle-assembly.developer.json\`
+   \`${WORKDIR}/bundle-assembly.inference.json\`
+   (legacy full-bundle config remains at \`${CONFIG_PATH}\`)
 
 If the release-input includes optional workflows engine Phase 1 artifacts, this
 workspace auto-detects them and adds them to the bundle config under:
@@ -599,6 +617,10 @@ EOF
 echo "created simple bundle workspace:"
 echo "  workdir: ${WORKDIR}"
 echo "  config: ${CONFIG_PATH}"
+echo "  pack configs:"
+echo "    ${WORKDIR}/bundle-assembly.base.json"
+echo "    ${WORKDIR}/bundle-assembly.developer.json"
+echo "    ${WORKDIR}/bundle-assembly.inference.json"
 echo "  release-input dir: ${RELEASE_INPUT_DIR}"
 echo "  staging dir: ${STAGING_DIR}"
 echo "  bundle output dir: ${BUNDLE_DIR}"

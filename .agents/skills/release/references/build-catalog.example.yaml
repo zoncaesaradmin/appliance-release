@@ -32,12 +32,12 @@
 #   /data/zon/workspaces/<workspace-name>/<repo-name>/
 #
 # Builder image:
-# Optional per-target builderImageDigest. Prefer the short bundle name
-# (default when omitted):
-#   builderImageDigest: dev-build
-# Install resolves that to the digest-pinned dev-build image packaged in
-# the signed bundle. Advanced overrides may use a digest-pinned reference that
-# is present in the bundle. Do not paste GHCR tags.
+# Required per-target builderImageDigest: an operator-supplied digest-pinned
+# OCI image already present on the appliance (ctr import / artifact-server).
+# Builder images are NOT packaged in the appliance bundle.
+# Example:
+#   builderImageDigest: registry.local/my-builder@sha256:<64-hex>
+# Do not paste mutable GHCR tags.
 #
 # Before using this file in a real install:
 # - replace repo URLs and defaultRef values with real product values
@@ -100,7 +100,7 @@ repos:
         workingDirectory: services/controlplane
         args: [image]
         imageRepository: appliance-images/appliance-control-plane
-        builderImageDigest: dev-build
+        builderImageDigest: registry.local/my-builder@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
 
   - name: appliance-ctl
     url: https://github.com/zoncaesaradmin/appliance-ctl.git
@@ -111,7 +111,7 @@ repos:
         execution: make
         args: [build]
         imageRepository: appliance-images/appliance-ctl
-        builderImageDigest: dev-build
+        builderImageDigest: registry.local/my-builder@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
 
   - name: appliance-release
     url: https://github.com/zoncaesaradmin/appliance-release.git
@@ -128,7 +128,7 @@ repos:
         execution: make
         args: [build-dev]
         imageRepository: appliance-images/development-container
-        builderImageDigest: dev-build
+        builderImageDigest: registry.local/my-builder@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
 
   - name: platformkit
     url: https://github.com/zoncaesaradmin/platformkit.git
@@ -140,13 +140,13 @@ repos:
         execution: make
         args: [build]
         imageRepository: users/example/platformkit
-        builderImageDigest: dev-build
+        builderImageDigest: registry.local/my-builder@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
       - name: platformkit-test
         description: Run platformkit unit tests (make test).
         execution: make
         args: [test]
         imageRepository: users/example/platformkit-test
-        builderImageDigest: dev-build
+        builderImageDigest: registry.local/my-builder@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
 
   - name: zonbundle
     url: https://github.com/zoncaesaradmin/zonbundle.git
@@ -158,7 +158,7 @@ repos:
         execution: make
         args: [build]
         imageRepository: users/example/zonbundle
-        builderImageDigest: dev-build
+        builderImageDigest: registry.local/my-builder@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
 
   - name: zoncore
     url: https://github.com/zoncaesaradmin/zoncore.git
@@ -175,13 +175,13 @@ repos:
         execution: make
         args: [build]
         imageRepository: users/example/forgeline
-        builderImageDigest: dev-build
+        builderImageDigest: registry.local/my-builder@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
       - name: forgeline-bridge
         description: Build the forgeline bridge binary (make build-bridge).
         execution: make
         args: [build-bridge]
         imageRepository: users/example/forgeline-bridge
-        builderImageDigest: dev-build
+        builderImageDigest: registry.local/my-builder@sha256:5ccdfda08e940614d030e377b75f048a55e3f61cbb0234294ad333f27afe222c
 
   - name: forgeline-release
     url: https://github.com/zoncaesaradmin/forgeline-release.git

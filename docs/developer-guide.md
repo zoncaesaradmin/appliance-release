@@ -148,8 +148,14 @@ In offline mode, K3s / Helm / CRDs / host-packages come from the LAN files API.
 Online mode uses public upstreams for those same pins (K3s from GitHub, Helm
 from get.helm.sh). Files API / LAN build-cache stay off when `OFFLINE_BUILD=0`.
 
-For the complete product (default), the build packages `registry.local/dev-build`
-from the unified `DEV_*` tooling pull.
+The `DEV_*` tooling image (`dev-build`) builds product images on the build host
+only. It is **not** packaged into the appliance. Each release exports three
+signed deliverables under `RELEASE_WORK_ROOT/export/`:
+
+- `appliance-${PRODUCT_VERSION}-bundle.tar.gz` (base)
+- `appliance-${PRODUCT_VERSION}-developer.tar.gz`
+- `appliance-${PRODUCT_VERSION}-inference.tar.gz`
+- `release-index.yaml` (capability → pack map)
 
 That script:
 
@@ -165,8 +171,11 @@ That script:
 
 Outputs:
 
-- `${RELEASE_WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-bundle`
+- `${RELEASE_WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-bundle` (base pack dir)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-bundle.tar.gz`
+- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-developer.tar.gz`
+- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-inference.tar.gz`
+- `${RELEASE_WORK_ROOT}/export/release-index.yaml`
 - `${RELEASE_WORK_ROOT}/export/release-signing.pub`
 
 Product packaging always exports the complete host package super-set

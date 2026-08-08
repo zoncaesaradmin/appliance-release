@@ -81,10 +81,16 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 
 - Canonical sources live in `deps/development-container/` (not a separate git repo).
 - The published image name is `dev-build`. It is used for:
-  - full-bundle packaging (online pull from GHCR; offline pull from LAN after seed)
-  - **local / day-2 service builds** outside the full bundle flow — `appliance-code`
+  - **build-host packaging only** (online pull from GHCR; offline pull from LAN after seed)
+  - **local / day-2 service builds** outside packaging — `appliance-code`
     `make dev-shell`, control-plane image, control-plane UI image, host-agent
     image, and similar tooling-container builds
+- **`dev-build` is not a product runtime image.** It is not packaged into the
+  base, developer, or inference packs. Operator build catalogs must use
+  explicit digest-pinned builder images they supply on the appliance.
+- Each platform release publishes three signed deliverables: base bundle,
+  `developer` pack (Argo + workspace-provisioner), and `inference` pack.
+  Install selects packs from the profile (`core` does not include workflows).
 - `make seed-build-deps` publishes `dev-build` to the **LAN Artifact Server only**.
   That does **not** update GHCR.
 - Whenever `deps/development-container` content changes (Containerfiles, pins,

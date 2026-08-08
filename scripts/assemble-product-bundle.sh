@@ -77,6 +77,8 @@ DOWNLOADS_DIR="${WORKDIR}/downloads"
 STAGING_DIR="${WORKDIR}/staging"
 RELEASE_INPUT_DIR="${WORKDIR}/release-input"
 BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-bundle"
+DEVELOPER_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-developer"
+INFERENCE_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-inference"
 
 mkdir -p "${WORKDIR}" "${INPUTS_DIR}" "${DOWNLOADS_DIR}"
 
@@ -587,8 +589,8 @@ import_release_input() {
   echo "  ${release_input_dir}"
 }
 
-assemble_simple_bundle() {
-  local config_path="${WORKDIR}/bundle-assembly.simple.json"
+assemble_pack_bundle() {
+  local config_path="$1"
   local release_input_dir=""
   if [[ ! -f "${config_path}" ]]; then
     echo "assemble-product-bundle: missing config: ${config_path}" >&2
@@ -608,6 +610,27 @@ assemble_simple_bundle() {
     exit 1
   fi
   "${ZONCTL_BINARY}" assemble-bundle --config "${config_path}"
+}
+
+assemble_all_packs() {
+  local pack_id=""
+  local config_path=""
+  local bundle_dir=""
+  for pack_id in base developer inference; do
+    config_path="${WORKDIR}/bundle-assembly.${pack_id}.json"
+    case "${pack_id}" in
+      base) bundle_dir="${BUNDLE_DIR}" ;;
+      developer) bundle_dir="${DEVELOPER_BUNDLE_DIR}" ;;
+      inference) bundle_dir="${INFERENCE_BUNDLE_DIR}" ;;
+    esac
+    rm -rf "${bundle_dir}"
+    echo "assemble-product-bundle: assembling pack ${pack_id}"
+    assemble_pack_bundle "${config_path}"
+    make -C "${REPO_ROOT}" verify-bundle \
+      ZONCTL_BINARY="${ZONCTL_BINARY}" \
+      BUNDLE_DIR="${bundle_dir}" \
+      PUBLIC_KEY="${WORKDIR}/keys/release-signing.pub"
+  done
 }
 
 if [[ -d "${CTL_REPO_SOURCE}" ]]; then
@@ -644,13 +667,11 @@ if [[ -n "${VALUES_FILE:-}" ]]; then
   cp "${VALUES_FILE}" "${STAGING_DIR}/values-minimal.yaml"
 fi
 
-rm -rf "${BUNDLE_DIR}"
+rm -rf "${BUNDLE_DIR}" "${DEVELOPER_BUNDLE_DIR}" "${INFERENCE_BUNDLE_DIR}"
 
-assemble_simple_bundle
-make -C "${REPO_ROOT}" verify-bundle \
-  ZONCTL_BINARY="${ZONCTL_BINARY}" \
-  BUNDLE_DIR="${BUNDLE_DIR}" \
-  PUBLIC_KEY="${WORKDIR}/keys/release-signing.pub"
+assemble_all_packs
 
-echo "bundle ready:"
-echo "  ${BUNDLE_DIR}"
+echo "packs ready:"
+echo "  base: ${BUNDLE_DIR}"
+echo "  developer: ${DEVELOPER_BUNDLE_DIR}"
+echo "  inference: ${INFERENCE_BUNDLE_DIR}"

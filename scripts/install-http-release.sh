@@ -316,16 +316,47 @@ if [[ "${USE_LATEST}" == "1" ]]; then
 fi
 
 BUNDLE_ARCHIVE="appliance-${PRODUCT_VERSION}-bundle.tar.gz"
+DEVELOPER_ARCHIVE="appliance-${PRODUCT_VERSION}-developer.tar.gz"
+INFERENCE_ARCHIVE="appliance-${PRODUCT_VERSION}-inference.tar.gz"
+RELEASE_INDEX_FILE="release-index.yaml"
 PUBLIC_KEY_FILE="release-signing.pub"
 CHECKSUM_FILE="sha256sum.txt"
 BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-bundle"
+DEVELOPER_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-developer"
+INFERENCE_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-inference"
 PUBLIC_KEY="${OUT_DIR}/release-signing.pub"
 ZONCTL="${BUNDLE_DIR}/zonctl"
 RELEASE_PAYLOAD_FILES=(
+  "${RELEASE_INDEX_FILE}"
   "${BUNDLE_ARCHIVE}"
   "${PUBLIC_KEY_FILE}"
   "${CHECKSUM_FILE}"
 )
+
+required_packs_for_profile() {
+  local profile="$1"
+  case "${profile}" in
+    core|storage|landns|storage-landns)
+      return 0
+      ;;
+    lanllm)
+      echo "inference"
+      ;;
+    builder|builder-landns|builder-storage-landns)
+      echo "developer"
+      ;;
+    builder-lanllm|builder-lanllm-storage-landns)
+      echo "developer"
+      echo "inference"
+      ;;
+    *)
+      # Unknown profiles: fail closed and require both optional packs when
+      # the release index is unavailable; otherwise rely on index + zonctl.
+      echo "developer"
+      echo "inference"
+      ;;
+  esac
+}
 
 curl_download() {
   local out_file="$1"
@@ -347,30 +378,82 @@ curl_download() {
   curl "${curl_args[@]}" "${url}"
 }
 
-echo "[1/5] Downloading release files from ${REMOTE_DIR} ..."
+echo "[1/5] Downloading release metadata from ${REMOTE_DIR} ..."
 for payload in "${RELEASE_PAYLOAD_FILES[@]}"; do
   curl_download "${OUT_DIR}/${payload}" "${REMOTE_DIR}/${payload}"
+done
+
+REQUIRED_PACKS=()
+while IFS= read -r pack_id; do
+  [[ -n "${pack_id}" ]] || continue
+  REQUIRED_PACKS+=("${pack_id}")
+done < <(required_packs_for_profile "${APPLIANCE_PROFILE}")
+
+for pack_id in "${REQUIRED_PACKS[@]}"; do
+  case "${pack_id}" in
+    developer)
+      curl_download "${OUT_DIR}/${DEVELOPER_ARCHIVE}" "${REMOTE_DIR}/${DEVELOPER_ARCHIVE}"
+      ;;
+    inference)
+      curl_download "${OUT_DIR}/${INFERENCE_ARCHIVE}" "${REMOTE_DIR}/${INFERENCE_ARCHIVE}"
+      ;;
+  esac
 done
 echo "[1/5] Release files downloaded."
 
 echo "[2/5] Verifying release checksums..."
+# Verify only the files we downloaded (base + pubkey + index + needed packs).
+VERIFY_LIST=(
+  "${BUNDLE_ARCHIVE}"
+  "${RELEASE_INDEX_FILE}"
+  "${PUBLIC_KEY_FILE}"
+)
+for pack_id in "${REQUIRED_PACKS[@]}"; do
+  case "${pack_id}" in
+    developer) VERIFY_LIST+=("${DEVELOPER_ARCHIVE}") ;;
+    inference) VERIFY_LIST+=("${INFERENCE_ARCHIVE}") ;;
+  esac
+done
+tmp_checksums="${OUT_DIR}/.sha256sum.selected"
+: > "${tmp_checksums}"
+for payload in "${VERIFY_LIST[@]}"; do
+  if ! awk -v f="${payload}" '$2 == f { print; found=1 } END { exit(found ? 0 : 1) }' "${OUT_DIR}/${CHECKSUM_FILE}" >> "${tmp_checksums}"; then
+    echo "install-http-release: checksum entry missing for ${payload}" >&2
+    exit 1
+  fi
+done
 if command -v sha256sum >/dev/null 2>&1; then
-  (cd "${OUT_DIR}" && sha256sum -c "${CHECKSUM_FILE}")
+  (cd "${OUT_DIR}" && sha256sum -c "$(basename "${tmp_checksums}")")
 else
   if ! command -v shasum >/dev/null 2>&1; then
     echo "install-http-release: need sha256sum or shasum to verify checksums" >&2
     exit 1
   fi
-  tmp_checksums="${OUT_DIR}/.sha256sum.tmp"
-  awk '{print $1 "  " $2}' "${OUT_DIR}/${CHECKSUM_FILE}" > "${tmp_checksums}"
-  (cd "${OUT_DIR}" && shasum -a 256 -c "$(basename "${tmp_checksums}")")
-  rm -f "${tmp_checksums}"
+  awk '{print $1 "  " $2}' "${tmp_checksums}" > "${OUT_DIR}/.sha256sum.tmp"
+  (cd "${OUT_DIR}" && shasum -a 256 -c .sha256sum.tmp)
+  rm -f "${OUT_DIR}/.sha256sum.tmp"
 fi
+rm -f "${tmp_checksums}"
 echo "[2/5] Release checksums verified."
 
-echo "[3/5] Extracting bundle..."
+echo "[3/5] Extracting packs..."
 rm -rf "${OUT_DIR:?}/$(basename "${BUNDLE_DIR}")"
 tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${BUNDLE_ARCHIVE}"
+PACK_DIRS=()
+for pack_id in "${REQUIRED_PACKS[@]}"; do
+  case "${pack_id}" in
+    developer)
+      rm -rf "${OUT_DIR:?}/$(basename "${DEVELOPER_BUNDLE_DIR}")"
+      tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${DEVELOPER_ARCHIVE}"
+      PACK_DIRS+=("${DEVELOPER_BUNDLE_DIR}")
+      ;;
+    inference)
+      rm -rf "${OUT_DIR:?}/$(basename "${INFERENCE_BUNDLE_DIR}")"
+      tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${INFERENCE_ARCHIVE}"
+      PACK_DIRS+=("${INFERENCE_BUNDLE_DIR}")
+      ;;
+  esac
+done
 echo "[3/5] Bundle extracted to ${BUNDLE_DIR}."
 
 chmod +x "${ZONCTL}"
@@ -390,6 +473,9 @@ lifecycle_args=(
   --appliance-name "${APPLIANCE_NAME}"
   --dns-zone "${DNS_ZONE}"
 )
+for pack_dir in "${PACK_DIRS[@]}"; do
+  lifecycle_args+=(--pack-dir "${pack_dir}")
+done
 if [[ -n "${NODE_NAME}" ]]; then
   lifecycle_args+=(--node-name "${NODE_NAME}")
 fi

@@ -121,13 +121,13 @@ components:
     depends_on: []
 
   - id: dev-build
+    note: build-host tooling only; not packaged into product packs
     owner: appliance-release
-    recipe: DEV_* pull → export_bundled_oci_archive → registry.local/dev-build@sha256:...
-    required_for: BUILD_COMPLETE_PRODUCT
+    recipe: DEV_* pull for build-host tooling only (not packaged into base/developer/inference packs)
     inputs:
       - DEV_REGISTRY + DEV_IMAGE_REPO/NAME/TAG
     outputs:
-      - imageReference digest pin
+      - tooling image for packaging host (not a product pack artifact)
     depends_on: []
 
   - id: metadata-bundle
@@ -155,7 +155,7 @@ components:
       - appliance-inference-chart
       - workflows
       - workspace-provisioner
-      - dev-build
+      # dev-build removed from product bundle (tooling only)
       - metadata-bundle
     always_rebuild: true
     outputs:
