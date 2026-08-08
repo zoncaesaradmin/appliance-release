@@ -3,21 +3,22 @@
 #
 # Env:
 #   APPLIANCE_PACKS   CSV or single token. Default: all
-#                     Values: all | base | developer | inference
-#                     Examples: all ; base ; base,developer ; base,inference
+#                     Values: all | foundation | developer | inference
+#                     Examples: all ; foundation ; foundation,developer ; foundation,inference
 #
 # After appliance_packs_resolve:
-#   APPLIANCE_PACKS_RESOLVED   space-separated, stable order: base [developer] [inference]
+#   APPLIANCE_PACKS_RESOLVED   space-separated, stable order: foundation [developer] [inference]
 #   appliance_pack_wanted ID   returns 0 when ID is selected
 #
-# base is always included (required deliverable). Unknown ids fail closed.
+# foundation is always included (required deliverable). Unknown ids fail closed.
 # Compatible with Bash 3.2 (no associative arrays).
+# Pack id is "foundation" (not "base") so it does not collide with capability "base".
 
 appliance_packs_resolve() {
   local raw="${APPLIANCE_PACKS-}"
   local token=""
   local want_all=0
-  local want_base=0
+  local want_foundation=0
   local want_developer=0
   local want_inference=0
   local IFS=','
@@ -36,8 +37,8 @@ appliance_packs_resolve() {
       all)
         want_all=1
         ;;
-      base)
-        want_base=1
+      foundation)
+        want_foundation=1
         ;;
       developer)
         want_developer=1
@@ -45,25 +46,29 @@ appliance_packs_resolve() {
       inference)
         want_inference=1
         ;;
+      base)
+        echo "appliance-packs: pack id 'base' was renamed to 'foundation' (capability 'base' is unchanged)" >&2
+        return 2
+        ;;
       *)
-        echo "appliance-packs: unknown pack id '${token}' (want all|base|developer|inference)" >&2
+        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|developer|inference)" >&2
         return 2
         ;;
     esac
   done
 
   if [[ "${want_all}" -eq 1 ]]; then
-    want_base=1
+    want_foundation=1
     want_developer=1
     want_inference=1
   fi
 
-  if [[ "${want_base}" -eq 0 ]]; then
-    echo "appliance-packs: including base (required)" >&2
-    want_base=1
+  if [[ "${want_foundation}" -eq 0 ]]; then
+    echo "appliance-packs: including foundation (required)" >&2
+    want_foundation=1
   fi
 
-  APPLIANCE_PACKS_RESOLVED="base"
+  APPLIANCE_PACKS_RESOLVED="foundation"
   if [[ "${want_developer}" -eq 1 ]]; then
     APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} developer"
   fi

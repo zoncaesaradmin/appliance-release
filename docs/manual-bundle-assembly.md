@@ -99,7 +99,7 @@ Or directly:
 ## 6. Verify The Bundle Before Transfer
 
 ```bash
-BUNDLE_DIR=/absolute/path/to/out/appliance-2.4.0-bundle \
+BUNDLE_DIR=/absolute/path/to/out/appliance-2.4.0-foundation \
 PUBLIC_KEY=./keys/release-signing.pub \
 make verify-bundle
 ```
@@ -108,7 +108,7 @@ Or directly:
 
 ```bash
 ../appliance-ctl/bin/zonctl verify-bundle \
-  --bundle-dir /absolute/path/to/out/appliance-2.4.0-bundle \
+  --bundle-dir /absolute/path/to/out/appliance-2.4.0-foundation \
   --public-key ./keys/release-signing.pub
 ```
 
@@ -123,7 +123,7 @@ Copy these to the target Ubuntu host:
 Example:
 
 ```bash
-scp -r /absolute/path/to/out/appliance-2.4.0-bundle user@host:/tmp/
+scp -r /absolute/path/to/out/appliance-2.4.0-foundation user@host:/tmp/
 scp ./keys/release-signing.pub user@host:/tmp/
 ```
 

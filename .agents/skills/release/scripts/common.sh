@@ -693,7 +693,7 @@ reject_removed_build_publish_packaging_keys() {
     fail "build_flow workflows engine/Zot/DNS/provisioner pin keys were removed from build-publish config; product scripts/build-full-bundle.sh owns those defaults"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "build_flow.appliance_packs_env" || true)" ]]; then
-    fail "build_flow.appliance_packs_env was removed; set build_flow.appliance_packs to a literal value (all|base|base,developer|base,inference)"
+    fail "build_flow.appliance_packs_env was removed; set build_flow.appliance_packs to a literal value (all|foundation|foundation,developer|foundation,inference)"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "verification.workflows.enabled" || true)" \
     || -n "$(config_get_optional "${config_path}" "install.appliance_profile" || true)" ]]; then

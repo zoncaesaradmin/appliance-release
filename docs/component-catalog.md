@@ -62,7 +62,7 @@ fingerprints can attach to the same units.
 | 5 | `workspace-provisioner` + `dev-build` | bundled offline image archives |
 | 6 | `product-images` | control-plane, UI, host-agent OCI + host-agentd |
 | 7 | `archive-release-input` | release-input tar (super-set) |
-| 8 | `assemble-and-sign` | **always** re-run → signed `appliance-*-bundle.tar.gz` |
+| 8 | `assemble-and-sign` | **always** re-run → signed `appliance-*-foundation.tar.gz` |
 
 Incremental rebuilds (Phase C) may skip stages 2–6 when fingerprints match;
 stages 7–8 always re-run so the published artifact is one consistent release.

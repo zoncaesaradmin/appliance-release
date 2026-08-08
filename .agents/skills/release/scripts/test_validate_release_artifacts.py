@@ -193,7 +193,7 @@ ingress:
 
 def populate_positive_case_with_nested_bundle(tmp: Path) -> None:
     populate_positive_case(tmp)
-    nested_root = tmp / "bundle" / "appliance-0.1.0-bundle"
+    nested_root = tmp / "bundle" / "appliance-0.1.0-foundation"
     nested_root.mkdir(parents=True, exist_ok=True)
     (tmp / "bundle" / "configuration").rename(nested_root / "configuration")
     (tmp / "bundle" / "release-manifest.json").rename(nested_root / "release-manifest.json")
@@ -554,6 +554,24 @@ def test_rejects_dns_annotation_and_version_mismatch() -> None:
             raise AssertionError(result.stderr or "wrong dns version accepted")
 
 
+def test_allows_omitted_inference_without_require_flag() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        release_input_path = tmp / "release-input" / "release-input.json"
+        release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
+        del release_input["artifacts"]["inferenceRuntimeImage"]
+        del release_input["artifacts"]["inferenceChart"]
+        del release_input["compatibility"]["inferenceVersion"]
+        release_input_path.write_text(json.dumps(release_input), encoding="utf-8")
+        result = run_validator(tmp)
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+        result = run_validator(tmp, "--require-inference")
+        if result.returncode == 0:
+            raise AssertionError("missing inference accepted with --require-inference")
+
+
 def test_rejects_inference_annotation_and_version_mismatch() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -563,7 +581,7 @@ def test_rejects_inference_annotation_and_version_mismatch() -> None:
             "registry.local/inference-runtime:wrong",
             "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
         )
-        result = run_validator(tmp)
+        result = run_validator(tmp, "--require-inference")
         if result.returncode == 0 or "annotation must be" not in result.stderr:
             raise AssertionError(result.stderr or "wrong inference annotation accepted")
 
@@ -572,7 +590,7 @@ def test_rejects_inference_annotation_and_version_mismatch() -> None:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["compatibility"]["inferenceVersion"] = "0.6.6"
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        result = run_validator(tmp)
+        result = run_validator(tmp, "--require-inference")
         if result.returncode == 0 or "inferenceVersion mismatch" not in result.stderr:
             raise AssertionError(result.stderr or "wrong inference version accepted")
 
@@ -636,6 +654,7 @@ def main() -> None:
     test_accepts_dot_slash_prefixed_dns_oci_archive()
     test_rejects_artifact_server_annotation_and_version_mismatch()
     test_rejects_dns_annotation_and_version_mismatch()
+    test_allows_omitted_inference_without_require_flag()
     test_rejects_inference_annotation_and_version_mismatch()
     test_rejects_legacy_zot_image_path_name()
     test_rejects_unidentified_artifact_server_image_path()

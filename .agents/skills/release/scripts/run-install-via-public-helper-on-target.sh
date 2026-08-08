@@ -319,7 +319,7 @@ payload = {
     "pathPrefix": path_prefix,
     "stateDir": state_dir,
     "outDir": out_dir,
-    "bundleDir": f"{out_dir.rstrip('/')}/appliance-{release_version}-bundle",
+    "bundleDir": f"{out_dir.rstrip('/')}/appliance-{release_version}-foundation",
     "applianceProfile": appliance_profile,
     "applianceName": appliance_name,
     "dnsZone": dns_zone,

@@ -22,8 +22,8 @@
 # - Scripts fail closed: required keys must appear in their role file.
 # - Absolute remote paths only (no ~/... on build/target hosts).
 # - Secrets never live in these files — only env *names* under *_env keys.
-# - Packaging always produces the complete product super-set; install.appliance_profile
-#   only selects what the target turns on.
+# - Packaging pack set is build_flow.appliance_packs (all|foundation|…); install.appliance_profile
+#   selects what the target turns on from the published packs.
 # - Offline builds require make seed-build-deps first (every deps/* package, including
 #   dns/coredns and inference/ollama). Online builds pull the same pins from upstream.
 #   New packaging deps must update deps/ + offline remap; see docs/offline-build-deps.md.

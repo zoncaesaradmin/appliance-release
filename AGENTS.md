@@ -86,9 +86,9 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
     `make dev-shell`, control-plane image, control-plane UI image, host-agent
     image, and similar tooling-container builds
 - **`dev-build` is not a product runtime image.** It is not packaged into the
-  base, developer, or inference packs. Operator build catalogs must use
+  foundation, developer, or inference packs. Operator build catalogs must use
   explicit digest-pinned builder images they supply on the appliance.
-- Each platform release publishes three signed deliverables: base bundle,
+- Each platform release publishes three signed deliverables: foundation pack,
   `developer` pack (Argo + workspace-provisioner), and `inference` pack.
   Install selects packs from the profile (`core` does not include workflows).
 - `make seed-build-deps` publishes `dev-build` to the **LAN Artifact Server only**.

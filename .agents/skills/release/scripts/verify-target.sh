@@ -288,7 +288,7 @@ if [[ -f "${INSTALL_METADATA_PATH}" ]]; then
   fi
 fi
 if [[ -z "${BUNDLE_DIR}" && -n "${RELEASE_VERSION}" ]]; then
-  BUNDLE_DIR="/tmp/appliance-${RELEASE_VERSION}/appliance-${RELEASE_VERSION}-bundle"
+  BUNDLE_DIR="/tmp/appliance-${RELEASE_VERSION}/appliance-${RELEASE_VERSION}-foundation"
   BUNDLE_BIN_DIR="${BUNDLE_DIR}/bin"
 fi
 

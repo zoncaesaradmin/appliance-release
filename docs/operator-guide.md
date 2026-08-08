@@ -115,7 +115,7 @@ different SKU.
 
 ## What The Wrapped Flow Does
 
-- downloads `appliance-<version>-bundle.tar.gz`
+- downloads `appliance-<version>-foundation.tar.gz`
 - downloads `release-signing.pub`
 - verifies `sha256sum.txt`
 - extracts the bundle under `/tmp/appliance-<version>`
@@ -137,24 +137,24 @@ using the wrapped helper above.
 rm -rf "${WORK_DIR}"
 mkdir -p "${WORK_DIR}"
 
-curl -fLo "${WORK_DIR}/appliance-${RELEASE_VERSION}-bundle.tar.gz" \
-  "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/appliance-${RELEASE_VERSION}-bundle.tar.gz"
+curl -fLo "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation.tar.gz" \
+  "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/appliance-${RELEASE_VERSION}-foundation.tar.gz"
 curl -fLo "${WORK_DIR}/release-signing.pub" \
   "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/release-signing.pub"
 curl -fLo "${WORK_DIR}/sha256sum.txt" \
   "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/sha256sum.txt"
 
 ( cd "${WORK_DIR}" && sha256sum -c sha256sum.txt )
-tar -C "${WORK_DIR}" -xzf "${WORK_DIR}/appliance-${RELEASE_VERSION}-bundle.tar.gz"
-chmod +x "${WORK_DIR}/appliance-${RELEASE_VERSION}-bundle/zonctl"
+tar -C "${WORK_DIR}" -xzf "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation.tar.gz"
+chmod +x "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl"
 ```
 
 Fresh install:
 
 ```bash
-sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-bundle/zonctl" preflight --output text
-sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-bundle/zonctl" install \
-  --bundle-dir "${WORK_DIR}/appliance-${RELEASE_VERSION}-bundle" \
+sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl" preflight --output text
+sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl" install \
+  --bundle-dir "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation" \
   --public-key "${WORK_DIR}/release-signing.pub" \
   --state-dir "${STATE_DIR}" \
   --output text
@@ -163,9 +163,9 @@ sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-bundle/zonctl" install \
 Upgrade:
 
 ```bash
-sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-bundle/zonctl" preflight --output text
-sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-bundle/zonctl" upgrade \
-  --bundle-dir "${WORK_DIR}/appliance-${RELEASE_VERSION}-bundle" \
+sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl" preflight --output text
+sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl" upgrade \
+  --bundle-dir "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation" \
   --public-key "${WORK_DIR}/release-signing.pub" \
   --state-dir "${STATE_DIR}" \
   --output text

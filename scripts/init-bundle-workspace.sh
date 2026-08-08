@@ -209,7 +209,7 @@ OUT_DIR="${WORKDIR}/out"
 KEYS_DIR="${WORKDIR}/keys"
 GENERATED_DIR="${WORKDIR}/generated-tools"
 GENERATED_BIN_DIR="${GENERATED_DIR}/bin"
-BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-bundle"
+BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-foundation"
 CONFIG_PATH="${WORKDIR}/bundle-assembly.simple.json"
 VALUES_PATH="${STAGING_DIR}/values-minimal.yaml"
 STAGING_README="${STAGING_DIR}/REQUIRED-FILES.md"
@@ -553,11 +553,11 @@ add_crd_artifacts()
 config["entries"] = entries
 config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 
-# Split signed pack assembly configs (base / developer / inference).
+# Split signed pack assembly configs (foundation / developer / inference).
 out_dir = Path(config["bundleDir"]).parent
 product_version = str(config.get("bundleVersion", "0.0.0"))
 pack_specs = (
-    ("base", f"appliance-{product_version}-bundle", "base"),
+    ("foundation", f"appliance-{product_version}-foundation", "foundation"),
     ("developer", f"appliance-{product_version}-developer", "developer"),
     ("inference", f"appliance-{product_version}-inference", "inference"),
 )
@@ -579,7 +579,7 @@ This workspace is the handoff point between the two repos:
 3. this low-level workspace flow is given a concrete Helm binary path so the
    bundle can include bundle-local operator tooling
 4. \`appliance-release\` assembles signed packs using:
-   \`${WORKDIR}/bundle-assembly.base.json\`
+   \`${WORKDIR}/bundle-assembly.foundation.json\`
    \`${WORKDIR}/bundle-assembly.developer.json\`
    \`${WORKDIR}/bundle-assembly.inference.json\`
    (legacy full-bundle config remains at \`${CONFIG_PATH}\`)
@@ -618,7 +618,7 @@ echo "created simple bundle workspace:"
 echo "  workdir: ${WORKDIR}"
 echo "  config: ${CONFIG_PATH}"
 echo "  pack configs:"
-echo "    ${WORKDIR}/bundle-assembly.base.json"
+echo "    ${WORKDIR}/bundle-assembly.foundation.json"
 echo "    ${WORKDIR}/bundle-assembly.developer.json"
 echo "    ${WORKDIR}/bundle-assembly.inference.json"
 echo "  release-input dir: ${RELEASE_INPUT_DIR}"

@@ -78,7 +78,7 @@ HELM_DOWNLOAD_BASE_URL="${HELM_DOWNLOAD_BASE_URL:-https://get.helm.sh}"
 DOWNLOADS_DIR="${WORKDIR}/downloads"
 STAGING_DIR="${WORKDIR}/staging"
 RELEASE_INPUT_DIR="${WORKDIR}/release-input"
-BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-bundle"
+BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-foundation"
 DEVELOPER_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-developer"
 INFERENCE_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-inference"
 
@@ -623,7 +623,7 @@ assemble_all_packs() {
   for pack_id in ${APPLIANCE_PACKS_RESOLVED}; do
     config_path="${WORKDIR}/bundle-assembly.${pack_id}.json"
     case "${pack_id}" in
-      base) bundle_dir="${BUNDLE_DIR}" ;;
+      foundation) bundle_dir="${BUNDLE_DIR}" ;;
       developer) bundle_dir="${DEVELOPER_BUNDLE_DIR}" ;;
       inference) bundle_dir="${INFERENCE_BUNDLE_DIR}" ;;
       *)
@@ -680,6 +680,6 @@ rm -rf "${BUNDLE_DIR}" "${DEVELOPER_BUNDLE_DIR}" "${INFERENCE_BUNDLE_DIR}"
 assemble_all_packs
 
 echo "packs ready (${APPLIANCE_PACKS_RESOLVED}):"
-appliance_pack_wanted base && echo "  base: ${BUNDLE_DIR}"
+appliance_pack_wanted foundation && echo "  foundation: ${BUNDLE_DIR}"
 appliance_pack_wanted developer && echo "  developer: ${DEVELOPER_BUNDLE_DIR}"
 appliance_pack_wanted inference && echo "  inference: ${INFERENCE_BUNDLE_DIR}"

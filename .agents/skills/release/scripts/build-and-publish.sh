@@ -289,7 +289,7 @@ for path in export_paths:
     candidate = Path(path)
     if not export_dir:
         export_dir = str(candidate.parent)
-    if candidate.name.endswith("-bundle.tar.gz") and not bundle_archive:
+    if candidate.name.endswith("-foundation.tar.gz") and not bundle_archive:
         bundle_archive = str(candidate)
 
 def emit(name: str, value: str):
@@ -366,7 +366,7 @@ if [[ -n "${DETECTED_BUNDLE_ARCHIVE}" ]]; then
   local_bundle_archive="${RUN_DIR}/artifacts/export/$(basename "${DETECTED_BUNDLE_ARCHIVE}")"
 fi
 if [[ -z "${local_bundle_archive}" || ! -f "${local_bundle_archive}" ]]; then
-  local_bundle_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-bundle.tar.gz")"
+  local_bundle_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-foundation.tar.gz")"
 fi
 if [[ -n "${local_bundle_archive}" && -f "${local_bundle_archive}" ]]; then
   extract_archive_into_dir "${local_bundle_archive}" "${RUN_DIR}/artifacts/bundle"
@@ -375,12 +375,13 @@ elif [[ -n "${DETECTED_BUNDLE_DIR}" ]]; then
 fi
 
 if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle" ]]; then
-  log "validating release-input against bundle"
+  log "validating release-input against foundation pack"
+  # Foundation never carries workflows/inference (those are separate packs).
+  # Do not pass --require-workflows / --require-inference / developer extra-OCI
+  # refs against the foundation archive.
   python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
     --release-input-root "${RUN_DIR}/artifacts/release-input" \
     --bundle-root "${RUN_DIR}/artifacts/bundle" \
-    --require-workflows \
-    --expected-extra-oci-image-refs "${WORKSPACE_PROVISIONER_LOCAL_REF}" \
     >"${RUN_DIR}/logs/release-artifact-validation.json"
 else
   fail "missing release-input or bundle artifacts for validation under ${RUN_DIR}/artifacts"

@@ -112,7 +112,7 @@ Suggested layout:
 
 ```text
 api/v1/files/appliance/<version>/
-  appliance-<version>-bundle.tar.gz
+  appliance-<version>-foundation.tar.gz
   appliance-<version>-developer.tar.gz   # when built (APPLIANCE_PACKS)
   appliance-<version>-inference.tar.gz   # when built
   release-index.yaml
@@ -128,7 +128,7 @@ VERSION=0.1.0
 BASE="${APPLIANCE}/api/v1/files/appliance/${VERSION}"
 
 curl -ksS -X POST -H "Authorization: Bearer ${ACCESS_TOKEN}" -H 'Content-Type: application/octet-stream' \
-  -T "./appliance-${VERSION}-bundle.tar.gz" "${BASE}/appliance-${VERSION}-bundle.tar.gz"
+  -T "./appliance-${VERSION}-foundation.tar.gz" "${BASE}/appliance-${VERSION}-foundation.tar.gz"
 curl -ksS -X POST -H "Authorization: Bearer ${ACCESS_TOKEN}" -H 'Content-Type: application/octet-stream' \
   -T ./release-signing.pub "${BASE}/release-signing.pub"
 curl -ksS -X POST -H "Authorization: Bearer ${ACCESS_TOKEN}" -H 'Content-Type: application/octet-stream' \

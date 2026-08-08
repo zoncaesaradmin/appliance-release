@@ -36,7 +36,7 @@ Notes:
   keys must appear in their role file (fixed lab values are fine in YAML).
 - `build_flow.mode` must be `online` or `offline` (exactly one source policy).
 - Optional packs: `build_flow.appliance_packs` literal (`all` default, or
-  `base` / `base,developer` / `base,inference`). Skill maps it to
+  `foundation` / `foundation,developer` / `foundation,inference`). Skill maps it to
   `APPLIANCE_PACKS` for product scripts — no Mac env export required.
   Keep both pull blocks; the inactive one is ignored.
   - Online: `online_image_pull` names `ONLINE_*` env vars (skill maps → `DEV_*`).

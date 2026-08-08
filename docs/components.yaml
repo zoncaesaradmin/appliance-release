@@ -123,7 +123,7 @@ components:
   - id: dev-build
     note: build-host tooling only; not packaged into product packs
     owner: appliance-release
-    recipe: DEV_* pull for build-host tooling only (not packaged into base/developer/inference packs)
+    recipe: DEV_* pull for build-host tooling only (not packaged into foundation/developer/inference packs)
     inputs:
       - DEV_REGISTRY + DEV_IMAGE_REPO/NAME/TAG
     outputs:
@@ -175,5 +175,5 @@ components:
       - release-input-archive
       - k3s-airgap
     outputs:
-      - appliance-<version>-bundle.tar.gz
+      - appliance-<version>-foundation.tar.gz
       - release-signing.pub

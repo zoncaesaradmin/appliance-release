@@ -125,9 +125,9 @@ Important rules:
 - use absolute remote paths, not `~/...`
 - do not store passwords in the config
 - appliance state dir is product-fixed `/var/lib/zon/state` (not YAML)
-- packaging defaults to **base + developer + inference**; set
-  `build_flow.appliance_packs` to `all` (default), `base`, `base,developer`,
-  or `base,inference`. Skill exports that as `APPLIANCE_PACKS` into product
+- packaging defaults to **foundation + developer + inference**; set
+  `build_flow.appliance_packs` to `all` (default), `foundation`, `foundation,developer`,
+  or `foundation,inference`. Skill exports that as `APPLIANCE_PACKS` into product
   scripts. Publish follows `export/release-index.yaml`.
   `install.appliance_profile` only selects which published packs to download.
 

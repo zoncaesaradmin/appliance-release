@@ -100,7 +100,7 @@ Optional overrides:
   INFERENCE_IMAGE_PULL_REF=docker.io/ollama/ollama:0.6.5
   # Inference runtime: always re-export via appliance-code
   # package-inference-runtime-image-archive; digest from index.json.
-  APPLIANCE_PACKS=all                   # all | base | base,developer | base,inference | …
+  APPLIANCE_PACKS=all                   # all | foundation | foundation,developer | foundation,inference | …
 EOF
 }
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -270,7 +270,7 @@ INFERENCE_VERSION="${USER_INFERENCE_VERSION:-${INFERENCE_VERSION:-0.6.5}}"
 INFERENCE_VERSION="${INFERENCE_VERSION#v}"
 INFERENCE_IMAGE_PULL_REF="${USER_INFERENCE_IMAGE_PULL_REF:-${INFERENCE_IMAGE_PULL_REF:-docker.io/ollama/ollama:${INFERENCE_VERSION}}}"
 
-# Pack selection (default all = base + developer + inference).
+# Pack selection (default all = foundation + developer + inference).
 APPLIANCE_PACKS="${USER_APPLIANCE_PACKS:-${APPLIANCE_PACKS:-all}}"
 appliance_packs_resolve
 echo "build-full-bundle: APPLIANCE_PACKS=${APPLIANCE_PACKS} → ${APPLIANCE_PACKS_RESOLVED}"
@@ -421,10 +421,10 @@ WORKSPACE="${RELEASE_WORK_ROOT}/workspace"
 INPUTS_DIR="${WORKSPACE}/inputs"
 GENERATED_DIR="${WORKSPACE}/generated"
 CONFIG_OUT="${GENERATED_DIR}/product-bundle.env"
-BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-bundle"
+BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-foundation"
 DEVELOPER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-developer"
 INFERENCE_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-inference"
-BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-bundle.tar.gz"
+BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-foundation.tar.gz"
 DEVELOPER_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-developer.tar.gz"
 INFERENCE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-inference.tar.gz"
 RELEASE_INDEX="${EXPORT_DIR}/release-index.yaml"
@@ -1742,7 +1742,7 @@ for idx in "${!BUNDLED_IMAGE_ARCHIVES[@]}"; do
 done
 
 INFERENCE_PACKAGE_LINES=""
-INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${INFERENCE_VERSION}") \\"$'\n'
+INFERENCE_ARCHIVE_ARG_LINES=""
 if appliance_pack_wanted inference; then
   INFERENCE_PACKAGE_LINES="$(cat <<INF
 # Appliance inference runtime (upstream Ollama-compatible image re-export).
@@ -1754,6 +1754,7 @@ INFERENCE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/inference-runtime-image.tar"
 INFERENCE_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)"
 INF
 )"
+  INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${INFERENCE_VERSION}") \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
 fi
@@ -1934,7 +1935,7 @@ echo "  ${CONFIG_OUT}"
 make -C "${RELEASE_REPO_DIR}" product-bundle CONFIG="${CONFIG_OUT}"
 
 EXPORTED_ARCHIVES=()
-if appliance_pack_wanted base; then
+if appliance_pack_wanted foundation; then
   tar -C "$(dirname "${BUNDLE_DIR}")" -czf "${BUNDLE_ARCHIVE}" "$(basename "${BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${BUNDLE_ARCHIVE}")
 fi
@@ -1965,9 +1966,9 @@ selected = set(args[:-3])
 
 pack_specs = []
 capability_lines = []
-if "base" in selected:
+if "foundation" in selected:
     pack_specs.append(
-        f"  - id: base\n    filename: {base_name}\n    capabilities: [base, host, artifact, dns]"
+        f"  - id: foundation\n    filename: {base_name}\n    capabilities: [base, host, artifact, dns]"
     )
 if "developer" in selected:
     pack_specs.append(
@@ -2003,7 +2004,7 @@ echo "release-input tarball:"
 echo "  ${RELEASE_INPUT_TAR}"
 echo
 echo "final packs (${APPLIANCE_PACKS_RESOLVED}):"
-appliance_pack_wanted base && echo "  ${BUNDLE_DIR}"
+appliance_pack_wanted foundation && echo "  ${BUNDLE_DIR}"
 appliance_pack_wanted developer && echo "  ${DEVELOPER_BUNDLE_DIR}"
 appliance_pack_wanted inference && echo "  ${INFERENCE_BUNDLE_DIR}"
 echo
@@ -2031,4 +2032,4 @@ echo "  bash ./scripts/publish-release.sh"
 echo "optional:"
 echo "  bash ./scripts/publish-release.sh --latest-alias"
 echo "  PRODUCT_VERSION=<override>"
-echo "  APPLIANCE_PACKS=base|base,developer|all  # default all"
+echo "  APPLIANCE_PACKS=foundation|foundation,developer|all  # default all"

@@ -771,6 +771,11 @@ def main() -> int:
     parser.add_argument("--bundle-root", required=True)
     parser.add_argument("--require-workflows", action="store_true")
     parser.add_argument(
+        "--require-inference",
+        action="store_true",
+        help="Require inferenceRuntimeImage/inferenceChart/inferenceVersion in release-input and the validated bundle (inference pack).",
+    )
+    parser.add_argument(
         "--expected-extra-oci-image-refs",
         default="",
         help="Comma-separated digest-pinned extra OCI image references expected in release-input and bundle.",
@@ -831,7 +836,9 @@ def main() -> int:
             artifacts,
             release_input_path.parent,
             entries_by_path,
-        ),
+        )
+        if args.require_inference
+        else [],
         "metadataBundle": validate_metadata_bundle(
             release_input,
             artifacts,

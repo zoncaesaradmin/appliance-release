@@ -315,13 +315,13 @@ if [[ "${USE_LATEST}" == "1" ]]; then
   REMOTE_DIR="${BASE_URL}/${PATH_PREFIX}/latest"
 fi
 
-BUNDLE_ARCHIVE="appliance-${PRODUCT_VERSION}-bundle.tar.gz"
+BUNDLE_ARCHIVE="appliance-${PRODUCT_VERSION}-foundation.tar.gz"
 DEVELOPER_ARCHIVE="appliance-${PRODUCT_VERSION}-developer.tar.gz"
 INFERENCE_ARCHIVE="appliance-${PRODUCT_VERSION}-inference.tar.gz"
 RELEASE_INDEX_FILE="release-index.yaml"
 PUBLIC_KEY_FILE="release-signing.pub"
 CHECKSUM_FILE="sha256sum.txt"
-BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-bundle"
+BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-foundation"
 DEVELOPER_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-developer"
 INFERENCE_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-inference"
 PUBLIC_KEY="${OUT_DIR}/release-signing.pub"
@@ -402,7 +402,7 @@ done
 echo "[1/5] Release files downloaded."
 
 echo "[2/5] Verifying release checksums..."
-# Verify only the files we downloaded (base + pubkey + index + needed packs).
+# Verify only the files we downloaded (foundation + pubkey + index + needed packs).
 VERIFY_LIST=(
   "${BUNDLE_ARCHIVE}"
   "${RELEASE_INDEX_FILE}"

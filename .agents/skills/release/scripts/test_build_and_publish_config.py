@@ -287,19 +287,19 @@ def test_resolve_appliance_packs_from_config() -> None:
             resolve(
                 MINIMAL_VALID_CONFIG.replace(
                     "build_flow:\n  mode: online\n",
-                    "build_flow:\n  mode: online\n  appliance_packs: base\n",
+                    "build_flow:\n  mode: online\n  appliance_packs: foundation\n",
                 )
             )
-            == "base"
+            == "foundation"
         )
         assert (
             resolve(
                 MINIMAL_VALID_CONFIG.replace(
                     "build_flow:\n  mode: online\n",
-                    "build_flow:\n  mode: online\n  appliance_packs: base,developer\n",
+                    "build_flow:\n  mode: online\n  appliance_packs: foundation,developer\n",
                 )
             )
-            == "base,developer"
+            == "foundation,developer"
         )
 
 

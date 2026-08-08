@@ -153,7 +153,7 @@ only. It is **not** packaged into the appliance. Each release exports signed
 deliverables under `RELEASE_WORK_ROOT/export/` according to `APPLIANCE_PACKS`
 (default `all`):
 
-- `appliance-${PRODUCT_VERSION}-bundle.tar.gz` (base; always included)
+- `appliance-${PRODUCT_VERSION}-foundation.tar.gz` (foundation; always included)
 - `appliance-${PRODUCT_VERSION}-developer.tar.gz` (when selected)
 - `appliance-${PRODUCT_VERSION}-inference.tar.gz` (when selected)
 - `release-index.yaml` (lists packs built this run + capability → pack map)
@@ -163,9 +163,9 @@ deliverables under `RELEASE_WORK_ROOT/export/` according to `APPLIANCE_PACKS`
 bash ./scripts/build-full-bundle.sh
 
 # Faster iteration examples
-APPLIANCE_PACKS=base bash ./scripts/build-full-bundle.sh
-APPLIANCE_PACKS=base,developer bash ./scripts/build-full-bundle.sh
-APPLIANCE_PACKS=base,inference bash ./scripts/build-full-bundle.sh
+APPLIANCE_PACKS=foundation bash ./scripts/build-full-bundle.sh
+APPLIANCE_PACKS=foundation,developer bash ./scripts/build-full-bundle.sh
+APPLIANCE_PACKS=foundation,inference bash ./scripts/build-full-bundle.sh
 ```
 
 That script:
@@ -182,8 +182,8 @@ That script:
 
 Outputs:
 
-- `${RELEASE_WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-bundle` (base pack dir)
-- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-bundle.tar.gz`
+- `${RELEASE_WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-foundation` (foundation pack dir)
+- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-foundation.tar.gz`
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-developer.tar.gz` (when developer pack selected)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-inference.tar.gz` (when inference pack selected)
 - `${RELEASE_WORK_ROOT}/export/release-index.yaml`
@@ -241,7 +241,7 @@ bash ./scripts/publish-release.sh
 ```
 
 `publish-release.sh` uploads the packs listed in `export/release-index.yaml`
-(from the last build). Default build is `APPLIANCE_PACKS=all` (base +
+(from the last build). Default build is `APPLIANCE_PACKS=all` (foundation +
 developer + inference). Selective builds only publish what was staged.
 
 Publish uploads to:

@@ -21,7 +21,7 @@ release-input handoff come from `appliance-code`.
 
 The build flow exports:
 
-- `appliance-<product-version>-bundle.tar.gz`
+- `appliance-<product-version>-foundation.tar.gz`
 - `release-signing.pub`
 
 ## Build-Host Bootstrap
