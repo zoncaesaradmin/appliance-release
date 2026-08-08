@@ -93,9 +93,12 @@ build_flow:
   # Pack selection (literal, like mode). Omit or all → foundation+developer+inference.
   # Skill exports this as APPLIANCE_PACKS into build-full-bundle.sh.
   # Pack id is foundation (not base) — capability base is separate.
+  # Match packs to the install profile, for example:
   #   appliance_packs: all
   #   appliance_packs: foundation
   #   appliance_packs: foundation,developer
+  #   appliance_packs: foundation,inference          # lanllm
+  #   appliance_packs: foundation,developer,inference # builder-lanllm
   appliance_packs: all
 
   # Used when mode: online (ONLINE_* env vars) — all seven required

@@ -301,16 +301,17 @@ This script checks:
 - the browser UI home route returning the expected appliance UI shell when `client_verification.base_url` or `verification.ui_home_command` is configured
 - support bundle collection on failure
 
-For workflow-capable profiles (`core` and `builder`), it also checks the
-workflows engine by default, unless you explicitly disable
-`verification.workflows.enabled`:
-
-- `workflows` and `appliance-builds` namespaces
-- core workflow CRDs
-- the workflow controller deployment and pods
+For workflow-capable profiles (`builder`, `builder-landns`,
+`builder-storage-landns`, `builder-lanllm`, `builder-lanllm-storage-landns`, and
+`core` for the skill's workflows checks), set `verification.workflows.enabled=true`
+and supply the namespaces/CRD/controller commands. For profiles without workflows
+(`storage`, `landns`, `lanllm`, …), set `verification.workflows.enabled=false` —
+the skill fails closed if you leave it true (see `config.install.example.yaml`
+lanllm alternate block).
 
 If `install.appliance_profile` is a build-capable profile (`builder`,
-`builder-landns`, `builder-storage-landns`), it also checks that
+`builder-landns`, `builder-storage-landns`, `builder-lanllm`,
+`builder-lanllm-storage-landns`), it also checks that
 `/api/v1/work-profiles` is not a 404 from the target. When
 `client_verification.base_url` is set, a stale host in
 `verification.builder.api_command` is rewritten to that base URL (same idea as

@@ -272,21 +272,35 @@ config_require_bool() {
 
 profile_supports_builder() {
   case "${1:-}" in
-    builder|builder-landns|builder-storage-landns) return 0 ;;
+    builder|builder-landns|builder-storage-landns|builder-lanllm|builder-lanllm-storage-landns) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 profile_supports_artifacts() {
   case "${1:-}" in
-    storage|builder|storage-landns|builder-landns|builder-storage-landns) return 0 ;;
+    storage|builder|storage-landns|builder-landns|builder-storage-landns|builder-lanllm|builder-lanllm-storage-landns) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 profile_supports_workflows() {
   case "${1:-}" in
-    core|builder|builder-landns|builder-storage-landns) return 0 ;;
+    core|builder|builder-landns|builder-storage-landns|builder-lanllm|builder-lanllm-storage-landns) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+profile_supports_inference() {
+  case "${1:-}" in
+    lanllm|builder-lanllm|builder-lanllm-storage-landns) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+profile_supports_dns() {
+  case "${1:-}" in
+    landns|storage-landns|builder-landns|builder-storage-landns|builder-lanllm-storage-landns) return 0 ;;
     *) return 1 ;;
   esac
 }

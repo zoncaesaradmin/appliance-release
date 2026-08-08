@@ -6,6 +6,7 @@
 # Must agree with build-publish on values (roles are never merged):
 #   product version (release.version optional; else configs/default-product-version)
 #   bundle_store download base (from the build-publish file)
+#   published packs must cover the profile (e.g. lanllm needs foundation+inference)
 #
 # Example:
 #   bash .agents/skills/release/scripts/run-release-from-devhost.sh \
@@ -17,6 +18,9 @@
 # - Only top-level keys: install, verification, client_verification.
 # - target_host is in the Mac config (SSH from the Mac).
 # - Secrets never live here.
+# - verification.*.enabled must match capabilities of install.appliance_profile.
+#   Skill fails closed if e.g. verification.workflows.enabled=true on lanllm
+#   (lanllm has inference only — not workflows/builder/artifact/dns).
 #
 # Runtime secrets (export on the Mac before running):
 #   APPLIANCE_TARGET_SUDO_PASSWORD
@@ -36,7 +40,12 @@ install:
   # Identity — FQDN becomes <appliance_name>.<dns_zone>
   appliance_name: artifact-dns-1
   dns_zone: appliance.internal
-  # core | builder | storage | landns | storage-landns | builder-landns | builder-storage-landns
+  # Profiles:
+  #   core | builder | storage | landns | storage-landns | builder-landns |
+  #   builder-storage-landns | lanllm | builder-lanllm | builder-lanllm-storage-landns
+  # This file's default is builder-landns (artifact+dns+workflows). For an
+  # inference-only host, copy the lanllm block at the bottom into install +
+  # verification (+ client_verification) instead of flipping only the profile.
   appliance_profile: builder-landns
 
   # Bundle extract dir on the target (version should match the published release)
@@ -44,7 +53,7 @@ install:
 
   # Used when install.bootstrap_admin is true
   bootstrap_admin_username: admin
-  # kubernetes_namespace / control_plane_deployment are product-fixed
+  # tls_namespace / control_plane_deployment are product-fixed
   # (control / api-server; zonctl defaultChartNamespace + chart name) — do not set
 
   # additional_tls_sans_csv: 192.168.1.101
@@ -76,9 +85,13 @@ verification:
   allow_verify_schema_bug: false
   ui_home_command: 'body="$(curl -kfsS https://artifact-dns-1.appliance.internal/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Appliance Control Plane UI|appliance-controlplane-ui|Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
   workflows:
-    enabled: false
+    enabled: true
+    namespaces_command: sudo kubectl get ns workflows appliance-builds
+    crds_command: sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io
+    controller_command: sudo kubectl -n workflows wait --for=condition=Available deployment/workflow-controller --timeout=120s
   builder:
-    enabled: false
+    enabled: true
+    api_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/work-profiles)" && [ "$code" != "404" ]'
   artifact:
     enabled: true
     readiness_command: sudo kubectl -n artifacts wait --for=condition=Available deployment/artifact-server --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data
@@ -97,8 +110,62 @@ client_verification:
   base_url: https://artifact-dns-1.appliance.internal
   username: admin
   builder:
-    enabled: false
-    expect_disabled: true
+    enabled: true
+    expect_disabled: false
   artifact:
     enabled: true
     expect_denied_scope: false
+
+# ============================================================================
+# Alternate: lanllm (inference-only)
+# ============================================================================
+#
+# Publish packs must include inference (build_flow.appliance_packs:
+# foundation,inference or all). lanllm enables base+host+inference only —
+# do not leave workflows/builder/artifact/dns verification enabled.
+#
+# install:
+#   appliance_name: lanllm-1
+#   dns_zone: appliance.internal
+#   appliance_profile: lanllm
+#   bundle_download_dir: /tmp/appliance-0.1.0
+#   bootstrap_admin: false
+#   enable_default_license: false
+#
+# verification:
+#   status_command: sudo zonctl status --output json
+#   verify_command: sudo zonctl verify --output json
+#   service_health_command: sudo kubectl get pods -A
+#   app_version_command: sudo zonctl status --output json
+#   failure_log_command: sudo zonctl support-bundle --output json
+#   smoke_test_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/auth/session)" && [ "$code" = "401" ]'
+#   smoke_test_retries: 5
+#   smoke_test_retry_delay_seconds: 3
+#   allow_ingress_warning: true
+#   allow_verify_schema_bug: false
+#   ui_home_command: 'body="$(curl -kfsS https://127.0.0.1/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html"'
+#   workflows:
+#     enabled: false
+#   builder:
+#     enabled: false
+#   artifact:
+#     enabled: false
+#   dns:
+#     enabled: false
+#   # Optional operator check until verification.inference.* exists in the skill:
+#   # service_health_command already lists pods; confirm inference-gateway Ready:
+#   #   sudo kubectl -n inference wait --for=condition=Available deployment/inference-gateway --timeout=120s
+#
+# client_verification:
+#   base_url: https://192.168.1.151   # or product FQDN when landns is also enabled
+#   username: admin
+#   builder:
+#     enabled: false
+#     expect_disabled: true
+#   artifact:
+#     enabled: false
+#     expect_denied_scope: true
+#
+# Related profiles (verification must track capabilities):
+#   builder-lanllm → workflows+builder+artifact on; dns off; needs developer+inference packs
+#   builder-lanllm-storage-landns → workflows+builder+artifact+dns on; needs all packs

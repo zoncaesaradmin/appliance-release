@@ -197,10 +197,21 @@ def test_profile_capability_helpers() -> None:
                 f'source "{COMMON_SH}"; '
                 'profile_supports_builder builder && '
                 '! profile_supports_builder storage && '
+                'profile_supports_builder builder-lanllm && '
+                '! profile_supports_builder lanllm && '
                 'profile_supports_artifacts storage-landns && '
                 '! profile_supports_artifacts core && '
+                'profile_supports_artifacts builder-lanllm && '
+                '! profile_supports_artifacts lanllm && '
                 'profile_supports_workflows core && '
-                '! profile_supports_workflows storage'
+                '! profile_supports_workflows storage && '
+                'profile_supports_workflows builder-lanllm && '
+                '! profile_supports_workflows lanllm && '
+                'profile_supports_inference lanllm && '
+                'profile_supports_inference builder-lanllm-storage-landns && '
+                '! profile_supports_inference builder && '
+                'profile_supports_dns builder-landns && '
+                '! profile_supports_dns lanllm'
             ),
         ],
         check=False,
@@ -228,6 +239,25 @@ def test_csv_items_trimmed_and_workflow_guard_helpers() -> None:
         capture_output=True,
     )
     assert result.returncode == 0, result.stderr
+
+    fail_lanllm = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                f'source "{COMMON_SH}"; '
+                'require_profile_supports_workflows true lanllm verification.workflows.enabled'
+            ),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert fail_lanllm.returncode != 0
+    assert (
+        "verification.workflows.enabled=true but install.appliance_profile=lanllm does not enable workflows"
+        in fail_lanllm.stderr
+    )
 
     fail_result = subprocess.run(
         [
