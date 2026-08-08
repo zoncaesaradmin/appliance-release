@@ -680,6 +680,12 @@ rm -rf "${BUNDLE_DIR}" "${DEVELOPER_BUNDLE_DIR}" "${INFERENCE_BUNDLE_DIR}"
 assemble_all_packs
 
 echo "packs ready (${APPLIANCE_PACKS_RESOLVED}):"
-appliance_pack_wanted foundation && echo "  foundation: ${BUNDLE_DIR}"
-appliance_pack_wanted developer && echo "  developer: ${DEVELOPER_BUNDLE_DIR}"
-appliance_pack_wanted inference && echo "  inference: ${INFERENCE_BUNDLE_DIR}"
+if appliance_pack_wanted foundation; then
+  echo "  foundation: ${BUNDLE_DIR}"
+fi
+if appliance_pack_wanted developer; then
+  echo "  developer: ${DEVELOPER_BUNDLE_DIR}"
+fi
+if appliance_pack_wanted inference; then
+  echo "  inference: ${INFERENCE_BUNDLE_DIR}"
+fi

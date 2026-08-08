@@ -2004,9 +2004,15 @@ echo "release-input tarball:"
 echo "  ${RELEASE_INPUT_TAR}"
 echo
 echo "final packs (${APPLIANCE_PACKS_RESOLVED}):"
-appliance_pack_wanted foundation && echo "  ${BUNDLE_DIR}"
-appliance_pack_wanted developer && echo "  ${DEVELOPER_BUNDLE_DIR}"
-appliance_pack_wanted inference && echo "  ${INFERENCE_BUNDLE_DIR}"
+if appliance_pack_wanted foundation; then
+  echo "  ${BUNDLE_DIR}"
+fi
+if appliance_pack_wanted developer; then
+  echo "  ${DEVELOPER_BUNDLE_DIR}"
+fi
+if appliance_pack_wanted inference; then
+  echo "  ${INFERENCE_BUNDLE_DIR}"
+fi
 echo
 echo "bundled artifact-server image:"
 echo "  ${ARTIFACT_SERVER_IMAGE_REF}"
