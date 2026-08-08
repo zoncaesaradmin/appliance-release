@@ -70,6 +70,7 @@ verify-help:
 	@bash scripts/publish-release.sh --help | grep -q -- 'DEV_REGISTRY'
 	@bash scripts/publish-release.sh --help | grep -q -- 'appliance file API'
 	@bash scripts/test-appliance-packs.sh
+	@bash scripts/test-install-release-index.sh
 
 .PHONY: verify-json
 verify-json:

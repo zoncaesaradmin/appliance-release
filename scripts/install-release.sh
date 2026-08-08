@@ -358,6 +358,65 @@ required_packs_for_profile() {
   esac
 }
 
+# Print space-separated pack ids listed in release-index.yaml (fail closed).
+published_pack_ids_from_index() {
+  local index_path="$1"
+  python3 - "${index_path}" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+ids = []
+try:
+    import yaml  # type: ignore
+except ImportError:
+    yaml = None
+if yaml is not None:
+    data = yaml.safe_load(text) or {}
+    for item in data.get("packs") or []:
+        pack_id = str((item or {}).get("id") or "").strip()
+        if pack_id:
+            ids.append(pack_id)
+else:
+    in_packs = False
+    current_id = ""
+    for line in text.splitlines():
+        if line.startswith("packs:"):
+            in_packs = True
+            continue
+        if in_packs and line and not line.startswith(" ") and not line.startswith("\t"):
+            break
+        if not in_packs:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("- id:"):
+            current_id = stripped.split(":", 1)[1].strip()
+            if current_id:
+                ids.append(current_id)
+        elif stripped.startswith("id:") and current_id == "":
+            current_id = stripped.split(":", 1)[1].strip()
+            if current_id:
+                ids.append(current_id)
+if not ids:
+    raise SystemExit(f"install-release: {path} lists no packs")
+print(" ".join(ids))
+PY
+}
+
+pack_id_is_published() {
+  local want="$1"
+  local published="$2"
+  local item=""
+  # shellcheck disable=SC2086
+  for item in ${published}; do
+    if [[ "${item}" == "${want}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 curl_download() {
   local out_file="$1"
   local url="$2"
@@ -389,6 +448,19 @@ while IFS= read -r pack_id; do
   REQUIRED_PACKS+=("${pack_id}")
 done < <(required_packs_for_profile "${APPLIANCE_PROFILE}")
 
+PUBLISHED_PACKS="$(published_pack_ids_from_index "${OUT_DIR}/${RELEASE_INDEX_FILE}")"
+if ! pack_id_is_published "foundation" "${PUBLISHED_PACKS}"; then
+  echo "install-release: release ${PRODUCT_VERSION} is missing required foundation pack (index packs: ${PUBLISHED_PACKS})" >&2
+  exit 1
+fi
+for pack_id in "${REQUIRED_PACKS[@]}"; do
+  if ! pack_id_is_published "${pack_id}" "${PUBLISHED_PACKS}"; then
+    echo "install-release: profile '${APPLIANCE_PROFILE}' requires pack '${pack_id}', but release ${PRODUCT_VERSION} only publishes: ${PUBLISHED_PACKS}" >&2
+    echo "install-release: rebuild/publish with APPLIANCE_PACKS including '${pack_id}', or choose a profile that only needs those packs" >&2
+    exit 1
+  fi
+done
+
 for pack_id in "${REQUIRED_PACKS[@]}"; do
   case "${pack_id}" in
     developer)
@@ -399,7 +471,7 @@ for pack_id in "${REQUIRED_PACKS[@]}"; do
       ;;
   esac
 done
-echo "[1/5] Release files downloaded."
+echo "[1/5] Release files downloaded (packs: foundation${REQUIRED_PACKS[*]:+ ${REQUIRED_PACKS[*]}})."
 
 echo "[2/5] Verifying release checksums..."
 # Verify only the files we downloaded (foundation + pubkey + index + needed packs).
