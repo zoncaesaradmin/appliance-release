@@ -1744,16 +1744,16 @@ done
 INFERENCE_PACKAGE_LINES=""
 INFERENCE_ARCHIVE_ARG_LINES=""
 if appliance_pack_wanted inference; then
-  INFERENCE_PACKAGE_LINES="$(cat <<INF
-# Appliance inference runtime (upstream Ollama-compatible image re-export).
+  # Build as a plain double-quoted string (not $(cat <<...)). A nested
+  # command-substitution heredoc breaks on the ")" in \$(tr ...).
+  INFERENCE_PACKAGE_LINES="# Appliance inference runtime (upstream Ollama-compatible image re-export).
 make package-inference-runtime-image-archive \\
-  OUT_FILE="/workspace/.run/inference-runtime-image.tar" \\
+  OUT_FILE=\"/workspace/.run/inference-runtime-image.tar\" \\
   INFERENCE_VERSION=$(shell_quote "${INFERENCE_VERSION}") \\
   INFERENCE_SOURCE_IMAGE=$(shell_quote "${INFERENCE_IMAGE_PULL_REF}")
-INFERENCE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/inference-runtime-image.tar"
-INFERENCE_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)"
-INF
-)"
+INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
+INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
+"
   INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${INFERENCE_VERSION}") \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
