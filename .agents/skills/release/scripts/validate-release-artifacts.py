@@ -696,7 +696,12 @@ def validate_metadata_bundle(
 
 
 def validate_extra_oci_images(
-    artifacts: dict, release_input_dir: Path, entries_by_path: dict, expected_refs: list
+    artifacts: dict,
+    release_input_dir: Path,
+    entries_by_path: dict,
+    expected_refs: list,
+    *,
+    require_in_bundle: bool,
 ) -> list:
     images = artifacts.get("extraOCIImages")
     if images is None:
@@ -740,9 +745,12 @@ def validate_extra_oci_images(
                     f"release-input artifacts.extraOCIImages[{idx}] path {rel_path!r} "
                     f"implies imageReference containing {token!r}, got {image_ref!r}"
                 )
-        bundle_path = f"oci-images/{image_path.name}"
-        entry = require_bundle_entry(entries_by_path, bundle_path, f"extraOCIImages[{idx}]")
-        require_matching_bundle_image_reference(entry, image_ref, bundle_path, f"extraOCIImages[{idx}]")
+        if require_in_bundle:
+            bundle_path = f"oci-images/{image_path.name}"
+            entry = require_bundle_entry(entries_by_path, bundle_path, f"extraOCIImages[{idx}]")
+            require_matching_bundle_image_reference(
+                entry, image_ref, bundle_path, f"extraOCIImages[{idx}]"
+            )
         checked.append(image_ref)
     # Expected refs from config may carry stale advisory digests. Match by repository
     # name so online builds that derive the platform manifest digest still pass.
@@ -769,6 +777,17 @@ def main() -> int:
     )
     parser.add_argument("--release-input-root", required=True)
     parser.add_argument("--bundle-root", required=True)
+    parser.add_argument(
+        "--pack",
+        choices=("foundation", "developer", "inference"),
+        default="foundation",
+        help=(
+            "Which signed pack archive is under --bundle-root. "
+            "foundation: base product checks; developer extras are release-input-only. "
+            "developer: workflows + extraOCI must be present in this pack. "
+            "inference: inference chart/image/version must be present in this pack."
+        ),
+    )
     parser.add_argument("--require-workflows", action="store_true")
     parser.add_argument(
         "--require-inference",
@@ -778,11 +797,14 @@ def main() -> int:
     parser.add_argument(
         "--expected-extra-oci-image-refs",
         default="",
-        help="Comma-separated digest-pinned extra OCI image references expected in release-input and bundle.",
+        help="Comma-separated digest-pinned extra OCI image references expected in release-input (and in-bundle when --pack=developer).",
     )
     args = parser.parse_args()
     host_packages_required = True
     expected_extra_refs = parse_csv(args.expected_extra_oci_image_refs)
+    pack = args.pack
+    require_workflows = args.require_workflows or pack == "developer"
+    require_inference = args.require_inference or pack == "inference"
 
     release_input_root = Path(args.release_input_root)
     bundle_root = Path(args.bundle_root)
@@ -811,52 +833,93 @@ def main() -> int:
     }
     bundle_values = load_bundle_values(bundle_manifest_path.parent, entries_by_path)
 
-    checked = {
-        "requiredArtifacts": validate_required_artifacts(
-            artifacts, release_input_path.parent, entries_by_path, host_packages_required=host_packages_required
-        ),
-        "runtimeValues": validate_runtime_values(artifacts, bundle_values),
-        "artifactServer": validate_artifact_server(
-            release_input,
-            bundle_manifest,
-            artifacts,
-            release_input_path.parent,
-            entries_by_path,
-        ),
-        "dns": validate_dns(
-            release_input,
-            bundle_manifest,
-            artifacts,
-            release_input_path.parent,
-            entries_by_path,
-        ),
-        "inference": validate_inference(
+    checked: dict = {"pack": pack}
+    if pack == "foundation":
+        checked.update(
+            {
+                "requiredArtifacts": validate_required_artifacts(
+                    artifacts,
+                    release_input_path.parent,
+                    entries_by_path,
+                    host_packages_required=host_packages_required,
+                ),
+                "runtimeValues": validate_runtime_values(artifacts, bundle_values),
+                "artifactServer": validate_artifact_server(
+                    release_input,
+                    bundle_manifest,
+                    artifacts,
+                    release_input_path.parent,
+                    entries_by_path,
+                ),
+                "dns": validate_dns(
+                    release_input,
+                    bundle_manifest,
+                    artifacts,
+                    release_input_path.parent,
+                    entries_by_path,
+                ),
+                "metadataBundle": validate_metadata_bundle(
+                    release_input,
+                    artifacts,
+                    release_input_path.parent,
+                    entries_by_path,
+                ),
+                "hostAgent": validate_host_agent(
+                    artifacts,
+                    release_input_path.parent,
+                    entries_by_path,
+                ),
+                # Developer/inference extras may appear in release-input for a multi-pack
+                # build; they are not in the foundation archive.
+                "extraOCIImages": validate_extra_oci_images(
+                    artifacts,
+                    release_input_path.parent,
+                    entries_by_path,
+                    expected_extra_refs,
+                    require_in_bundle=False,
+                ),
+            }
+        )
+        if require_workflows:
+            checked["workflows"] = validate_workflows(
+                artifacts, release_input_path.parent, entries_by_path
+            )
+        else:
+            checked["workflows"] = []
+        if require_inference:
+            checked["inference"] = validate_inference(
+                release_input,
+                bundle_manifest,
+                artifacts,
+                release_input_path.parent,
+                entries_by_path,
+            )
+        else:
+            checked["inference"] = []
+    elif pack == "developer":
+        checked.update(
+            {
+                "workflows": validate_workflows(
+                    artifacts, release_input_path.parent, entries_by_path
+                ),
+                "extraOCIImages": validate_extra_oci_images(
+                    artifacts,
+                    release_input_path.parent,
+                    entries_by_path,
+                    expected_extra_refs,
+                    require_in_bundle=True,
+                ),
+            }
+        )
+    else:  # inference
+        checked["inference"] = validate_inference(
             release_input,
             bundle_manifest,
             artifacts,
             release_input_path.parent,
             entries_by_path,
         )
-        if args.require_inference
-        else [],
-        "metadataBundle": validate_metadata_bundle(
-            release_input,
-            artifacts,
-            release_input_path.parent,
-            entries_by_path,
-        ),
-        "hostAgent": validate_host_agent(
-            artifacts,
-            release_input_path.parent,
-            entries_by_path,
-        ),
-        "workflows": validate_workflows(artifacts, release_input_path.parent, entries_by_path)
-        if args.require_workflows
-        else [],
-        "extraOCIImages": validate_extra_oci_images(
-            artifacts, release_input_path.parent, entries_by_path, expected_extra_refs
-        ),
-    }
+
     print(json.dumps({"checked": checked}, indent=2, sort_keys=True))
     return 0
 

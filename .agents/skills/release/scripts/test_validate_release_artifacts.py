@@ -572,6 +572,35 @@ def test_allows_omitted_inference_without_require_flag() -> None:
             raise AssertionError("missing inference accepted with --require-inference")
 
 
+def test_foundation_pack_allows_developer_extra_oci_absent_from_bundle() -> None:
+    """Multi-pack builds put developer extras in release-input but not foundation."""
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["entries"] = [
+            entry
+            for entry in manifest["entries"]
+            if "buildah" not in str(entry.get("targetPath") or "")
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = run_validator(tmp, "--pack", "foundation")
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+        result = run_validator(
+            tmp,
+            "--pack",
+            "developer",
+            "--expected-extra-oci-image-refs",
+            "registry.local/buildah",
+        )
+        if result.returncode == 0:
+            raise AssertionError("developer pack accepted without extraOCIImages in bundle")
+        if "extraOCIImages[0]" not in result.stderr and "missing" not in result.stderr.lower():
+            raise AssertionError(result.stderr)
+
+
 def test_rejects_inference_annotation_and_version_mismatch() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -655,6 +684,7 @@ def main() -> None:
     test_rejects_artifact_server_annotation_and_version_mismatch()
     test_rejects_dns_annotation_and_version_mismatch()
     test_allows_omitted_inference_without_require_flag()
+    test_foundation_pack_allows_developer_extra_oci_absent_from_bundle()
     test_rejects_inference_annotation_and_version_mismatch()
     test_rejects_legacy_zot_image_path_name()
     test_rejects_unidentified_artifact_server_image_path()

@@ -376,13 +376,34 @@ fi
 
 if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle" ]]; then
   log "validating release-input against foundation pack"
-  # Foundation never carries workflows/inference (those are separate packs).
-  # Do not pass --require-workflows / --require-inference / developer extra-OCI
-  # refs against the foundation archive.
   python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
+    --pack foundation \
     --release-input-root "${RUN_DIR}/artifacts/release-input" \
     --bundle-root "${RUN_DIR}/artifacts/bundle" \
     >"${RUN_DIR}/logs/release-artifact-validation.json"
+
+  local_developer_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-developer.tar.gz")"
+  if [[ -n "${local_developer_archive}" && -f "${local_developer_archive}" ]]; then
+    extract_archive_into_dir "${local_developer_archive}" "${RUN_DIR}/artifacts/developer-bundle"
+    log "validating release-input against developer pack"
+    python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
+      --pack developer \
+      --release-input-root "${RUN_DIR}/artifacts/release-input" \
+      --bundle-root "${RUN_DIR}/artifacts/developer-bundle" \
+      --expected-extra-oci-image-refs "${WORKSPACE_PROVISIONER_LOCAL_REF}" \
+      >"${RUN_DIR}/logs/release-artifact-validation-developer.json"
+  fi
+
+  local_inference_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-inference.tar.gz")"
+  if [[ -n "${local_inference_archive}" && -f "${local_inference_archive}" ]]; then
+    extract_archive_into_dir "${local_inference_archive}" "${RUN_DIR}/artifacts/inference-bundle"
+    log "validating release-input against inference pack"
+    python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
+      --pack inference \
+      --release-input-root "${RUN_DIR}/artifacts/release-input" \
+      --bundle-root "${RUN_DIR}/artifacts/inference-bundle" \
+      >"${RUN_DIR}/logs/release-artifact-validation-inference.json"
+  fi
 else
   fail "missing release-input or bundle artifacts for validation under ${RUN_DIR}/artifacts"
 fi
