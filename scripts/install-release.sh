@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# install-http-release.sh — public target-host install helper (fresh install only).
+# install-release.sh — public target-host install helper (fresh install only).
 #
 # Public path:
-#   1) curl -fsSL -o install-http-release.sh "<distributor>/…/install-http-release.sh"
-#   2) bash install-http-release.sh --appliance-name <unique-name> [--appliance-profile <profile>]
+#   1) curl -fsSL -o install-release.sh "<distributor>/…/install-release.sh"
+#   2) bash install-release.sh --appliance-name <unique-name> [--appliance-profile <profile>]
 #
 # This helper does not upgrade in place. If the host already has an owned
 # appliance, fail and require uninstall (or factory-reset), then re-run.
@@ -13,8 +13,8 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: install-http-release.sh --appliance-name NAME [options]
-       install-http-release.sh --help
+usage: install-release.sh --appliance-name NAME [options]
+       install-release.sh --help
 
 Public install (fresh host only):
 
@@ -22,17 +22,17 @@ Public install (fresh host only):
      URL; open static HTTP vs appliance_files differ only on this curl, e.g.
      Authorization header if the store requires a token):
 
-       curl -fsSL -o install-http-release.sh \
-         "https://downloads.example/appliance/0.1.0/install-http-release.sh"
+       curl -fsSL -o install-release.sh \
+         "https://downloads.example/appliance/0.1.0/install-release.sh"
 
   2) Run with a stable unique appliance name (required — identity, TLS SAN /
      FQDN, and registry realm all key off it):
 
-       bash install-http-release.sh --appliance-name my-appliance-1
+       bash install-release.sh --appliance-name my-appliance-1
 
      Optional profile (default: core):
 
-       bash install-http-release.sh \
+       bash install-release.sh \
          --appliance-name my-appliance-1 \
          --appliance-profile storage-landns
 
@@ -120,7 +120,7 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     *)
-      echo "install-http-release: unknown argument: $1" >&2
+      echo "install-release: unknown argument: $1" >&2
       echo "Only --appliance-name (required) and --appliance-profile (optional) are accepted." >&2
       echo "See --help." >&2
       exit 2
@@ -140,7 +140,7 @@ require_nonempty() {
   local name="$1"
   local value="$2"
   if [[ -z "${value}" ]]; then
-    echo "install-http-release: ${name} is required" >&2
+    echo "install-release: ${name} is required" >&2
     exit 2
   fi
 }
@@ -209,7 +209,7 @@ print_captured_failure() {
 }
 
 if [[ -z "${APPLIANCE_NAME}" ]]; then
-  echo "install-http-release: --appliance-name NAME is required (stable instance identity)." >&2
+  echo "install-release: --appliance-name NAME is required (stable instance identity)." >&2
   usage >&2
   exit 2
 fi
@@ -279,20 +279,20 @@ if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
   require_nonempty "IMAGE_PULL_USERNAME_ENV (when IMAGE_PULL_REGISTRY is set)" "${IMAGE_PULL_USERNAME_ENV}"
   require_nonempty "IMAGE_PULL_TOKEN_ENV (when IMAGE_PULL_REGISTRY is set)" "${IMAGE_PULL_TOKEN_ENV}"
   if [[ -z "${!IMAGE_PULL_USERNAME_ENV}" ]]; then
-    echo "install-http-release: image pull username env ${IMAGE_PULL_USERNAME_ENV} is empty" >&2
+    echo "install-release: image pull username env ${IMAGE_PULL_USERNAME_ENV} is empty" >&2
     exit 2
   fi
   if [[ -z "${!IMAGE_PULL_TOKEN_ENV}" ]]; then
-    echo "install-http-release: image pull token env ${IMAGE_PULL_TOKEN_ENV} is empty" >&2
+    echo "install-release: image pull token env ${IMAGE_PULL_TOKEN_ENV} is empty" >&2
     exit 2
   fi
   if [[ -n "${IMAGE_PULL_TLS_VERIFY_ENV}" && -z "${!IMAGE_PULL_TLS_VERIFY_ENV}" ]]; then
-    echo "install-http-release: image pull TLS verify env ${IMAGE_PULL_TLS_VERIFY_ENV} is empty" >&2
+    echo "install-release: image pull TLS verify env ${IMAGE_PULL_TLS_VERIFY_ENV} is empty" >&2
     exit 2
   fi
 fi
 
-echo "install-http-release: using settings"
+echo "install-release: using settings"
 echo "  appliance-name:    ${APPLIANCE_NAME}"
 echo "  appliance-profile: ${APPLIANCE_PROFILE}"
 echo "  dns-zone:          ${DNS_ZONE}"
@@ -418,7 +418,7 @@ tmp_checksums="${OUT_DIR}/.sha256sum.selected"
 : > "${tmp_checksums}"
 for payload in "${VERIFY_LIST[@]}"; do
   if ! awk -v f="${payload}" '$2 == f { print; found=1 } END { exit(found ? 0 : 1) }' "${OUT_DIR}/${CHECKSUM_FILE}" >> "${tmp_checksums}"; then
-    echo "install-http-release: checksum entry missing for ${payload}" >&2
+    echo "install-release: checksum entry missing for ${payload}" >&2
     exit 1
   fi
 done
@@ -426,7 +426,7 @@ if command -v sha256sum >/dev/null 2>&1; then
   (cd "${OUT_DIR}" && sha256sum -c "$(basename "${tmp_checksums}")")
 else
   if ! command -v shasum >/dev/null 2>&1; then
-    echo "install-http-release: need sha256sum or shasum to verify checksums" >&2
+    echo "install-release: need sha256sum or shasum to verify checksums" >&2
     exit 1
   fi
   awk '{print $1 "  " $2}' "${tmp_checksums}" > "${OUT_DIR}/.sha256sum.tmp"
@@ -522,7 +522,7 @@ if [[ "${install_output}" == *"refusing to install (reuse-owned)"* || "${install
   print_captured_failure "[5/5] Existing owned appliance detected; install refused." "${install_stdout}" "${install_stderr}"
   rm -f "${install_stdout}" "${install_stderr}"
   cat >&2 <<'EOF'
-install-http-release: this helper performs a fresh install only.
+install-release: this helper performs a fresh install only.
 Uninstall the appliance on this host, then re-run install:
 
   sudo zonctl uninstall --confirm yes

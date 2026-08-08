@@ -20,7 +20,8 @@ usage: run-build-and-publish-on-build-host.sh \
 
 From the Mac/devhost: live-repo preflight, scp build-publish YAML, sync remote
 appliance-release, SSH-run build-and-publish.sh --local with secrets from
-*this* shell (build_flow.mode + online/offline image pull + bundle_store *_env + sudo).
+*this* shell (build_flow.mode + online/offline image pull + bundle_store *_env +
+sudo). Pack selection comes from build_flow.appliance_packs in the YAML.
 
 Required: build-publish config path + build_host (via --config or --build-host).
 Optional: --run-dir, --remote-run-dir, --remote-config-path, --skip-repo-sync.

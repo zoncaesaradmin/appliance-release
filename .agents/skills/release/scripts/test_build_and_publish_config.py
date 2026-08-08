@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = ROOT / ".agents" / "skills" / "release" / "scripts" / "build-and-publish.sh"
+COMMON = ROOT / ".agents" / "skills" / "release" / "scripts" / "common.sh"
 
 MINIMAL_VALID_CONFIG = """
 release_workspace:
@@ -253,6 +254,74 @@ def test_rejects_literal_image_tag() -> None:
             raise AssertionError(result.stdout)
 
 
+def test_resolve_appliance_packs_from_config() -> None:
+    with tempfile.TemporaryDirectory(prefix="build-and-publish-packs-") as tmp_dir:
+        tmp = Path(tmp_dir)
+
+        def resolve(config_text: str) -> str:
+            config = tmp / "config.yaml"
+            write(config, config_text)
+            cmd = f"source {COMMON} && resolve_appliance_packs_from_config {config}"
+            result = subprocess.run(
+                ["bash", "-c", cmd],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise AssertionError(result.stdout)
+            return result.stdout.strip()
+
+        assert resolve(MINIMAL_VALID_CONFIG) == "all"
+        assert (
+            resolve(
+                MINIMAL_VALID_CONFIG.replace(
+                    "build_flow:\n  mode: online\n",
+                    "build_flow:\n  mode: online\n  appliance_packs: all\n",
+                )
+            )
+            == "all"
+        )
+        assert (
+            resolve(
+                MINIMAL_VALID_CONFIG.replace(
+                    "build_flow:\n  mode: online\n",
+                    "build_flow:\n  mode: online\n  appliance_packs: base\n",
+                )
+            )
+            == "base"
+        )
+        assert (
+            resolve(
+                MINIMAL_VALID_CONFIG.replace(
+                    "build_flow:\n  mode: online\n",
+                    "build_flow:\n  mode: online\n  appliance_packs: base,developer\n",
+                )
+            )
+            == "base,developer"
+        )
+
+
+def test_rejects_appliance_packs_env() -> None:
+    with tempfile.TemporaryDirectory(prefix="build-and-publish-packs-env-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        config = tmp / "config.yaml"
+        run_dir = tmp / "run"
+        write(
+            config,
+            MINIMAL_VALID_CONFIG.replace(
+                "build_flow:\n  mode: online\n",
+                "build_flow:\n  mode: online\n  appliance_packs_env: APPLIANCE_PACKS\n",
+            ),
+        )
+        result = run_build_publish_config(config, run_dir)
+        if result.returncode == 0:
+            raise AssertionError("appliance_packs_env was accepted")
+        if "appliance_packs_env was removed" not in result.stdout:
+            raise AssertionError(result.stdout)
+
+
 def main() -> None:
     test_requires_local()
     test_rejects_legacy_dev_image_pull()
@@ -263,6 +332,8 @@ def main() -> None:
     test_rejects_skill_fixed_build_commands_and_sudo_flags()
     test_rejects_packaging_pin_keys()
     test_rejects_removed_build_publish_path_keys()
+    test_resolve_appliance_packs_from_config()
+    test_rejects_appliance_packs_env()
     print("build-and-publish config tests passed")
 
 

@@ -11,7 +11,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 COMMON_SH = SCRIPT_DIR / "common.sh"
 INSTALL_HELPER = (
-    SCRIPT_DIR.parents[3] / "scripts" / "install-http-release.sh"
+    SCRIPT_DIR.parents[3] / "scripts" / "install-release.sh"
 )
 RUN_INSTALL = SCRIPT_DIR / "run-install-via-public-helper-on-target.sh"
 
@@ -122,7 +122,7 @@ def test_resolve_install_extra_tls_sans() -> None:
         assert result.stdout.strip() == "192.168.1.101 demo.example"
 
 
-def test_install_http_release_wires_image_pull_flags() -> None:
+def test_install_release_wires_image_pull_flags() -> None:
     text = INSTALL_HELPER.read_text(encoding="utf-8")
     assert 'IMAGE_PULL_REGISTRY=""' in text
     assert "--image-pull-registry" in text
@@ -152,7 +152,7 @@ def test_run_install_patches_image_pull_and_dns() -> None:
 def test_helper_patch_assign_roundtrip() -> None:
     """Mirror the Python patcher used on the target for install knobs."""
     with tempfile.TemporaryDirectory(prefix="helper-patch-") as tmp:
-        helper = Path(tmp) / "install-http-release.sh"
+        helper = Path(tmp) / "install-release.sh"
         helper.write_text(
             "\n".join(
                 [
@@ -249,7 +249,7 @@ def main() -> None:
     test_reject_literal_image_pull_registry()
     test_partial_image_pull_registry_fails()
     test_resolve_install_extra_tls_sans()
-    test_install_http_release_wires_image_pull_flags()
+    test_install_release_wires_image_pull_flags()
     test_run_install_patches_image_pull_and_dns()
     test_helper_patch_assign_roundtrip()
     print("install public helper config tests passed")

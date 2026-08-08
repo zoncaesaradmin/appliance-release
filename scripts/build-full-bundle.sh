@@ -100,6 +100,7 @@ Optional overrides:
   INFERENCE_IMAGE_PULL_REF=docker.io/ollama/ollama:0.6.5
   # Inference runtime: always re-export via appliance-code
   # package-inference-runtime-image-archive; digest from index.json.
+  APPLIANCE_PACKS=all                   # all | base | base,developer | base,inference | …
 EOF
 }
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -109,6 +110,8 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RELEASE_REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/appliance-packs.sh"
 DEFAULTS_FILE="${RELEASE_REPO_DIR}/configs/product-bundle.ci.env"
 
 USER_PRODUCT_VERSION="${PRODUCT_VERSION-}"
@@ -136,6 +139,7 @@ USER_DEV_REGISTRY="${DEV_REGISTRY-}"
 USER_DEV_IMAGE_REPO="${DEV_IMAGE_REPO-}"
 USER_DEV_IMAGE_NAME="${DEV_IMAGE_NAME-}"
 USER_DEV_IMAGE_TAG="${DEV_IMAGE_TAG-}"
+USER_APPLIANCE_PACKS="${APPLIANCE_PACKS-}"
 
 set -a
 # shellcheck disable=SC1090
@@ -266,12 +270,27 @@ INFERENCE_VERSION="${USER_INFERENCE_VERSION:-${INFERENCE_VERSION:-0.6.5}}"
 INFERENCE_VERSION="${INFERENCE_VERSION#v}"
 INFERENCE_IMAGE_PULL_REF="${USER_INFERENCE_IMAGE_PULL_REF:-${INFERENCE_IMAGE_PULL_REF:-docker.io/ollama/ollama:${INFERENCE_VERSION}}}"
 
+# Pack selection (default all = base + developer + inference).
+APPLIANCE_PACKS="${USER_APPLIANCE_PACKS:-${APPLIANCE_PACKS:-all}}"
+appliance_packs_resolve
+echo "build-full-bundle: APPLIANCE_PACKS=${APPLIANCE_PACKS} → ${APPLIANCE_PACKS_RESOLVED}"
+
 # The workflows engine is a mandatory component of the complete product
-# super-set (ADR 0011). BUILD_COMPLETE_PRODUCT defaults true and forces WORKFLOWS_ENABLED.
-# WORKFLOWS_VERSION is derived later from appliance-code's Chart.yaml once checked out.
+# super-set (ADR 0011) when the developer pack is selected. BUILD_COMPLETE_PRODUCT
+# defaults true and forces WORKFLOWS_ENABLED for that pack. Pack-selective builds
+# that omit developer skip workflows packaging.
 BUILD_COMPLETE_PRODUCT="${BUILD_COMPLETE_PRODUCT:-true}"
-if [[ -z "${WORKFLOWS_ENABLED}" ]]; then
-  WORKFLOWS_ENABLED="true"
+if appliance_pack_wanted developer; then
+  if [[ -z "${WORKFLOWS_ENABLED}" ]]; then
+    WORKFLOWS_ENABLED="true"
+  fi
+else
+  case "$(printf '%s' "${USER_WORKFLOWS_ENABLED:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on)
+      echo "build-full-bundle: WORKFLOWS_ENABLED=true ignored because developer pack is not in APPLIANCE_PACKS (${APPLIANCE_PACKS_RESOLVED})" >&2
+      ;;
+  esac
+  WORKFLOWS_ENABLED="false"
 fi
 
 # Unified tooling identity.
@@ -426,8 +445,8 @@ bool_true() {
   esac
 }
 
-if bool_true "${BUILD_COMPLETE_PRODUCT}" && ! bool_true "${WORKFLOWS_ENABLED}"; then
-  echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires WORKFLOWS_ENABLED=true (developer slim builds: BUILD_COMPLETE_PRODUCT=false)" >&2
+if bool_true "${BUILD_COMPLETE_PRODUCT}" && appliance_pack_wanted developer && ! bool_true "${WORKFLOWS_ENABLED}"; then
+  echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires WORKFLOWS_ENABLED=true when developer pack is selected (developer slim builds: BUILD_COMPLETE_PRODUCT=false)" >&2
   exit 2
 fi
 # Always resolve the build-host tooling image from DEV_*. This image builds
@@ -1535,17 +1554,21 @@ if [[ "${DNS_IMAGE_PULL_REF}" == *:latest || "${DNS_IMAGE_PULL_REF}" == registry
   echo "build-full-bundle: DNS_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
   exit 2
 fi
-if [[ -z "${INFERENCE_VERSION}" || "${INFERENCE_VERSION}" == *latest* ]]; then
-  echo "build-full-bundle: INFERENCE_VERSION must be an exact non-latest version" >&2
-  exit 2
+if appliance_pack_wanted inference; then
+  if [[ -z "${INFERENCE_VERSION}" || "${INFERENCE_VERSION}" == *latest* ]]; then
+    echo "build-full-bundle: INFERENCE_VERSION must be an exact non-latest version" >&2
+    exit 2
+  fi
+  if [[ "${INFERENCE_IMAGE_PULL_REF}" == *:latest || "${INFERENCE_IMAGE_PULL_REF}" == registry.local/* ]]; then
+    echo "build-full-bundle: INFERENCE_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
+    exit 2
+  fi
 fi
-if [[ "${INFERENCE_IMAGE_PULL_REF}" == *:latest || "${INFERENCE_IMAGE_PULL_REF}" == registry.local/* ]]; then
-  echo "build-full-bundle: INFERENCE_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
-  exit 2
-fi
-if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner || "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner@sha256:* ]]; then
-  echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be an upstream or LAN build-cache pull ref (default docker.io/alpine/git:2.49.0); got ${WORKSPACE_PROVISIONER_IMAGE_REF}" >&2
-  exit 2
+if appliance_pack_wanted developer; then
+  if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner || "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner@sha256:* ]]; then
+    echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be an upstream or LAN build-cache pull ref (default docker.io/alpine/git:2.49.0); got ${WORKSPACE_PROVISIONER_IMAGE_REF}" >&2
+    exit 2
+  fi
 fi
 
 rm -rf "${ARTIFACTS_DIR}" "${WORKSPACE}"
@@ -1576,9 +1599,11 @@ fi
 
 INFERENCE_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-inference/Chart.yaml")"
 # Chart.yaml may use Helm/upstream form v0.6.5 while INFERENCE_VERSION is 0.6.5.
-if [[ -z "${INFERENCE_CHART_APP_VERSION}" || "${INFERENCE_CHART_APP_VERSION#v}" != "${INFERENCE_VERSION}" ]]; then
-  echo "build-full-bundle: INFERENCE_VERSION ${INFERENCE_VERSION} must match appliance-inference chart appVersion ${INFERENCE_CHART_APP_VERSION:-<missing>}" >&2
-  exit 2
+if appliance_pack_wanted inference; then
+  if [[ -z "${INFERENCE_CHART_APP_VERSION}" || "${INFERENCE_CHART_APP_VERSION#v}" != "${INFERENCE_VERSION}" ]]; then
+    echo "build-full-bundle: INFERENCE_VERSION ${INFERENCE_VERSION} must match appliance-inference chart appVersion ${INFERENCE_CHART_APP_VERSION:-<missing>}" >&2
+    exit 2
+  fi
 fi
 
 require_appliance_code_bootstrap
@@ -1599,10 +1624,14 @@ fi
 # public upstreams), prefer LAN build-cache (deps/*) names.
 if offline_build_enabled; then
   require_var DEV_REGISTRY
-  WORKSPACE_PROVISIONER_IMAGE_REF="$(lan_cache_ref alpine-git "${ALPINE_GIT_CACHE_TAG}")"
+  if appliance_pack_wanted developer; then
+    WORKSPACE_PROVISIONER_IMAGE_REF="$(lan_cache_ref alpine-git "${ALPINE_GIT_CACHE_TAG}")"
+  fi
   ARTIFACT_SERVER_SOURCE_IMAGE="$(lan_cache_ref zot-linux-amd64 "v${ARTIFACT_SERVER_VERSION}")"
   DNS_IMAGE_PULL_REF="$(lan_cache_ref coredns "v${DNS_VERSION}")"
-  INFERENCE_IMAGE_PULL_REF="$(lan_cache_ref ollama "${INFERENCE_VERSION}")"
+  if appliance_pack_wanted inference; then
+    INFERENCE_IMAGE_PULL_REF="$(lan_cache_ref ollama "${INFERENCE_VERSION}")"
+  fi
   if bool_true "${WORKFLOWS_ENABLED}"; then
     WORKFLOW_EXECUTOR_IMAGE_REF="$(lan_cache_ref argoexec "${WORKFLOWS_VERSION}")"
     WORKFLOW_CONTROLLER_BASE_IMAGE="$(lan_cache_ref workflow-controller "${WORKFLOWS_VERSION}")"
@@ -1681,7 +1710,7 @@ if bool_true "${WORKFLOWS_ENABLED}"; then
 fi
 
 # Bundled supplemental images for release-input (--extra-oci-image flags):
-# provisioner always; builder only when complete product.
+# workspace-provisioner when the developer pack is selected.
 BUNDLED_IMAGE_ARCHIVES=()
 BUNDLED_IMAGE_REFS=()
 
@@ -1696,11 +1725,13 @@ DNS_IMAGE_REF=""
 INFERENCE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/inference-runtime-image.tar"
 INFERENCE_IMAGE_REF=""
 
-WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:2.49.0}"
-WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
-WORKSPACE_PROVISIONER_IMAGE_REF="$(export_bundled_oci_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "registry.local/workspace-provisioner" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
-BUNDLED_IMAGE_ARCHIVES+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
-BUNDLED_IMAGE_REFS+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
+if appliance_pack_wanted developer; then
+  WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:2.49.0}"
+  WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
+  WORKSPACE_PROVISIONER_IMAGE_REF="$(export_bundled_oci_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "registry.local/workspace-provisioner" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
+  BUNDLED_IMAGE_ARCHIVES+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
+  BUNDLED_IMAGE_REFS+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
+fi
 
 # Note: registry.local/dev-build is intentionally NOT packaged. The DEV_* image
 # remains build-host tooling only; runtime builder images are operator-supplied.
@@ -1709,6 +1740,23 @@ BUNDLED_IMAGE_ARG_LINES=""
 for idx in "${!BUNDLED_IMAGE_ARCHIVES[@]}"; do
   BUNDLED_IMAGE_ARG_LINES+="  BUNDLED_IMAGE_ARGS+=(--extra-oci-image $(shell_quote "${BUNDLED_IMAGE_ARCHIVES[idx]}") --extra-oci-image-reference $(shell_quote "${BUNDLED_IMAGE_REFS[idx]}"))"$'\n'
 done
+
+INFERENCE_PACKAGE_LINES=""
+INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${INFERENCE_VERSION}") \\"$'\n'
+if appliance_pack_wanted inference; then
+  INFERENCE_PACKAGE_LINES="$(cat <<INF
+# Appliance inference runtime (upstream Ollama-compatible image re-export).
+make package-inference-runtime-image-archive \\
+  OUT_FILE="/workspace/.run/inference-runtime-image.tar" \\
+  INFERENCE_VERSION=$(shell_quote "${INFERENCE_VERSION}") \\
+  INFERENCE_SOURCE_IMAGE=$(shell_quote "${INFERENCE_IMAGE_PULL_REF}")
+INFERENCE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/inference-runtime-image.tar"
+INFERENCE_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)"
+INF
+)"
+  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
+fi
 
 cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF
 #!/usr/bin/env bash
@@ -1782,14 +1830,7 @@ make package-dns-server-image-archive \
 DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/dns-server-image.tar"
 DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/dns-server-image.reference)"
 
-# Appliance inference runtime (upstream Ollama-compatible image re-export).
-make package-inference-runtime-image-archive \
-  OUT_FILE="/workspace/.run/inference-runtime-image.tar" \
-  INFERENCE_VERSION=$(shell_quote "${INFERENCE_VERSION}") \
-  INFERENCE_SOURCE_IMAGE=$(shell_quote "${INFERENCE_IMAGE_PULL_REF}")
-INFERENCE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/inference-runtime-image.tar"
-INFERENCE_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)"
-
+${INFERENCE_PACKAGE_LINES}
 
 METADATA_BUNDLE_ARCHIVE_FOR_DEV="\$(bash ./scripts/package/generate-metadata-bundle.sh --software-version "\${CODE_VERSION}" --out-dir "/workspace/.run/metadata-bundle")"
 
@@ -1835,10 +1876,7 @@ bash ./scripts/package/archive-release-input.sh \
   --dns-version $(shell_quote "${DNS_VERSION}") \
   --dns-image "\${DNS_IMAGE_ARCHIVE_FOR_DEV}" \
   --dns-image-reference "\${DNS_IMAGE_REF}" \
-  --inference-version $(shell_quote "${INFERENCE_VERSION}") \
-  --inference-runtime-image "\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}" \
-  --inference-runtime-image-reference "\${INFERENCE_IMAGE_REF}" \
-  --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \
+${INFERENCE_ARCHIVE_ARG_LINES}  --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \
   "\${WORKFLOWS_ARGS[@]}" \
   "\${BUNDLED_IMAGE_ARGS[@]}"
 EOF
@@ -1872,6 +1910,7 @@ set_env_var "${CONFIG_OUT}" HELM_VERSION "${HELM_VERSION}"
 set_env_var "${CONFIG_OUT}" K3S_BINARY "${INPUTS_DIR}/k3s"
 set_env_var "${CONFIG_OUT}" K3S_AIRGAP_IMAGES "${INPUTS_DIR}/k3s-airgap-images-amd64.tar.zst"
 set_env_var "${CONFIG_OUT}" OFFLINE_BUILD "${OFFLINE_BUILD}"
+set_env_var "${CONFIG_OUT}" APPLIANCE_PACKS "${APPLIANCE_PACKS}"
 # Assemble only needs DEV_* for offline files API. Online tooling registry must
 # not be written here — it is not the LAN Artifact Server.
 if offline_build_enabled; then
@@ -1894,12 +1933,22 @@ echo "  ${CONFIG_OUT}"
 
 make -C "${RELEASE_REPO_DIR}" product-bundle CONFIG="${CONFIG_OUT}"
 
-tar -C "$(dirname "${BUNDLE_DIR}")" -czf "${BUNDLE_ARCHIVE}" "$(basename "${BUNDLE_DIR}")"
-tar -C "$(dirname "${DEVELOPER_BUNDLE_DIR}")" -czf "${DEVELOPER_ARCHIVE}" "$(basename "${DEVELOPER_BUNDLE_DIR}")"
-tar -C "$(dirname "${INFERENCE_BUNDLE_DIR}")" -czf "${INFERENCE_ARCHIVE}" "$(basename "${INFERENCE_BUNDLE_DIR}")"
+EXPORTED_ARCHIVES=()
+if appliance_pack_wanted base; then
+  tar -C "$(dirname "${BUNDLE_DIR}")" -czf "${BUNDLE_ARCHIVE}" "$(basename "${BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${BUNDLE_ARCHIVE}")
+fi
+if appliance_pack_wanted developer; then
+  tar -C "$(dirname "${DEVELOPER_BUNDLE_DIR}")" -czf "${DEVELOPER_ARCHIVE}" "$(basename "${DEVELOPER_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${DEVELOPER_ARCHIVE}")
+fi
+if appliance_pack_wanted inference; then
+  tar -C "$(dirname "${INFERENCE_BUNDLE_DIR}")" -czf "${INFERENCE_ARCHIVE}" "$(basename "${INFERENCE_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${INFERENCE_ARCHIVE}")
+fi
 cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
 
-python3 - "${RELEASE_INDEX}" "${PRODUCT_VERSION}" \
+python3 - "${RELEASE_INDEX}" "${PRODUCT_VERSION}" ${APPLIANCE_PACKS_RESOLVED} \
   "$(basename "${BUNDLE_ARCHIVE}")" \
   "$(basename "${DEVELOPER_ARCHIVE}")" \
   "$(basename "${INFERENCE_ARCHIVE}")" <<'PY'
@@ -1908,22 +1957,43 @@ import sys
 
 index_path = Path(sys.argv[1])
 version = sys.argv[2]
-base_name, workflow_name, inference_name = sys.argv[3:6]
-text = f"""version: {version}
+args = sys.argv[3:]
+if len(args) < 4:
+    raise SystemExit("release-index writer: expected pack ids then three filenames")
+base_name, developer_name, inference_name = args[-3:]
+selected = set(args[:-3])
+
+pack_specs = []
+capability_lines = []
+if "base" in selected:
+    pack_specs.append(
+        f"  - id: base\n    filename: {base_name}\n    capabilities: [base, host, artifact, dns]"
+    )
+if "developer" in selected:
+    pack_specs.append(
+        f"  - id: developer\n    filename: {developer_name}\n    capabilities: [workflows, build]"
+    )
+    capability_lines.append("  workflows: developer")
+    capability_lines.append("  build: developer")
+if "inference" in selected:
+    pack_specs.append(
+        f"  - id: inference\n    filename: {inference_name}\n    capabilities: [inference]"
+    )
+    capability_lines.append("  inference: inference")
+
+if capability_lines:
+    capability_block = "\n".join(capability_lines)
+    text = f"""version: {version}
 packs:
-  - id: base
-    filename: {base_name}
-    capabilities: [base, host, artifact, dns]
-  - id: developer
-    filename: {workflow_name}
-    capabilities: [workflows, build]
-  - id: inference
-    filename: {inference_name}
-    capabilities: [inference]
+{chr(10).join(pack_specs)}
 capabilityPacks:
-  workflows: developer
-  build: developer
-  inference: inference
+{capability_block}
+"""
+else:
+    text = f"""version: {version}
+packs:
+{chr(10).join(pack_specs)}
+capabilityPacks: {{}}
 """
 index_path.write_text(text, encoding="utf-8")
 PY
@@ -1932,10 +2002,10 @@ echo
 echo "release-input tarball:"
 echo "  ${RELEASE_INPUT_TAR}"
 echo
-echo "final packs:"
-echo "  ${BUNDLE_DIR}"
-echo "  ${DEVELOPER_BUNDLE_DIR}"
-echo "  ${INFERENCE_BUNDLE_DIR}"
+echo "final packs (${APPLIANCE_PACKS_RESOLVED}):"
+appliance_pack_wanted base && echo "  ${BUNDLE_DIR}"
+appliance_pack_wanted developer && echo "  ${DEVELOPER_BUNDLE_DIR}"
+appliance_pack_wanted inference && echo "  ${INFERENCE_BUNDLE_DIR}"
 echo
 echo "bundled artifact-server image:"
 echo "  ${ARTIFACT_SERVER_IMAGE_REF}"
@@ -1944,9 +2014,9 @@ echo "generated bundle config:"
 echo "  ${WORKSPACE}/generated/product-bundle.env"
 echo
 echo "exported customer delivery files:"
-echo "  ${BUNDLE_ARCHIVE}"
-echo "  ${DEVELOPER_ARCHIVE}"
-echo "  ${INFERENCE_ARCHIVE}"
+for archive in "${EXPORTED_ARCHIVES[@]}"; do
+  echo "  ${archive}"
+done
 echo "  ${RELEASE_INDEX}"
 echo "  ${PUBLIC_KEY_EXPORT}"
 echo
@@ -1956,7 +2026,9 @@ echo "  # export dir is \$RELEASE_WORK_ROOT/export"
 echo "  # uploads to https://\$DEV_REGISTRY/api/v1/files/appliance/<version>/"
 echo "  export RELEASE_WORK_ROOT=${RELEASE_WORK_ROOT}"
 echo "  # DEV_REGISTRY + DEV_REGISTRY_TOKEN (+ DEV_IMAGE_REPO / TLS) from build"
+echo "  # publish follows export/release-index.yaml (same packs as this build)"
 echo "  bash ./scripts/publish-release.sh"
 echo "optional:"
 echo "  bash ./scripts/publish-release.sh --latest-alias"
 echo "  PRODUCT_VERSION=<override>"
+echo "  APPLIANCE_PACKS=base|base,developer|all  # default all"

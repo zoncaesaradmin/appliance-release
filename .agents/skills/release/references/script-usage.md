@@ -35,6 +35,9 @@ Notes:
   for the overview). Scripts do **not** invent operational defaults — required
   keys must appear in their role file (fixed lab values are fine in YAML).
 - `build_flow.mode` must be `online` or `offline` (exactly one source policy).
+- Optional packs: `build_flow.appliance_packs` literal (`all` default, or
+  `base` / `base,developer` / `base,inference`). Skill maps it to
+  `APPLIANCE_PACKS` for product scripts — no Mac env export required.
   Keep both pull blocks; the inactive one is ignored.
   - Online: `online_image_pull` names `ONLINE_*` env vars (skill maps → `DEV_*`).
   - Offline: `offline_image_pull` names the same `DEV_*` LAN vars as `bundle_store`
@@ -92,7 +95,7 @@ Notes:
 - Optional `install.image_pull_registry` teaches K3s/containerd to pull from a
   private LAN registry (`registries.yaml`). Bundle preload stays primary.
   The public-helper install path (`run-install-via-public-helper-on-target.sh`
-  → local `scripts/install-http-release.sh` scp'd to the target →
+  → local `scripts/install-release.sh` scp'd to the target →
   `zonctl install --image-pull-registry*`) applies this when set. Lab installs
   use the local repo helper so this wiring cannot silently lag a stale
   published copy; the signed bundle still downloads from the distributor.

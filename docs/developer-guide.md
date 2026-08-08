@@ -149,13 +149,24 @@ Online mode uses public upstreams for those same pins (K3s from GitHub, Helm
 from get.helm.sh). Files API / LAN build-cache stay off when `OFFLINE_BUILD=0`.
 
 The `DEV_*` tooling image (`dev-build`) builds product images on the build host
-only. It is **not** packaged into the appliance. Each release exports three
-signed deliverables under `RELEASE_WORK_ROOT/export/`:
+only. It is **not** packaged into the appliance. Each release exports signed
+deliverables under `RELEASE_WORK_ROOT/export/` according to `APPLIANCE_PACKS`
+(default `all`):
 
-- `appliance-${PRODUCT_VERSION}-bundle.tar.gz` (base)
-- `appliance-${PRODUCT_VERSION}-developer.tar.gz`
-- `appliance-${PRODUCT_VERSION}-inference.tar.gz`
-- `release-index.yaml` (capability → pack map)
+- `appliance-${PRODUCT_VERSION}-bundle.tar.gz` (base; always included)
+- `appliance-${PRODUCT_VERSION}-developer.tar.gz` (when selected)
+- `appliance-${PRODUCT_VERSION}-inference.tar.gz` (when selected)
+- `release-index.yaml` (lists packs built this run + capability → pack map)
+
+```bash
+# Default: build and stage every pack
+bash ./scripts/build-full-bundle.sh
+
+# Faster iteration examples
+APPLIANCE_PACKS=base bash ./scripts/build-full-bundle.sh
+APPLIANCE_PACKS=base,developer bash ./scripts/build-full-bundle.sh
+APPLIANCE_PACKS=base,inference bash ./scripts/build-full-bundle.sh
+```
 
 That script:
 
@@ -173,8 +184,8 @@ Outputs:
 
 - `${RELEASE_WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-bundle` (base pack dir)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-bundle.tar.gz`
-- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-developer.tar.gz`
-- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-inference.tar.gz`
+- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-developer.tar.gz` (when developer pack selected)
+- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-inference.tar.gz` (when inference pack selected)
 - `${RELEASE_WORK_ROOT}/export/release-index.yaml`
 - `${RELEASE_WORK_ROOT}/export/release-signing.pub`
 
@@ -229,6 +240,10 @@ bash ./scripts/build-full-bundle.sh
 bash ./scripts/publish-release.sh
 ```
 
+`publish-release.sh` uploads the packs listed in `export/release-index.yaml`
+(from the last build). Default build is `APPLIANCE_PACKS=all` (base +
+developer + inference). Selective builds only publish what was staged.
+
 Publish uploads to:
 
 `https://$DEV_REGISTRY/api/v1/files/appliance/<version>/`
@@ -237,7 +252,7 @@ Optional: `bash ./scripts/publish-release.sh --latest-alias` also
 uploads under `appliance/latest/`. `PRODUCT_VERSION` defaults from
 `configs/default-product-version`.
 
-The published `install-http-release.sh` helper takes a required
+The published `install-release.sh` helper takes a required
 `--appliance-name` and optional `--appliance-profile` (default `core`). Other
 values are product defaults stamped at publish or set near the top of the
 script for rare overrides.

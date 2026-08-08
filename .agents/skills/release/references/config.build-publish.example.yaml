@@ -54,6 +54,9 @@
 #     ONLINE_REGISTRY, ONLINE_IMAGE_REPO, ONLINE_IMAGE_NAME, ONLINE_IMAGE_TAG,
 #     ONLINE_REGISTRY_USER, ONLINE_REGISTRY_TOKEN, ONLINE_REGISTRY_TLS_VERIFY
 #   Plus APPLIANCE_BUILD_SUDO_PASSWORD.
+#   Pack selection is a config literal (not an env):
+#     build_flow.appliance_packs: all|base|base,developer|base,inference
+#     (omit or all → full three packs)
 
 # ============================================================================
 # Release workspace on the build host
@@ -86,6 +89,13 @@ build_flow:
   # Flip this only: online | offline. Keep both pull sections below;
   # the inactive one is ignored. Skill unifies the active block → DEV_*.
   mode: online
+
+  # Pack selection (literal, like mode). Omit or all → base+developer+inference.
+  # Skill exports this as APPLIANCE_PACKS into build-full-bundle.sh.
+  #   appliance_packs: all
+  #   appliance_packs: base
+  #   appliance_packs: base,developer
+  appliance_packs: all
 
   # Used when mode: online (ONLINE_* env vars) — all seven required
   online_image_pull:

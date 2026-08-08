@@ -66,16 +66,16 @@ read operator env vars for the public path.
 Open static publish:
 
 ```bash
-curl -fsSL -o install-http-release.sh \
-  "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-http-release.sh"
+curl -fsSL -o install-release.sh \
+  "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-release.sh"
 ```
 
 Authenticated appliance_files store (token only for this download curl):
 
 ```bash
-curl -fsSL -o install-http-release.sh \
+curl -fsSL -o install-release.sh \
   -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-  "https://artifact.example.internal/api/v1/files/appliance/${RELEASE_VERSION}/install-http-release.sh"
+  "https://artifact.example.internal/api/v1/files/appliance/${RELEASE_VERSION}/install-release.sh"
 ```
 
 ### 2) Run with a stable appliance name
@@ -84,9 +84,9 @@ curl -fsSL -o install-http-release.sh \
 TLS, registry realm). Omit profile to install the base `core` profile.
 
 ```bash
-bash install-http-release.sh --appliance-name my-appliance-1
+bash install-release.sh --appliance-name my-appliance-1
 
-bash install-http-release.sh \
+bash install-release.sh \
   --appliance-name my-appliance-1 \
   --appliance-profile storage-landns
 ```

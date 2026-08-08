@@ -3,10 +3,10 @@
 #
 # Builds the full curl URL and auth flags on *this* machine (using config +
 # devhost DEV_* env), SSHs to the target, runs a clean uninstall when zonctl
-# is already present, scp's the local scripts/install-http-release.sh, patches
+# is already present, scp's the local scripts/install-release.sh, patches
 # stamped settings + optional lab install knobs (dns_zone, TLS SANs, image-pull
 # registry, out dir), and runs:
-#   install-http-release.sh --appliance-name … --appliance-profile …
+#   install-release.sh --appliance-name … --appliance-profile …
 #
 # Bundle/charts/images still download from the distributor; only the helper
 # script itself comes from the local release checkout so lab wiring cannot
@@ -138,9 +138,9 @@ case "$(printf '%s' "${tls_verify}" | tr '[:upper:]' '[:lower:]')" in
   *) TLS_INSECURE="0" ;;
 esac
 
-HELPER_URL="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-http-release.sh"
-SCRIPT_PATH="/tmp/install-http-release-${RELEASE_VERSION}.sh"
-LOCAL_HELPER="$(skill_release_repo_root "${SCRIPT_DIR}")/scripts/install-http-release.sh"
+HELPER_URL="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-release.sh"
+SCRIPT_PATH="/tmp/install-release-${RELEASE_VERSION}.sh"
+LOCAL_HELPER="$(skill_release_repo_root "${SCRIPT_DIR}")/scripts/install-release.sh"
 [[ -f "${LOCAL_HELPER}" ]] || fail "local install helper missing: ${LOCAL_HELPER}"
 
 if [[ -z "${RUN_DIR}" ]]; then
@@ -261,7 +261,7 @@ text = set_assign(text, \"IMAGE_PULL_TLS_VERIFY_ENV\", image_pull_tls_verify_env
 Path(path).write_text(text, encoding=\"utf-8\")
 PY
 
-echo \"running install-http-release.sh --appliance-name \${name} --appliance-profile \${profile} (via non-interactive sudo)\"
+echo \"running install-release.sh --appliance-name \${name} --appliance-profile \${profile} (via non-interactive sudo)\"
 printf '%s\\n' ${quoted_sudo_password} | sudo -S -p ''${sudo_preserve} bash \"\${script_path}\" --appliance-name \"\${name}\" --appliance-profile \"\${profile}\"
 "
 

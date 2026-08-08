@@ -125,8 +125,11 @@ Important rules:
 - use absolute remote paths, not `~/...`
 - do not store passwords in the config
 - appliance state dir is product-fixed `/var/lib/zon/state` (not YAML)
-- packaging builds **base + developer + inference** packs every release;
-  `install.appliance_profile` only selects modules at install
+- packaging defaults to **base + developer + inference**; set
+  `build_flow.appliance_packs` to `all` (default), `base`, `base,developer`,
+  or `base,inference`. Skill exports that as `APPLIANCE_PACKS` into product
+  scripts. Publish follows `export/release-index.yaml`.
+  `install.appliance_profile` only selects which published packs to download.
 
 Publish/install download uses the appliance file API only:
 
@@ -144,7 +147,7 @@ Publish/install download uses the appliance file API only:
 Also skill-owned post-build check:
 `.agents/skills/release/scripts/validate-release-artifacts.py`
 (release-input ↔ bundle OCI contract after the three product scripts).
-Product-owned install helper: `scripts/install-http-release.sh`
+Product-owned install helper: `scripts/install-release.sh`
 (published with the release).
 
 **Skill entry / remote wrappers**

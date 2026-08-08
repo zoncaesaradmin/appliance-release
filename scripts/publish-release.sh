@@ -29,6 +29,9 @@ Optional environment:
                             (default: ${TMPDIR:-/tmp}/appliance-build)
   PRODUCT_VERSION           Override configs/default-product-version
 
+Publishes whatever packs are listed in export/release-index.yaml from the
+last build-full-bundle.sh run (default build is APPLIANCE_PACKS=all).
+
 Options:
   --release-work-root DIR   Same as RELEASE_WORK_ROOT
   --product-version VERSION Same as PRODUCT_VERSION
@@ -134,34 +137,66 @@ PATH_PREFIX="${PUBLISH_PATH_PREFIX}"
 
 RELEASE_WORK_ROOT="$(cd "$(dirname "${RELEASE_WORK_ROOT}")" && pwd)/$(basename "${RELEASE_WORK_ROOT}")"
 EXPORT_DIR="${RELEASE_WORK_ROOT}/export"
-BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-bundle.tar.gz"
-DEVELOPER_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-developer.tar.gz"
-INFERENCE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-inference.tar.gz"
 RELEASE_INDEX="${EXPORT_DIR}/release-index.yaml"
 PUBLIC_KEY_FILE="${EXPORT_DIR}/release-signing.pub"
 CHECKSUM_FILE="${EXPORT_DIR}/sha256sum.txt"
-INSTALL_HELPER_HTTP="${SCRIPT_DIR}/install-http-release.sh"
-INSTALL_HELPER_HTTP_PUBLISHED="install-http-release.sh"
+INSTALL_HELPER="${SCRIPT_DIR}/install-release.sh"
+INSTALL_HELPER_PUBLISHED="install-release.sh"
 
 if [[ ! -d "${EXPORT_DIR}" ]]; then
   echo "publish-release: export directory not found: ${EXPORT_DIR} (set RELEASE_WORK_ROOT)" >&2
   exit 1
 fi
 
-require_file "${BUNDLE_ARCHIVE}" "bundle archive"
-require_file "${DEVELOPER_ARCHIVE}" "developer pack archive"
-require_file "${INFERENCE_ARCHIVE}" "inference pack archive"
 require_file "${RELEASE_INDEX}" "release index"
 require_file "${PUBLIC_KEY_FILE}" "release signing public key"
-require_file "${INSTALL_HELPER_HTTP}" "HTTP install helper script"
+require_file "${INSTALL_HELPER}" "install helper script"
 
-CHECKSUM_TARGETS=(
-  "$(basename "${BUNDLE_ARCHIVE}")"
-  "$(basename "${DEVELOPER_ARCHIVE}")"
-  "$(basename "${INFERENCE_ARCHIVE}")"
-  "$(basename "${RELEASE_INDEX}")"
-  "$(basename "${PUBLIC_KEY_FILE}")"
+mapfile -t PACK_FILENAMES < <(python3 - "${RELEASE_INDEX}" <<'PY'
+from pathlib import Path
+import sys
+
+try:
+    import yaml  # type: ignore
+except ImportError:
+    yaml = None
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+packs = []
+if yaml is not None:
+    data = yaml.safe_load(text) or {}
+    for item in data.get("packs") or []:
+        name = str((item or {}).get("filename") or "").strip()
+        if name:
+            packs.append(name)
+else:
+    # Minimal fallback without PyYAML: read "filename:" lines under packs.
+    in_packs = False
+    for line in text.splitlines():
+        if line.startswith("packs:"):
+            in_packs = True
+            continue
+        if in_packs and line and not line.startswith(" ") and not line.startswith("\t"):
+            break
+        if in_packs and "filename:" in line:
+            packs.append(line.split("filename:", 1)[1].strip())
+if not packs:
+    raise SystemExit("publish-release: release-index.yaml lists no packs")
+print("\n".join(packs))
+PY
 )
+
+RELEASE_FILE_PAYLOADS=()
+for pack_file in "${PACK_FILENAMES[@]}"; do
+  require_file "${EXPORT_DIR}/${pack_file}" "pack archive ${pack_file}"
+  RELEASE_FILE_PAYLOADS+=("${EXPORT_DIR}/${pack_file}")
+done
+RELEASE_FILE_PAYLOADS+=("${RELEASE_INDEX}" "${PUBLIC_KEY_FILE}")
+
+CHECKSUM_TARGETS=()
+for payload in "${RELEASE_FILE_PAYLOADS[@]}"; do
+  CHECKSUM_TARGETS+=("$(basename "${payload}")")
+done
 if command -v shasum >/dev/null 2>&1; then
   (
     cd "${EXPORT_DIR}"
@@ -258,14 +293,9 @@ upload_payloads_to_api_dir() {
 PUBLIC_BASE_URL="$(trim_trailing_slashes "${PUBLIC_BASE_URL}")"
 PUBLISH_STAGE_DIR="$(mktemp -d "${EXPORT_DIR}/.publish-stage.XXXXXX")"
 trap 'rm -rf "${PUBLISH_STAGE_DIR}"' EXIT
-PUBLISHED_INSTALL_HELPER="${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
-stamp_helper "${INSTALL_HELPER_HTTP}" "${PUBLISHED_INSTALL_HELPER}"
-RELEASE_FILE_PAYLOADS=(
-  "${BUNDLE_ARCHIVE}"
-  "${DEVELOPER_ARCHIVE}"
-  "${INFERENCE_ARCHIVE}"
-  "${RELEASE_INDEX}"
-  "${PUBLIC_KEY_FILE}"
+PUBLISHED_INSTALL_HELPER="${PUBLISH_STAGE_DIR}/${INSTALL_HELPER_PUBLISHED}"
+stamp_helper "${INSTALL_HELPER}" "${PUBLISHED_INSTALL_HELPER}"
+RELEASE_FILE_PAYLOADS+=(
   "${CHECKSUM_FILE}"
 )
 RELEASE_PAYLOADS=(
@@ -287,7 +317,8 @@ for payload in "${RELEASE_FILE_PAYLOADS[@]}"; do
 done
 echo
 echo "published helper script:"
-echo "  ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED}"
+echo "  ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_PUBLISHED}"
 echo
 echo "authenticated install helper example:"
-echo "  curl -fsSL -H 'Authorization: Bearer <token>' ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_HTTP_PUBLISHED} | bash -s -- --base-url ${PUBLIC_BASE_URL}"
+echo "  curl -fsSL -H 'Authorization: Bearer <token>' -o install-release.sh ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_PUBLISHED}"
+echo "  bash install-release.sh --appliance-name <unique-name> [--appliance-profile <profile>]"

@@ -65,10 +65,11 @@ verify-help:
 	@for script in $$(find "$(RELEASE_SKILL_SCRIPT_DIR)" -type f -name '*.sh' | LC_ALL=C sort); do \
 		bash "$$script" --help >/dev/null; \
 	done
-	@bash scripts/install-http-release.sh --help | grep -q -- '--appliance-name'
-	@bash scripts/install-http-release.sh --help | grep -q -- 'appliance-name'
+	@bash scripts/install-release.sh --help | grep -q -- '--appliance-name'
+	@bash scripts/install-release.sh --help | grep -q -- 'appliance-name'
 	@bash scripts/publish-release.sh --help | grep -q -- 'DEV_REGISTRY'
 	@bash scripts/publish-release.sh --help | grep -q -- 'appliance file API'
+	@bash scripts/test-appliance-packs.sh
 
 .PHONY: verify-json
 verify-json:

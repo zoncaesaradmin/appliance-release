@@ -13,6 +13,8 @@ EOF
 CONFIG_PATH=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/appliance-packs.sh"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -616,12 +618,18 @@ assemble_all_packs() {
   local pack_id=""
   local config_path=""
   local bundle_dir=""
-  for pack_id in base developer inference; do
+  appliance_packs_resolve
+  echo "assemble-product-bundle: APPLIANCE_PACKS=${APPLIANCE_PACKS} → ${APPLIANCE_PACKS_RESOLVED}"
+  for pack_id in ${APPLIANCE_PACKS_RESOLVED}; do
     config_path="${WORKDIR}/bundle-assembly.${pack_id}.json"
     case "${pack_id}" in
       base) bundle_dir="${BUNDLE_DIR}" ;;
       developer) bundle_dir="${DEVELOPER_BUNDLE_DIR}" ;;
       inference) bundle_dir="${INFERENCE_BUNDLE_DIR}" ;;
+      *)
+        echo "assemble-product-bundle: unsupported pack id ${pack_id}" >&2
+        exit 2
+        ;;
     esac
     rm -rf "${bundle_dir}"
     echo "assemble-product-bundle: assembling pack ${pack_id}"
@@ -671,7 +679,7 @@ rm -rf "${BUNDLE_DIR}" "${DEVELOPER_BUNDLE_DIR}" "${INFERENCE_BUNDLE_DIR}"
 
 assemble_all_packs
 
-echo "packs ready:"
-echo "  base: ${BUNDLE_DIR}"
-echo "  developer: ${DEVELOPER_BUNDLE_DIR}"
-echo "  inference: ${INFERENCE_BUNDLE_DIR}"
+echo "packs ready (${APPLIANCE_PACKS_RESOLVED}):"
+appliance_pack_wanted base && echo "  base: ${BUNDLE_DIR}"
+appliance_pack_wanted developer && echo "  developer: ${DEVELOPER_BUNDLE_DIR}"
+appliance_pack_wanted inference && echo "  inference: ${INFERENCE_BUNDLE_DIR}"

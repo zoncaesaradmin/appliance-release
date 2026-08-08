@@ -87,7 +87,7 @@ PY
 }
 
 # Fixed product appliance state directory (matches zonctl default and
-# scripts/install-http-release.sh STATE_DIR). Not release config —
+# scripts/install-release.sh STATE_DIR). Not release config —
 # operators override only by editing that product install script after download.
 default_appliance_state_dir() {
   printf '%s\n' "/var/lib/zon/state"
@@ -565,6 +565,20 @@ resolve_build_flow_mode() {
   esac
 }
 
+# Resolve pack selection for product scripts.
+# Config: build_flow.appliance_packs (literal value, like build_flow.mode).
+# Empty/omitted → all. Skill exports APPLIANCE_PACKS into product scripts.
+resolve_appliance_packs_from_config() {
+  local config_path="$1"
+  local value=""
+  value="$(config_get_optional "${config_path}" "build_flow.appliance_packs" || true)"
+  value="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  if [[ -z "${value}" ]]; then
+    value="all"
+  fi
+  printf '%s' "${value}"
+}
+
 # Repo-owned default product version (configs/default-product-version).
 # PRODUCT_VERSION / release.version may override it.
 read_default_product_version() {
@@ -678,6 +692,9 @@ reject_removed_build_publish_packaging_keys() {
     || -n "$(config_get_optional "${config_path}" "build_flow.dns.image_pull_ref" || true)" ]]; then
     fail "build_flow workflows engine/Zot/DNS/provisioner pin keys were removed from build-publish config; product scripts/build-full-bundle.sh owns those defaults"
   fi
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.appliance_packs_env" || true)" ]]; then
+    fail "build_flow.appliance_packs_env was removed; set build_flow.appliance_packs to a literal value (all|base|base,developer|base,inference)"
+  fi
   if [[ -n "$(config_get_optional "${config_path}" "verification.workflows.enabled" || true)" \
     || -n "$(config_get_optional "${config_path}" "install.appliance_profile" || true)" ]]; then
     fail "verification.* and install.* belong on the install-role config, not build-publish"
@@ -752,6 +769,7 @@ collect_build_publish_env_names() {
       names+=("${candidate}")
     fi
   done
+
   # Bootstrap/build always use sudo on the build host.
   names+=("APPLIANCE_BUILD_SUDO_PASSWORD")
   for n in "${names[@]}"; do

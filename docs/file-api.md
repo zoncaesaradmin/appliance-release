@@ -113,9 +113,12 @@ Suggested layout:
 ```text
 api/v1/files/appliance/<version>/
   appliance-<version>-bundle.tar.gz
+  appliance-<version>-developer.tar.gz   # when built (APPLIANCE_PACKS)
+  appliance-<version>-inference.tar.gz   # when built
+  release-index.yaml
   release-signing.pub
   sha256sum.txt
-  install-http-release.sh
+  install-release.sh
 ```
 
 Upload the standard release bundle files (always stream with `-T`):
@@ -131,7 +134,7 @@ curl -ksS -X POST -H "Authorization: Bearer ${ACCESS_TOKEN}" -H 'Content-Type: a
 curl -ksS -X POST -H "Authorization: Bearer ${ACCESS_TOKEN}" -H 'Content-Type: application/octet-stream' \
   -T ./sha256sum.txt "${BASE}/sha256sum.txt"
 curl -ksS -X POST -H "Authorization: Bearer ${ACCESS_TOKEN}" -H 'Content-Type: application/octet-stream' \
-  -T ./install-http-release.sh "${BASE}/install-http-release.sh"
+  -T ./install-release.sh "${BASE}/install-release.sh"
 ```
 
 Download the helper:
@@ -139,7 +142,7 @@ Download the helper:
 ```bash
 curl -ksS \
   -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-  "${BASE}/install-http-release.sh"
+  "${BASE}/install-release.sh"
 ```
 
 ## Notes
