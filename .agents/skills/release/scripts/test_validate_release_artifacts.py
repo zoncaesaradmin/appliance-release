@@ -601,6 +601,40 @@ def test_foundation_pack_allows_developer_extra_oci_absent_from_bundle() -> None
             raise AssertionError(result.stderr)
 
 
+def test_developer_pack_skips_foundation_values_file() -> None:
+    """Developer archives do not ship configuration/values.yaml."""
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        # Keep only developer-relevant entries (no values.yaml).
+        keep_prefixes = (
+            "charts/argo-workflows",
+            "kubernetes/crds/",
+            "oci-images/workflow-",
+            "oci-images/buildah",
+        )
+        manifest["entries"] = [
+            entry
+            for entry in manifest["entries"]
+            if any(str(entry.get("targetPath") or "").startswith(p) for p in keep_prefixes)
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        values_path = tmp / "bundle" / "configuration" / "values.yaml"
+        if values_path.exists():
+            values_path.unlink()
+        result = run_validator(
+            tmp,
+            "--pack",
+            "developer",
+            "--expected-extra-oci-image-refs",
+            "registry.local/buildah",
+        )
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+
+
 def test_rejects_inference_annotation_and_version_mismatch() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -685,6 +719,7 @@ def main() -> None:
     test_rejects_dns_annotation_and_version_mismatch()
     test_allows_omitted_inference_without_require_flag()
     test_foundation_pack_allows_developer_extra_oci_absent_from_bundle()
+    test_developer_pack_skips_foundation_values_file()
     test_rejects_inference_annotation_and_version_mismatch()
     test_rejects_legacy_zot_image_path_name()
     test_rejects_unidentified_artifact_server_image_path()

@@ -831,10 +831,10 @@ def main() -> int:
         for entry in entries
         if isinstance(entry, dict)
     }
-    bundle_values = load_bundle_values(bundle_manifest_path.parent, entries_by_path)
 
     checked: dict = {"pack": pack}
     if pack == "foundation":
+        bundle_values = load_bundle_values(bundle_manifest_path.parent, entries_by_path)
         checked.update(
             {
                 "requiredArtifacts": validate_required_artifacts(
