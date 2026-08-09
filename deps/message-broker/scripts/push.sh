@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$(cd "$(dirname "$0")/../../.." && pwd)/scripts/deps-common.sh"
+source "${ROOT}/pins.env"
+deps_require_var DEV_REGISTRY
+dest="$(deps_build_cache_ref "${CACHE_NAME}" "${CACHE_TAG}")"
+deps_push_oci "${LOCAL_REF}" "${dest}"
+echo "published ${dest}"

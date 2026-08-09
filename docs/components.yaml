@@ -139,6 +139,15 @@ components:
       - sbom, provenance, notices, tests stubs as required
     depends_on: []
 
+  - id: message-broker
+    owner: appliance-code / appliance-release
+    recipe: pinned NATS JetStream image + appliance-message-broker chart
+    required_for: BUILD_COMPLETE_PRODUCT
+    outputs:
+      - message broker OCI image archive
+      - message broker chart
+    depends_on: []
+
   - id: release-input-archive
     owner: appliance-code
     recipe: scripts/package/archive-release-input.sh
@@ -159,6 +168,7 @@ components:
       - workspace-provisioner
       # dev-build removed from product bundle (tooling only)
       - metadata-bundle
+      - message-broker
     always_rebuild: true
     outputs:
       - release-input-*.tar.gz

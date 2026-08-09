@@ -86,6 +86,7 @@ Optional overrides:
   # DEV_* tooling image (dev-build) builds product images on the build host only.
   # It is NOT packaged into the appliance bundle; operators supply builder images.
   ARTIFACT_SERVER_VERSION=2.1.8
+  MESSAGE_BROKER_SOURCE_IMAGE=nats:2.10.26-alpine
   ARTIFACT_SERVER_SOURCE_IMAGE=ghcr.io/project-zot/zot-linux-amd64:v2.1.8
   # Artifact server: always wrap upstream via appliance-code
   # package-artifact-server-image-archive (dev-run has buildah+skopeo);
@@ -257,6 +258,7 @@ WORKSPACE_PROVISIONER_IMAGE_REF="${USER_WORKSPACE_PROVISIONER_IMAGE_REF:-${WORKS
 ARTIFACT_SERVER_VERSION="${USER_ARTIFACT_SERVER_VERSION:-${ARTIFACT_SERVER_VERSION:-2.1.8}}"
 ARTIFACT_SERVER_VERSION="${ARTIFACT_SERVER_VERSION#v}"
 ARTIFACT_SERVER_SOURCE_IMAGE="${USER_ARTIFACT_SERVER_SOURCE_IMAGE:-${ARTIFACT_SERVER_SOURCE_IMAGE:-ghcr.io/project-zot/zot-linux-amd64:v${ARTIFACT_SERVER_VERSION}}}"
+MESSAGE_BROKER_SOURCE_IMAGE="${USER_MESSAGE_BROKER_SOURCE_IMAGE:-${MESSAGE_BROKER_SOURCE_IMAGE:-nats:2.10.26-alpine}}"
 # compatibility.dnsVersion is unprefixed (1.14.4). Chart appVersion and the
 # upstream registry.k8s.io tag use a leading v (v1.14.4). Normalize before
 # constructing the pull ref, same as ARTIFACT_SERVER_VERSION above.
@@ -1628,6 +1630,7 @@ if offline_build_enabled; then
     WORKSPACE_PROVISIONER_IMAGE_REF="$(lan_cache_ref alpine-git "${ALPINE_GIT_CACHE_TAG}")"
   fi
   ARTIFACT_SERVER_SOURCE_IMAGE="$(lan_cache_ref zot-linux-amd64 "v${ARTIFACT_SERVER_VERSION}")"
+  MESSAGE_BROKER_SOURCE_IMAGE="$(lan_cache_ref nats "2.10.26-alpine")"
   DNS_IMAGE_PULL_REF="$(lan_cache_ref coredns "v${DNS_VERSION}")"
   if appliance_pack_wanted inference; then
     INFERENCE_IMAGE_PULL_REF="$(lan_cache_ref ollama "${INFERENCE_VERSION}")"
@@ -1767,6 +1770,8 @@ CONTROL_PLANE_IMAGE_OUT="/workspace/.run/control-plane-image.tar"
 UI_IMAGE_OUT="/workspace/.run/appliance-ui-image.tar"
 HOST_AGENT_IMAGE_OUT="/workspace/.run/appliance-host-agent-image.tar"
 HOST_AGENT_IMAGE_REF_FILE="/workspace/.run/appliance-host-agent-image.reference"
+MESSAGE_BROKER_IMAGE_OUT="/workspace/.run/message-broker-image.tar"
+MESSAGE_BROKER_IMAGE_REF_FILE="/workspace/.run/message-broker-image.reference"
 WORKFLOWS_ARGS=()
 BUNDLED_IMAGE_ARGS=()
 # Prefer the release/product version for image tags and the control-plane
@@ -1802,6 +1807,11 @@ make package-host-agent-image-archive \
   RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \
   RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
 HOST_AGENT_IMAGE_REF="\$(tr -d '\r\n' < "\${HOST_AGENT_IMAGE_REF_FILE}")"
+make package-message-broker-image-archive \
+  OUT_FILE="\${MESSAGE_BROKER_IMAGE_OUT}" \
+  REFERENCE_OUT_FILE="\${MESSAGE_BROKER_IMAGE_REF_FILE}" \
+  MESSAGE_BROKER_SOURCE_IMAGE=$(shell_quote "${MESSAGE_BROKER_SOURCE_IMAGE:-nats:2.10.26-alpine}")
+MESSAGE_BROKER_IMAGE_REF="\$(tr -d '\r\n' < "\${MESSAGE_BROKER_IMAGE_REF_FILE}")"
 # Super-set: always pass host-packages (packages staged at install; services off).
 HOST_PACKAGES_ARGS=(
   --host-packages-dir "\${HOST_PACKAGES_DIR_FOR_DEV}"
@@ -1869,6 +1879,8 @@ bash ./scripts/package/archive-release-input.sh \
   --ui-image-reference "localhost/appliance-ui:\${CODE_VERSION}" \
   --host-agent-image "\${HOST_AGENT_IMAGE_OUT}" \
   --host-agent-image-reference "\${HOST_AGENT_IMAGE_REF}" \
+  --message-broker-image "\${MESSAGE_BROKER_IMAGE_OUT}" \
+  --message-broker-image-reference "\${MESSAGE_BROKER_IMAGE_REF}" \
   "\${HOST_PACKAGES_ARGS[@]}" \
   --k3s-version $(shell_quote "${K3S_VERSION}") \
   --artifact-server-version $(shell_quote "${ARTIFACT_SERVER_VERSION}") \

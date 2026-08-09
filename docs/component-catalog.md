@@ -41,6 +41,7 @@ flowchart TB
     devBuild[dev-build]
     hostPkgs[host-packages]
     meta[metadata-bundle (policy + workflow defs)]
+    broker[message-broker image + chart]
   end
   subgraph host [build-full-bundle assemble]
     k3s[k3s-binary + airgap-images]
