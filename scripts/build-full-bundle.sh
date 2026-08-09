@@ -86,7 +86,7 @@ Optional overrides:
   # DEV_* tooling image (dev-build) builds product images on the build host only.
   # It is NOT packaged into the appliance bundle; operators supply builder images.
   ARTIFACT_SERVER_VERSION=2.1.8
-  MESSAGE_BROKER_SOURCE_IMAGE=nats:2.10.26-alpine
+  MESSAGE_BROKER_SOURCE_IMAGE=docker.io/library/nats:2.10.26-alpine
   ARTIFACT_SERVER_SOURCE_IMAGE=ghcr.io/project-zot/zot-linux-amd64:v2.1.8
   # Artifact server: always wrap upstream via appliance-code
   # package-artifact-server-image-archive (dev-run has buildah+skopeo);
@@ -226,6 +226,18 @@ lan_cache_ref() {
   printf '%s/%s/%s:%s' "${host}" "${LAN_BUILD_CACHE_PREFIX}" "${short_name}" "${tag}"
 }
 
+require_seed_package() {
+  local package="$1"
+  local pins="${RELEASE_REPO_DIR}/deps/${package}/pins.env"
+  if [[ ! -f "${pins}" ]]; then
+    cat >&2 <<EOF
+build-full-bundle: offline dependency seed package is missing: deps/${package}
+build-full-bundle: sync the complete appliance-release checkout before building
+EOF
+    exit 1
+  fi
+}
+
 # Fixed dependent-repo git refs (edit this script to pin a different branch).
 code_git_ref="main"
 ctl_git_ref="main"
@@ -258,7 +270,7 @@ WORKSPACE_PROVISIONER_IMAGE_REF="${USER_WORKSPACE_PROVISIONER_IMAGE_REF:-${WORKS
 ARTIFACT_SERVER_VERSION="${USER_ARTIFACT_SERVER_VERSION:-${ARTIFACT_SERVER_VERSION:-2.1.8}}"
 ARTIFACT_SERVER_VERSION="${ARTIFACT_SERVER_VERSION#v}"
 ARTIFACT_SERVER_SOURCE_IMAGE="${USER_ARTIFACT_SERVER_SOURCE_IMAGE:-${ARTIFACT_SERVER_SOURCE_IMAGE:-ghcr.io/project-zot/zot-linux-amd64:v${ARTIFACT_SERVER_VERSION}}}"
-MESSAGE_BROKER_SOURCE_IMAGE="${USER_MESSAGE_BROKER_SOURCE_IMAGE:-${MESSAGE_BROKER_SOURCE_IMAGE:-nats:2.10.26-alpine}}"
+MESSAGE_BROKER_SOURCE_IMAGE="${USER_MESSAGE_BROKER_SOURCE_IMAGE:-${MESSAGE_BROKER_SOURCE_IMAGE:-docker.io/library/nats:2.10.26-alpine}}"
 # compatibility.dnsVersion is unprefixed (1.14.4). Chart appVersion and the
 # upstream registry.k8s.io tag use a leading v (v1.14.4). Normalize before
 # constructing the pull ref, same as ARTIFACT_SERVER_VERSION above.
@@ -1626,6 +1638,7 @@ fi
 # public upstreams), prefer LAN build-cache (deps/*) names.
 if offline_build_enabled; then
   require_var DEV_REGISTRY
+  require_seed_package message-broker
   if appliance_pack_wanted developer; then
     WORKSPACE_PROVISIONER_IMAGE_REF="$(lan_cache_ref alpine-git "${ALPINE_GIT_CACHE_TAG}")"
   fi
@@ -1810,7 +1823,7 @@ HOST_AGENT_IMAGE_REF="\$(tr -d '\r\n' < "\${HOST_AGENT_IMAGE_REF_FILE}")"
 make package-message-broker-image-archive \
   OUT_FILE="\${MESSAGE_BROKER_IMAGE_OUT}" \
   REFERENCE_OUT_FILE="\${MESSAGE_BROKER_IMAGE_REF_FILE}" \
-  MESSAGE_BROKER_SOURCE_IMAGE=$(shell_quote "${MESSAGE_BROKER_SOURCE_IMAGE:-nats:2.10.26-alpine}")
+  MESSAGE_BROKER_SOURCE_IMAGE=$(shell_quote "${MESSAGE_BROKER_SOURCE_IMAGE:-docker.io/library/nats:2.10.26-alpine}")
 MESSAGE_BROKER_IMAGE_REF="\$(tr -d '\r\n' < "\${MESSAGE_BROKER_IMAGE_REF_FILE}")"
 # Super-set: always pass host-packages (packages staged at install; services off).
 HOST_PACKAGES_ARGS=(
