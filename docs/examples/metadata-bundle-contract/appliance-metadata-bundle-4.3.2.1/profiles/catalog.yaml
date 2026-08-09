@@ -1,0 +1,6 @@
+apiVersion: metadata.zon/v1alpha1
+kind: ProfileCatalog
+profiles:
+  - id: core
+    title: Core
+    description: Minimal base appliance profile.

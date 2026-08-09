@@ -1,0 +1,6 @@
+apiVersion: metadata.zon/v1alpha1
+kind: CapabilityCatalog
+capabilities:
+  - id: base
+    title: Base
+    description: Foundation capability always present on the appliance.

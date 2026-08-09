@@ -6,6 +6,11 @@ install-time profile selection only. Host mDNS/Wi-Fi AP are day-2 Admin UI enabl
 
 Machine-readable list: [components.yaml](components.yaml).
 
+The signed metadata bundle in this catalog is not limited to profiles. It is
+also the delivery mechanism for dynamic appliance policy such as capabilities,
+future MCP tool descriptors, and metadata-driven workflow definitions that the
+installed software already knows how to execute.
+
 ## Package vs install
 
 | Layer | Selects components? |
@@ -35,7 +40,7 @@ flowchart TB
     prov[workspace-provisioner]
     devBuild[dev-build]
     hostPkgs[host-packages]
-    meta[metadata-bundle]
+    meta[metadata-bundle (policy + workflow defs)]
   end
   subgraph host [build-full-bundle assemble]
     k3s[k3s-binary + airgap-images]
@@ -66,6 +71,32 @@ fingerprints can attach to the same units.
 
 Incremental rebuilds (Phase C) may skip stages 2–6 when fingerprints match;
 stages 7–8 always re-run so the published artifact is one consistent release.
+
+## Metadata Bundle Payload
+
+The `metadata-bundle` component is a signed product-policy archive. Its payload
+is expected to grow over time without changing the packaging layer away from a
+single metadata artifact.
+
+Today or planned next, that payload may include:
+
+- `profiles/` for appliance profile catalogs
+- `capabilities/` for capability dependencies, conflicts, and gating rules
+- `activation/` for activation warnings and transition policy
+- `ui/` for control-plane text and visibility metadata
+- `notifications/` for operator-facing alerts and policy
+- `mcp-tools/` for tool descriptors, policy, and MCP-style workflow-backed
+  actions
+- `debug-tools/` for debug-oriented workflow DSL files and their input/output
+  schemas executed by the already-installed software runtime
+
+This means dynamic workflow capability should ship through the signed metadata
+bundle. Its Go-native Automation Runtime image and chart must ship in the
+foundation independently of the developer workflows/Argo artifacts listed
+above.
+
+The release-side contract fixture for this metadata layout lives under
+`docs/examples/metadata-bundle-contract/`.
 
 ## Developer slim path
 

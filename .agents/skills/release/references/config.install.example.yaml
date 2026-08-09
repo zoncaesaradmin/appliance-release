@@ -46,7 +46,7 @@ install:
   # This file's default is builder-landns (artifact+dns+workflows). For an
   # inference-only host, copy the lanllm block at the bottom into install +
   # verification (+ client_verification) instead of flipping only the profile.
-  appliance_profile: builder-landns
+  appliance_profile: storage
 
   # Bundle extract dir on the target (version should match the published release)
   bundle_download_dir: /tmp/appliance-0.1.0
@@ -86,7 +86,7 @@ verification:
   ui_home_command: 'body="$(curl -kfsS https://artifact-dns-1.appliance.internal/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Appliance Control Plane UI|appliance-controlplane-ui|Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
   workflows:
     enabled: true
-    namespaces_command: sudo kubectl get ns workflows appliance-builds
+    namespaces_command: sudo kubectl get namespace workflows appliance-builds
     crds_command: sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io
     controller_command: sudo kubectl -n workflows wait --for=condition=Available deployment/workflow-controller --timeout=120s
   builder:
@@ -110,10 +110,10 @@ client_verification:
   base_url: https://artifact-dns-1.appliance.internal
   username: admin
   builder:
-    enabled: true
+    enabled: false
     expect_disabled: false
   artifact:
-    enabled: true
+    enabled: false
     expect_denied_scope: false
 
 # ============================================================================

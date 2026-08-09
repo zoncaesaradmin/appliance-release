@@ -1,0 +1,17 @@
+apiVersion: metadata.zon/v1alpha1
+kind: MetadataBundle
+metadata:
+  name: appliance-metadata-bundle
+  version: 4.3.2.1
+spec:
+  softwareCompatibility:
+    minVersion: 4.3.2
+    maxVersion: 4.3.x
+  sections:
+    - profiles
+    - capabilities
+    - activation
+    - ui
+    - notifications
+    - mcp-tools
+    - debug-tools

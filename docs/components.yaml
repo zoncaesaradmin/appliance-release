@@ -134,6 +134,8 @@ components:
     owner: appliance-code
     recipe: package-metadata-bundle
     outputs:
+      - appliance-metadata-bundle-<version>.tar.zst
+      - signed metadata sections: profiles, capabilities, activation, ui, notifications, mcp-tools, debug-tools
       - sbom, provenance, notices, tests stubs as required
     depends_on: []
 
