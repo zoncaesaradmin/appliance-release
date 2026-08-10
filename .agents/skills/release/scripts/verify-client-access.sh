@@ -196,6 +196,10 @@ if [[ -z "${ARTIFACT_ENABLED}" ]]; then
   else
     ARTIFACT_ENABLED="false"
   fi
+elif profile_supports_artifacts "${APPLIANCE_PROFILE}" && ! bool_true "${ARTIFACT_ENABLED}"; then
+  fail "client_verification.artifact.enabled=false conflicts with appliance profile ${APPLIANCE_PROFILE}; set it to true or select a profile without artifact capability"
+elif ! profile_supports_artifacts "${APPLIANCE_PROFILE}" && bool_true "${ARTIFACT_ENABLED}"; then
+  fail "client_verification.artifact.enabled=true conflicts with appliance profile ${APPLIANCE_PROFILE}; set it to false or select an artifact-capable profile"
 fi
 if [[ -z "${ARTIFACT_EXPECT_DENIED_SCOPE}" ]]; then
   if [[ "${USERNAME}" == "admin" ]]; then
