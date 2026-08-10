@@ -136,6 +136,7 @@ components:
     outputs:
       - appliance-metadata-bundle-<version>.tar.zst
       - signed metadata sections: profiles, capabilities, activation, ui, notifications, mcp-tools, debug-tools
+      - application definitions are managed through the Control Plane API and are not bundled as product images
       - sbom, provenance, notices, tests stubs as required
     depends_on: []
 

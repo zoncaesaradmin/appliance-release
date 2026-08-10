@@ -1,0 +1,15 @@
+{
+  "apiVersion": "appliance.zon/v1",
+  "kind": "ApplicationDefinition",
+  "metadata": {
+    "name": "sample-app",
+    "version": "1.0.0",
+    "description": "Small application-management contract example"
+  },
+  "runtime": {
+    "image": {
+      "reference": "registry.local/sample-app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "port": 8080
+  }
+}

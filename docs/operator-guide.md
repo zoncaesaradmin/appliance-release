@@ -10,6 +10,11 @@ All lifecycle commands below should be run with `sudo`, because the appliance
 state directory is `/var/lib/zon/state` and the installer owns K3s on the
 host. Builder workspace data is separate and defaults to `/data/zon/workspaces`.
 
+The Control Plane always provisions an `apps` namespace for Application
+Management, even when no application is installed. It is separate from
+`ace-apps`, which is reserved for co-packaged UI, host-agent, and Automation
+Runtime components. Application Management does not modify Automation Runtime.
+
 ## Qualified Host Baseline
 
 | Requirement | Value | Enforced by |

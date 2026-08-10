@@ -4,3 +4,6 @@ capabilities:
   - id: base
     title: Base
     description: Foundation capability always present on the appliance.
+  - id: applications
+    title: Application Management
+    description: Always-enabled Control Plane capability for managing signed, digest-pinned application workloads in the apps namespace.
