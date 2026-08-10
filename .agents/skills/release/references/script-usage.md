@@ -83,7 +83,7 @@ Notes:
   `canonicalOrigin`, and the registry realm. There is no separate `public_host`
   override.
 - Control-plane **namespace** and **deployment name** are product-fixed, not
-  install YAML: namespace `control` (`zonctl` `defaultChartNamespace`) and
+  install YAML: namespace `ace-apps` (`zonctl` `defaultChartNamespace`) and
   deployment `api-server` (chart `appliance-control-plane` fullname /
   `app.kubernetes.io/name`). Do not set `install.kubernetes_namespace` or
   `install.control_plane_deployment` (rejected). Bootstrap scripts use the

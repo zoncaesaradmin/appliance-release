@@ -474,14 +474,14 @@ render_export_assignments_from_current_env() {
 }
 
 # Product-fixed control-plane identity (not operator install YAML).
-# Namespace:  appliance-ctl cmd/zonctl/main.go defaultChartNamespace = "control"
+# Namespace:  appliance-ctl cmd/zonctl/main.go defaultChartNamespace = "ace-apps"
 # Deployment: appliance-code deploy/charts/appliance-control-plane:
 #   templates/_helpers.tpl nameOverride|default "api-server"
 #   chart_test.go controlPlaneDeploymentName
 #   selectorLabels app.kubernetes.io/name (same basename)
 # zonctl install/upgrade always use defaultChartNamespace; bootstrap scripts
 # must match so kubectl exec targets the product workload, not skill invention.
-PRODUCT_CONTROL_PLANE_NAMESPACE="control"
+PRODUCT_CONTROL_PLANE_NAMESPACE="ace-apps"
 PRODUCT_CONTROL_PLANE_DEPLOYMENT="api-server"
 
 reject_removed_install_control_plane_identity_keys() {

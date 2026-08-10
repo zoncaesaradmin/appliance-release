@@ -54,7 +54,7 @@ install:
   # Used when install.bootstrap_admin is true
   bootstrap_admin_username: admin
   # tls_namespace / control_plane_deployment are product-fixed
-  # (control / api-server; zonctl defaultChartNamespace + chart name) — do not set
+  # (ace-apps / api-server; zonctl defaultChartNamespace + chart name) — do not set
 
   # additional_tls_sans_csv: 192.168.1.101
   #

@@ -446,7 +446,7 @@ def test_product_control_plane_identity_helpers() -> None:
     )
     assert result.returncode == 0, result.stderr
     lines = [line for line in result.stdout.splitlines() if line.strip()]
-    assert lines == ["control", "api-server"], result.stdout
+    assert lines == ["ace-apps", "api-server"], result.stdout
 
     with tempfile.TemporaryDirectory(prefix="install-identity-") as tmp:
         cfg = Path(tmp) / "install.yaml"

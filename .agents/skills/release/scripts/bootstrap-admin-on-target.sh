@@ -12,7 +12,7 @@ Create the first appliance administrator on the configured target host as an
 explicit post-install step. Safe to rerun: if already initialized, skip OK.
 
 Control-plane namespace/deployment are product-fixed (not install YAML):
-  namespace=control (zonctl defaultChartNamespace)
+  namespace=ace-apps (zonctl defaultChartNamespace)
   deployment=api-server (chart appliance-control-plane)
 
 Required:

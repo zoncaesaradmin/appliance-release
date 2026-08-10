@@ -12,7 +12,7 @@ Accept the base/free entitlement on the configured target host.
 Safe to rerun when licensing is already resolved.
 
 Control-plane namespace/deployment are product-fixed (not install YAML):
-  namespace=control (zonctl defaultChartNamespace)
+  namespace=ace-apps (zonctl defaultChartNamespace)
   deployment=api-server (chart appliance-control-plane)
 
 Required:
