@@ -12,8 +12,8 @@ Accept the base/free entitlement on the configured target host.
 Safe to rerun when licensing is already resolved.
 
 Control-plane namespace/deployment are product-fixed (not install YAML):
-  namespace=ace-apps (zonctl defaultChartNamespace)
-  deployment=api-server (chart appliance-control-plane)
+  namespace=ace-system (zonctl defaultChartNamespace)
+  deployment=controlplane (chart appliance-control-plane)
 
 Required:
   --install-config PATH    install config path (identity keys rejected if present)
