@@ -62,7 +62,7 @@ fingerprints can attach to the same units.
 | Order | Stage / recipe | Primary outputs |
 | --- | --- | --- |
 | 1 | `clone-repos` | RELEASE_WORK_ROOT checkouts |
-| 2 | `host-packages` | `.run/host-packages/ubuntu/<VER>/amd64/*.deb` (mdns + wifi-ap) |
+| 2 | `host-packages` | `.run/host-packages/ubuntu/<VER>/amd64/*.deb` (mdns + wifi-client + wifi-ap) |
 | 3 | `artifact-server-image` / `dns-image` | first-class OCI archives + digest refs |
 | 4 | `workflows-crds` / `workflow-controller` / `workflow-executor` | workflows engine offline set |
 | 5 | `workspace-provisioner` + `dev-build` | bundled offline image archives |

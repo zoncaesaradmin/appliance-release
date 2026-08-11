@@ -190,7 +190,7 @@ Outputs:
 - `${RELEASE_WORK_ROOT}/export/release-signing.pub`
 
 Product packaging always exports the complete host package super-set
-(`mdns` + `wifi-ap`) for the selected `OS_VERSION` baseline under
+(`mdns` + `wifi-client` + `wifi-ap`) for the selected `OS_VERSION` baseline under
 `ubuntu/<version>/amd64/*.deb` on the build host (apt download during export).
 That tree is copied into signed `host-packages/`. Install stages the .deb
 payload offline but leaves mDNS and Wi-Fi AP services off; admins enable them

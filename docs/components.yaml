@@ -15,7 +15,7 @@ components:
     recipe: scripts/package/export-host-packages.sh
     inputs:
       - OS_VERSION
-      - capabilities: [mdns, wifi-ap]
+      - capabilities: [mdns, wifi-client, wifi-ap]
     outputs:
       - path: host-packages/ubuntu/<OS_VERSION>/amd64/*.deb
       - release_input: artifacts.hostPackages

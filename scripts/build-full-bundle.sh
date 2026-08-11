@@ -72,7 +72,7 @@ Optional overrides:
   HELM_VERSION=v3.21.1
   HELM_BINARY=/abs/path/to/linux-amd64/helm
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
-  # Host packages: always export-host-packages for mdns + wifi-ap under OS_VERSION
+  # Host packages: always export-host-packages for mdns + wifi-client + wifi-ap under OS_VERSION
   # (ubuntu/<version>/amd64/*.deb). Install stages debs; enablement is day-2 only.
   # BUILD_COMPLETE_PRODUCT=false  # developer slim path only; default true requires workflows
   # COMPONENT_CACHE_DIR=/var/cache/appliance-build/components  # optional dirty-only rebuild cache
@@ -182,7 +182,7 @@ LAN_BUILD_CACHE_TIMEOUT_SECONDS="15"
 # files API / LAN build-cache paths stay disabled.
 OFFLINE_BUILD="${OFFLINE_BUILD:-0}"
 export OFFLINE_BUILD
-HOST_PACKAGES_FINGERPRINT="${HOST_PACKAGES_FINGERPRINT:-mdns-wifi-ap-v1}"
+HOST_PACKAGES_FINGERPRINT="${HOST_PACKAGES_FINGERPRINT:-mdns-wifi-client-wifi-ap-v1}"
 ALPINE_GIT_CACHE_TAG="${ALPINE_GIT_CACHE_TAG:-2.49.0}"
 
 offline_build_enabled() {
@@ -1682,9 +1682,9 @@ rm -rf "${CODE_REPO_DIR}/.run/host-packages"
 # Complete product super-set always packages both host capability closures by
 # export on the build host (no external host-packages tree override).
 HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
-HOST_CAPABILITIES=(mdns wifi-ap)
+HOST_CAPABILITIES=(mdns wifi-client wifi-ap)
 mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
-host_packages_fingerprint_inputs=("${OS_VERSION}" "mdns" "wifi-ap" "${HOST_PACKAGES_FINGERPRINT}")
+host_packages_fingerprint_inputs=("${OS_VERSION}" "mdns" "wifi-client" "wifi-ap" "${HOST_PACKAGES_FINGERPRINT}")
 if ! component_cache_try_restore "host-packages" "${CODE_REPO_DIR}/.run/host-packages" "${host_packages_fingerprint_inputs[@]}"; then
   host_pkg_archive="${CODE_REPO_DIR}/.run/host-packages-seed.tar.zst"
   host_pkg_remote="host-packages/ubuntu-${OS_VERSION}/${HOST_PACKAGES_FINGERPRINT}/host-packages.tar.zst"
