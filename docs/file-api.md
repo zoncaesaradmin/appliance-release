@@ -14,14 +14,16 @@ This is distinct from the OCI registry:
 |---|---|
 | API base | `https://<appliance-fqdn>/api/v1/files/` |
 | Backing host path | `/data/zon/files` |
-| Capability | `artifact` |
-| Read permission | `artifacts.read` |
-| Write permission | `artifacts.write` |
-| Auth | appliance bearer token |
+| Capability | `files` (module) on appliance profiles that include the files module |
+| Read permission | `files.read` |
+| Write permission | `files.write` |
+| Auth | appliance bearer token (`apt_…` API token or session access token) |
 
 The control plane stores file content under `/data/zon/files` and serves it
 through authenticated appliance routes. Upload and download use the same token
-model as other appliance APIs.
+model as other appliance APIs. OCI registry access is separate and uses
+`artifacts.read` / `artifacts.write` plus registry grants; do not confuse those
+with file-API permissions.
 
 ## Basic Flow
 
@@ -31,10 +33,11 @@ model as other appliance APIs.
 
 ## Get A Bearer Token
 
-Preferred: open the distributor appliance UI → **Dashboard → API tokens**, create a
-long-lived token (scopes “Artifact files only” for release publish, or all
-permissions), copy the `apt_…` secret once, and export it as
-`DEV_REGISTRY_TOKEN` (preferred). Optional config override:
+Preferred: open the distributor appliance UI → user menu → **Manage API keys**,
+create a long-lived token (omit scopes so it inherits your role permissions —
+needed for both OCI seed pushes and `/api/v1/files` uploads), copy the `apt_…`
+secret once, and export it as `DEV_REGISTRY_TOKEN` (preferred). Optional config
+override:
 
 ```yaml
 bundle_store:
@@ -43,7 +46,9 @@ bundle_store:
   # access_token: apt_….…   # optional; prefer DEV_REGISTRY_TOKEN
 ```
 
-You can also mint a token with curl (then `export DEV_REGISTRY_TOKEN=...`):
+You can also mint a token with curl (then `export DEV_REGISTRY_TOKEN=...`).
+Omit `scopes` (or set only what you need). For release/seed hosts that push
+both OCI and files, omit scopes or include both families:
 
 ```bash
 APPLIANCE=https://artifact-dns-1.appliance.internal
@@ -63,13 +68,17 @@ API_TOKEN="$(
     -X POST \
     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d '{"name":"appliance-release-files","lifetimeSeconds":31536000,"scopes":["artifacts.read","artifacts.write"]}' \
+    -d '{"name":"appliance-release-files","lifetimeSeconds":31536000}' \
     "${APPLIANCE}/api/v1/tokens" \
   | jq -r '.token'
 )"
 echo "${API_TOKEN}"
 ```
 
+If you must scope the token, file uploads require `files.write` (and usually
+`files.read`). Artifact-only scopes such as `artifacts.read` /
+`artifacts.write` authorize OCI registry use but return **HTTP 403** on
+`/api/v1/files`.
 ## Upload A File
 
 Small files may use either form. Prefer `-T` (stream from disk) for any
