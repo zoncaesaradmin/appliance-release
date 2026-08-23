@@ -318,12 +318,14 @@ fi
 BUNDLE_ARCHIVE="appliance-${PRODUCT_VERSION}-foundation.tar.gz"
 DEVELOPER_ARCHIVE="appliance-${PRODUCT_VERSION}-developer.tar.gz"
 INFERENCE_ARCHIVE="appliance-${PRODUCT_VERSION}-inference.tar.gz"
+VIDEO_ARCHIVE="appliance-${PRODUCT_VERSION}-video.tar.gz"
 RELEASE_INDEX_FILE="release-index.yaml"
 PUBLIC_KEY_FILE="release-signing.pub"
 CHECKSUM_FILE="sha256sum.txt"
 BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-foundation"
 DEVELOPER_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-developer"
 INFERENCE_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-inference"
+VIDEO_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-video"
 PUBLIC_KEY="${OUT_DIR}/release-signing.pub"
 ZONCTL="${BUNDLE_DIR}/zonctl"
 RELEASE_PAYLOAD_FILES=(
@@ -341,6 +343,9 @@ required_packs_for_profile() {
       ;;
     lanllm)
       echo "inference"
+      ;;
+    training)
+      echo "video"
       ;;
     builder|builder-landns|builder-storage-landns)
       echo "developer"
@@ -469,6 +474,9 @@ for pack_id in "${REQUIRED_PACKS[@]}"; do
     inference)
       curl_download "${OUT_DIR}/${INFERENCE_ARCHIVE}" "${REMOTE_DIR}/${INFERENCE_ARCHIVE}"
       ;;
+    video)
+      curl_download "${OUT_DIR}/${VIDEO_ARCHIVE}" "${REMOTE_DIR}/${VIDEO_ARCHIVE}"
+      ;;
   esac
 done
 echo "[1/5] Release files downloaded (packs: foundation${REQUIRED_PACKS[*]:+ ${REQUIRED_PACKS[*]}})."
@@ -484,6 +492,7 @@ for pack_id in "${REQUIRED_PACKS[@]}"; do
   case "${pack_id}" in
     developer) VERIFY_LIST+=("${DEVELOPER_ARCHIVE}") ;;
     inference) VERIFY_LIST+=("${INFERENCE_ARCHIVE}") ;;
+    video) VERIFY_LIST+=("${VIDEO_ARCHIVE}") ;;
   esac
 done
 tmp_checksums="${OUT_DIR}/.sha256sum.selected"
@@ -523,6 +532,11 @@ for pack_id in "${REQUIRED_PACKS[@]}"; do
       rm -rf "${OUT_DIR:?}/$(basename "${INFERENCE_BUNDLE_DIR}")"
       tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${INFERENCE_ARCHIVE}"
       PACK_DIRS+=("${INFERENCE_BUNDLE_DIR}")
+      ;;
+    video)
+      rm -rf "${OUT_DIR:?}/$(basename "${VIDEO_BUNDLE_DIR}")"
+      tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${VIDEO_ARCHIVE}"
+      PACK_DIRS+=("${VIDEO_BUNDLE_DIR}")
       ;;
   esac
 done

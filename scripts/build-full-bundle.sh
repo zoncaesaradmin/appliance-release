@@ -101,7 +101,11 @@ Optional overrides:
   INFERENCE_IMAGE_PULL_REF=docker.io/ollama/ollama:0.6.5
   # Inference runtime: always re-export via appliance-code
   # package-inference-runtime-image-archive; digest from index.json.
-  APPLIANCE_PACKS=all                   # all | foundation | foundation,developer | foundation,inference | …
+  VIDEO_VERSION=10.10.7
+  VIDEO_IMAGE_PULL_REF=docker.io/jellyfin/jellyfin:10.10.7
+  # Video runtime: always re-export via appliance-code
+  # package-video-runtime-image-archive; digest from index.json.
+  APPLIANCE_PACKS=all                   # all | foundation | foundation,developer | foundation,inference | foundation,video | …
 EOF
 }
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -136,6 +140,8 @@ USER_DNS_VERSION="${DNS_VERSION-}"
 USER_DNS_IMAGE_PULL_REF="${DNS_IMAGE_PULL_REF-}"
 USER_INFERENCE_VERSION="${INFERENCE_VERSION-}"
 USER_INFERENCE_IMAGE_PULL_REF="${INFERENCE_IMAGE_PULL_REF-}"
+USER_VIDEO_VERSION="${VIDEO_VERSION-}"
+USER_VIDEO_IMAGE_PULL_REF="${VIDEO_IMAGE_PULL_REF-}"
 USER_DEV_REGISTRY="${DEV_REGISTRY-}"
 USER_DEV_IMAGE_REPO="${DEV_IMAGE_REPO-}"
 USER_DEV_IMAGE_NAME="${DEV_IMAGE_NAME-}"
@@ -283,8 +289,13 @@ DNS_IMAGE_PULL_REF="${USER_DNS_IMAGE_PULL_REF:-${DNS_IMAGE_PULL_REF:-registry.k8
 INFERENCE_VERSION="${USER_INFERENCE_VERSION:-${INFERENCE_VERSION:-0.6.5}}"
 INFERENCE_VERSION="${INFERENCE_VERSION#v}"
 INFERENCE_IMAGE_PULL_REF="${USER_INFERENCE_IMAGE_PULL_REF:-${INFERENCE_IMAGE_PULL_REF:-docker.io/ollama/ollama:${INFERENCE_VERSION}}}"
+# compatibility.videoVersion is unprefixed (10.10.7). Chart appVersion and
+# the upstream docker.io/jellyfin/jellyfin tag are unprefixed as well.
+VIDEO_VERSION="${USER_VIDEO_VERSION:-${VIDEO_VERSION:-10.10.7}}"
+VIDEO_VERSION="${VIDEO_VERSION#v}"
+VIDEO_IMAGE_PULL_REF="${USER_VIDEO_IMAGE_PULL_REF:-${VIDEO_IMAGE_PULL_REF:-docker.io/jellyfin/jellyfin:${VIDEO_VERSION}}}"
 
-# Pack selection (default all = foundation + developer + inference).
+# Pack selection (default all = foundation + developer + inference + video).
 APPLIANCE_PACKS="${USER_APPLIANCE_PACKS:-${APPLIANCE_PACKS:-all}}"
 appliance_packs_resolve
 echo "build-full-bundle: APPLIANCE_PACKS=${APPLIANCE_PACKS} → ${APPLIANCE_PACKS_RESOLVED}"
@@ -438,9 +449,11 @@ CONFIG_OUT="${GENERATED_DIR}/product-bundle.env"
 BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-foundation"
 DEVELOPER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-developer"
 INFERENCE_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-inference"
+VIDEO_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-video"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-foundation.tar.gz"
 DEVELOPER_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-developer.tar.gz"
 INFERENCE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-inference.tar.gz"
+VIDEO_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-video.tar.gz"
 RELEASE_INDEX="${EXPORT_DIR}/release-index.yaml"
 PUBLIC_KEY_EXPORT="${EXPORT_DIR}/release-signing.pub"
 
@@ -1578,6 +1591,16 @@ if appliance_pack_wanted inference; then
     exit 2
   fi
 fi
+if appliance_pack_wanted video; then
+  if [[ -z "${VIDEO_VERSION}" || "${VIDEO_VERSION}" == *latest* ]]; then
+    echo "build-full-bundle: VIDEO_VERSION must be an exact non-latest version" >&2
+    exit 2
+  fi
+  if [[ "${VIDEO_IMAGE_PULL_REF}" == *:latest || "${VIDEO_IMAGE_PULL_REF}" == registry.local/* ]]; then
+    echo "build-full-bundle: VIDEO_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
+    exit 2
+  fi
+fi
 if appliance_pack_wanted developer; then
   if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner || "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner@sha256:* ]]; then
     echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be an upstream or LAN build-cache pull ref (default docker.io/alpine/git:2.49.0); got ${WORKSPACE_PROVISIONER_IMAGE_REF}" >&2
@@ -1620,6 +1643,15 @@ if appliance_pack_wanted inference; then
   fi
 fi
 
+VIDEO_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-video/Chart.yaml")"
+# Chart.yaml may use Helm/upstream form v10.10.7 while VIDEO_VERSION is 10.10.7.
+if appliance_pack_wanted video; then
+  if [[ -z "${VIDEO_CHART_APP_VERSION}" || "${VIDEO_CHART_APP_VERSION#v}" != "${VIDEO_VERSION}" ]]; then
+    echo "build-full-bundle: VIDEO_VERSION ${VIDEO_VERSION} must match appliance-video chart appVersion ${VIDEO_CHART_APP_VERSION:-<missing>}" >&2
+    exit 2
+  fi
+fi
+
 require_appliance_code_bootstrap
 
 if bool_true "${WORKFLOWS_ENABLED}"; then
@@ -1647,6 +1679,9 @@ if offline_build_enabled; then
   DNS_IMAGE_PULL_REF="$(lan_cache_ref coredns "v${DNS_VERSION}")"
   if appliance_pack_wanted inference; then
     INFERENCE_IMAGE_PULL_REF="$(lan_cache_ref ollama "${INFERENCE_VERSION}")"
+  fi
+  if appliance_pack_wanted video; then
+    VIDEO_IMAGE_PULL_REF="$(lan_cache_ref jellyfin "${VIDEO_VERSION}")"
   fi
   if bool_true "${WORKFLOWS_ENABLED}"; then
     WORKFLOW_EXECUTOR_IMAGE_REF="$(lan_cache_ref argoexec "${WORKFLOWS_VERSION}")"
@@ -1741,6 +1776,9 @@ DNS_IMAGE_REF=""
 INFERENCE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/inference-runtime-image.tar"
 INFERENCE_IMAGE_REF=""
 
+VIDEO_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/video-runtime-image.tar"
+VIDEO_IMAGE_REF=""
+
 if appliance_pack_wanted developer; then
   WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:2.49.0}"
   WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
@@ -1773,6 +1811,22 @@ INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.r
   INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${INFERENCE_VERSION}") \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
+fi
+
+VIDEO_PACKAGE_LINES=""
+VIDEO_ARCHIVE_ARG_LINES=""
+if appliance_pack_wanted video; then
+  VIDEO_PACKAGE_LINES="# Appliance video runtime (upstream Jellyfin-compatible image re-export).
+make package-video-runtime-image-archive \\
+  OUT_FILE=\"/workspace/.run/video-runtime-image.tar\" \\
+  VIDEO_VERSION=$(shell_quote "${VIDEO_VERSION}") \\
+  VIDEO_SOURCE_IMAGE=$(shell_quote "${VIDEO_IMAGE_PULL_REF}")
+VIDEO_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/video-runtime-image.tar\"
+VIDEO_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/video-runtime-image.reference)\"
+"
+  VIDEO_ARCHIVE_ARG_LINES="  --video-version $(shell_quote "${VIDEO_VERSION}") \\"$'\n'
+  VIDEO_ARCHIVE_ARG_LINES+="  --video-runtime-image \"\${VIDEO_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+  VIDEO_ARCHIVE_ARG_LINES+="  --video-runtime-image-reference \"\${VIDEO_IMAGE_REF}\" \\"$'\n'
 fi
 
 cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF
@@ -1856,6 +1910,8 @@ DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/dns-server-image.reference)"
 
 ${INFERENCE_PACKAGE_LINES}
 
+${VIDEO_PACKAGE_LINES}
+
 METADATA_BUNDLE_ARCHIVE_FOR_DEV="\$(bash ./scripts/package/generate-metadata-bundle.sh --software-version "\${CODE_VERSION}" --out-dir "/workspace/.run/metadata-bundle")"
 
 if bool_true $(shell_quote "${WORKFLOWS_ENABLED}"); then
@@ -1902,7 +1958,7 @@ bash ./scripts/package/archive-release-input.sh \
   --dns-version $(shell_quote "${DNS_VERSION}") \
   --dns-image "\${DNS_IMAGE_ARCHIVE_FOR_DEV}" \
   --dns-image-reference "\${DNS_IMAGE_REF}" \
-${INFERENCE_ARCHIVE_ARG_LINES}  --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \
+${INFERENCE_ARCHIVE_ARG_LINES}${VIDEO_ARCHIVE_ARG_LINES}  --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \
   "\${WORKFLOWS_ARGS[@]}" \
   "\${BUNDLED_IMAGE_ARGS[@]}"
 EOF
@@ -1972,22 +2028,27 @@ if appliance_pack_wanted inference; then
   tar -C "$(dirname "${INFERENCE_BUNDLE_DIR}")" -czf "${INFERENCE_ARCHIVE}" "$(basename "${INFERENCE_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${INFERENCE_ARCHIVE}")
 fi
+if appliance_pack_wanted video; then
+  tar -C "$(dirname "${VIDEO_BUNDLE_DIR}")" -czf "${VIDEO_ARCHIVE}" "$(basename "${VIDEO_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${VIDEO_ARCHIVE}")
+fi
 cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
 
 python3 - "${RELEASE_INDEX}" "${PRODUCT_VERSION}" ${APPLIANCE_PACKS_RESOLVED} \
   "$(basename "${BUNDLE_ARCHIVE}")" \
   "$(basename "${DEVELOPER_ARCHIVE}")" \
-  "$(basename "${INFERENCE_ARCHIVE}")" <<'PY'
+  "$(basename "${INFERENCE_ARCHIVE}")" \
+  "$(basename "${VIDEO_ARCHIVE}")" <<'PY'
 from pathlib import Path
 import sys
 
 index_path = Path(sys.argv[1])
 version = sys.argv[2]
 args = sys.argv[3:]
-if len(args) < 4:
-    raise SystemExit("release-index writer: expected pack ids then three filenames")
-base_name, developer_name, inference_name = args[-3:]
-selected = set(args[:-3])
+if len(args) < 5:
+    raise SystemExit("release-index writer: expected pack ids then four filenames")
+base_name, developer_name, inference_name, video_name = args[-4:]
+selected = set(args[:-4])
 
 pack_specs = []
 capability_lines = []
@@ -2006,6 +2067,11 @@ if "inference" in selected:
         f"  - id: inference\n    filename: {inference_name}\n    capabilities: [inference]"
     )
     capability_lines.append("  inference: inference")
+if "video" in selected:
+    pack_specs.append(
+        f"  - id: video\n    filename: {video_name}\n    capabilities: [video]"
+    )
+    capability_lines.append("  video: video")
 
 if capability_lines:
     capability_block = "\n".join(capability_lines)
@@ -2037,6 +2103,9 @@ if appliance_pack_wanted developer; then
 fi
 if appliance_pack_wanted inference; then
   echo "  ${INFERENCE_BUNDLE_DIR}"
+fi
+if appliance_pack_wanted video; then
+  echo "  ${VIDEO_BUNDLE_DIR}"
 fi
 echo
 echo "bundled artifact-server image:"

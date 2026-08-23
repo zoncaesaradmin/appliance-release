@@ -56,7 +56,7 @@ After that mapping, bootstrap/build use only `DEV_*` + `OFFLINE_BUILD`.
 Publish uses `bundle_store` (also `DEV_*`) for `publish-release.sh`.
 
 Both modes must work for every packaging dependency (including `deps/inference`
-/ Ollama). Adding a new third-party input requires a matching `deps/<name>`
+/ Ollama and `deps/video` / Jellyfin). Adding a new third-party input requires a matching `deps/<name>`
 seed package and an offline `lan_cache_ref` / files remap — see AGENTS.md and
 `docs/offline-build-deps.md`.
 
@@ -125,9 +125,9 @@ Important rules:
 - use absolute remote paths, not `~/...`
 - do not store passwords in the config
 - appliance state dir is product-fixed `/var/lib/zon/state` (not YAML)
-- packaging defaults to **foundation + developer + inference**; set
+- packaging defaults to **foundation + developer + inference + video**; set
   `build_flow.appliance_packs` to `all` (default), `foundation`, `foundation,developer`,
-  or `foundation,inference`. Skill exports that as `APPLIANCE_PACKS` into product
+  `foundation,inference`, or `foundation,video`. Skill exports that as `APPLIANCE_PACKS` into product
   scripts. Publish follows `export/release-index.yaml`.
   `install.appliance_profile` only selects which published packs to download.
 

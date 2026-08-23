@@ -410,6 +410,17 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
       --bundle-root "${RUN_DIR}/artifacts/inference-bundle" \
       >"${RUN_DIR}/logs/release-artifact-validation-inference.json"
   fi
+
+  local_video_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-video.tar.gz")"
+  if [[ -n "${local_video_archive}" && -f "${local_video_archive}" ]]; then
+    extract_archive_into_dir "${local_video_archive}" "${RUN_DIR}/artifacts/video-bundle"
+    log "validating release-input against video pack"
+    python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
+      --pack video \
+      --release-input-root "${RUN_DIR}/artifacts/release-input" \
+      --bundle-root "${RUN_DIR}/artifacts/video-bundle" \
+      >"${RUN_DIR}/logs/release-artifact-validation-video.json"
+  fi
 else
   fail "missing release-input or bundle artifacts for validation under ${RUN_DIR}/artifacts"
 fi

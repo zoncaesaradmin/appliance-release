@@ -61,6 +61,9 @@ pack_id_is_published inference "foundation" && fail "inference must not be publi
 req="$(required_packs_for_profile "builder-lanllm-storage-landns" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
 [[ "${req}" == "developer inference" ]] || fail "builder-lanllm-storage-landns packs: '${req}'"
 
+req="$(required_packs_for_profile "training" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+[[ "${req}" == "video" ]] || fail "training packs: '${req}'"
+
 # Simulate the install gate: profile needs developer, index is foundation-only.
 published="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"
 if pack_id_is_published "developer" "${published}"; then

@@ -553,13 +553,14 @@ add_crd_artifacts()
 config["entries"] = entries
 config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 
-# Split signed pack assembly configs (foundation / developer / inference).
+# Split signed pack assembly configs (foundation / developer / inference / video).
 out_dir = Path(config["bundleDir"]).parent
 product_version = str(config.get("bundleVersion", "0.0.0"))
 pack_specs = (
     ("foundation", f"appliance-{product_version}-foundation", "foundation"),
     ("developer", f"appliance-{product_version}-developer", "developer"),
     ("inference", f"appliance-{product_version}-inference", "inference"),
+    ("video", f"appliance-{product_version}-video", "video"),
 )
 for pack_id, bundle_name, pack_value in pack_specs:
     pack_config = json.loads(json.dumps(config))
@@ -582,6 +583,7 @@ This workspace is the handoff point between the two repos:
    \`${WORKDIR}/bundle-assembly.foundation.json\`
    \`${WORKDIR}/bundle-assembly.developer.json\`
    \`${WORKDIR}/bundle-assembly.inference.json\`
+   \`${WORKDIR}/bundle-assembly.video.json\`
    (legacy full-bundle config remains at \`${CONFIG_PATH}\`)
 
 If the release-input includes optional workflows engine Phase 1 artifacts, this
@@ -621,6 +623,7 @@ echo "  pack configs:"
 echo "    ${WORKDIR}/bundle-assembly.foundation.json"
 echo "    ${WORKDIR}/bundle-assembly.developer.json"
 echo "    ${WORKDIR}/bundle-assembly.inference.json"
+echo "    ${WORKDIR}/bundle-assembly.video.json"
 echo "  release-input dir: ${RELEASE_INPUT_DIR}"
 echo "  staging dir: ${STAGING_DIR}"
 echo "  bundle output dir: ${BUNDLE_DIR}"

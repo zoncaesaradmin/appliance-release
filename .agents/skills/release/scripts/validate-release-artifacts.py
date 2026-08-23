@@ -580,6 +580,76 @@ def validate_inference(
     return ["inferenceChart", "inferenceRuntimeImage", f"inferenceVersion={inference_version}"]
 
 
+def validate_video(
+    release_input: dict,
+    bundle_manifest: dict,
+    artifacts: dict,
+    release_input_dir: Path,
+    entries_by_path: dict[str, dict],
+) -> list:
+    compatibility = release_input.get("compatibility")
+    if not isinstance(compatibility, dict):
+        raise ValueError("release-input compatibility must be an object")
+    video_version = str(compatibility.get("videoVersion") or "").strip()
+    if not video_version or video_version.lower() == "latest":
+        raise ValueError("release-input compatibility.videoVersion must be an exact non-latest version")
+    bundle_compatibility = bundle_manifest.get("compatibility")
+    if not isinstance(bundle_compatibility, dict):
+        raise ValueError("bundle manifest compatibility must be an object")
+    bundle_video_version = str(bundle_compatibility.get("videoVersion") or "").strip()
+    if bundle_video_version != video_version:
+        raise ValueError(
+            "bundle manifest compatibility.videoVersion mismatch: "
+            f"expected {video_version}, got {bundle_video_version}"
+        )
+
+    chart = require_artifact(artifacts, "videoChart")
+    chart_path = require_file_artifact(artifacts, "videoChart", release_input_dir)
+    chart_candidates = (
+        f"charts/{chart_path.name}",
+        f"chart/{chart_path.name}",
+        f"chart/appliance-video-{chart_path.name}",
+    )
+    chart_bundle_path = next((path for path in chart_candidates if path in entries_by_path), "")
+    if not chart_bundle_path:
+        raise ValueError(
+            "bundle manifest is missing videoChart; expected one of: "
+            + ", ".join(chart_candidates)
+        )
+    chart_entry = require_bundle_entry(entries_by_path, chart_bundle_path, "videoChart")
+    require_matching_bundle_digest(chart_entry, chart, chart_bundle_path, "videoChart")
+
+    image = require_artifact(artifacts, "videoRuntimeImage")
+    image_path = require_file_artifact(artifacts, "videoRuntimeImage", release_input_dir)
+    image_ref = require_image_reference(image, "videoRuntimeImage")
+    if not re.fullmatch(r"registry\.local/video-runtime@sha256:[0-9a-f]{64}", image_ref):
+        raise ValueError(
+            "release-input artifacts.videoRuntimeImage.imageReference must be "
+            "registry.local/video-runtime@sha256:<64 lowercase hex>"
+        )
+    if "video" not in image_path.name.lower():
+        raise ValueError(
+            f"release-input artifacts.videoRuntimeImage.path must identify video-runtime, got {image['path']!r}"
+        )
+    require_oci_archive_reference_matches_content(image_path, image_ref, "videoRuntimeImage")
+    index = load_oci_archive_index(image_path)
+    if index is None:
+        raise ValueError(f"videoRuntimeImage OCI archive {image_path} is missing index.json")
+    annotation = (
+        (index.get("manifests") or [{}])[0].get("annotations") or {}
+    ).get("org.opencontainers.image.ref.name")
+    if annotation != "registry.local/video-runtime:bundled":
+        raise ValueError(
+            "videoRuntimeImage OCI archive annotation must be 'registry.local/video-runtime:bundled', "
+            f"got {annotation!r}"
+        )
+    image_bundle_path = f"oci-images/{image_path.name}"
+    image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "videoRuntimeImage")
+    require_matching_bundle_digest(image_entry, image, image_bundle_path, "videoRuntimeImage")
+    require_matching_bundle_image_reference(image_entry, image_ref, image_bundle_path, "videoRuntimeImage")
+    return ["videoChart", "videoRuntimeImage", f"videoVersion={video_version}"]
+
+
 def validate_host_agent(
     artifacts: dict,
     release_input_dir: Path,
@@ -779,13 +849,14 @@ def main() -> int:
     parser.add_argument("--bundle-root", required=True)
     parser.add_argument(
         "--pack",
-        choices=("foundation", "developer", "inference"),
+        choices=("foundation", "developer", "inference", "video"),
         default="foundation",
         help=(
             "Which signed pack archive is under --bundle-root. "
             "foundation: base product checks; developer extras are release-input-only. "
             "developer: workflows + extraOCI must be present in this pack. "
-            "inference: inference chart/image/version must be present in this pack."
+            "inference: inference chart/image/version must be present in this pack. "
+            "video: video chart/image/version must be present in this pack."
         ),
     )
     parser.add_argument("--require-workflows", action="store_true")
@@ -793,6 +864,11 @@ def main() -> int:
         "--require-inference",
         action="store_true",
         help="Require inferenceRuntimeImage/inferenceChart/inferenceVersion in release-input and the validated bundle (inference pack).",
+    )
+    parser.add_argument(
+        "--require-video",
+        action="store_true",
+        help="Require videoRuntimeImage/videoChart/videoVersion in release-input and the validated bundle (video pack).",
     )
     parser.add_argument(
         "--expected-extra-oci-image-refs",
@@ -805,6 +881,7 @@ def main() -> int:
     pack = args.pack
     require_workflows = args.require_workflows or pack == "developer"
     require_inference = args.require_inference or pack == "inference"
+    require_video = args.require_video or pack == "video"
 
     release_input_root = Path(args.release_input_root)
     bundle_root = Path(args.bundle_root)
@@ -896,6 +973,16 @@ def main() -> int:
             )
         else:
             checked["inference"] = []
+        if require_video:
+            checked["video"] = validate_video(
+                release_input,
+                bundle_manifest,
+                artifacts,
+                release_input_path.parent,
+                entries_by_path,
+            )
+        else:
+            checked["video"] = []
     elif pack == "developer":
         checked.update(
             {
@@ -911,8 +998,16 @@ def main() -> int:
                 ),
             }
         )
-    else:  # inference
+    elif pack == "inference":
         checked["inference"] = validate_inference(
+            release_input,
+            bundle_manifest,
+            artifacts,
+            release_input_path.parent,
+            entries_by_path,
+        )
+    else:  # video
+        checked["video"] = validate_video(
             release_input,
             bundle_manifest,
             artifacts,

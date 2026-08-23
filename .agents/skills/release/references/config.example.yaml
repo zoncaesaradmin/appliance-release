@@ -26,7 +26,7 @@
 #   selects what the target turns on from the published packs. verification.*.enabled must match
 #   that profile (lanllm → workflows/builder/artifact/dns all false; see config.install.example.yaml).
 # - Offline builds require make seed-build-deps first (every deps/* package, including
-#   dns/coredns and inference/ollama). Online builds pull the same pins from upstream.
+#   dns/coredns, inference/ollama, and video/jellyfin). Online builds pull the same pins from upstream.
 #   New packaging deps must update deps/ + offline remap; see docs/offline-build-deps.md.
 # - Appliance state dir is product-fixed /var/lib/zon/state (not config).
 # - Host mDNS / Wi-Fi AP enablement is day-2 Admin UI/API only.
