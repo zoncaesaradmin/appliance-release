@@ -317,12 +317,14 @@ fi
 
 BUNDLE_ARCHIVE="appliance-${PRODUCT_VERSION}-foundation.tar.gz"
 DEVELOPER_ARCHIVE="appliance-${PRODUCT_VERSION}-developer.tar.gz"
+DEVICEUSER_ARCHIVE="appliance-${PRODUCT_VERSION}-deviceuser.tar.gz"
 INFERENCE_ARCHIVE="appliance-${PRODUCT_VERSION}-inference.tar.gz"
 RELEASE_INDEX_FILE="release-index.yaml"
 PUBLIC_KEY_FILE="release-signing.pub"
 CHECKSUM_FILE="sha256sum.txt"
 BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-foundation"
 DEVELOPER_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-developer"
+DEVICEUSER_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-deviceuser"
 INFERENCE_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-inference"
 PUBLIC_KEY="${OUT_DIR}/release-signing.pub"
 ZONCTL="${BUNDLE_DIR}/zonctl"
@@ -336,26 +338,31 @@ RELEASE_PAYLOAD_FILES=(
 required_packs_for_profile() {
   local profile="$1"
   case "${profile}" in
-    core|storage|landns|storage-landns)
-      return 0
+    core|training)
+      echo "deviceuser"
+      ;;
+    storage|landns|storage-landns)
+      echo "developer"
+      echo "deviceuser"
       ;;
     lanllm)
+      echo "deviceuser"
       echo "inference"
-      ;;
-    training)
-      echo "video"
       ;;
     builder|builder-landns|builder-storage-landns)
       echo "developer"
+      echo "deviceuser"
       ;;
     builder-lanllm|builder-lanllm-storage-landns)
       echo "developer"
+      echo "deviceuser"
       echo "inference"
       ;;
     *)
       # Unknown profiles: fail closed and require both optional packs when
       # the release index is unavailable; otherwise rely on index + zonctl.
       echo "developer"
+      echo "deviceuser"
       echo "inference"
       ;;
   esac
@@ -469,6 +476,9 @@ for pack_id in "${REQUIRED_PACKS[@]}"; do
     developer)
       curl_download "${OUT_DIR}/${DEVELOPER_ARCHIVE}" "${REMOTE_DIR}/${DEVELOPER_ARCHIVE}"
       ;;
+    deviceuser)
+      curl_download "${OUT_DIR}/${DEVICEUSER_ARCHIVE}" "${REMOTE_DIR}/${DEVICEUSER_ARCHIVE}"
+      ;;
     inference)
       curl_download "${OUT_DIR}/${INFERENCE_ARCHIVE}" "${REMOTE_DIR}/${INFERENCE_ARCHIVE}"
       ;;
@@ -486,6 +496,7 @@ VERIFY_LIST=(
 for pack_id in "${REQUIRED_PACKS[@]}"; do
   case "${pack_id}" in
     developer) VERIFY_LIST+=("${DEVELOPER_ARCHIVE}") ;;
+    deviceuser) VERIFY_LIST+=("${DEVICEUSER_ARCHIVE}") ;;
     inference) VERIFY_LIST+=("${INFERENCE_ARCHIVE}") ;;
   esac
 done
@@ -521,6 +532,11 @@ for pack_id in "${REQUIRED_PACKS[@]}"; do
       rm -rf "${OUT_DIR:?}/$(basename "${DEVELOPER_BUNDLE_DIR}")"
       tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${DEVELOPER_ARCHIVE}"
       PACK_DIRS+=("${DEVELOPER_BUNDLE_DIR}")
+      ;;
+    deviceuser)
+      rm -rf "${OUT_DIR:?}/$(basename "${DEVICEUSER_BUNDLE_DIR}")"
+      tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${DEVICEUSER_ARCHIVE}"
+      PACK_DIRS+=("${DEVICEUSER_BUNDLE_DIR}")
       ;;
     inference)
       rm -rf "${OUT_DIR:?}/$(basename "${INFERENCE_BUNDLE_DIR}")"

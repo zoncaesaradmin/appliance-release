@@ -554,12 +554,13 @@ add_crd_artifacts()
 config["entries"] = entries
 config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 
-# Split signed pack assembly configs (foundation / developer / inference).
+# Split signed pack assembly configs (foundation / developer / deviceuser / inference).
 out_dir = Path(config["bundleDir"]).parent
 product_version = str(config.get("bundleVersion", "0.0.0"))
 pack_specs = (
     ("foundation", f"appliance-{product_version}-foundation", "foundation"),
     ("developer", f"appliance-{product_version}-developer", "developer"),
+    ("deviceuser", f"appliance-{product_version}-deviceuser", "deviceuser"),
     ("inference", f"appliance-{product_version}-inference", "inference"),
 )
 for pack_id, bundle_name, pack_value in pack_specs:
@@ -582,6 +583,7 @@ This workspace is the handoff point between the two repos:
 4. \`appliance-release\` assembles signed packs using:
    \`${WORKDIR}/bundle-assembly.foundation.json\`
    \`${WORKDIR}/bundle-assembly.developer.json\`
+   \`${WORKDIR}/bundle-assembly.deviceuser.json\`
    \`${WORKDIR}/bundle-assembly.inference.json\`
    (legacy full-bundle config remains at \`${CONFIG_PATH}\`)
 
@@ -621,6 +623,7 @@ echo "  config: ${CONFIG_PATH}"
 echo "  pack configs:"
 echo "    ${WORKDIR}/bundle-assembly.foundation.json"
 echo "    ${WORKDIR}/bundle-assembly.developer.json"
+echo "    ${WORKDIR}/bundle-assembly.deviceuser.json"
 echo "    ${WORKDIR}/bundle-assembly.inference.json"
 echo "  release-input dir: ${RELEASE_INPUT_DIR}"
 echo "  staging dir: ${STAGING_DIR}"

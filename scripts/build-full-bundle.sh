@@ -101,7 +101,7 @@ Optional overrides:
   INFERENCE_IMAGE_PULL_REF=docker.io/ollama/ollama:0.6.5
   # Inference runtime: always re-export via appliance-code
   # package-inference-runtime-image-archive; digest from index.json.
-  APPLIANCE_PACKS=all                   # all | foundation | foundation,developer | foundation,inference
+  APPLIANCE_PACKS=all                   # all | foundation | foundation,developer | foundation,deviceuser | foundation,inference
 EOF
 }
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -295,7 +295,7 @@ source "${BLOB_STORAGE_PINS_FILE}"
 BLOB_STORAGE_VERSION="${CACHE_TAG}"
 BLOB_STORAGE_SOURCE_IMAGE="${UPSTREAM_IMAGE}"
 
-# Pack selection (default all = foundation + developer + inference).
+# Pack selection (default all = foundation + developer + deviceuser + inference).
 APPLIANCE_PACKS="${USER_APPLIANCE_PACKS:-${APPLIANCE_PACKS:-all}}"
 appliance_packs_resolve
 echo "build-full-bundle: APPLIANCE_PACKS=${APPLIANCE_PACKS} → ${APPLIANCE_PACKS_RESOLVED}"
@@ -448,9 +448,11 @@ GENERATED_DIR="${WORKSPACE}/generated"
 CONFIG_OUT="${GENERATED_DIR}/product-bundle.env"
 BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-foundation"
 DEVELOPER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-developer"
+DEVICEUSER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 INFERENCE_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-inference"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-foundation.tar.gz"
 DEVELOPER_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-developer.tar.gz"
+DEVICEUSER_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-deviceuser.tar.gz"
 INFERENCE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-inference.tar.gz"
 RELEASE_INDEX="${EXPORT_DIR}/release-index.yaml"
 PUBLIC_KEY_EXPORT="${EXPORT_DIR}/release-signing.pub"
@@ -1994,6 +1996,10 @@ if appliance_pack_wanted developer; then
   tar -C "$(dirname "${DEVELOPER_BUNDLE_DIR}")" -czf "${DEVELOPER_ARCHIVE}" "$(basename "${DEVELOPER_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${DEVELOPER_ARCHIVE}")
 fi
+if appliance_pack_wanted deviceuser; then
+  tar -C "$(dirname "${DEVICEUSER_BUNDLE_DIR}")" -czf "${DEVICEUSER_ARCHIVE}" "$(basename "${DEVICEUSER_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${DEVICEUSER_ARCHIVE}")
+fi
 if appliance_pack_wanted inference; then
   tar -C "$(dirname "${INFERENCE_BUNDLE_DIR}")" -czf "${INFERENCE_ARCHIVE}" "$(basename "${INFERENCE_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${INFERENCE_ARCHIVE}")
@@ -2003,6 +2009,7 @@ cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
 python3 - "${RELEASE_INDEX}" "${PRODUCT_VERSION}" ${APPLIANCE_PACKS_RESOLVED} \
   "$(basename "${BUNDLE_ARCHIVE}")" \
   "$(basename "${DEVELOPER_ARCHIVE}")" \
+  "$(basename "${DEVICEUSER_ARCHIVE}")" \
   "$(basename "${INFERENCE_ARCHIVE}")" <<'PY'
 from pathlib import Path
 import sys
@@ -2010,23 +2017,30 @@ import sys
 index_path = Path(sys.argv[1])
 version = sys.argv[2]
 args = sys.argv[3:]
-if len(args) < 4:
-    raise SystemExit("release-index writer: expected pack ids then three filenames")
-base_name, developer_name, inference_name = args[-3:]
-selected = set(args[:-3])
+if len(args) < 5:
+    raise SystemExit("release-index writer: expected pack ids then four filenames")
+base_name, developer_name, deviceuser_name, inference_name = args[-4:]
+selected = set(args[:-4])
 
 pack_specs = []
 capability_lines = []
 if "foundation" in selected:
     pack_specs.append(
-        f"  - id: foundation\n    filename: {base_name}\n    capabilities: [base, host, artifact, dns, video]"
+        f"  - id: foundation\n    filename: {base_name}\n    capabilities: [base, files, video]"
     )
 if "developer" in selected:
     pack_specs.append(
-        f"  - id: developer\n    filename: {developer_name}\n    capabilities: [workflows, build]"
+        f"  - id: developer\n    filename: {developer_name}\n    capabilities: [workflows, build, artifact, dns]"
     )
     capability_lines.append("  workflows: developer")
     capability_lines.append("  build: developer")
+    capability_lines.append("  artifact: developer")
+    capability_lines.append("  dns: developer")
+if "deviceuser" in selected:
+    pack_specs.append(
+        f"  - id: deviceuser\n    filename: {deviceuser_name}\n    capabilities: [host]"
+    )
+    capability_lines.append("  host: deviceuser")
 if "inference" in selected:
     pack_specs.append(
         f"  - id: inference\n    filename: {inference_name}\n    capabilities: [inference]"
@@ -2060,6 +2074,9 @@ fi
 if appliance_pack_wanted developer; then
   echo "  ${DEVELOPER_BUNDLE_DIR}"
 fi
+if appliance_pack_wanted deviceuser; then
+  echo "  ${DEVICEUSER_BUNDLE_DIR}"
+fi
 if appliance_pack_wanted inference; then
   echo "  ${INFERENCE_BUNDLE_DIR}"
 fi
@@ -2088,4 +2105,4 @@ echo "  bash ./scripts/publish-release.sh"
 echo "optional:"
 echo "  bash ./scripts/publish-release.sh --latest-alias"
 echo "  PRODUCT_VERSION=<override>"
-echo "  APPLIANCE_PACKS=foundation|foundation,developer|all  # default all"
+echo "  APPLIANCE_PACKS=foundation|foundation,developer|foundation,deviceuser|all  # default all"

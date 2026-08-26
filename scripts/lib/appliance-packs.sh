@@ -3,11 +3,11 @@
 #
 # Env:
 #   APPLIANCE_PACKS   CSV or single token. Default: all
-#                     Values: all | foundation | developer | inference
-#                     Examples: all ; foundation ; foundation,developer ; foundation,inference
+#                     Values: all | foundation | developer | deviceuser | inference
+#                     Examples: all ; foundation ; foundation,developer ; foundation,deviceuser
 #
 # After appliance_packs_resolve:
-#   APPLIANCE_PACKS_RESOLVED   space-separated, stable order: foundation [developer] [inference]
+#   APPLIANCE_PACKS_RESOLVED   space-separated, stable order: foundation [developer] [deviceuser] [inference]
 #   appliance_pack_wanted ID   returns 0 when ID is selected
 #
 # foundation is always included (required deliverable). Unknown ids fail closed.
@@ -20,6 +20,7 @@ appliance_packs_resolve() {
   local want_all=0
   local want_foundation=0
   local want_developer=0
+  local want_deviceuser=0
   local want_inference=0
   local IFS=','
 
@@ -43,6 +44,9 @@ appliance_packs_resolve() {
       developer)
         want_developer=1
         ;;
+      deviceuser)
+        want_deviceuser=1
+        ;;
       inference)
         want_inference=1
         ;;
@@ -51,7 +55,7 @@ appliance_packs_resolve() {
         return 2
         ;;
       *)
-        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|developer|inference)" >&2
+        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|developer|deviceuser|inference)" >&2
         return 2
         ;;
     esac
@@ -60,6 +64,7 @@ appliance_packs_resolve() {
   if [[ "${want_all}" -eq 1 ]]; then
     want_foundation=1
     want_developer=1
+    want_deviceuser=1
     want_inference=1
   fi
 
@@ -71,6 +76,9 @@ appliance_packs_resolve() {
   APPLIANCE_PACKS_RESOLVED="foundation"
   if [[ "${want_developer}" -eq 1 ]]; then
     APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} developer"
+  fi
+  if [[ "${want_deviceuser}" -eq 1 ]]; then
+    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} deviceuser"
   fi
   if [[ "${want_inference}" -eq 1 ]]; then
     APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} inference"

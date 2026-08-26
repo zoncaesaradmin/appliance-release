@@ -80,6 +80,7 @@ STAGING_DIR="${WORKDIR}/staging"
 RELEASE_INPUT_DIR="${WORKDIR}/release-input"
 BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-foundation"
 DEVELOPER_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-developer"
+DEVICEUSER_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 INFERENCE_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-inference"
 
 mkdir -p "${WORKDIR}" "${INPUTS_DIR}" "${DOWNLOADS_DIR}"
@@ -630,6 +631,7 @@ assemble_all_packs() {
     case "${pack_id}" in
       foundation) bundle_dir="${BUNDLE_DIR}" ;;
       developer) bundle_dir="${DEVELOPER_BUNDLE_DIR}" ;;
+      deviceuser) bundle_dir="${DEVICEUSER_BUNDLE_DIR}" ;;
       inference) bundle_dir="${INFERENCE_BUNDLE_DIR}" ;;
       *)
         echo "assemble-product-bundle: unsupported pack id ${pack_id}" >&2
@@ -680,7 +682,7 @@ if [[ -n "${VALUES_FILE:-}" ]]; then
   cp "${VALUES_FILE}" "${STAGING_DIR}/values-minimal.yaml"
 fi
 
-rm -rf "${BUNDLE_DIR}" "${DEVELOPER_BUNDLE_DIR}" "${INFERENCE_BUNDLE_DIR}"
+rm -rf "${BUNDLE_DIR}" "${DEVELOPER_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${INFERENCE_BUNDLE_DIR}"
 
 assemble_all_packs
 
@@ -690,6 +692,9 @@ if appliance_pack_wanted foundation; then
 fi
 if appliance_pack_wanted developer; then
   echo "  developer: ${DEVELOPER_BUNDLE_DIR}"
+fi
+if appliance_pack_wanted deviceuser; then
+  echo "  deviceuser: ${DEVICEUSER_BUNDLE_DIR}"
 fi
 if appliance_pack_wanted inference; then
   echo "  inference: ${INFERENCE_BUNDLE_DIR}"
