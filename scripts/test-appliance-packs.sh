@@ -21,11 +21,11 @@ assert_eq() {
 APPLIANCE_PACKS=""
 appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS}" "all" "empty defaults to all token"
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation developer inference video" "empty → all packs"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation developer inference" "empty → all packs"
 
 APPLIANCE_PACKS="all"
 appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation developer inference video" "all"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation developer inference" "all"
 
 APPLIANCE_PACKS="foundation"
 appliance_packs_resolve
@@ -36,16 +36,10 @@ appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation developer" "foundation+developer"
 appliance_pack_wanted developer || fail "developer should be wanted"
 appliance_pack_wanted inference && fail "inference should not be wanted"
-appliance_pack_wanted video && fail "video should not be wanted"
 
 APPLIANCE_PACKS="inference"
 appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation inference" "inference auto-includes foundation"
-
-APPLIANCE_PACKS="video"
-appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation video" "video auto-includes foundation"
-appliance_pack_wanted video || fail "video should be wanted"
 
 if APPLIANCE_PACKS="base" appliance_packs_resolve 2>/dev/null; then
   fail "legacy pack id base should fail (use foundation)"

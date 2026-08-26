@@ -81,7 +81,6 @@ RELEASE_INPUT_DIR="${WORKDIR}/release-input"
 BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-foundation"
 DEVELOPER_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-developer"
 INFERENCE_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-inference"
-VIDEO_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-video"
 
 mkdir -p "${WORKDIR}" "${INPUTS_DIR}" "${DOWNLOADS_DIR}"
 
@@ -133,12 +132,15 @@ if workflows_version:
 
 control_plane_bytes = b"control-plane-image\n"
 ui_bytes = b"appliance-ui-image\n"
+blob_storage_name = "blob-storage.oci.tar.zst"
+blob_storage_bytes = b"blob-storage-image\n"
 schema_bytes = b'{\n  "$schema": "https://json-schema.org/draft/2020-12/schema",\n  "type": "object"\n}\n'
 compatibility_bytes = (json.dumps(compatibility, indent=2) + "\n").encode("utf-8")
 checksums_bytes = b"sample checksums placeholder\n"
 
 (sample_root / control_plane_name).write_bytes(control_plane_bytes)
 (sample_root / ui_name).write_bytes(ui_bytes)
+(sample_root / blob_storage_name).write_bytes(blob_storage_bytes)
 (sample_root / schema_name).write_bytes(schema_bytes)
 (sample_root / compatibility_name).write_bytes(compatibility_bytes)
 (sample_root / checksums_name).write_bytes(checksums_bytes)
@@ -263,6 +265,7 @@ release_input = {
     "artifacts": {
         "controlPlaneImage": file_artifact(control_plane_name),
         "uiImage": file_artifact(ui_name),
+        "blobStorageImage": file_artifact(blob_storage_name),
         "applianceChart": file_artifact(chart_name),
         "configurationSchema": file_artifact(schema_name),
         "compatibility": file_artifact(compatibility_name),
@@ -276,6 +279,7 @@ release_input = {
 }
 release_input["artifacts"]["controlPlaneImage"]["imageReference"] = control_plane_image_ref
 release_input["artifacts"]["uiImage"]["imageReference"] = ui_image_ref
+release_input["artifacts"]["blobStorageImage"]["imageReference"] = "registry.local/blob-storage@sha256:" + "ab" * 32
 
 if workflows_chart_name:
     release_input["artifacts"]["workflowsChart"] = file_artifact(workflows_chart_name)
@@ -627,7 +631,6 @@ assemble_all_packs() {
       foundation) bundle_dir="${BUNDLE_DIR}" ;;
       developer) bundle_dir="${DEVELOPER_BUNDLE_DIR}" ;;
       inference) bundle_dir="${INFERENCE_BUNDLE_DIR}" ;;
-      video) bundle_dir="${VIDEO_BUNDLE_DIR}" ;;
       *)
         echo "assemble-product-bundle: unsupported pack id ${pack_id}" >&2
         exit 2
@@ -677,7 +680,7 @@ if [[ -n "${VALUES_FILE:-}" ]]; then
   cp "${VALUES_FILE}" "${STAGING_DIR}/values-minimal.yaml"
 fi
 
-rm -rf "${BUNDLE_DIR}" "${DEVELOPER_BUNDLE_DIR}" "${INFERENCE_BUNDLE_DIR}" "${VIDEO_BUNDLE_DIR}"
+rm -rf "${BUNDLE_DIR}" "${DEVELOPER_BUNDLE_DIR}" "${INFERENCE_BUNDLE_DIR}"
 
 assemble_all_packs
 
@@ -690,7 +693,4 @@ if appliance_pack_wanted developer; then
 fi
 if appliance_pack_wanted inference; then
   echo "  inference: ${INFERENCE_BUNDLE_DIR}"
-fi
-if appliance_pack_wanted video; then
-  echo "  video: ${VIDEO_BUNDLE_DIR}"
 fi

@@ -3,11 +3,11 @@
 #
 # Env:
 #   APPLIANCE_PACKS   CSV or single token. Default: all
-#                     Values: all | foundation | developer | inference | video
-#                     Examples: all ; foundation ; foundation,developer ; foundation,inference ; foundation,video
+#                     Values: all | foundation | developer | inference
+#                     Examples: all ; foundation ; foundation,developer ; foundation,inference
 #
 # After appliance_packs_resolve:
-#   APPLIANCE_PACKS_RESOLVED   space-separated, stable order: foundation [developer] [inference] [video]
+#   APPLIANCE_PACKS_RESOLVED   space-separated, stable order: foundation [developer] [inference]
 #   appliance_pack_wanted ID   returns 0 when ID is selected
 #
 # foundation is always included (required deliverable). Unknown ids fail closed.
@@ -21,7 +21,6 @@ appliance_packs_resolve() {
   local want_foundation=0
   local want_developer=0
   local want_inference=0
-  local want_video=0
   local IFS=','
 
   raw="$(printf '%s' "${raw}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
@@ -47,15 +46,12 @@ appliance_packs_resolve() {
       inference)
         want_inference=1
         ;;
-      video)
-        want_video=1
-        ;;
       base)
         echo "appliance-packs: pack id 'base' was renamed to 'foundation' (capability 'base' is unchanged)" >&2
         return 2
         ;;
       *)
-        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|developer|inference|video)" >&2
+        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|developer|inference)" >&2
         return 2
         ;;
     esac
@@ -65,7 +61,6 @@ appliance_packs_resolve() {
     want_foundation=1
     want_developer=1
     want_inference=1
-    want_video=1
   fi
 
   if [[ "${want_foundation}" -eq 0 ]]; then
@@ -79,9 +74,6 @@ appliance_packs_resolve() {
   fi
   if [[ "${want_inference}" -eq 1 ]]; then
     APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} inference"
-  fi
-  if [[ "${want_video}" -eq 1 ]]; then
-    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} video"
   fi
 
   export APPLIANCE_PACKS
