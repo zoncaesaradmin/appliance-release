@@ -36,8 +36,8 @@
 #
 # Offline seed coverage (make seed-build-deps → every deps/* package), including:
 #   development-container, git-runtime-container, workflows, artifact-server-bases,
-#   dns (coredns), inference (ollama), service-build-bases, host-packages,
-#   platform-inputs (k3s/helm).
+#   dns (coredns), inference (ollama), blob-storage (minio), service-build-bases,
+#   host-packages, platform-inputs (k3s/helm), message-broker.
 # New packaging deps must add deps/<name> + offline lan_cache_ref/files remap;
 # see docs/offline-build-deps.md and AGENTS.md "Packaging Code Reuse".
 #

@@ -400,6 +400,17 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
       >"${RUN_DIR}/logs/release-artifact-validation-developer.json"
   fi
 
+  local_deviceuser_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-deviceuser.tar.gz")"
+  if [[ -n "${local_deviceuser_archive}" && -f "${local_deviceuser_archive}" ]]; then
+    extract_archive_into_dir "${local_deviceuser_archive}" "${RUN_DIR}/artifacts/deviceuser-bundle"
+    log "validating release-input against deviceuser pack"
+    python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
+      --pack deviceuser \
+      --release-input-root "${RUN_DIR}/artifacts/release-input" \
+      --bundle-root "${RUN_DIR}/artifacts/deviceuser-bundle" \
+      >"${RUN_DIR}/logs/release-artifact-validation-deviceuser.json"
+  fi
+
   local_inference_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-inference.tar.gz")"
   if [[ -n "${local_inference_archive}" && -f "${local_inference_archive}" ]]; then
     extract_archive_into_dir "${local_inference_archive}" "${RUN_DIR}/artifacts/inference-bundle"

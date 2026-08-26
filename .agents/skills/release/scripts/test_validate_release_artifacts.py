@@ -209,7 +209,7 @@ def test_positive_case() -> None:
 
 
 def test_rejects_missing_host_packages_when_flags_false() -> None:
-    """Complete product always requires host-packages regardless of install flags."""
+    """Complete product release-input always requires host-packages."""
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp, include_host_packages=False)
@@ -217,6 +217,29 @@ def test_rejects_missing_host_packages_when_flags_false() -> None:
         if result.returncode == 0:
             raise AssertionError("missing host-packages were accepted when install flags are false")
         if "hostPackages" not in result.stderr and "host-packages" not in result.stderr.lower():
+            raise AssertionError(result.stderr)
+
+
+def test_foundation_pack_allows_host_packages_absent_from_bundle() -> None:
+    """Host packages ship in the deviceuser pack, not foundation."""
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["entries"] = [
+            entry
+            for entry in manifest["entries"]
+            if not str(entry.get("targetPath") or "").startswith("host-packages/")
+            and "host-agent" not in str(entry.get("targetPath") or "")
+            and "artifact-server" not in str(entry.get("targetPath") or "")
+            and "appliance-registry" not in str(entry.get("targetPath") or "")
+            and "coredns" not in str(entry.get("targetPath") or "")
+            and "appliance-dns" not in str(entry.get("targetPath") or "")
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = run_validator(tmp, "--pack", "foundation")
+        if result.returncode != 0:
             raise AssertionError(result.stderr)
 
 
@@ -331,7 +354,7 @@ def test_rejects_missing_host_packages_bundle_entry() -> None:
             if not entry["targetPath"].startswith("host-packages/")
         ]
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        result = run_validator(tmp)
+        result = run_validator(tmp, "--pack", "deviceuser")
         if result.returncode == 0:
             raise AssertionError("missing host-packages bundle entries were accepted")
         if "hostPackages" not in result.stderr:
@@ -614,6 +637,10 @@ def test_developer_pack_skips_foundation_values_file() -> None:
             "kubernetes/crds/",
             "oci-images/workflow-",
             "oci-images/buildah",
+            "oci-images/artifact-server",
+            "charts/appliance-registry",
+            "oci-images/coredns",
+            "charts/appliance-dns",
         )
         manifest["entries"] = [
             entry
@@ -706,6 +733,7 @@ def test_rejects_unidentified_artifact_server_image_path() -> None:
 def main() -> None:
     test_positive_case()
     test_rejects_missing_host_packages_when_flags_false()
+    test_foundation_pack_allows_host_packages_absent_from_bundle()
     test_positive_case_with_nested_bundle_root()
     test_allows_empty_directory_artifacts()
     test_rejects_tag_only_extra_oci_image()

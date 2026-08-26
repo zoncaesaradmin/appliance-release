@@ -371,6 +371,8 @@ def validate_artifact_server(
     artifacts: dict,
     release_input_dir: Path,
     entries_by_path: dict[str, dict],
+    *,
+    require_in_bundle: bool,
 ) -> list:
     compatibility = release_input.get("compatibility")
     if not isinstance(compatibility, dict):
@@ -390,19 +392,20 @@ def validate_artifact_server(
 
     chart = require_artifact(artifacts, "artifactServerChart")
     chart_path = require_file_artifact(artifacts, "artifactServerChart", release_input_dir)
-    chart_candidates = (
-        f"charts/{chart_path.name}",
-        f"chart/{chart_path.name}",
-        f"chart/appliance-registry-{chart_path.name}",
-    )
-    chart_bundle_path = next((path for path in chart_candidates if path in entries_by_path), "")
-    if not chart_bundle_path:
-        raise ValueError(
-            "bundle manifest is missing artifactServerChart; expected one of: "
-            + ", ".join(chart_candidates)
+    if require_in_bundle:
+        chart_candidates = (
+            f"charts/{chart_path.name}",
+            f"chart/{chart_path.name}",
+            f"chart/appliance-registry-{chart_path.name}",
         )
-    chart_entry = require_bundle_entry(entries_by_path, chart_bundle_path, "artifactServerChart")
-    require_matching_bundle_digest(chart_entry, chart, chart_bundle_path, "artifactServerChart")
+        chart_bundle_path = next((path for path in chart_candidates if path in entries_by_path), "")
+        if not chart_bundle_path:
+            raise ValueError(
+                "bundle manifest is missing artifactServerChart; expected one of: "
+                + ", ".join(chart_candidates)
+            )
+        chart_entry = require_bundle_entry(entries_by_path, chart_bundle_path, "artifactServerChart")
+        require_matching_bundle_digest(chart_entry, chart, chart_bundle_path, "artifactServerChart")
 
     image = require_artifact(artifacts, "artifactServerImage")
     image_path = require_file_artifact(artifacts, "artifactServerImage", release_input_dir)
@@ -433,10 +436,11 @@ def validate_artifact_server(
             "artifactServerImage OCI archive annotation must be 'registry.local/artifact-server:bundled', "
             f"got {annotation!r}"
         )
-    image_bundle_path = f"oci-images/{image_path.name}"
-    image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "artifactServerImage")
-    require_matching_bundle_digest(image_entry, image, image_bundle_path, "artifactServerImage")
-    require_matching_bundle_image_reference(image_entry, image_ref, image_bundle_path, "artifactServerImage")
+    if require_in_bundle:
+        image_bundle_path = f"oci-images/{image_path.name}"
+        image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "artifactServerImage")
+        require_matching_bundle_digest(image_entry, image, image_bundle_path, "artifactServerImage")
+        require_matching_bundle_image_reference(image_entry, image_ref, image_bundle_path, "artifactServerImage")
     return ["artifactServerChart", "artifactServerImage", f"artifactServerVersion={artifact_server_version}"]
 
 
@@ -446,6 +450,8 @@ def validate_dns(
     artifacts: dict,
     release_input_dir: Path,
     entries_by_path: dict[str, dict],
+    *,
+    require_in_bundle: bool,
 ) -> list:
     compatibility = release_input.get("compatibility")
     if not isinstance(compatibility, dict):
@@ -465,19 +471,20 @@ def validate_dns(
 
     chart = require_artifact(artifacts, "dnsChart")
     chart_path = require_file_artifact(artifacts, "dnsChart", release_input_dir)
-    chart_candidates = (
-        f"charts/{chart_path.name}",
-        f"chart/{chart_path.name}",
-        f"chart/appliance-dns-{chart_path.name}",
-    )
-    chart_bundle_path = next((path for path in chart_candidates if path in entries_by_path), "")
-    if not chart_bundle_path:
-        raise ValueError(
-            "bundle manifest is missing dnsChart; expected one of: "
-            + ", ".join(chart_candidates)
+    if require_in_bundle:
+        chart_candidates = (
+            f"charts/{chart_path.name}",
+            f"chart/{chart_path.name}",
+            f"chart/appliance-dns-{chart_path.name}",
         )
-    chart_entry = require_bundle_entry(entries_by_path, chart_bundle_path, "dnsChart")
-    require_matching_bundle_digest(chart_entry, chart, chart_bundle_path, "dnsChart")
+        chart_bundle_path = next((path for path in chart_candidates if path in entries_by_path), "")
+        if not chart_bundle_path:
+            raise ValueError(
+                "bundle manifest is missing dnsChart; expected one of: "
+                + ", ".join(chart_candidates)
+            )
+        chart_entry = require_bundle_entry(entries_by_path, chart_bundle_path, "dnsChart")
+        require_matching_bundle_digest(chart_entry, chart, chart_bundle_path, "dnsChart")
 
     image = require_artifact(artifacts, "dnsImage")
     image_path = require_file_artifact(artifacts, "dnsImage", release_input_dir)
@@ -503,10 +510,11 @@ def validate_dns(
             "dnsImage OCI archive annotation must be 'registry.local/coredns:bundled', "
             f"got {annotation!r}"
         )
-    image_bundle_path = f"oci-images/{image_path.name}"
-    image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "dnsImage")
-    require_matching_bundle_digest(image_entry, image, image_bundle_path, "dnsImage")
-    require_matching_bundle_image_reference(image_entry, image_ref, image_bundle_path, "dnsImage")
+    if require_in_bundle:
+        image_bundle_path = f"oci-images/{image_path.name}"
+        image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "dnsImage")
+        require_matching_bundle_digest(image_entry, image, image_bundle_path, "dnsImage")
+        require_matching_bundle_image_reference(image_entry, image_ref, image_bundle_path, "dnsImage")
     return ["dnsChart", "dnsImage", f"dnsVersion={dns_version}"]
 
 
@@ -654,6 +662,8 @@ def validate_host_agent(
     artifacts: dict,
     release_input_dir: Path,
     entries_by_path: dict[str, dict],
+    *,
+    require_in_bundle: bool,
 ) -> list:
     image = require_artifact(artifacts, "hostAgentImage")
     image_path = require_file_artifact(artifacts, "hostAgentImage", release_input_dir)
@@ -683,12 +693,13 @@ def validate_host_agent(
             "'registry.local/appliance-host-agent:bundled', "
             f"got {annotation!r}"
         )
-    image_bundle_path = f"oci-images/{image_path.name}"
-    image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "hostAgentImage")
-    require_matching_bundle_digest(image_entry, image, image_bundle_path, "hostAgentImage")
-    require_matching_bundle_image_reference(
-        image_entry, image_ref, image_bundle_path, "hostAgentImage"
-    )
+    if require_in_bundle:
+        image_bundle_path = f"oci-images/{image_path.name}"
+        image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "hostAgentImage")
+        require_matching_bundle_digest(image_entry, image, image_bundle_path, "hostAgentImage")
+        require_matching_bundle_image_reference(
+            image_entry, image_ref, image_bundle_path, "hostAgentImage"
+        )
 
     binary = require_artifact(artifacts, "hostAgentBinary")
     binary_path = require_file_artifact(artifacts, "hostAgentBinary", release_input_dir)
@@ -697,14 +708,30 @@ def validate_host_agent(
             "release-input artifacts.hostAgentBinary.path must identify "
             f"appliance-host-agentd, got {binary['path']!r}"
         )
-    binary_bundle_path = f"bin/{binary_path.name}"
-    binary_entry = require_bundle_entry(entries_by_path, binary_bundle_path, "hostAgentBinary")
-    require_matching_bundle_digest(binary_entry, binary, binary_bundle_path, "hostAgentBinary")
+    if require_in_bundle:
+        binary_bundle_path = f"bin/{binary_path.name}"
+        binary_entry = require_bundle_entry(entries_by_path, binary_bundle_path, "hostAgentBinary")
+        require_matching_bundle_digest(binary_entry, binary, binary_bundle_path, "hostAgentBinary")
     return ["hostAgentImage", "hostAgentBinary"]
 
 
+def validate_host_packages(
+    artifacts: dict,
+    release_input_dir: Path,
+    entries_by_path: dict[str, dict],
+    *,
+    require_in_bundle: bool,
+) -> list:
+    # Complete product release-input always includes host-packages. They ship in
+    # the deviceuser pack only (not foundation).
+    require_dir_artifact(artifacts, "hostPackages", release_input_dir)
+    if require_in_bundle:
+        require_bundle_entry_prefix(entries_by_path, "host-packages/", "hostPackages")
+    return ["hostPackages"]
+
+
 def validate_required_artifacts(
-    artifacts: dict, release_input_dir: Path, entries_by_path: dict, *, host_packages_required: bool = True
+    artifacts: dict, release_input_dir: Path, entries_by_path: dict
 ) -> list:
     checked = []
     runtime_targets = {"applianceChart": "charts"}
@@ -725,17 +752,6 @@ def validate_required_artifacts(
     for key in ("configurationSchema", "compatibility", "checksums"):
         require_file_artifact(artifacts, key, release_input_dir)
         checked.append(key)
-
-    # Complete product super-set always includes host-packages. Install host
-    # flags only enable services on the target; they never omit packaging.
-    if not host_packages_required:
-        raise ValueError(
-            "hostPackages are required in the complete product super-set "
-            "(install host flags no longer control packaging layout)"
-        )
-    require_dir_artifact(artifacts, "hostPackages", release_input_dir)
-    require_bundle_entry_prefix(entries_by_path, "host-packages/", "hostPackages")
-    checked.append("hostPackages")
 
     for key in ("sbom", "provenance", "notices", "tests"):
         require_dir_artifact(artifacts, key, release_input_dir)
@@ -849,12 +865,13 @@ def main() -> int:
     parser.add_argument("--bundle-root", required=True)
     parser.add_argument(
         "--pack",
-        choices=("foundation", "developer", "inference", "video"),
+        choices=("foundation", "developer", "deviceuser", "inference", "video"),
         default="foundation",
         help=(
             "Which signed pack archive is under --bundle-root. "
-            "foundation: base product checks; developer extras are release-input-only. "
-            "developer: workflows + extraOCI must be present in this pack. "
+            "foundation: base product checks; developer/deviceuser extras are release-input-only. "
+            "developer: workflows + artifact-server + dns + extraOCI must be present in this pack. "
+            "deviceuser: host-agent + host-packages must be present in this pack. "
             "inference: inference chart/image/version must be present in this pack. "
             "video: video chart/image/version must be present in this pack."
         ),
@@ -876,7 +893,6 @@ def main() -> int:
         help="Comma-separated digest-pinned extra OCI image references expected in release-input (and in-bundle when --pack=developer).",
     )
     args = parser.parse_args()
-    host_packages_required = True
     expected_extra_refs = parse_csv(args.expected_extra_oci_image_refs)
     pack = args.pack
     require_workflows = args.require_workflows or pack == "developer"
@@ -918,15 +934,17 @@ def main() -> int:
                     artifacts,
                     release_input_path.parent,
                     entries_by_path,
-                    host_packages_required=host_packages_required,
                 ),
                 "runtimeValues": validate_runtime_values(artifacts, bundle_values),
+                # Artifact-server, DNS, host-agent, and host-packages live in other
+                # packs; foundation still checks release-input presence/content.
                 "artifactServer": validate_artifact_server(
                     release_input,
                     bundle_manifest,
                     artifacts,
                     release_input_path.parent,
                     entries_by_path,
+                    require_in_bundle=False,
                 ),
                 "dns": validate_dns(
                     release_input,
@@ -934,6 +952,7 @@ def main() -> int:
                     artifacts,
                     release_input_path.parent,
                     entries_by_path,
+                    require_in_bundle=False,
                 ),
                 "metadataBundle": validate_metadata_bundle(
                     release_input,
@@ -945,6 +964,13 @@ def main() -> int:
                     artifacts,
                     release_input_path.parent,
                     entries_by_path,
+                    require_in_bundle=False,
+                ),
+                "hostPackages": validate_host_packages(
+                    artifacts,
+                    release_input_path.parent,
+                    entries_by_path,
+                    require_in_bundle=False,
                 ),
                 # Developer/inference extras may appear in release-input for a multi-pack
                 # build; they are not in the foundation archive.
@@ -989,11 +1015,44 @@ def main() -> int:
                 "workflows": validate_workflows(
                     artifacts, release_input_path.parent, entries_by_path
                 ),
+                "artifactServer": validate_artifact_server(
+                    release_input,
+                    bundle_manifest,
+                    artifacts,
+                    release_input_path.parent,
+                    entries_by_path,
+                    require_in_bundle=True,
+                ),
+                "dns": validate_dns(
+                    release_input,
+                    bundle_manifest,
+                    artifacts,
+                    release_input_path.parent,
+                    entries_by_path,
+                    require_in_bundle=True,
+                ),
                 "extraOCIImages": validate_extra_oci_images(
                     artifacts,
                     release_input_path.parent,
                     entries_by_path,
                     expected_extra_refs,
+                    require_in_bundle=True,
+                ),
+            }
+        )
+    elif pack == "deviceuser":
+        checked.update(
+            {
+                "hostAgent": validate_host_agent(
+                    artifacts,
+                    release_input_path.parent,
+                    entries_by_path,
+                    require_in_bundle=True,
+                ),
+                "hostPackages": validate_host_packages(
+                    artifacts,
+                    release_input_path.parent,
+                    entries_by_path,
                     require_in_bundle=True,
                 ),
             }
