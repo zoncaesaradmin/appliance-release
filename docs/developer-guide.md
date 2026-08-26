@@ -157,7 +157,11 @@ deliverables under `RELEASE_WORK_ROOT/export/` according to `APPLIANCE_PACKS`
 - `appliance-${PRODUCT_VERSION}-developer.tar.gz` (when selected)
 - `appliance-${PRODUCT_VERSION}-deviceuser.tar.gz` (when selected; host-agent capability)
 - `appliance-${PRODUCT_VERSION}-inference.tar.gz` (when selected)
-- `release-index.yaml` (lists packs built this run + capability → pack map)
+- `release-index.yaml` (install contract: packs built this run, full
+  `capabilityPacks` map, and a snapshot of `profiles → capabilities` from the
+  product profiles catalog). `install-release.sh` derives optional packs as
+  `capabilityPacks[cap]` for each capability on the selected profile — it does
+  not hardcode profile→pack tables.
 
 ```bash
 # Default: build and stage every pack

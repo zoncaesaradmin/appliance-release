@@ -2006,7 +2006,9 @@ if appliance_pack_wanted inference; then
 fi
 cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
 
-python3 - "${RELEASE_INDEX}" "${PRODUCT_VERSION}" ${APPLIANCE_PACKS_RESOLVED} \
+python3 - "${RELEASE_INDEX}" "${PRODUCT_VERSION}" \
+  "${CODE_REPO_DIR}/metadata-bundle/base/profiles/catalog.yaml" \
+  ${APPLIANCE_PACKS_RESOLVED} \
   "$(basename "${BUNDLE_ARCHIVE}")" \
   "$(basename "${DEVELOPER_ARCHIVE}")" \
   "$(basename "${DEVICEUSER_ARCHIVE}")" \
@@ -2016,14 +2018,64 @@ import sys
 
 index_path = Path(sys.argv[1])
 version = sys.argv[2]
-args = sys.argv[3:]
+profiles_catalog_path = Path(sys.argv[3])
+args = sys.argv[4:]
 if len(args) < 5:
     raise SystemExit("release-index writer: expected pack ids then four filenames")
 base_name, developer_name, deviceuser_name, inference_name = args[-4:]
 selected = set(args[:-4])
 
+# Product profile → capabilities snapshot for install-time pack derivation.
+profiles_text = profiles_catalog_path.read_text(encoding="utf-8")
+try:
+    import yaml  # type: ignore
+except ImportError:
+    yaml = None
+if yaml is not None:
+    profiles_doc = yaml.safe_load(profiles_text) or {}
+    profiles = profiles_doc.get("profiles") or {}
+else:
+    # Minimal fallback when PyYAML is unavailable: parse name + capabilities lists.
+    profiles = {}
+    current = None
+    caps = []
+    for line in profiles_text.splitlines():
+        if line.startswith("  ") and not line.startswith("    ") and line.strip().endswith(":"):
+            if current is not None:
+                profiles[current] = {"capabilities": caps}
+            current = line.strip().rstrip(":")
+            caps = []
+        elif "capabilities:" in line and current is not None:
+            raw = line.split(":", 1)[1].strip()
+            if raw.startswith("[") and raw.endswith("]"):
+                caps = [c.strip() for c in raw[1:-1].split(",") if c.strip()]
+    if current is not None:
+        profiles[current] = {"capabilities": caps}
+
+if not profiles:
+    raise SystemExit(f"release-index writer: no profiles found in {profiles_catalog_path}")
+
+profile_lines = []
+for name in sorted(profiles):
+    entry = profiles[name] or {}
+    caps = entry.get("capabilities") if isinstance(entry, dict) else None
+    if not isinstance(caps, list) or not caps:
+        raise SystemExit(f"release-index writer: profile {name!r} missing capabilities")
+    caps_csv = ", ".join(str(c).strip() for c in caps if str(c).strip())
+    profile_lines.append(f"  {name}:\n    capabilities: [{caps_csv}]")
+
 pack_specs = []
-capability_lines = []
+# Packaging contract: always emit the full capability → pack map so install can
+# derive required packs from profile capabilities even when some packs were not
+# published this run (published_pack_ids_from_index then fails closed).
+capability_lines = [
+    "  workflows: developer",
+    "  build: developer",
+    "  artifact: developer",
+    "  dns: developer",
+    "  host: deviceuser",
+    "  inference: inference",
+]
 if "foundation" in selected:
     pack_specs.append(
         f"  - id: foundation\n    filename: {base_name}\n    capabilities: [base, files, video]"
@@ -2032,33 +2084,22 @@ if "developer" in selected:
     pack_specs.append(
         f"  - id: developer\n    filename: {developer_name}\n    capabilities: [workflows, build, artifact, dns]"
     )
-    capability_lines.append("  workflows: developer")
-    capability_lines.append("  build: developer")
-    capability_lines.append("  artifact: developer")
-    capability_lines.append("  dns: developer")
 if "deviceuser" in selected:
     pack_specs.append(
         f"  - id: deviceuser\n    filename: {deviceuser_name}\n    capabilities: [host]"
     )
-    capability_lines.append("  host: deviceuser")
 if "inference" in selected:
     pack_specs.append(
         f"  - id: inference\n    filename: {inference_name}\n    capabilities: [inference]"
     )
-    capability_lines.append("  inference: inference")
-if capability_lines:
-    capability_block = "\n".join(capability_lines)
-    text = f"""version: {version}
+capability_block = "\n".join(capability_lines)
+text = f"""version: {version}
 packs:
 {chr(10).join(pack_specs)}
 capabilityPacks:
 {capability_block}
-"""
-else:
-    text = f"""version: {version}
-packs:
-{chr(10).join(pack_specs)}
-capabilityPacks: {{}}
+profiles:
+{chr(10).join(profile_lines)}
 """
 index_path.write_text(text, encoding="utf-8")
 PY

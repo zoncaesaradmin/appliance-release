@@ -335,37 +335,104 @@ RELEASE_PAYLOAD_FILES=(
   "${CHECKSUM_FILE}"
 )
 
-required_packs_for_profile() {
-  local profile="$1"
-  case "${profile}" in
-    core|training)
-      echo "deviceuser"
-      ;;
-    storage|landns|storage-landns)
-      echo "developer"
-      echo "deviceuser"
-      ;;
-    lanllm)
-      echo "deviceuser"
-      echo "inference"
-      ;;
-    builder|builder-landns|builder-storage-landns)
-      echo "developer"
-      echo "deviceuser"
-      ;;
-    builder-lanllm|builder-lanllm-storage-landns)
-      echo "developer"
-      echo "deviceuser"
-      echo "inference"
-      ;;
-    *)
-      # Unknown profiles: fail closed and require both optional packs when
-      # the release index is unavailable; otherwise rely on index + zonctl.
-      echo "developer"
-      echo "deviceuser"
-      echo "inference"
-      ;;
-  esac
+# Optional packs required by profile, derived from release-index profiles +
+# capabilityPacks (foundation is always required separately). Prints one pack
+# id per line in stable order: developer, deviceuser, inference.
+required_packs_for_profile_from_index() {
+  local index_path="$1"
+  local profile="$2"
+  python3 - "${index_path}" "${profile}" <<'PY'
+from pathlib import Path
+import sys
+
+index_path = Path(sys.argv[1])
+profile = str(sys.argv[2] or "").strip()
+if not profile:
+    raise SystemExit("install-release: appliance profile must not be empty")
+text = index_path.read_text(encoding="utf-8")
+
+
+def parse_release_index(raw: str) -> dict:
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        yaml = None
+    if yaml is not None:
+        data = yaml.safe_load(raw) or {}
+        if not isinstance(data, dict):
+            raise SystemExit("install-release: release-index root must be a mapping")
+        return data
+
+    # Minimal fallback parser for the fixed release-index shape (no PyYAML).
+    profiles = {}
+    capability_packs = {}
+    section = ""
+    current_profile = ""
+    for line in raw.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line.startswith("packs:"):
+            section = "packs"
+            current_profile = ""
+            continue
+        if line.startswith("capabilityPacks:"):
+            section = "capabilityPacks"
+            current_profile = ""
+            if line.strip() == "capabilityPacks: {}":
+                continue
+            continue
+        if line.startswith("profiles:"):
+            section = "profiles"
+            current_profile = ""
+            continue
+        if section == "capabilityPacks" and line.startswith("  ") and ":" in line and not line.startswith("    "):
+            key, value = line.strip().split(":", 1)
+            capability_packs[key.strip()] = value.strip()
+            continue
+        if section == "profiles":
+            if line.startswith("  ") and not line.startswith("    ") and line.strip().endswith(":"):
+                current_profile = line.strip().rstrip(":")
+                profiles[current_profile] = {"capabilities": []}
+                continue
+            if current_profile and "capabilities:" in line:
+                raw_caps = line.split(":", 1)[1].strip()
+                if raw_caps.startswith("[") and raw_caps.endswith("]"):
+                    caps = [c.strip() for c in raw_caps[1:-1].split(",") if c.strip()]
+                    profiles[current_profile] = {"capabilities": caps}
+    return {"profiles": profiles, "capabilityPacks": capability_packs}
+
+
+data = parse_release_index(text)
+profiles = data.get("profiles") or {}
+if not isinstance(profiles, dict) or not profiles:
+    raise SystemExit(f"install-release: {index_path} is missing profiles (rebuild with a current release skill)")
+entry = profiles.get(profile)
+if not isinstance(entry, dict):
+    known = ", ".join(sorted(profiles))
+    raise SystemExit(f"install-release: unknown appliance profile {profile!r} (index profiles: {known})")
+caps = entry.get("capabilities") or []
+if not isinstance(caps, list) or not caps:
+    raise SystemExit(f"install-release: profile {profile!r} has no capabilities in {index_path}")
+capability_packs = data.get("capabilityPacks") or {}
+if capability_packs is None:
+    capability_packs = {}
+if not isinstance(capability_packs, dict):
+    raise SystemExit(f"install-release: {index_path} capabilityPacks must be a mapping")
+
+wanted = set()
+for cap in caps:
+    name = str(cap or "").strip()
+    if not name:
+        continue
+    pack = str(capability_packs.get(name) or "").strip()
+    if pack:
+        wanted.add(pack)
+
+# Stable optional-pack order for download/verify.
+for pack_id in ("developer", "deviceuser", "inference"):
+    if pack_id in wanted:
+        print(pack_id)
+PY
 }
 
 # Print space-separated pack ids listed in release-index.yaml (fail closed).
@@ -456,7 +523,7 @@ REQUIRED_PACKS=()
 while IFS= read -r pack_id; do
   [[ -n "${pack_id}" ]] || continue
   REQUIRED_PACKS+=("${pack_id}")
-done < <(required_packs_for_profile "${APPLIANCE_PROFILE}")
+done < <(required_packs_for_profile_from_index "${OUT_DIR}/${RELEASE_INDEX_FILE}" "${APPLIANCE_PROFILE}")
 
 PUBLISHED_PACKS="$(published_pack_ids_from_index "${OUT_DIR}/${RELEASE_INDEX_FILE}")"
 if ! pack_id_is_published "foundation" "${PUBLISHED_PACKS}"; then
