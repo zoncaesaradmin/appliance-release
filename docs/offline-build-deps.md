@@ -73,6 +73,7 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | `dns` | `build-cache/coredns:…` | dns wrap |
 | `inference` | `build-cache/ollama:…` | inference-runtime wrap (`export-inference-runtime-image-archive.sh`) |
 | `blob-storage` | `build-cache/minio:…` | foundation S3-compatible blob-storage wrap (`export-blob-storage-image-archive.sh`) |
+| `jellyfin` | `build-cache/jellyfin:10.10.7-amd64` | reviewed Jellyfin application runtime |
 | `service-build-bases` | golang/node/alpine/ui-npm cache images | CP/UI/hostagent build-args |
 | `host-packages` | files `host-packages/ubuntu-…` | host-packages unpack |
 | `platform-inputs` | files `k3s/…`, `helm/…` | K3s + Helm |

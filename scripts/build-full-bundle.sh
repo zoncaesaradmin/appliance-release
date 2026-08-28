@@ -294,6 +294,20 @@ fi
 source "${BLOB_STORAGE_PINS_FILE}"
 BLOB_STORAGE_VERSION="${CACHE_TAG}"
 BLOB_STORAGE_SOURCE_IMAGE="${UPSTREAM_IMAGE}"
+BLOB_STORAGE_CACHE_NAME="${CACHE_NAME}"
+BLOB_STORAGE_CACHE_TAG="${CACHE_TAG}"
+
+JELLYFIN_PINS_FILE="${RELEASE_REPO_DIR}/deps/jellyfin/pins.env"
+if [[ ! -f "${JELLYFIN_PINS_FILE}" ]]; then
+  echo "build-full-bundle: missing jellyfin seed pin: ${JELLYFIN_PINS_FILE}" >&2
+  exit 1
+fi
+# shellcheck disable=SC1090
+source "${JELLYFIN_PINS_FILE}"
+JELLYFIN_SOURCE_IMAGE="${UPSTREAM_IMAGE}"
+JELLYFIN_CACHE_NAME="${CACHE_NAME}"
+JELLYFIN_CACHE_TAG="${CACHE_TAG}"
+JELLYFIN_RUNTIME_REFERENCE="${RUNTIME_REFERENCE}"
 
 # Pack selection (default all = foundation + developer + deviceuser + inference).
 APPLIANCE_PACKS="${USER_APPLIANCE_PACKS:-${APPLIANCE_PACKS:-all}}"
@@ -1653,13 +1667,19 @@ if offline_build_enabled; then
   require_var DEV_REGISTRY
   require_seed_package message-broker
   require_seed_package blob-storage
+  if appliance_pack_wanted deviceuser; then
+    require_seed_package jellyfin
+  fi
   if appliance_pack_wanted developer; then
     WORKSPACE_PROVISIONER_IMAGE_REF="$(lan_cache_ref alpine-git "${ALPINE_GIT_CACHE_TAG}")"
   fi
   ARTIFACT_SERVER_SOURCE_IMAGE="$(lan_cache_ref zot-linux-amd64 "v${ARTIFACT_SERVER_VERSION}")"
   MESSAGE_BROKER_SOURCE_IMAGE="$(lan_cache_ref nats "2.10.26-alpine")"
   DNS_IMAGE_PULL_REF="$(lan_cache_ref coredns "v${DNS_VERSION}")"
-  BLOB_STORAGE_SOURCE_IMAGE="$(lan_cache_ref "${CACHE_NAME}" "${CACHE_TAG}")"
+  BLOB_STORAGE_SOURCE_IMAGE="$(lan_cache_ref "${BLOB_STORAGE_CACHE_NAME}" "${BLOB_STORAGE_CACHE_TAG}")"
+  if appliance_pack_wanted deviceuser; then
+    JELLYFIN_SOURCE_IMAGE="$(lan_cache_ref "${JELLYFIN_CACHE_NAME}" "${JELLYFIN_CACHE_TAG}")"
+  fi
   if appliance_pack_wanted inference; then
     INFERENCE_IMAGE_PULL_REF="$(lan_cache_ref ollama "${INFERENCE_VERSION}")"
   fi
@@ -1765,6 +1785,17 @@ if appliance_pack_wanted developer; then
   WORKSPACE_PROVISIONER_IMAGE_REF="$(export_bundled_oci_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "registry.local/workspace-provisioner" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
   BUNDLED_IMAGE_ARCHIVES+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
   BUNDLED_IMAGE_REFS+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
+fi
+
+if appliance_pack_wanted deviceuser; then
+  JELLYFIN_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/jellyfin-image.tar"
+  JELLYFIN_IMAGE_REF="$(export_bundled_oci_archive "${JELLYFIN_SOURCE_IMAGE}" "registry.local/jellyfin" "${CODE_REPO_DIR}/.run/jellyfin-image.tar")"
+  if [[ "${JELLYFIN_IMAGE_REF}" != "${JELLYFIN_RUNTIME_REFERENCE}" ]]; then
+    echo "build-full-bundle: Jellyfin re-export ${JELLYFIN_IMAGE_REF} does not match catalog pin ${JELLYFIN_RUNTIME_REFERENCE}" >&2
+    exit 1
+  fi
+  BUNDLED_IMAGE_ARCHIVES+=("${JELLYFIN_IMAGE_ARCHIVE_FOR_DEV}")
+  BUNDLED_IMAGE_REFS+=("${JELLYFIN_IMAGE_REF}")
 fi
 
 # Note: registry.local/dev-build is intentionally NOT packaged. The DEV_* image
