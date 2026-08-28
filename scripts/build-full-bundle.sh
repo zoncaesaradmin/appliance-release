@@ -2008,6 +2008,7 @@ cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
 
 python3 - "${RELEASE_INDEX}" "${PRODUCT_VERSION}" \
   "${CODE_REPO_DIR}/metadata-bundle/base/profiles/catalog.yaml" \
+	"${CODE_REPO_DIR}/metadata-bundle/base/capabilities/catalog.yaml" \
   ${APPLIANCE_PACKS_RESOLVED} \
   "$(basename "${BUNDLE_ARCHIVE}")" \
   "$(basename "${DEVELOPER_ARCHIVE}")" \
@@ -2019,38 +2020,24 @@ import sys
 index_path = Path(sys.argv[1])
 version = sys.argv[2]
 profiles_catalog_path = Path(sys.argv[3])
-args = sys.argv[4:]
+capabilities_catalog_path = Path(sys.argv[4])
+args = sys.argv[5:]
 if len(args) < 5:
     raise SystemExit("release-index writer: expected pack ids then four filenames")
 base_name, developer_name, deviceuser_name, inference_name = args[-4:]
 selected = set(args[:-4])
 
-# Product profile → capabilities snapshot for install-time pack derivation.
-profiles_text = profiles_catalog_path.read_text(encoding="utf-8")
 try:
     import yaml  # type: ignore
-except ImportError:
-    yaml = None
-if yaml is not None:
-    profiles_doc = yaml.safe_load(profiles_text) or {}
-    profiles = profiles_doc.get("profiles") or {}
-else:
-    # Minimal fallback when PyYAML is unavailable: parse name + capabilities lists.
-    profiles = {}
-    current = None
-    caps = []
-    for line in profiles_text.splitlines():
-        if line.startswith("  ") and not line.startswith("    ") and line.strip().endswith(":"):
-            if current is not None:
-                profiles[current] = {"capabilities": caps}
-            current = line.strip().rstrip(":")
-            caps = []
-        elif "capabilities:" in line and current is not None:
-            raw = line.split(":", 1)[1].strip()
-            if raw.startswith("[") and raw.endswith("]"):
-                caps = [c.strip() for c in raw[1:-1].split(",") if c.strip()]
-    if current is not None:
-        profiles[current] = {"capabilities": caps}
+except ImportError as exc:
+    raise SystemExit("release-index writer: PyYAML is required to parse the authoritative metadata catalog") from exc
+
+# The release index is a signed projection of the metadata bundle. It must not
+# contain independently authored profile or capability-to-pack policy.
+profiles_doc = yaml.safe_load(profiles_catalog_path.read_text(encoding="utf-8")) or {}
+capabilities_doc = yaml.safe_load(capabilities_catalog_path.read_text(encoding="utf-8")) or {}
+profiles = profiles_doc.get("profiles") or {}
+capabilities = capabilities_doc.get("capabilities") or {}
 
 if not profiles:
     raise SystemExit(f"release-index writer: no profiles found in {profiles_catalog_path}")
@@ -2064,36 +2051,23 @@ for name in sorted(profiles):
     caps_csv = ", ".join(str(c).strip() for c in caps if str(c).strip())
     profile_lines.append(f"  {name}:\n    capabilities: [{caps_csv}]")
 
+capability_packs = {}
+for capability, entry in capabilities.items():
+    packs = entry.get("packages") if isinstance(entry, dict) else None
+    if not isinstance(packs, list) or not packs:
+        raise SystemExit(f"release-index writer: capability {capability!r} must define packages")
+    capability_packs[str(capability)] = [str(pack).strip() for pack in packs if str(pack).strip()]
+
+filenames = {"foundation": base_name, "developer": developer_name, "deviceuser": deviceuser_name, "inference": inference_name}
 pack_specs = []
-# Packaging contract: always emit the full capability → pack map so install can
-# derive required packs from profile capabilities even when some packs were not
-# published this run (published_pack_ids_from_index then fails closed).
-capability_lines = [
-    "  workflows: developer",
-    "  build: developer",
-    "  artifact: developer",
-    "  dns: developer",
-    "  host: deviceuser",
-    "  applications: deviceuser",
-    "  inference: inference",
-]
-if "foundation" in selected:
-    pack_specs.append(
-        f"  - id: foundation\n    filename: {base_name}\n    capabilities: [base, files, video]"
-    )
-if "developer" in selected:
-    pack_specs.append(
-        f"  - id: developer\n    filename: {developer_name}\n    capabilities: [workflows, build, artifact, dns]"
-    )
-if "deviceuser" in selected:
-    pack_specs.append(
-        f"  - id: deviceuser\n    filename: {deviceuser_name}\n    capabilities: [host]"
-    )
-if "inference" in selected:
-    pack_specs.append(
-        f"  - id: inference\n    filename: {inference_name}\n    capabilities: [inference]"
-    )
-capability_block = "\n".join(capability_lines)
+for pack in ("foundation", "developer", "deviceuser", "inference"):
+    if pack not in selected:
+        continue
+    pack_capabilities = sorted(capability for capability, owners in capability_packs.items() if pack in owners)
+    if not pack_capabilities:
+        raise SystemExit(f"release-index writer: selected pack {pack!r} owns no capabilities")
+    pack_specs.append(f"  - id: {pack}\n    filename: {filenames[pack]}\n    capabilities: [{', '.join(pack_capabilities)}]")
+capability_block = "\n".join(f"  {capability}: {', '.join(owners)}" for capability, owners in sorted(capability_packs.items()))
 text = f"""version: {version}
 packs:
 {chr(10).join(pack_specs)}
