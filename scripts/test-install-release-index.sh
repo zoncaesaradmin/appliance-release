@@ -33,18 +33,19 @@ capabilityPacks:
   artifact: developer
   dns: developer
   host: deviceuser
+  applications: deviceuser
   inference: inference
 profiles:
   core:
-    capabilities: [base, files]
+    capabilities: [base, files, applications]
   training:
     capabilities: [base, files, video]
   storage-landns:
-    capabilities: [base, host, files, artifact, dns]
+    capabilities: [base, host, files, artifact, dns, applications]
   builder-lanllm-storage-landns:
-    capabilities: [base, host, files, workflows, build, artifact, dns, inference]
+    capabilities: [base, host, files, workflows, build, artifact, dns, inference, applications]
   lanllm:
-    capabilities: [base, inference]
+    capabilities: [base, inference, applications]
 EOF
 
 cat >"${TMP}/all-packs.yaml" <<'EOF'
@@ -68,18 +69,19 @@ capabilityPacks:
   artifact: developer
   dns: developer
   host: deviceuser
+  applications: deviceuser
   inference: inference
 profiles:
   core:
-    capabilities: [base, files]
+    capabilities: [base, files, applications]
   training:
     capabilities: [base, files, video]
   storage-landns:
-    capabilities: [base, host, files, artifact, dns]
+    capabilities: [base, host, files, artifact, dns, applications]
   builder-lanllm-storage-landns:
-    capabilities: [base, host, files, workflows, build, artifact, dns, inference]
+    capabilities: [base, host, files, workflows, build, artifact, dns, inference, applications]
   lanllm:
-    capabilities: [base, inference]
+    capabilities: [base, inference, applications]
 EOF
 
 got="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"
@@ -106,10 +108,10 @@ req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "storage-la
 [[ "${req}" == "developer deviceuser" ]] || fail "storage-landns packs: '${req}'"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "lanllm" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-[[ "${req}" == "inference" ]] || fail "lanllm packs: '${req}'"
+[[ "${req}" == "deviceuser inference" ]] || fail "lanllm packs: '${req}'"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "core" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-[[ -z "${req}" ]] || fail "core packs should be empty, got '${req}'"
+[[ "${req}" == "deviceuser" ]] || fail "core packs: '${req}'"
 
 # Simulate the install gate: profile needs developer, index is foundation-only.
 published="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"

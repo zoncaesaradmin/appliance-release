@@ -2074,6 +2074,7 @@ capability_lines = [
     "  artifact: developer",
     "  dns: developer",
     "  host: deviceuser",
+    "  applications: deviceuser",
     "  inference: inference",
 ]
 if "foundation" in selected:
