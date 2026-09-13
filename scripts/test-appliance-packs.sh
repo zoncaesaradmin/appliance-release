@@ -21,20 +21,20 @@ assert_eq() {
 APPLIANCE_PACKS=""
 appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS}" "all" "empty defaults to all token"
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation storage-network build-workflows deviceuser inference" "empty → all packs"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform deviceuser inference" "empty → all packs"
 
 APPLIANCE_PACKS="all"
 appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation storage-network build-workflows deviceuser inference" "all"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform deviceuser inference" "all"
 
 APPLIANCE_PACKS="foundation"
 appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation" "foundation only"
 
-APPLIANCE_PACKS="foundation,build-workflows"
+APPLIANCE_PACKS="foundation,dev-platform"
 appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation build-workflows" "foundation+build-workflows"
-appliance_pack_wanted build-workflows || fail "build-workflows should be wanted"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform" "foundation+dev-platform"
+appliance_pack_wanted dev-platform || fail "dev-platform should be wanted"
 appliance_pack_wanted inference && fail "inference should not be wanted"
 
 APPLIANCE_PACKS="inference"
@@ -54,10 +54,9 @@ if APPLIANCE_PACKS="nope" appliance_packs_resolve 2>/dev/null; then
 fi
 
 echo "test-appliance-packs: ok"
-APPLIANCE_PACKS=storage-network
+APPLIANCE_PACKS=dev-platform
 appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation storage-network" "storage only"
-appliance_pack_wanted build-workflows && fail "storage must not require build-workflows"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform" "dev platform only"
 if appliance_packs_require_complete 2>/dev/null; then
   fail "partial production release must fail"
 fi

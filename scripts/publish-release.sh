@@ -184,9 +184,9 @@ else:
             pack_ids.append(line.split("id:", 1)[1].strip())
         if in_packs and "filename:" in line:
             packs.append(line.split("filename:", 1)[1].strip())
-required = {"foundation", "storage-network", "build-workflows", "deviceuser", "inference"}
+required = {"foundation", "dev-platform", "deviceuser", "inference"}
 if set(pack_ids) != required or len(pack_ids) != len(required) or len(packs) != len(required):
-    raise SystemExit("publish-release: production release must contain exactly foundation, storage-network, build-workflows, deviceuser, inference; rebuild with APPLIANCE_PACKS=all")
+    raise SystemExit("publish-release: production release must contain exactly foundation, dev-platform, deviceuser, inference; rebuild with APPLIANCE_PACKS=all")
 print("\n".join(packs))
 PY
 )"

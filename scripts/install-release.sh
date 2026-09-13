@@ -316,16 +316,14 @@ if [[ "${USE_LATEST}" == "1" ]]; then
 fi
 
 BUNDLE_ARCHIVE="appliance-${PRODUCT_VERSION}-foundation.tar.gz"
-STORAGE_NETWORK_ARCHIVE="appliance-${PRODUCT_VERSION}-storage-network.tar.gz"
-BUILD_WORKFLOWS_ARCHIVE="appliance-${PRODUCT_VERSION}-build-workflows.tar.gz"
+DEV_PLATFORM_ARCHIVE="appliance-${PRODUCT_VERSION}-dev-platform.tar.gz"
 DEVICEUSER_ARCHIVE="appliance-${PRODUCT_VERSION}-deviceuser.tar.gz"
 INFERENCE_ARCHIVE="appliance-${PRODUCT_VERSION}-inference.tar.gz"
 RELEASE_INDEX_FILE="release-index.yaml"
 PUBLIC_KEY_FILE="release-signing.pub"
 CHECKSUM_FILE="sha256sum.txt"
 BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-foundation"
-STORAGE_NETWORK_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-storage-network"
-BUILD_WORKFLOWS_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-build-workflows"
+DEV_PLATFORM_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-dev-platform"
 DEVICEUSER_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-deviceuser"
 INFERENCE_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-inference"
 PUBLIC_KEY="${OUT_DIR}/release-signing.pub"
@@ -339,7 +337,8 @@ RELEASE_PAYLOAD_FILES=(
 
 # Optional packs required by profile, derived from release-index profiles +
 # capabilityPacks (foundation is always required separately). Prints one pack
-# id per line in stable order: build-workflows, deviceuser, inference.
+# id per line in stable order: dev-platform, deviceuser,
+# inference.
 required_packs_for_profile_from_index() {
   local index_path="$1"
   local profile="$2"
@@ -434,12 +433,12 @@ for cap in caps:
     if not isinstance(owners, list):
         raise SystemExit(f"install-release: invalid delivery packs for {name!r}")
     for pack in owners:
-        if pack not in ("foundation", "storage-network", "build-workflows", "deviceuser", "inference"):
+        if pack not in ("foundation", "dev-platform", "deviceuser", "inference"):
             raise SystemExit(f"install-release: unknown delivery pack {pack!r}")
         wanted.add(pack)
 
 # Stable optional-pack order for download/verify.
-for pack_id in ("storage-network", "build-workflows", "deviceuser", "inference"):
+for pack_id in ("dev-platform", "deviceuser", "inference"):
     if pack_id in wanted:
         print(pack_id)
 PY
@@ -487,7 +486,7 @@ else:
                 ids.append(current_id)
 if not ids:
     raise SystemExit(f"install-release: {path} lists no packs")
-known = {"foundation", "storage-network", "build-workflows", "deviceuser", "inference"}
+known = {"foundation", "dev-platform", "deviceuser", "inference"}
 if any(pack not in known for pack in ids) or len(ids) != len(set(ids)):
     raise SystemExit("install-release: unknown or duplicate delivery pack in release index")
 print(" ".join(ids))
@@ -554,11 +553,8 @@ done
 
 for pack_id in "${REQUIRED_PACKS[@]}"; do
   case "${pack_id}" in
-    storage-network)
-      curl_download "${OUT_DIR}/${STORAGE_NETWORK_ARCHIVE}" "${REMOTE_DIR}/${STORAGE_NETWORK_ARCHIVE}"
-      ;;
-    build-workflows)
-      curl_download "${OUT_DIR}/${BUILD_WORKFLOWS_ARCHIVE}" "${REMOTE_DIR}/${BUILD_WORKFLOWS_ARCHIVE}"
+    dev-platform)
+      curl_download "${OUT_DIR}/${DEV_PLATFORM_ARCHIVE}" "${REMOTE_DIR}/${DEV_PLATFORM_ARCHIVE}"
       ;;
     deviceuser)
       curl_download "${OUT_DIR}/${DEVICEUSER_ARCHIVE}" "${REMOTE_DIR}/${DEVICEUSER_ARCHIVE}"
@@ -579,8 +575,7 @@ VERIFY_LIST=(
 )
 for pack_id in "${REQUIRED_PACKS[@]}"; do
   case "${pack_id}" in
-    storage-network) VERIFY_LIST+=("${STORAGE_NETWORK_ARCHIVE}") ;;
-    build-workflows) VERIFY_LIST+=("${BUILD_WORKFLOWS_ARCHIVE}") ;;
+    dev-platform) VERIFY_LIST+=("${DEV_PLATFORM_ARCHIVE}") ;;
     deviceuser) VERIFY_LIST+=("${DEVICEUSER_ARCHIVE}") ;;
     inference) VERIFY_LIST+=("${INFERENCE_ARCHIVE}") ;;
   esac
@@ -613,15 +608,10 @@ tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${BUNDLE_ARCHIVE}"
 PACK_DIRS=()
 for pack_id in "${REQUIRED_PACKS[@]}"; do
   case "${pack_id}" in
-    storage-network)
-      rm -rf "${OUT_DIR:?}/$(basename "${STORAGE_NETWORK_BUNDLE_DIR}")"
-      tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${STORAGE_NETWORK_ARCHIVE}"
-      PACK_DIRS+=("${STORAGE_NETWORK_BUNDLE_DIR}")
-      ;;
-    build-workflows)
-      rm -rf "${OUT_DIR:?}/$(basename "${BUILD_WORKFLOWS_BUNDLE_DIR}")"
-      tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${BUILD_WORKFLOWS_ARCHIVE}"
-      PACK_DIRS+=("${BUILD_WORKFLOWS_BUNDLE_DIR}")
+    dev-platform)
+      rm -rf "${OUT_DIR:?}/$(basename "${DEV_PLATFORM_BUNDLE_DIR}")"
+      tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${DEV_PLATFORM_ARCHIVE}"
+      PACK_DIRS+=("${DEV_PLATFORM_BUNDLE_DIR}")
       ;;
     deviceuser)
       rm -rf "${OUT_DIR:?}/$(basename "${DEVICEUSER_BUNDLE_DIR}")"

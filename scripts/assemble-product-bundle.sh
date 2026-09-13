@@ -79,8 +79,7 @@ DOWNLOADS_DIR="${WORKDIR}/downloads"
 STAGING_DIR="${WORKDIR}/staging"
 RELEASE_INPUT_DIR="${WORKDIR}/release-input"
 BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-foundation"
-STORAGE_NETWORK_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-storage-network"
-BUILD_WORKFLOWS_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-build-workflows"
+DEV_PLATFORM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-dev-platform"
 DEVICEUSER_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 INFERENCE_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-inference"
 
@@ -631,8 +630,7 @@ assemble_all_packs() {
     config_path="${WORKDIR}/bundle-assembly.${pack_id}.json"
     case "${pack_id}" in
       foundation) bundle_dir="${BUNDLE_DIR}" ;;
-      storage-network) bundle_dir="${STORAGE_NETWORK_BUNDLE_DIR}" ;;
-      build-workflows) bundle_dir="${BUILD_WORKFLOWS_BUNDLE_DIR}" ;;
+      dev-platform) bundle_dir="${DEV_PLATFORM_BUNDLE_DIR}" ;;
       deviceuser) bundle_dir="${DEVICEUSER_BUNDLE_DIR}" ;;
       inference) bundle_dir="${INFERENCE_BUNDLE_DIR}" ;;
       *)
@@ -684,7 +682,7 @@ if [[ -n "${VALUES_FILE:-}" ]]; then
   cp "${VALUES_FILE}" "${STAGING_DIR}/values-minimal.yaml"
 fi
 
-rm -rf "${BUNDLE_DIR}" "${STORAGE_NETWORK_BUNDLE_DIR}" "${BUILD_WORKFLOWS_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${INFERENCE_BUNDLE_DIR}"
+rm -rf "${BUNDLE_DIR}" "${DEV_PLATFORM_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${INFERENCE_BUNDLE_DIR}"
 
 assemble_all_packs
 
@@ -692,11 +690,8 @@ echo "packs ready (${APPLIANCE_PACKS_RESOLVED}):"
 if appliance_pack_wanted foundation; then
   echo "  foundation: ${BUNDLE_DIR}"
 fi
-if appliance_pack_wanted storage-network; then
-  echo "  storage-network: ${STORAGE_NETWORK_BUNDLE_DIR}"
-fi
-if appliance_pack_wanted build-workflows; then
-  echo "  build-workflows: ${BUILD_WORKFLOWS_BUNDLE_DIR}"
+if appliance_pack_wanted dev-platform; then
+  echo "  dev-platform: ${DEV_PLATFORM_BUNDLE_DIR}"
 fi
 if appliance_pack_wanted deviceuser; then
   echo "  deviceuser: ${DEVICEUSER_BUNDLE_DIR}"

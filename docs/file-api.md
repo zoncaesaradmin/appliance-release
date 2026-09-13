@@ -122,8 +122,7 @@ Suggested layout:
 ```text
 api/v1/files/appliance/<version>/
   appliance-<version>-foundation.tar.gz
-  appliance-<version>-storage-network.tar.gz
-  appliance-<version>-build-workflows.tar.gz
+  appliance-<version>-dev-platform.tar.gz
   appliance-<version>-inference.tar.gz   # when built
   release-index.yaml
   release-signing.pub

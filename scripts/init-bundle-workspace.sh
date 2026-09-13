@@ -554,13 +554,12 @@ add_crd_artifacts()
 config["entries"] = entries
 config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 
-# Split signed pack assembly configs (foundation / build-workflows / deviceuser / inference).
+# Split signed pack assembly configs (foundation / dev-platform / deviceuser / inference).
 out_dir = Path(config["bundleDir"]).parent
 product_version = str(config.get("bundleVersion", "0.0.0"))
 pack_specs = (
     ("foundation", f"appliance-{product_version}-foundation", "foundation"),
-    ("storage-network", f"appliance-{product_version}-storage-network", "storage-network"),
-    ("build-workflows", f"appliance-{product_version}-build-workflows", "build-workflows"),
+    ("dev-platform", f"appliance-{product_version}-dev-platform", "dev-platform"),
     ("deviceuser", f"appliance-{product_version}-deviceuser", "deviceuser"),
     ("inference", f"appliance-{product_version}-inference", "inference"),
 )
@@ -583,8 +582,7 @@ This workspace is the handoff point between the two repos:
    bundle can include bundle-local operator tooling
 4. \`appliance-release\` assembles signed packs using:
    \`${WORKDIR}/bundle-assembly.foundation.json\`
-   \`${WORKDIR}/bundle-assembly.storage-network.json\`
-   \`${WORKDIR}/bundle-assembly.build-workflows.json\`
+   \`${WORKDIR}/bundle-assembly.dev-platform.json\`
    \`${WORKDIR}/bundle-assembly.deviceuser.json\`
    \`${WORKDIR}/bundle-assembly.inference.json\`
    (legacy full-bundle config remains at \`${CONFIG_PATH}\`)
@@ -624,8 +622,7 @@ echo "  workdir: ${WORKDIR}"
 echo "  config: ${CONFIG_PATH}"
 echo "  pack configs:"
 echo "    ${WORKDIR}/bundle-assembly.foundation.json"
-echo "    ${WORKDIR}/bundle-assembly.storage-network.json"
-echo "    ${WORKDIR}/bundle-assembly.build-workflows.json"
+echo "    ${WORKDIR}/bundle-assembly.dev-platform.json"
 echo "    ${WORKDIR}/bundle-assembly.deviceuser.json"
 echo "    ${WORKDIR}/bundle-assembly.inference.json"
 echo "  release-input dir: ${RELEASE_INPUT_DIR}"

@@ -154,8 +154,7 @@ deliverables under `RELEASE_WORK_ROOT/export/` according to `APPLIANCE_PACKS`
 (default `all`):
 
 - `appliance-${PRODUCT_VERSION}-foundation.tar.gz` (foundation; always included)
-- `appliance-${PRODUCT_VERSION}-storage-network.tar.gz` (included in every production release)
-- `appliance-${PRODUCT_VERSION}-build-workflows.tar.gz` (included in every production release)
+- `appliance-${PRODUCT_VERSION}-dev-platform.tar.gz` (included in every production release)
 - `appliance-${PRODUCT_VERSION}-deviceuser.tar.gz` (host-agent delivery pack)
 - `appliance-${PRODUCT_VERSION}-inference.tar.gz` (included in every production release)
 - `release-index.yaml` (install contract: packs built this run, full
@@ -177,14 +176,13 @@ Delivery packs describe available software, not enabled functionality:
 | Delivery pack | Contents |
 |---|---|
 | `foundation` | Core appliance services, including file storage |
-| `storage-network` | Artifact Server/registry and LAN DNS |
-| `build-workflows` | Workflow controller/executor, CRDs, and workspace provisioner |
+| `dev-platform` | Artifact Server/registry, LAN DNS, workflow controller/executor, CRDs, and workspace provisioner |
 | `deviceuser` | Host-agent and device-user components |
 | `inference` | Local inference runtime |
 
 Profiles enable capabilities; the signed index derives delivery requirements
-from the capability catalog's `packages` fields. For example, `storage-landns`
-needs foundation + storage-network, not build-workflows. Service image contents and
+from the package catalog. For example, `storage-landns` needs foundation +
+dev-platform. Service image contents and
 profile capability lists are unchanged by this packaging split.
 
 That script:
@@ -203,8 +201,7 @@ Outputs:
 
 - `${RELEASE_WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-foundation` (foundation pack dir)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-foundation.tar.gz`
-- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-storage-network.tar.gz` (when storage-network pack selected)
-- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-build-workflows.tar.gz` (when build-workflows pack selected)
+- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-dev-platform.tar.gz` (when dev-platform pack selected)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-deviceuser.tar.gz` (when deviceuser pack selected)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-inference.tar.gz` (when inference pack selected)
 - `${RELEASE_WORK_ROOT}/export/release-index.yaml`
@@ -262,7 +259,7 @@ bash ./scripts/publish-release.sh
 ```
 
 `publish-release.sh` requires and uploads the complete delivery set listed in
-`export/release-index.yaml`: foundation, storage-network, build-workflows,
+`export/release-index.yaml`: foundation, dev-platform,
 deviceuser, and inference. Build with `APPLIANCE_PACKS=all`.
 
 Publish uploads to:
