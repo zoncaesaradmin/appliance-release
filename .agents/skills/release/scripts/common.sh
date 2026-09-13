@@ -1427,12 +1427,23 @@ sync_existing_release_repo() {
   # previous manual copy or interrupted edit cannot block the release flow.
   if [[ -n "\${repo_ref}" ]]; then
     if ! git fetch --prune --depth 1 origin "\${repo_ref}"; then
-      echo "ensure remote release repo: fetch failed for \${repo_source} ref \${repo_ref}; recloning" >&2
+      # Offline build hosts may not be able to resolve the Git origin. Keep a
+      # valid checkout in place so a transient/unavailable network does not
+      # destroy the last synchronized release source.
+      if git rev-parse --verify HEAD >/dev/null 2>&1; then
+        echo "ensure remote release repo: fetch unavailable for \${repo_source} ref \${repo_ref}; reusing \$(git rev-parse --short HEAD)" >&2
+        return 0
+      fi
+      echo "ensure remote release repo: fetch failed for \${repo_source} ref \${repo_ref}; checkout has no usable HEAD" >&2
       return 1
     fi
   else
     if ! git fetch --prune --depth 1 origin; then
-      echo "ensure remote release repo: fetch failed for \${repo_source}; recloning" >&2
+      if git rev-parse --verify HEAD >/dev/null 2>&1; then
+        echo "ensure remote release repo: fetch unavailable for \${repo_source}; reusing \$(git rev-parse --short HEAD)" >&2
+        return 0
+      fi
+      echo "ensure remote release repo: fetch failed for \${repo_source}; checkout has no usable HEAD" >&2
       return 1
     fi
   fi
@@ -1443,6 +1454,7 @@ sync_existing_release_repo() {
 
 clone_release_repo() {
   mkdir -p "\$(dirname "\${repo_path}")"
+  cd "\$(dirname "\${repo_path}")"
   rm -rf "\${repo_path}"
   if [[ -n "\${repo_ref}" ]]; then
     git clone --depth 1 --branch "\${repo_ref}" "\${repo_source}" "\${repo_path}"
@@ -1454,13 +1466,10 @@ clone_release_repo() {
 
 if [[ -d "\${repo_path}/.git" ]]; then
   if ! sync_existing_release_repo; then
-    echo "ensure remote release repo: removing unusable checkout at \${repo_path}" >&2
-    rm -rf "\${repo_path}"
     clone_release_repo
   fi
 elif [[ -e "\${repo_path}" ]]; then
   echo "ensure remote release repo: path exists but is not a git checkout; replacing \${repo_path}" >&2
-  rm -rf "\${repo_path}"
   clone_release_repo
 else
   clone_release_repo
