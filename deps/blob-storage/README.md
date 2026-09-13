@@ -1,6 +1,6 @@
 # blob-storage
 
-Mirrors the pinned S3-compatible MinIO runtime into
+Mirrors the pinned S3-compatible MinIO runtime from Quay into
 `$DEV_REGISTRY/build-cache/minio:RELEASE.2025-05-24T17-08-30Z` for the
 foundation blob-storage image export and offline `build-full-bundle`.
 
