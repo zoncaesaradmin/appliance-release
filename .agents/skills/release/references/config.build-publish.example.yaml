@@ -36,8 +36,8 @@
 #
 # Offline seed coverage (make seed-build-deps → every deps/* package), including:
 #   development-container, git-runtime-container, workflows, artifact-server-bases,
-#   dns (coredns), inference (ollama), blob-storage (minio), service-build-bases,
-#   host-packages, platform-inputs (k3s/helm), message-broker.
+#   dns (coredns), inference (ollama), service-build-bases, host-packages,
+#   platform-inputs (k3s/helm).
 # New packaging deps must add deps/<name> + offline lan_cache_ref/files remap;
 # see docs/offline-build-deps.md and AGENTS.md "Packaging Code Reuse".
 #
@@ -55,8 +55,9 @@
 #     ONLINE_REGISTRY_USER, ONLINE_REGISTRY_TOKEN, ONLINE_REGISTRY_TLS_VERIFY
 #   Plus APPLIANCE_BUILD_SUDO_PASSWORD.
 #   Pack selection is a config literal (not an env):
-#     build_flow.appliance_packs: all (complete production delivery)
-#     (omit or all → full three packs)
+#     build_flow.appliance_packs: all|foundation|foundation,dev-platform|foundation,std-llm-amd64
+#     (omit or all → every available pack; partial releases support only profiles
+#     whose capability packages are included)
 
 # ============================================================================
 # Release workspace on the build host
@@ -88,12 +89,18 @@ release:
 build_flow:
   # Flip this only: online | offline. Keep both pull sections below;
   # the inactive one is ignored. Skill unifies the active block → DEV_*.
-  mode: online
+  mode: offline
 
-  # Delivery packs are packaging groups, not appliance profiles.
-  # Production must publish the complete set: foundation, storage-network,
-  # build-workflows, deviceuser, std-llm-amd64. Select functionality at installation.
-  appliance_packs: all
+  # Pack selection (literal, like mode). Omit or all → every delivery pack.
+  # Skill exports this as APPLIANCE_PACKS into build-full-bundle.sh.
+  # Pack id is foundation (not base) — capability base is separate.
+  # Match packs to the install profile, for example:
+  #   appliance_packs: all
+  #   appliance_packs: foundation
+  #   appliance_packs: foundation,dev-platform
+  #   appliance_packs: foundation,dev-platform,std-llm-amd64  # builder+lanllm
+  #   appliance_packs: foundation,std-llm-amd64               # inference-only
+  appliance_packs: foundation,dev-platform
 
   # Used when mode: online (ONLINE_* env vars) — all seven required
   online_image_pull:

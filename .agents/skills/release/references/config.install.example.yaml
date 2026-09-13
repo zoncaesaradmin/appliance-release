@@ -34,11 +34,11 @@
 install:
   # Lab reinstall always uninstalls then fresh-installs (orchestrator does that;
   # no in-place public upgrade). Profile/name below apply only after a clean host.
-  bootstrap_admin: false
-  enable_default_license: false
+  bootstrap_admin: true
+  enable_default_license: true
 
   # Identity — FQDN becomes <appliance_name>.<dns_zone>
-  appliance_name: artifact-dns-1
+  appliance_name: test-device-1
   dns_zone: appliance.internal
   # Profiles:
   #   core | builder | storage | landns | storage-landns | builder-landns |
@@ -46,7 +46,7 @@ install:
   # This file's default is builder-landns (artifact+dns+workflows). For an
   # inference-only host, copy the lanllm block at the bottom into install +
   # verification (+ client_verification) instead of flipping only the profile.
-  appliance_profile: storage
+  appliance_profile: storage-landns
 
   # Bundle extract dir on the target (version should match the published release)
   bundle_download_dir: /tmp/appliance-0.1.0
@@ -62,11 +62,11 @@ install:
   # (writes /etc/rancher/k3s/registries.yaml). Bundle preload stays primary.
   # Applied by the public-helper install path when set. Host comes only from
   # registry_env (no literal registry key). Export the named env vars on the Mac.
-  # image_pull_registry:
-  #   registry_env: DEV_REGISTRY
-  #   username_env: DEV_REGISTRY_USER
-  #   token_env: DEV_REGISTRY_TOKEN
-  #   tls_verify_env: DEV_REGISTRY_TLS_VERIFY
+  image_pull_registry:
+    registry_env: DEV_REGISTRY
+    username_env: DEV_REGISTRY_USER
+    token_env: DEV_REGISTRY_TOKEN
+    tls_verify_env: DEV_REGISTRY_TLS_VERIFY
 
 # ============================================================================
 # Target host checks (verify-target.sh)
@@ -83,20 +83,20 @@ verification:
   smoke_test_retry_delay_seconds: 3
   allow_ingress_warning: true
   allow_verify_schema_bug: false
-  ui_home_command: 'body="$(curl -kfsS https://artifact-dns-1.appliance.internal/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Appliance Control Plane UI|appliance-controlplane-ui|Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
+  ui_home_command: 'body="$(curl -kfsS https://192.168.1.151/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Appliance Control Plane UI|appliance-controlplane-ui|Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
   workflows:
-    enabled: true
+    enabled: false
     namespaces_command: sudo kubectl get namespace workflows appliance-builds
     crds_command: sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io
     controller_command: sudo kubectl -n workflows wait --for=condition=Available deployment/workflow-controller --timeout=120s
   builder:
-    enabled: true
-    api_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://127.0.0.1/api/v1/work-profiles)" && [ "$code" != "404" ]'
+    enabled: false
+    api_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://192.168.1.151/api/v1/work-profiles)" && [ "$code" != "404" ]'
   artifact:
-    enabled: true
+    enabled: false
     readiness_command: sudo kubectl -n artifacts wait --for=condition=Available deployment/artifact-server --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data
   dns:
-    enabled: true
+    enabled: false
     readiness_command: sudo kubectl -n dns wait --for=condition=Available deployment/dns-server --timeout=120s && dig +short @127.0.0.1 -p 53 SOA appliance.internal
 
 # ============================================================================
@@ -107,13 +107,13 @@ client_verification:
   # Preferred: landns product FQDN. Mac-side DNS is not required when the
   # orchestrator has target_host.alias as user@IPv4 (curl --resolve is applied).
   # Optional override: connect_ip: 192.168.1.151
-  base_url: https://artifact-dns-1.appliance.internal
+  base_url: https://192.168.1.151
   username: admin
   builder:
     enabled: false
     expect_disabled: false
   artifact:
-    enabled: false
+    enabled: true
     expect_denied_scope: false
 
 # ============================================================================
