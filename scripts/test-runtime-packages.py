@@ -20,8 +20,8 @@ class PackageSelectionTest(unittest.TestCase):
         self.capabilities = {"base": {}, "inference": {}}
         self.packages = {
             "foundation": {"capabilities": ["base"]},
-            "std-llm-amd64": {"capabilities": ["inference"], "runtimes": {"inference": {"engine": "ollama"}}},
-            "acc-llm-arm64": {"capabilities": ["inference"], "runtimes": {"inference": {"engine": "vllm"}}},
+            "std-llm-amd64": {"capabilities": ["inference"], "inferenceEngine": "ollama"},
+            "acc-llm-arm64": {"capabilities": ["inference"], "inferenceEngine": "vllm"},
         }
         self.profiles = {"cpu-host": {"capabilities": ["base", "inference"]}, "core": {"capabilities": ["base"]}}
         self.filenames = {p: f"appliance-1.0.0-{p}.tar.gz" for p in self.packages}
