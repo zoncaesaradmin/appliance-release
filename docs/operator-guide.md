@@ -44,6 +44,9 @@ Prefer host names over raw appliance IPs for day-to-day access.
 - Profiles with the `lan-discovery` capability enable host mDNS at
   installation and advertise `<appliance-name>.local`, for example
   `https://appliance.local` or `ssh <user>@appliance.local`.
+- This mDNS name is not a static `/etc/hosts` entry. `manage.ap` is likewise
+  absent from the appliance LAN hosts file; it exists only when Wi-Fi AP mode
+  serves its private management network.
 - When a DNS-bearing profile is in use and its A record has been published,
   use the derived appliance name `<appliance_name>.<dns_zone>`, for example
   `https://appliance.appliance.internal`.
