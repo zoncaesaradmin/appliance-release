@@ -182,17 +182,26 @@ Destructive commands require an explicit confirmation mechanism suitable for bot
 3. Run read-only preflight for OS/architecture, CPU/RAM, disk/inodes, `ext4`, cgroup v2, kernel/user namespaces, time, internal DNS, hostname/TLS SANs, ports, firewall, and conflicting services.
 4. Present the exact planned changes. Apply only documented safe remediations; never weaken security controls silently.
 5. Create protected appliance directories and an atomic installed-state journal.
-6. Install the pinned K3s binary as a system service using the release-owned configuration file and disable unattended K3s advancement.
-7. Import every bundled image by digest into the K3s image store and verify that no image pull can fall through to a public registry.
-8. Wait for and verify K3s, CoreDNS, storage provisioner, Traefik, networking, and metrics dependencies.
-9. Generate purpose-separated secrets and TLS material, or validate operator-supplied certificates, without command-line leakage.
-10. Install the exact Helm chart with schema-validated values and wait for rollout.
-11. Run first-admin bootstrap through the supported application mechanism from
+6. Install host packages from the signed bundle. If the selected profile
+   contains `lan-discovery`, the installer must explicitly remove any systemd
+   mask on `avahi-daemon.service`, enable and start Avahi, configure the
+   appliance mDNS identity from `appliance_name`, and verify that
+   `<appliance_name>.local` resolves locally. This is an installer-owned,
+   idempotent remediation; operators must not be left with a manual `systemctl
+   unmask` step. Profiles without `lan-discovery` leave Avahi disabled and do
+   not alter an existing operator service policy.
+7. Install the pinned K3s binary as a system service using the release-owned configuration file and disable unattended K3s advancement.
+8. Import every bundled image by digest into the K3s image store and verify that no image pull can fall through to a public registry.
+9. Wait for and verify K3s, CoreDNS, storage provisioner, Traefik, networking, and metrics dependencies.
+10. Generate purpose-separated secrets and TLS material, or validate operator-supplied certificates, without command-line leakage.
+11. Install the exact Helm chart with schema-validated values and wait for rollout.
+12. Run first-admin bootstrap through the supported application mechanism from
     `zonctl` using a terminal prompt for human installs or protected stdin for
     automation, then disable replay. Operators must not need to `kubectl exec`
     into a pod for day-0 admin creation.
-12. Run product-supplied black-box REST, MCP, OCI, auth, and dependency-health smoke tests.
-13. Persist the verified installed-state record and print access, backup, and recovery instructions.
+13. Run product-supplied black-box REST, MCP, OCI, auth, dependency-health,
+    and, when `lan-discovery` is selected, mDNS resolution smoke tests.
+14. Persist the verified installed-state record and print access, backup, and recovery instructions.
 
 Failure before completion performs a bounded rollback only for changes proven safe to reverse. Once durable state has been created or migrated, recovery follows the recorded transaction journal and backup policy rather than deleting data.
 
@@ -328,13 +337,16 @@ A release is complete only when:
 2. Every byte installed is selected by an immutable signed manifest and verifies offline.
 3. Fresh installs from the complete bundle pass with public egress denied on every supported host baseline.
 4. Re-running install is idempotent; interrupted operations resume or fail with safe, actionable recovery.
-5. K3s, Traefik, control plane, zot, the workflows engine, workflow tasks, storage, and ingress pass health and security checks.
-6. Product-supplied REST, MCP, OCI, authentication, authorization, and build conformance tests pass against the installed appliance.
-7. Backup and clean-node restore meet the published RPO/RTO.
-8. N-1 upgrade, failed-upgrade recovery, and restore-based rollback pass.
-9. Uninstall preserves data by default; factory reset cannot occur accidentally.
-10. Support bundles and logs pass automated secret and personal-data leakage checks.
-11. SBOM, provenance, vulnerability/license reports, notices, checksums, signatures, and support metadata agree with the installed state.
+5. Profiles with `lan-discovery` start Avahi even when the pre-install host has
+   a masked unit, advertise `<appliance_name>.local`, and pass local and
+   same-LAN resolution checks; non-discovery profiles do not change Avahi policy.
+6. K3s, Traefik, control plane, zot, the workflows engine, workflow tasks, storage, and ingress pass health and security checks.
+7. Product-supplied REST, MCP, OCI, authentication, authorization, build, and mDNS conformance tests pass against the installed appliance.
+8. Backup and clean-node restore meet the published RPO/RTO.
+9. N-1 upgrade, failed-upgrade recovery, and restore-based rollback pass.
+10. Uninstall preserves data by default; factory reset cannot occur accidentally.
+11. Support bundles and logs pass automated secret and personal-data leakage checks.
+12. SBOM, provenance, vulnerability/license reports, notices, checksums, signatures, and support metadata agree with the installed state.
 
 ## Deferred
 
