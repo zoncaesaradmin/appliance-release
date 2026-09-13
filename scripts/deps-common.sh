@@ -85,13 +85,15 @@ deps_files_upload() {
   insecure="$(deps_tls_insecure_curl)"
   local url
   url="$(deps_files_api_base)/${remote_path#/}"
-  local code
+  local code response_file response_body
+  response_file="$(mktemp)"
+  trap 'rm -f "${response_file}"' RETURN
   # Stream with -T + -X POST. --data-binary @file loads the whole payload into
   # memory and OOMs on multi-GB files (host-packages archives, release bundles).
   # shellcheck disable=SC2086
   code="$(
     curl -sS ${insecure} -X POST \
-      -o /dev/null -w "%{http_code}" \
+      -o "${response_file}" -w "%{http_code}" \
       -H "Authorization: Bearer ${DEV_REGISTRY_TOKEN}" \
       -H "Content-Type: application/octet-stream" \
       -T "${src}" \
@@ -100,7 +102,12 @@ deps_files_upload() {
   case "${code}" in
     200|201|204) echo "uploaded ${src} -> ${url} (${code})" ;;
     *)
-      echo "deps: files upload failed HTTP ${code} for ${url}" >&2
+      response_body="$(tr '\n' ' ' <"${response_file}" | sed 's/[[:space:]]\+/ /g' | cut -c1-512)"
+      if [[ -n "${response_body}" ]]; then
+        echo "deps: files upload failed HTTP ${code} for ${url}: ${response_body}" >&2
+      else
+        echo "deps: files upload failed HTTP ${code} for ${url}" >&2
+      fi
       exit 1
       ;;
   esac
