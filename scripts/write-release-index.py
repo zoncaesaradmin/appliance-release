@@ -34,9 +34,6 @@ def build_index(version, profiles, capabilities, packages, selected, filenames):
             if capability in owners:
                 raise ValueError(f"ambiguous package ownership for {capability}")
             owners[capability] = package
-    if set(capabilities) != set(owners):
-        raise ValueError("capabilities lack a delivery package")
-
     profile_entries = {}
     for name, entry in sorted(profiles.items()):
         if not identifier(name) or not isinstance(entry, dict):
@@ -51,7 +48,7 @@ def build_index(version, profiles, capabilities, packages, selected, filenames):
     return {
         "version": version,
         "packs": [{"id": package, "filename": filenames[package], "capabilities": package_caps[package]} for package in filenames if package in selected],
-        "capabilityPacks": {cap: owners[cap] for cap in capabilities if owners[cap] in selected},
+        "capabilityPacks": {cap: package for cap, package in owners.items() if package in selected},
         "profiles": profile_entries,
     }
 

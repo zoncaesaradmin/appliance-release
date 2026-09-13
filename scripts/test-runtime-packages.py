@@ -54,6 +54,14 @@ class PackageSelectionTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.build()
 
+    def test_unselected_optional_capability_is_omitted(self):
+        self.selected = {"foundation"}
+        index = self.build()
+        self.assertNotIn("inference", index["capabilityPacks"])
+        result = self.resolve(index, "core")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "")
+
     def test_missing_package_mapping_fails_closed(self):
         index = self.build()
         del index["capabilityPacks"]["inference"]
