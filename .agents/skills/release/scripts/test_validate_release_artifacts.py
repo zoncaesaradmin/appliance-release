@@ -153,7 +153,7 @@ ingress:
         tmp / "bundle" / "release-manifest.json",
         """
 {
-  "runtimes": {"inference": {"package": "std-llm-amd64", "engine": "ollama"}},
+  "runtimes": {"inference": {"package": "std-llm-amd64", "inferenceEngine": "ollama", "architecture": "amd64"}},
   "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "artifactServerVersion": "2.1.11", "dnsVersion": "1.14.4", "inferenceVersion": "0.6.5"},
   "entries": [
     {"targetPath": "oci-images/control-plane.tar", "digest": "sha256:control", "sizeBytes": 7, "imageReference": "internal/control-plane:1.0.0"},

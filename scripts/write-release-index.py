@@ -27,8 +27,10 @@ def build_index(version, profiles, capabilities, packages, selected, filenames):
         for capability in caps:
             if capability not in capabilities:
                 raise ValueError(f"package {package!r} references unknown capability {capability!r}")
-            if capability == "inference" and not identifier(entry.get("inferenceEngine")):
-                raise ValueError(f"package {package!r} needs an inferenceEngine")
+            if capability == "inference":
+                runtime = entry.get("runtime")
+                if not isinstance(runtime, dict) or not identifier(runtime.get("inferenceEngine")) or not identifier(runtime.get("architecture")):
+                    raise ValueError(f"package {package!r} needs runtime inferenceEngine and architecture")
             if capability in owners:
                 raise ValueError(f"ambiguous package ownership for {capability}")
             owners[capability] = package

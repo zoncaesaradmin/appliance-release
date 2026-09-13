@@ -542,9 +542,9 @@ def validate_inference(
         )
 
     runtime = (bundle_manifest.get("runtimes") or {}).get("inference")
-    expected_engines = {"std-llm-amd64": "ollama", "acc-llm-arm64": "vllm"}
-    if not isinstance(runtime, dict) or runtime.get("package") not in expected_engines or runtime.get("engine") != expected_engines[runtime.get("package")]:
-        raise ValueError("bundle manifest inference runtime must identify one supported inference package and engine")
+    expected_runtime = {"package": "std-llm-amd64", "inferenceEngine": "ollama", "architecture": "amd64"}
+    if runtime != expected_runtime:
+        raise ValueError("bundle manifest inference runtime must identify one supported inference package and inference engine")
 
     chart = require_artifact(artifacts, "inferenceChart")
     chart_path = require_file_artifact(artifacts, "inferenceChart", release_input_dir)
