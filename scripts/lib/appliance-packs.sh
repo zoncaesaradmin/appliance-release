@@ -99,15 +99,3 @@ appliance_pack_wanted() {
   done
   return 1
 }
-
-# Production publishing requires every delivery group. Explicit partial assembly
-# remains available for local packaging tests, never a production release.
-appliance_packs_require_complete() {
-  local id=""
-  for id in foundation dev-platform deviceuser inference; do
-    if ! appliance_pack_wanted "${id}"; then
-      echo "appliance-packs: production release requires all delivery packs; missing ${id}; set APPLIANCE_PACKS=all" >&2
-      return 2
-    fi
-  done
-}

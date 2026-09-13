@@ -29,8 +29,9 @@ Optional environment:
                             (default: ${TMPDIR:-/tmp}/appliance-build)
   PRODUCT_VERSION           Override configs/default-product-version
 
-Publishes all five delivery packs listed in export/release-index.yaml.
-Partial production releases are rejected; build with APPLIANCE_PACKS=all.
+Publishes the delivery packs listed in export/release-index.yaml. Foundation is
+mandatory; a profile can only be installed when its capability packages were
+published in that release.
 
 Options:
   --release-work-root DIR   Same as RELEASE_WORK_ROOT
@@ -184,9 +185,13 @@ else:
             pack_ids.append(line.split("id:", 1)[1].strip())
         if in_packs and "filename:" in line:
             packs.append(line.split("filename:", 1)[1].strip())
-required = {"foundation", "dev-platform", "deviceuser", "inference"}
-if set(pack_ids) != required or len(pack_ids) != len(required) or len(packs) != len(required):
-    raise SystemExit("publish-release: production release must contain exactly foundation, dev-platform, deviceuser, inference; rebuild with APPLIANCE_PACKS=all")
+known = {"foundation", "dev-platform", "deviceuser", "inference"}
+if not pack_ids or "foundation" not in pack_ids:
+    raise SystemExit("publish-release: release index must include the mandatory foundation pack")
+if any(pack not in known for pack in pack_ids) or len(pack_ids) != len(set(pack_ids)):
+    raise SystemExit("publish-release: release index contains an unknown or duplicate delivery pack")
+if len(packs) != len(pack_ids) or len(packs) != len(set(packs)) or any(not name for name in packs):
+    raise SystemExit("publish-release: release index must provide one unique archive filename per delivery pack")
 print("\n".join(packs))
 PY
 )"

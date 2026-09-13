@@ -101,7 +101,7 @@ Optional overrides:
   INFERENCE_IMAGE_PULL_REF=docker.io/ollama/ollama:0.6.5
   # Inference runtime: always re-export via appliance-code
   # package-inference-runtime-image-archive; digest from index.json.
-  APPLIANCE_PACKS=all                   # complete production delivery set (required)
+  APPLIANCE_PACKS=all                   # default: every delivery pack
 EOF
 }
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -312,7 +312,6 @@ JELLYFIN_RUNTIME_REFERENCE="${RUNTIME_REFERENCE}"
 # Pack selection (default all = foundation + dev-platform + deviceuser + inference).
 APPLIANCE_PACKS="${USER_APPLIANCE_PACKS:-${APPLIANCE_PACKS:-all}}"
 appliance_packs_resolve
-appliance_packs_require_complete
 echo "build-full-bundle: APPLIANCE_PACKS=${APPLIANCE_PACKS} → ${APPLIANCE_PACKS_RESOLVED}"
 
 # The workflows engine is a mandatory component of the complete product
@@ -2084,7 +2083,13 @@ for name in sorted(profiles):
     caps = entry.get("capabilities") if isinstance(entry, dict) else None
     if not isinstance(caps, list) or not caps:
         raise SystemExit(f"release-index writer: profile {name!r} missing capabilities")
-    caps_csv = ", ".join(str(c).strip() for c in caps if str(c).strip())
+    normalized_caps = [str(c).strip() for c in caps if str(c).strip()]
+    if len(normalized_caps) != len(caps) or not normalized_caps:
+        raise SystemExit(f"release-index writer: profile {name!r} has an empty capability")
+    unknown_caps = sorted(set(normalized_caps) - set(capabilities))
+    if unknown_caps:
+        raise SystemExit(f"release-index writer: profile {name!r} references unknown capabilities: {', '.join(unknown_caps)}")
+    caps_csv = ", ".join(normalized_caps)
     profile_lines.append(f"  {name}:\n    capabilities: [{caps_csv}]")
 
 if not capabilities:
@@ -2176,4 +2181,4 @@ echo "  bash ./scripts/publish-release.sh"
 echo "optional:"
 echo "  bash ./scripts/publish-release.sh --latest-alias"
 echo "  PRODUCT_VERSION=<override>"
-echo "  APPLIANCE_PACKS=all  # complete production delivery set (required)"
+echo "  APPLIANCE_PACKS=all  # default: every delivery pack"

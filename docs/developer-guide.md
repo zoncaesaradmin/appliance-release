@@ -154,9 +154,9 @@ deliverables under `RELEASE_WORK_ROOT/export/` according to `APPLIANCE_PACKS`
 (default `all`):
 
 - `appliance-${PRODUCT_VERSION}-foundation.tar.gz` (foundation; always included)
-- `appliance-${PRODUCT_VERSION}-dev-platform.tar.gz` (included in every production release)
-- `appliance-${PRODUCT_VERSION}-deviceuser.tar.gz` (host-agent delivery pack)
-- `appliance-${PRODUCT_VERSION}-inference.tar.gz` (included in every production release)
+- `appliance-${PRODUCT_VERSION}-dev-platform.tar.gz` (when selected)
+- `appliance-${PRODUCT_VERSION}-deviceuser.tar.gz` (when selected)
+- `appliance-${PRODUCT_VERSION}-inference.tar.gz` (when selected)
 - `release-index.yaml` (install contract: packs built this run, full
   `capabilityPacks` map, and a snapshot of `profiles → capabilities` from the
   product profiles catalog). `install-release.sh` derives optional packs as
@@ -167,7 +167,7 @@ deliverables under `RELEASE_WORK_ROOT/export/` according to `APPLIANCE_PACKS`
 # Default: build and stage every pack
 bash ./scripts/build-full-bundle.sh
 
-# Production publishing always includes the complete delivery set.
+# Optional: build every delivery pack (the default).
 APPLIANCE_PACKS=all bash ./scripts/build-full-bundle.sh
 ```
 
@@ -258,9 +258,9 @@ bash ./scripts/build-full-bundle.sh
 bash ./scripts/publish-release.sh
 ```
 
-`publish-release.sh` requires and uploads the complete delivery set listed in
-`export/release-index.yaml`: foundation, dev-platform,
-deviceuser, and inference. Build with `APPLIANCE_PACKS=all`.
+`publish-release.sh` uploads the packs listed in `export/release-index.yaml`.
+The `foundation` pack is mandatory; the installer rejects any profile whose
+capability packages are absent from that release.
 
 Publish uploads to:
 

@@ -57,9 +57,3 @@ echo "test-appliance-packs: ok"
 APPLIANCE_PACKS=dev-platform
 appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform" "dev platform only"
-if appliance_packs_require_complete 2>/dev/null; then
-  fail "partial production release must fail"
-fi
-APPLIANCE_PACKS=all
-appliance_packs_resolve
-appliance_packs_require_complete

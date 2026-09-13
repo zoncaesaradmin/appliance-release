@@ -316,16 +316,10 @@ if [[ "${USE_LATEST}" == "1" ]]; then
 fi
 
 BUNDLE_ARCHIVE="appliance-${PRODUCT_VERSION}-foundation.tar.gz"
-DEV_PLATFORM_ARCHIVE="appliance-${PRODUCT_VERSION}-dev-platform.tar.gz"
-DEVICEUSER_ARCHIVE="appliance-${PRODUCT_VERSION}-deviceuser.tar.gz"
-INFERENCE_ARCHIVE="appliance-${PRODUCT_VERSION}-inference.tar.gz"
 RELEASE_INDEX_FILE="release-index.yaml"
 PUBLIC_KEY_FILE="release-signing.pub"
 CHECKSUM_FILE="sha256sum.txt"
 BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-foundation"
-DEV_PLATFORM_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-dev-platform"
-DEVICEUSER_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-deviceuser"
-INFERENCE_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-inference"
 PUBLIC_KEY="${OUT_DIR}/release-signing.pub"
 ZONCTL="${BUNDLE_DIR}/zonctl"
 RELEASE_PAYLOAD_FILES=(
@@ -335,10 +329,9 @@ RELEASE_PAYLOAD_FILES=(
   "${CHECKSUM_FILE}"
 )
 
-# Optional packs required by profile, derived from release-index profiles +
-# capabilityPacks (foundation is always required separately). Prints one pack
-# id per line in stable order: dev-platform, deviceuser,
-# inference.
+# Optional packages required by profile, derived from the catalog-projected
+# release-index profiles and capabilityPacks. Foundation is handled separately.
+# Prints one package id per line, sorted for stable behavior.
 required_packs_for_profile_from_index() {
   local index_path="$1"
   local profile="$2"
@@ -433,14 +426,15 @@ for cap in caps:
     if not isinstance(owners, list):
         raise SystemExit(f"install-release: invalid delivery packs for {name!r}")
     for pack in owners:
-        if pack not in ("foundation", "dev-platform", "deviceuser", "inference"):
-            raise SystemExit(f"install-release: unknown delivery pack {pack!r}")
+        pack = str(pack or "").strip()
+        if not pack:
+            raise SystemExit(f"install-release: invalid delivery package for {name!r}")
         wanted.add(pack)
 
-# Stable optional-pack order for download/verify.
-for pack_id in ("dev-platform", "deviceuser", "inference"):
-    if pack_id in wanted:
-        print(pack_id)
+# Stable optional-package order for download/verify. Package ownership comes
+# from the catalog-derived index, not from a hardcoded package list.
+for pack_id in sorted(wanted - {"foundation"}):
+    print(pack_id)
 PY
 }
 
@@ -486,10 +480,84 @@ else:
                 ids.append(current_id)
 if not ids:
     raise SystemExit(f"install-release: {path} lists no packs")
-known = {"foundation", "dev-platform", "deviceuser", "inference"}
-if any(pack not in known for pack in ids) or len(ids) != len(set(ids)):
-    raise SystemExit("install-release: unknown or duplicate delivery pack in release index")
+if len(ids) != len(set(ids)):
+    raise SystemExit("install-release: duplicate delivery package in release index")
 print(" ".join(ids))
+PY
+}
+
+# Print the archive filename for a published package from the signed release
+# index. Archive selection is therefore driven by catalog-derived metadata.
+pack_filename_from_index() {
+  local index_path="$1"
+  local wanted_pack="$2"
+  python3 - "${index_path}" "${wanted_pack}" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+wanted = str(sys.argv[2] or "").strip()
+try:
+    import yaml  # type: ignore
+except ImportError:
+    yaml = None
+
+filename = ""
+if yaml is not None:
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    for item in data.get("packs") or []:
+        if isinstance(item, dict) and str(item.get("id") or "").strip() == wanted:
+            filename = str(item.get("filename") or "").strip()
+            break
+else:
+    in_packs = False
+    current_id = ""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("packs:"):
+            in_packs = True
+            continue
+        if in_packs and line and not line.startswith((" ", "\t")):
+            break
+        if not in_packs:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("- id:"):
+            current_id = stripped.split(":", 1)[1].strip()
+        elif current_id == wanted and stripped.startswith("filename:"):
+            filename = stripped.split(":", 1)[1].strip()
+            break
+if not filename:
+    raise SystemExit(f"install-release: package {wanted!r} is not published in {path}")
+if "/" in filename or filename in (".", ".."):
+    raise SystemExit(f"install-release: invalid archive filename for package {wanted!r}")
+print(filename)
+PY
+}
+
+# Return the one top-level directory in a verified pack archive. This avoids
+# encoding package-specific extraction paths in the installer.
+pack_bundle_dirname_from_archive() {
+  local archive_path="$1"
+  python3 - "${archive_path}" <<'PY'
+from pathlib import PurePosixPath
+import sys
+import tarfile
+
+archive = sys.argv[1]
+roots = set()
+with tarfile.open(archive, "r:gz") as tar:
+    for member in tar.getmembers():
+        path = PurePosixPath(member.name)
+        if path.is_absolute() or ".." in path.parts or not path.parts:
+            raise SystemExit(f"install-release: unsafe pack archive member {member.name!r}")
+        # BSD tar on macOS writes AppleDouble sidecars for local test archives.
+        # They are metadata, not a second bundle root.
+        if any(part.startswith("._") for part in path.parts):
+            continue
+        roots.add(path.parts[0])
+if len(roots) != 1:
+    raise SystemExit(f"install-release: pack archive {archive} must contain exactly one top-level directory")
+print(next(iter(roots)))
 PY
 }
 
@@ -551,18 +619,12 @@ for pack_id in "${REQUIRED_PACKS[@]}"; do
   fi
 done
 
+REQUIRED_PACK_ARCHIVES=()
 for pack_id in "${REQUIRED_PACKS[@]}"; do
-  case "${pack_id}" in
-    dev-platform)
-      curl_download "${OUT_DIR}/${DEV_PLATFORM_ARCHIVE}" "${REMOTE_DIR}/${DEV_PLATFORM_ARCHIVE}"
-      ;;
-    deviceuser)
-      curl_download "${OUT_DIR}/${DEVICEUSER_ARCHIVE}" "${REMOTE_DIR}/${DEVICEUSER_ARCHIVE}"
-      ;;
-    inference)
-      curl_download "${OUT_DIR}/${INFERENCE_ARCHIVE}" "${REMOTE_DIR}/${INFERENCE_ARCHIVE}"
-      ;;
-  esac
+  REQUIRED_PACK_ARCHIVES+=("$(pack_filename_from_index "${OUT_DIR}/${RELEASE_INDEX_FILE}" "${pack_id}")")
+done
+for archive in "${REQUIRED_PACK_ARCHIVES[@]}"; do
+  curl_download "${OUT_DIR}/${archive}" "${REMOTE_DIR}/${archive}"
 done
 echo "[1/5] Release files downloaded (packs: foundation${REQUIRED_PACKS[*]:+ ${REQUIRED_PACKS[*]}})."
 
@@ -573,12 +635,8 @@ VERIFY_LIST=(
   "${RELEASE_INDEX_FILE}"
   "${PUBLIC_KEY_FILE}"
 )
-for pack_id in "${REQUIRED_PACKS[@]}"; do
-  case "${pack_id}" in
-    dev-platform) VERIFY_LIST+=("${DEV_PLATFORM_ARCHIVE}") ;;
-    deviceuser) VERIFY_LIST+=("${DEVICEUSER_ARCHIVE}") ;;
-    inference) VERIFY_LIST+=("${INFERENCE_ARCHIVE}") ;;
-  esac
+for archive in "${REQUIRED_PACK_ARCHIVES[@]}"; do
+  VERIFY_LIST+=("${archive}")
 done
 tmp_checksums="${OUT_DIR}/.sha256sum.selected"
 : > "${tmp_checksums}"
@@ -606,24 +664,11 @@ echo "[3/5] Extracting packs..."
 rm -rf "${OUT_DIR:?}/$(basename "${BUNDLE_DIR}")"
 tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${BUNDLE_ARCHIVE}"
 PACK_DIRS=()
-for pack_id in "${REQUIRED_PACKS[@]}"; do
-  case "${pack_id}" in
-    dev-platform)
-      rm -rf "${OUT_DIR:?}/$(basename "${DEV_PLATFORM_BUNDLE_DIR}")"
-      tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${DEV_PLATFORM_ARCHIVE}"
-      PACK_DIRS+=("${DEV_PLATFORM_BUNDLE_DIR}")
-      ;;
-    deviceuser)
-      rm -rf "${OUT_DIR:?}/$(basename "${DEVICEUSER_BUNDLE_DIR}")"
-      tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${DEVICEUSER_ARCHIVE}"
-      PACK_DIRS+=("${DEVICEUSER_BUNDLE_DIR}")
-      ;;
-    inference)
-      rm -rf "${OUT_DIR:?}/$(basename "${INFERENCE_BUNDLE_DIR}")"
-      tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${INFERENCE_ARCHIVE}"
-      PACK_DIRS+=("${INFERENCE_BUNDLE_DIR}")
-      ;;
-  esac
+for archive in "${REQUIRED_PACK_ARCHIVES[@]}"; do
+  pack_dirname="$(pack_bundle_dirname_from_archive "${OUT_DIR}/${archive}")"
+  rm -rf "${OUT_DIR:?}/${pack_dirname}"
+  tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${archive}"
+  PACK_DIRS+=("${OUT_DIR}/${pack_dirname}")
 done
 echo "[3/5] Bundle extracted to ${BUNDLE_DIR}."
 

@@ -88,10 +88,11 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 - **`dev-build` is not a product runtime image.** It is not packaged into the
   foundation, dev-platform, deviceuser, or inference packs. Operator build catalogs must use
   explicit digest-pinned builder images they supply on the appliance.
-- Each platform release publishes all five signed delivery packs: foundation,
-  dev-platform (registry + LAN DNS, workflow engine, and workspace provisioner),
-  deviceuser, and inference. Installation selects the
-  required packs from metadata-derived profile capabilities. Packs do not enable capabilities.
+- Each platform release publishes the signed delivery packs selected for its
+  supported appliance profiles: foundation is mandatory; dev-platform (registry
+  + LAN DNS, workflow engine, and workspace provisioner), deviceuser, and
+  inference are optional. Installation selects the required packs from
+  metadata-derived profile capabilities. Packs do not enable capabilities.
 - `make seed-build-deps` publishes `dev-build` to the **LAN Artifact Server only**.
   That does **not** update GHCR.
 - Whenever `deps/development-container` content changes (Containerfiles, pins,

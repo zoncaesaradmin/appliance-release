@@ -38,6 +38,7 @@ capabilityPacks:
   host: deviceuser
   applications: deviceuser
   inference: inference
+  future: future-package
 profiles:
   core:
     capabilities: [base, files, applications]
@@ -49,6 +50,8 @@ profiles:
     capabilities: [base, host, files, workflows, build, artifact, dns, inference, applications]
   lanllm:
     capabilities: [base, inference, applications]
+  future-profile:
+    capabilities: [base, future]
 EOF
 
 cat >"${TMP}/all-packs.yaml" <<'EOF'
@@ -101,6 +104,14 @@ pack_id_is_published dev-platform "${got}" || fail "dev-platform should be publi
 pack_id_is_published deviceuser "${got}" || fail "deviceuser should be published"
 pack_id_is_published inference "foundation" && fail "inference must not be published in foundation-only set"
 
+archive="$(pack_filename_from_index "${TMP}/all-packs.yaml" "dev-platform")"
+[[ "${archive}" == "appliance-0.1.0-dev-platform.tar.gz" ]] || fail "dev-platform archive: '${archive}'"
+mkdir -p "${TMP}/generic-pack"
+touch "${TMP}/generic-pack/manifest.json"
+tar -C "${TMP}" -czf "${TMP}/generic-pack.tar.gz" generic-pack
+dirname="$(pack_bundle_dirname_from_archive "${TMP}/generic-pack.tar.gz")"
+[[ "${dirname}" == "generic-pack" ]] || fail "generic pack directory: '${dirname}'"
+
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "builder-lanllm-storage-landns" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
 [[ "${req}" == "dev-platform deviceuser inference" ]] || fail "builder-lanllm-storage-landns packs: '${req}'"
 
@@ -109,6 +120,12 @@ req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "training" 
 
 req="$(required_packs_for_profile_from_index "${TMP}/foundation-only.yaml" "training" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
 [[ -z "${req}" ]] || fail "training on foundation-only index should need no optional packs, got '${req}'"
+
+# Package IDs come from the catalog-derived index; a future package is not
+# rejected by a hardcoded installer allowlist. The later published-pack check
+# supplies the actionable error when that package was not released.
+req="$(required_packs_for_profile_from_index "${TMP}/foundation-only.yaml" "future-profile" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+[[ "${req}" == "future-package" ]] || fail "future profile package: '${req}'"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "storage-landns" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
 [[ "${req}" == "dev-platform" ]] || fail "storage-landns packs: '${req}'"
