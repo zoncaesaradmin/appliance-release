@@ -71,7 +71,7 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | `message-broker` | `build-cache/nats:2.10.26-alpine` | NATS JetStream broker image |
 | `artifact-server-bases` | `build-cache/zot-…`, `debian-bookworm-slim-runtime` | artifact-server wrap |
 | `dns` | `build-cache/coredns:…` | dns wrap |
-| `inference` | `build-cache/ollama:…` | inference-runtime wrap (`export-inference-runtime-image-archive.sh`) |
+| `inference` | `build-cache/ollama:…` | CPU runtime for `std-llm-amd64` / `inference` (`export-inference-runtime-image-archive.sh`) |
 | `blob-storage` | `build-cache/minio:…` | foundation S3-compatible blob-storage wrap (`export-blob-storage-image-archive.sh`) |
 | `jellyfin` | `build-cache/jellyfin:10.10.7-amd64` | reviewed Jellyfin application runtime |
 | `service-build-bases` | golang/node/alpine/ui-npm cache images | CP/UI/hostagent build-args |

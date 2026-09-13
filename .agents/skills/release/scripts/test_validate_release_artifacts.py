@@ -153,6 +153,7 @@ ingress:
         tmp / "bundle" / "release-manifest.json",
         """
 {
+  "runtimes": {"inference": {"package": "std-llm-amd64", "engine": "ollama"}},
   "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "artifactServerVersion": "2.1.11", "dnsVersion": "1.14.4", "inferenceVersion": "0.6.5"},
   "entries": [
     {"targetPath": "oci-images/control-plane.tar", "digest": "sha256:control", "sizeBytes": 7, "imageReference": "internal/control-plane:1.0.0"},
@@ -577,6 +578,25 @@ def test_rejects_dns_annotation_and_version_mismatch() -> None:
             raise AssertionError(result.stderr or "wrong dns version accepted")
 
 
+def test_cpu_llm_pack_requires_verified_runtime() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-std-llm-amd64-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        result = run_validator(tmp, "--pack", "std-llm-amd64")
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["entries"] = [entry for entry in manifest["entries"] if "inference-runtime" not in entry.get("targetPath", "")]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = run_validator(tmp, "--pack", "std-llm-amd64")
+        if result.returncode == 0 or "inferenceRuntimeImage" not in result.stderr:
+            raise AssertionError(result.stderr or "std-llm-amd64 accepted without runtime image")
+        result = run_validator(tmp, "--pack", "inference")
+        if result.returncode == 0 or "invalid choice" not in result.stderr:
+            raise AssertionError(result.stderr or "legacy inference pack accepted")
+
+
 def test_allows_omitted_inference_without_require_flag() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -799,6 +819,7 @@ def main() -> None:
     test_accepts_dot_slash_prefixed_dns_oci_archive()
     test_rejects_artifact_server_annotation_and_version_mismatch()
     test_rejects_dns_annotation_and_version_mismatch()
+    test_cpu_llm_pack_requires_verified_runtime()
     test_allows_omitted_inference_without_require_flag()
     test_foundation_pack_allows_build_workflows_extra_oci_absent_from_bundle()
     test_build_workflows_pack_skips_foundation_values_file()

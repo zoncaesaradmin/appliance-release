@@ -81,7 +81,7 @@ RELEASE_INPUT_DIR="${WORKDIR}/release-input"
 BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-foundation"
 DEV_PLATFORM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-dev-platform"
 DEVICEUSER_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-deviceuser"
-INFERENCE_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-inference"
+CPU_LLM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-std-llm-amd64"
 
 mkdir -p "${WORKDIR}" "${INPUTS_DIR}" "${DOWNLOADS_DIR}"
 
@@ -632,7 +632,7 @@ assemble_all_packs() {
       foundation) bundle_dir="${BUNDLE_DIR}" ;;
       dev-platform) bundle_dir="${DEV_PLATFORM_BUNDLE_DIR}" ;;
       deviceuser) bundle_dir="${DEVICEUSER_BUNDLE_DIR}" ;;
-      inference) bundle_dir="${INFERENCE_BUNDLE_DIR}" ;;
+      std-llm-amd64) bundle_dir="${CPU_LLM_BUNDLE_DIR}" ;;
       *)
         echo "assemble-product-bundle: unsupported pack id ${pack_id}" >&2
         exit 2
@@ -682,7 +682,7 @@ if [[ -n "${VALUES_FILE:-}" ]]; then
   cp "${VALUES_FILE}" "${STAGING_DIR}/values-minimal.yaml"
 fi
 
-rm -rf "${BUNDLE_DIR}" "${DEV_PLATFORM_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${INFERENCE_BUNDLE_DIR}"
+rm -rf "${BUNDLE_DIR}" "${DEV_PLATFORM_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}"
 
 assemble_all_packs
 
@@ -696,6 +696,6 @@ fi
 if appliance_pack_wanted deviceuser; then
   echo "  deviceuser: ${DEVICEUSER_BUNDLE_DIR}"
 fi
-if appliance_pack_wanted inference; then
-  echo "  inference: ${INFERENCE_BUNDLE_DIR}"
+if appliance_pack_wanted std-llm-amd64; then
+  echo "  std-llm-amd64: ${CPU_LLM_BUNDLE_DIR}"
 fi

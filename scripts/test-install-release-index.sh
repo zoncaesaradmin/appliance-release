@@ -38,7 +38,6 @@ capabilityPacks:
   dns: dev-platform
   host: deviceuser
   applications: deviceuser
-  inference: inference
   future: future-package
 profiles:
   core:
@@ -67,8 +66,8 @@ packs:
   - id: deviceuser
     filename: appliance-0.1.0-deviceuser.tar.gz
     capabilities: [host]
-  - id: inference
-    filename: appliance-0.1.0-inference.tar.gz
+  - id: std-llm-amd64
+    filename: appliance-0.1.0-std-llm-amd64.tar.gz
     capabilities: [inference]
 capabilityPacks:
   base: foundation
@@ -81,7 +80,7 @@ capabilityPacks:
   dns: dev-platform
   host: deviceuser
   applications: deviceuser
-  inference: inference
+  inference: std-llm-amd64
 profiles:
   core:
     capabilities: [base, lan-discovery, files, applications]
@@ -99,12 +98,12 @@ got="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"
 [[ "${got}" == "foundation" ]] || fail "foundation-only index: got '${got}'"
 
 got="$(published_pack_ids_from_index "${TMP}/all-packs.yaml")"
-[[ "${got}" == "foundation dev-platform deviceuser inference" ]] || fail "all-packs index: got '${got}'"
+[[ "${got}" == "foundation dev-platform deviceuser std-llm-amd64" ]] || fail "all-packs index: got '${got}'"
 
 pack_id_is_published foundation "${got}" || fail "foundation should be published"
 pack_id_is_published dev-platform "${got}" || fail "dev-platform should be published"
 pack_id_is_published deviceuser "${got}" || fail "deviceuser should be published"
-pack_id_is_published inference "foundation" && fail "inference must not be published in foundation-only set"
+pack_id_is_published std-llm-amd64 "foundation" && fail "std-llm-amd64 must not be published in foundation-only set"
 
 archive="$(pack_filename_from_index "${TMP}/all-packs.yaml" "dev-platform")"
 [[ "${archive}" == "appliance-0.1.0-dev-platform.tar.gz" ]] || fail "dev-platform archive: '${archive}'"
@@ -115,7 +114,7 @@ dirname="$(pack_bundle_dirname_from_archive "${TMP}/generic-pack.tar.gz")"
 [[ "${dirname}" == "generic-pack" ]] || fail "generic pack directory: '${dirname}'"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "builder-lanllm-storage-landns" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-[[ "${req}" == "dev-platform deviceuser inference" ]] || fail "builder-lanllm-storage-landns packs: '${req}'"
+[[ "${req}" == "dev-platform deviceuser std-llm-amd64" ]] || fail "builder-lanllm-storage-landns packs: '${req}'"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "training" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
 [[ -z "${req}" ]] || fail "training packs should be empty (foundation only), got '${req}'"
@@ -133,7 +132,7 @@ req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "storage-la
 [[ "${req}" == "dev-platform" ]] || fail "storage-landns packs: '${req}'"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "lanllm" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-[[ "${req}" == "deviceuser inference" ]] || fail "lanllm packs: '${req}'"
+[[ "${req}" == "deviceuser std-llm-amd64" ]] || fail "lanllm packs: '${req}'"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "core" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
 [[ "${req}" == "deviceuser" ]] || fail "core packs: '${req}'"

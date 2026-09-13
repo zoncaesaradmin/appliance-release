@@ -3,11 +3,11 @@
 #
 # Env:
 #   APPLIANCE_PACKS   CSV or single token. Default: all
-#                     Values: all | foundation | dev-platform | deviceuser | inference
+#                     Values: all | foundation | dev-platform | deviceuser | std-llm-amd64
 #                     Examples: all ; foundation ; foundation,dev-platform ; foundation,deviceuser
 #
 # After appliance_packs_resolve:
-#   APPLIANCE_PACKS_RESOLVED   space-separated, stable order: foundation [dev-platform] [deviceuser] [inference]
+#   APPLIANCE_PACKS_RESOLVED   space-separated, stable order: foundation [dev-platform] [deviceuser] [std-llm-amd64]
 #   appliance_pack_wanted ID   returns 0 when ID is selected
 #
 # foundation is always included (required deliverable). Unknown ids fail closed.
@@ -21,7 +21,7 @@ appliance_packs_resolve() {
   local want_foundation=0
   local want_dev_platform=0
   local want_deviceuser=0
-  local want_inference=0
+  local want_cpu_llm=0
   local IFS=','
 
   raw="$(printf '%s' "${raw}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
@@ -47,15 +47,19 @@ appliance_packs_resolve() {
       deviceuser)
         want_deviceuser=1
         ;;
+      std-llm-amd64)
+        want_cpu_llm=1
+        ;;
       inference)
-        want_inference=1
+        echo "appliance-packs: pack id 'inference' was renamed to 'std-llm-amd64' (capability 'inference')" >&2
+        return 2
         ;;
       base)
         echo "appliance-packs: pack id 'base' was renamed to 'foundation' (capability 'base' is unchanged)" >&2
         return 2
         ;;
       *)
-        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|dev-platform|deviceuser|inference)" >&2
+        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|dev-platform|deviceuser|std-llm-amd64)" >&2
         return 2
         ;;
     esac
@@ -65,7 +69,7 @@ appliance_packs_resolve() {
     want_foundation=1
     want_dev_platform=1
     want_deviceuser=1
-    want_inference=1
+    want_cpu_llm=1
   fi
 
   if [[ "${want_foundation}" -eq 0 ]]; then
@@ -80,8 +84,8 @@ appliance_packs_resolve() {
   if [[ "${want_deviceuser}" -eq 1 ]]; then
     APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} deviceuser"
   fi
-  if [[ "${want_inference}" -eq 1 ]]; then
-    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} inference"
+  if [[ "${want_cpu_llm}" -eq 1 ]]; then
+    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} std-llm-amd64"
   fi
 
   export APPLIANCE_PACKS

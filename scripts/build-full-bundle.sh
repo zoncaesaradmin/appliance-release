@@ -309,7 +309,7 @@ JELLYFIN_CACHE_NAME="${CACHE_NAME}"
 JELLYFIN_CACHE_TAG="${CACHE_TAG}"
 JELLYFIN_RUNTIME_REFERENCE="${RUNTIME_REFERENCE}"
 
-# Pack selection (default all = foundation + dev-platform + deviceuser + inference).
+# Pack selection (default all = foundation + dev-platform + deviceuser + std-llm-amd64).
 APPLIANCE_PACKS="${USER_APPLIANCE_PACKS:-${APPLIANCE_PACKS:-all}}"
 appliance_packs_resolve
 echo "build-full-bundle: APPLIANCE_PACKS=${APPLIANCE_PACKS} → ${APPLIANCE_PACKS_RESOLVED}"
@@ -463,11 +463,11 @@ CONFIG_OUT="${GENERATED_DIR}/product-bundle.env"
 BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-foundation"
 DEV_PLATFORM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-dev-platform"
 DEVICEUSER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-deviceuser"
-INFERENCE_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-inference"
+CPU_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-std-llm-amd64"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-foundation.tar.gz"
 DEV_PLATFORM_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-dev-platform.tar.gz"
 DEVICEUSER_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-deviceuser.tar.gz"
-INFERENCE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-inference.tar.gz"
+CPU_LLM_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-std-llm-amd64.tar.gz"
 RELEASE_INDEX="${EXPORT_DIR}/release-index.yaml"
 PUBLIC_KEY_EXPORT="${EXPORT_DIR}/release-signing.pub"
 
@@ -1595,7 +1595,7 @@ if [[ "${DNS_IMAGE_PULL_REF}" == *:latest || "${DNS_IMAGE_PULL_REF}" == registry
   echo "build-full-bundle: DNS_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
   exit 2
 fi
-if appliance_pack_wanted inference; then
+if appliance_pack_wanted std-llm-amd64; then
   if [[ -z "${INFERENCE_VERSION}" || "${INFERENCE_VERSION}" == *latest* ]]; then
     echo "build-full-bundle: INFERENCE_VERSION must be an exact non-latest version" >&2
     exit 2
@@ -1640,7 +1640,7 @@ fi
 
 INFERENCE_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-inference/Chart.yaml")"
 # Chart.yaml may use Helm/upstream form v0.6.5 while INFERENCE_VERSION is 0.6.5.
-if appliance_pack_wanted inference; then
+if appliance_pack_wanted std-llm-amd64; then
   if [[ -z "${INFERENCE_CHART_APP_VERSION}" || "${INFERENCE_CHART_APP_VERSION#v}" != "${INFERENCE_VERSION}" ]]; then
     echo "build-full-bundle: INFERENCE_VERSION ${INFERENCE_VERSION} must match appliance-inference chart appVersion ${INFERENCE_CHART_APP_VERSION:-<missing>}" >&2
     exit 2
@@ -1680,7 +1680,7 @@ if offline_build_enabled; then
   if appliance_pack_wanted deviceuser; then
     JELLYFIN_SOURCE_IMAGE="$(lan_cache_ref "${JELLYFIN_CACHE_NAME}" "${JELLYFIN_CACHE_TAG}")"
   fi
-  if appliance_pack_wanted inference; then
+  if appliance_pack_wanted std-llm-amd64; then
     INFERENCE_IMAGE_PULL_REF="$(lan_cache_ref ollama "${INFERENCE_VERSION}")"
   fi
   if bool_true "${WORKFLOWS_ENABLED}"; then
@@ -1808,7 +1808,7 @@ done
 
 INFERENCE_PACKAGE_LINES=""
 INFERENCE_ARCHIVE_ARG_LINES=""
-if appliance_pack_wanted inference; then
+if appliance_pack_wanted std-llm-amd64; then
   # Build as a plain double-quoted string (not $(cat <<...)). A nested
   # command-substitution heredoc breaks on the ")" in \$(tr ...).
   INFERENCE_PACKAGE_LINES="# Appliance inference runtime (upstream Ollama-compatible image re-export).
@@ -2031,13 +2031,13 @@ if appliance_pack_wanted deviceuser; then
   tar -C "$(dirname "${DEVICEUSER_BUNDLE_DIR}")" -czf "${DEVICEUSER_ARCHIVE}" "$(basename "${DEVICEUSER_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${DEVICEUSER_ARCHIVE}")
 fi
-if appliance_pack_wanted inference; then
-  tar -C "$(dirname "${INFERENCE_BUNDLE_DIR}")" -czf "${INFERENCE_ARCHIVE}" "$(basename "${INFERENCE_BUNDLE_DIR}")"
-  EXPORTED_ARCHIVES+=("${INFERENCE_ARCHIVE}")
+if appliance_pack_wanted std-llm-amd64; then
+  tar -C "$(dirname "${CPU_LLM_BUNDLE_DIR}")" -czf "${CPU_LLM_ARCHIVE}" "$(basename "${CPU_LLM_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${CPU_LLM_ARCHIVE}")
 fi
 cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
 
-python3 - "${RELEASE_INDEX}" "${PRODUCT_VERSION}" \
+python3 "${SCRIPT_DIR}/write-release-index.py" "${RELEASE_INDEX}" "${PRODUCT_VERSION}" \
   "${CODE_REPO_DIR}/metadata-bundle/base/profiles/catalog.yaml" \
 	"${CODE_REPO_DIR}/metadata-bundle/base/capabilities/catalog.yaml" \
   "${CODE_REPO_DIR}/metadata-bundle/base/packages/catalog.yaml" \
@@ -2045,99 +2045,7 @@ python3 - "${RELEASE_INDEX}" "${PRODUCT_VERSION}" \
   "$(basename "${BUNDLE_ARCHIVE}")" \
   "$(basename "${DEV_PLATFORM_ARCHIVE}")" \
   "$(basename "${DEVICEUSER_ARCHIVE}")" \
-  "$(basename "${INFERENCE_ARCHIVE}")" <<'PY'
-from pathlib import Path
-import sys
-
-index_path = Path(sys.argv[1])
-version = sys.argv[2]
-profiles_catalog_path = Path(sys.argv[3])
-capabilities_catalog_path = Path(sys.argv[4])
-packages_catalog_path = Path(sys.argv[5])
-args = sys.argv[6:]
-if len(args) < 5:
-    raise SystemExit("release-index writer: expected pack ids then four filenames")
-base_name, dev_platform_name, deviceuser_name, inference_name = args[-4:]
-selected = set(args[:-4])
-
-try:
-    import yaml  # type: ignore
-except ImportError as exc:
-    raise SystemExit("release-index writer: PyYAML is required to parse the authoritative metadata catalog") from exc
-
-# The release index is a signed projection of the metadata bundle. Profile and
-# capability-to-package policy come only from the three metadata catalogs.
-profiles_doc = yaml.safe_load(profiles_catalog_path.read_text(encoding="utf-8")) or {}
-capabilities_doc = yaml.safe_load(capabilities_catalog_path.read_text(encoding="utf-8")) or {}
-packages_doc = yaml.safe_load(packages_catalog_path.read_text(encoding="utf-8")) or {}
-profiles = profiles_doc.get("profiles") or {}
-capabilities = capabilities_doc.get("capabilities") or {}
-packages = packages_doc.get("packages") or {}
-
-if not profiles:
-    raise SystemExit(f"release-index writer: no profiles found in {profiles_catalog_path}")
-
-profile_lines = []
-for name in sorted(profiles):
-    entry = profiles[name] or {}
-    caps = entry.get("capabilities") if isinstance(entry, dict) else None
-    if not isinstance(caps, list) or not caps:
-        raise SystemExit(f"release-index writer: profile {name!r} missing capabilities")
-    normalized_caps = [str(c).strip() for c in caps if str(c).strip()]
-    if len(normalized_caps) != len(caps) or not normalized_caps:
-        raise SystemExit(f"release-index writer: profile {name!r} has an empty capability")
-    unknown_caps = sorted(set(normalized_caps) - set(capabilities))
-    if unknown_caps:
-        raise SystemExit(f"release-index writer: profile {name!r} references unknown capabilities: {', '.join(unknown_caps)}")
-    caps_csv = ", ".join(normalized_caps)
-    profile_lines.append(f"  {name}:\n    capabilities: [{caps_csv}]")
-
-if not capabilities:
-    raise SystemExit(f"release-index writer: no capabilities found in {capabilities_catalog_path}")
-if not packages:
-    raise SystemExit(f"release-index writer: no delivery packages found in {packages_catalog_path}")
-
-capability_packs = {}
-package_capabilities = {}
-for package, entry in packages.items():
-    caps = entry.get("capabilities") if isinstance(entry, dict) else None
-    if not isinstance(caps, list) or not caps:
-        raise SystemExit(f"release-index writer: package {package!r} must define capabilities")
-    package = str(package).strip()
-    normalized = []
-    for capability in caps:
-        capability = str(capability).strip()
-        if capability not in capabilities:
-            raise SystemExit(f"release-index writer: package {package!r} references unknown capability {capability!r}")
-        if capability in capability_packs:
-            raise SystemExit(f"release-index writer: capability {capability!r} is assigned to both {capability_packs[capability]!r} and {package!r}")
-        capability_packs[capability] = package
-        normalized.append(capability)
-    package_capabilities[package] = normalized
-missing_capabilities = sorted(set(capabilities) - set(capability_packs))
-if missing_capabilities:
-    raise SystemExit("release-index writer: capabilities lack a delivery package: " + ", ".join(missing_capabilities))
-
-filenames = {"foundation": base_name, "dev-platform": dev_platform_name, "deviceuser": deviceuser_name, "inference": inference_name}
-pack_specs = []
-for pack in ("foundation", "dev-platform", "deviceuser", "inference"):
-    if pack not in selected:
-        continue
-    pack_capabilities = sorted(package_capabilities.get(pack, []))
-    if not pack_capabilities:
-        raise SystemExit(f"release-index writer: selected pack {pack!r} owns no capabilities")
-    pack_specs.append(f"  - id: {pack}\n    filename: {filenames[pack]}\n    capabilities: [{', '.join(pack_capabilities)}]")
-capability_block = "\n".join(f"  {capability}: {package}" for capability, package in sorted(capability_packs.items()))
-text = f"""version: {version}
-packs:
-{chr(10).join(pack_specs)}
-capabilityPacks:
-{capability_block}
-profiles:
-{chr(10).join(profile_lines)}
-"""
-index_path.write_text(text, encoding="utf-8")
-PY
+  "$(basename "${CPU_LLM_ARCHIVE}")"
 
 echo
 echo "release-input tarball:"
@@ -2153,8 +2061,8 @@ fi
 if appliance_pack_wanted deviceuser; then
   echo "  ${DEVICEUSER_BUNDLE_DIR}"
 fi
-if appliance_pack_wanted inference; then
-  echo "  ${INFERENCE_BUNDLE_DIR}"
+if appliance_pack_wanted std-llm-amd64; then
+  echo "  ${CPU_LLM_BUNDLE_DIR}"
 fi
 echo
 echo "bundled artifact-server image:"

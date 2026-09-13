@@ -92,7 +92,7 @@ build_flow:
 
   # Delivery packs are packaging groups, not appliance profiles.
   # Production must publish the complete set: foundation, storage-network,
-  # build-workflows, deviceuser, inference. Select functionality at installation.
+  # build-workflows, deviceuser, std-llm-amd64. Select functionality at installation.
   appliance_packs: all
 
   # Used when mode: online (ONLINE_* env vars) — all seven required

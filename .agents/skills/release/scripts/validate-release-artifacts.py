@@ -541,6 +541,11 @@ def validate_inference(
             f"expected {inference_version}, got {bundle_inference_version}"
         )
 
+    runtime = (bundle_manifest.get("runtimes") or {}).get("inference")
+    expected_engines = {"std-llm-amd64": "ollama", "acc-llm-arm64": "vllm"}
+    if not isinstance(runtime, dict) or runtime.get("package") not in expected_engines or runtime.get("engine") != expected_engines[runtime.get("package")]:
+        raise ValueError("bundle manifest inference runtime must identify one supported inference package and engine")
+
     chart = require_artifact(artifacts, "inferenceChart")
     chart_path = require_file_artifact(artifacts, "inferenceChart", release_input_dir)
     chart_candidates = (
@@ -866,7 +871,7 @@ def main() -> int:
     parser.add_argument("--companion-bundle-root", action="append", default=[], help="Additional signed delivery pack roots used to locate supplemental OCI images; every image reference remains required and checked.")
     parser.add_argument(
         "--pack",
-        choices=("foundation", "storage-network", "build-workflows", "deviceuser", "inference", "video"),
+        choices=("foundation", "storage-network", "build-workflows", "deviceuser", "std-llm-amd64", "acc-llm-arm64", "video"),
         default="foundation",
         help=(
             "Which signed pack archive is under --bundle-root. "
@@ -874,7 +879,7 @@ def main() -> int:
             "storage-network: artifact-server and dns images/charts. "
             "build-workflows: workflows and supplemental OCI images (including companion delivery packs). "
             "deviceuser: host-agent + host-packages must be present in this pack. "
-            "inference: inference chart/image/version must be present in this pack. "
+            "inference package: inference chart/image/version must be present in this pack. "
             "video: video chart/image/version must be present in this pack."
         ),
     )
@@ -882,7 +887,7 @@ def main() -> int:
     parser.add_argument(
         "--require-inference",
         action="store_true",
-        help="Require inferenceRuntimeImage/inferenceChart/inferenceVersion in release-input and the validated bundle (inference pack).",
+        help="Require inferenceRuntimeImage/inferenceChart/inferenceVersion in release-input and the validated bundle (inference package).",
     )
     parser.add_argument(
         "--require-video",
@@ -898,7 +903,7 @@ def main() -> int:
     expected_extra_refs = parse_csv(args.expected_extra_oci_image_refs)
     pack = args.pack
     require_workflows = args.require_workflows or pack == "build-workflows"
-    require_inference = args.require_inference or pack == "inference"
+    require_inference = args.require_inference or pack in {"std-llm-amd64", "acc-llm-arm64"}
     require_video = args.require_video or pack == "video"
 
     release_input_root = Path(args.release_input_root)
@@ -1060,7 +1065,7 @@ def main() -> int:
                 ),
             }
         )
-    elif pack == "inference":
+    elif pack in {"std-llm-amd64", "acc-llm-arm64"}:
         checked["inference"] = validate_inference(
             release_input,
             bundle_manifest,

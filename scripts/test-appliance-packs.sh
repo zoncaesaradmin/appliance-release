@@ -21,11 +21,11 @@ assert_eq() {
 APPLIANCE_PACKS=""
 appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS}" "all" "empty defaults to all token"
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform deviceuser inference" "empty → all packs"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform deviceuser std-llm-amd64" "empty → all packs"
 
 APPLIANCE_PACKS="all"
 appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform deviceuser inference" "all"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform deviceuser std-llm-amd64" "all"
 
 APPLIANCE_PACKS="foundation"
 appliance_packs_resolve
@@ -35,11 +35,11 @@ APPLIANCE_PACKS="foundation,dev-platform"
 appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform" "foundation+dev-platform"
 appliance_pack_wanted dev-platform || fail "dev-platform should be wanted"
-appliance_pack_wanted inference && fail "inference should not be wanted"
+appliance_pack_wanted std-llm-amd64 && fail "std-llm-amd64 should not be wanted"
 
-APPLIANCE_PACKS="inference"
+APPLIANCE_PACKS="std-llm-amd64"
 appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation inference" "inference auto-includes foundation"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation std-llm-amd64" "std-llm-amd64 auto-includes foundation"
 
 APPLIANCE_PACKS="deviceuser"
 appliance_packs_resolve
@@ -52,6 +52,12 @@ fi
 if APPLIANCE_PACKS="nope" appliance_packs_resolve 2>/dev/null; then
   fail "unknown pack should fail"
 fi
+
+for unsupported in inference acc-llm-arm64; do
+  if APPLIANCE_PACKS="${unsupported}" appliance_packs_resolve 2>/dev/null; then
+    fail "legacy capability or unimplemented package '${unsupported}' should fail"
+  fi
+done
 
 echo "test-appliance-packs: ok"
 APPLIANCE_PACKS=dev-platform

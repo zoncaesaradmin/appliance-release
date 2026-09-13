@@ -156,7 +156,7 @@ deliverables under `RELEASE_WORK_ROOT/export/` according to `APPLIANCE_PACKS`
 - `appliance-${PRODUCT_VERSION}-foundation.tar.gz` (foundation; always included)
 - `appliance-${PRODUCT_VERSION}-dev-platform.tar.gz` (when selected)
 - `appliance-${PRODUCT_VERSION}-deviceuser.tar.gz` (when selected)
-- `appliance-${PRODUCT_VERSION}-inference.tar.gz` (when selected)
+- `appliance-${PRODUCT_VERSION}-std-llm-amd64.tar.gz` (when selected)
 - `release-index.yaml` (install contract: packs built this run, full
   `capabilityPacks` map, and a snapshot of `profiles → capabilities` from the
   product profiles catalog). `install-release.sh` derives optional packs as
@@ -178,7 +178,7 @@ Delivery packs describe available software, not enabled functionality:
 | `foundation` | Core appliance services, including file storage |
 | `dev-platform` | Artifact Server/registry, LAN DNS, workflow controller/executor, CRDs, and workspace provisioner |
 | `deviceuser` | Host-agent and device-user components |
-| `inference` | Local inference runtime |
+| `std-llm-amd64` | Standard CPU inference runtime (`inference`) |
 
 Profiles enable capabilities; the signed index derives delivery requirements
 from the package catalog. For example, `storage-landns` needs foundation +
@@ -203,7 +203,7 @@ Outputs:
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-foundation.tar.gz`
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-dev-platform.tar.gz` (when dev-platform pack selected)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-deviceuser.tar.gz` (when deviceuser pack selected)
-- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-inference.tar.gz` (when inference pack selected)
+- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-std-llm-amd64.tar.gz` (when std-llm-amd64 pack selected)
 - `${RELEASE_WORK_ROOT}/export/release-index.yaml`
 - `${RELEASE_WORK_ROOT}/export/release-signing.pub`
 
@@ -308,3 +308,22 @@ If you need to debug a specific stage, these targets still exist:
 3. If you changed bundle examples or config shape, review the generated
    workspace files and JSON examples.
 4. If you changed `zonctl`, validate those changes in `appliance-ctl`.
+
+### Standard CPU inference naming
+
+The current inference capability is `inference`; its delivery package is
+`std-llm-amd64`. Explicit pack selections must use `std-llm-amd64`, for example
+`APPLIANCE_PACKS=foundation,std-llm-amd64`; `all` includes it. Generated assembly config
+is `bundle-assembly.std-llm-amd64.json`, and the archive is
+`appliance-${PRODUCT_VERSION}-std-llm-amd64.tar.gz`. Regenerate old assembly configs and
+publish the matching signed metadata and release index with the renamed packs.
+The existing `builder-lanllm-storage-landns` profile keeps its ID and now resolves
+to `inference`, requiring foundation, dev-platform, deviceuser, and std-llm-amd64.
+
+The runtime Service, API, image-reference contract, and separate signed model
+packs retain their inference names. `deps/inference` still seeds the same pinned
+Ollama input for offline packaging; the chart explicitly runs it on CPU. The
+upstream image is not rebuilt to remove GPU libraries. A future GPU engine will
+use the same `inference` capability with the `acc-llm-arm64` package and a GPU runtime
+variant; it is not selectable yet. The
+cross-repository design is in `appliance-code/docs/inference-capability-phasing.md`.

@@ -22,7 +22,7 @@ Runtime:             config.*ImageDigest == digest pin → workflow pod image (I
 
 Names today (product packs): `workspace-provisioner` (build-workflows pack),
 first-class `artifact-server` / `coredns` (base), first-class `inference-runtime`
-(inference pack). `dev-build` is build-host tooling only and is **not** packaged.
+(std-llm-amd64 pack). `dev-build` is build-host tooling only and is **not** packaged.
 Artifact-server archives use `registry.local/artifact-server:bundled` plus
 `registry.local/artifact-server@sha256:<platform-digest>`; CoreDNS uses
 `registry.local/coredns:bundled` plus

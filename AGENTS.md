@@ -86,12 +86,12 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
     `make dev-shell`, control-plane image, control-plane UI image, host-agent
     image, and similar tooling-container builds
 - **`dev-build` is not a product runtime image.** It is not packaged into the
-  foundation, dev-platform, deviceuser, or inference packs. Operator build catalogs must use
+  foundation, dev-platform, deviceuser, or std-llm-amd64 packs. Operator build catalogs must use
   explicit digest-pinned builder images they supply on the appliance.
 - Each platform release publishes the signed delivery packs selected for its
   supported appliance profiles: foundation is mandatory; dev-platform (registry
   + LAN DNS, workflow engine, and workspace provisioner), deviceuser, and
-  inference are optional. Installation selects the required packs from
+  std-llm-amd64 are optional. Installation selects the required packs from
   metadata-derived profile capabilities. Packs do not enable capabilities.
 - `make seed-build-deps` publishes `dev-build` to the **LAN Artifact Server only**.
   That does **not** update GHCR.

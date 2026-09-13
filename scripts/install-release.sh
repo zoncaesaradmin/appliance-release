@@ -337,6 +337,7 @@ required_packs_for_profile_from_index() {
   local profile="$2"
   python3 - "${index_path}" "${profile}" <<'PY'
 from pathlib import Path
+import json
 import sys
 
 index_path = Path(sys.argv[1])
@@ -392,7 +393,7 @@ def parse_release_index(raw: str) -> dict:
                 raw_caps = line.split(":", 1)[1].strip()
                 if raw_caps.startswith("[") and raw_caps.endswith("]"):
                     caps = [c.strip() for c in raw_caps[1:-1].split(",") if c.strip()]
-                    profiles[current_profile] = {"capabilities": caps}
+                    profiles[current_profile]["capabilities"] = caps
     return {"profiles": profiles, "capabilityPacks": capability_packs}
 
 
@@ -414,22 +415,13 @@ if not isinstance(capability_packs, dict):
     raise SystemExit(f"install-release: {index_path} capabilityPacks must be a mapping")
 
 wanted = set()
-for cap in caps:
-    name = str(cap or "").strip()
-    if not name:
-        continue
-    owners = capability_packs.get(name)
-    if not owners:
-        raise SystemExit(f"install-release: capability {name!r} has no delivery pack mapping")
-    if isinstance(owners, str):
-        owners = [p.strip() for p in owners.split(",") if p.strip()]
-    if not isinstance(owners, list):
-        raise SystemExit(f"install-release: invalid delivery packs for {name!r}")
-    for pack in owners:
-        pack = str(pack or "").strip()
-        if not pack:
-            raise SystemExit(f"install-release: invalid delivery package for {name!r}")
-        wanted.add(pack)
+for name in caps:
+    if not isinstance(name, str) or not name:
+        raise SystemExit("install-release: invalid profile capability")
+    package = capability_packs.get(name)
+    if not isinstance(package, str) or not package or package.strip() != package or "," in package:
+        raise SystemExit(f"install-release: capability {name!r} has no unambiguous delivery pack mapping")
+    wanted.add(package)
 
 # Stable optional-package order for download/verify. Package ownership comes
 # from the catalog-derived index, not from a hardcoded package list.

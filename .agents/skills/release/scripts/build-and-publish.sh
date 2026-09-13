@@ -400,7 +400,7 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
   fi
 
   companion_args=()
-  for companion_pack in foundation storage-network deviceuser inference; do
+  for companion_pack in foundation storage-network deviceuser std-llm-amd64; do
     companion_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-${companion_pack}.tar.gz")"
     if [[ -n "${companion_archive}" ]]; then
       companion_root="${RUN_DIR}/artifacts/companions/${companion_pack}"
@@ -432,15 +432,15 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
       >"${RUN_DIR}/logs/release-artifact-validation-deviceuser.json"
   fi
 
-  local_inference_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-inference.tar.gz")"
+  local_inference_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-std-llm-amd64.tar.gz")"
   if [[ -n "${local_inference_archive}" && -f "${local_inference_archive}" ]]; then
-    extract_archive_into_dir "${local_inference_archive}" "${RUN_DIR}/artifacts/inference-bundle"
-    log "validating release-input against inference pack"
+    extract_archive_into_dir "${local_inference_archive}" "${RUN_DIR}/artifacts/std-llm-amd64-bundle"
+    log "validating release-input against std-llm-amd64 pack"
     python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
-      --pack inference \
+      --pack std-llm-amd64 \
       --release-input-root "${RUN_DIR}/artifacts/release-input" \
-      --bundle-root "${RUN_DIR}/artifacts/inference-bundle" \
-      >"${RUN_DIR}/logs/release-artifact-validation-inference.json"
+      --bundle-root "${RUN_DIR}/artifacts/std-llm-amd64-bundle" \
+      >"${RUN_DIR}/logs/release-artifact-validation-std-llm-amd64.json"
   fi
 
   local_video_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-video.tar.gz")"
