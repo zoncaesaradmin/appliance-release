@@ -29,8 +29,8 @@ Optional environment:
                             (default: ${TMPDIR:-/tmp}/appliance-build)
   PRODUCT_VERSION           Override configs/default-product-version
 
-Publishes whatever packs are listed in export/release-index.yaml from the
-last build-full-bundle.sh run (default build is APPLIANCE_PACKS=all).
+Publishes all five delivery packs listed in export/release-index.yaml.
+Partial production releases are rejected; build with APPLIANCE_PACKS=all.
 
 Options:
   --release-work-root DIR   Same as RELEASE_WORK_ROOT
@@ -152,7 +152,7 @@ require_file "${RELEASE_INDEX}" "release index"
 require_file "${PUBLIC_KEY_FILE}" "release signing public key"
 require_file "${INSTALL_HELPER}" "install helper script"
 
-mapfile -t PACK_FILENAMES < <(python3 - "${RELEASE_INDEX}" <<'PY'
+PACK_FILENAMES_TEXT="$(python3 - "${RELEASE_INDEX}" <<'PY'
 from pathlib import Path
 import sys
 
@@ -163,9 +163,11 @@ except ImportError:
 
 text = Path(sys.argv[1]).read_text(encoding="utf-8")
 packs = []
+pack_ids = []
 if yaml is not None:
     data = yaml.safe_load(text) or {}
     for item in data.get("packs") or []:
+        pack_ids.append(str((item or {}).get("id") or "").strip())
         name = str((item or {}).get("filename") or "").strip()
         if name:
             packs.append(name)
@@ -178,13 +180,17 @@ else:
             continue
         if in_packs and line and not line.startswith(" ") and not line.startswith("\t"):
             break
+        if in_packs and line.strip().startswith("- id:"):
+            pack_ids.append(line.split("id:", 1)[1].strip())
         if in_packs and "filename:" in line:
             packs.append(line.split("filename:", 1)[1].strip())
-if not packs:
-    raise SystemExit("publish-release: release-index.yaml lists no packs")
+required = {"foundation", "storage-network", "build-workflows", "deviceuser", "inference"}
+if set(pack_ids) != required or len(pack_ids) != len(required) or len(packs) != len(required):
+    raise SystemExit("publish-release: production release must contain exactly foundation, storage-network, build-workflows, deviceuser, inference; rebuild with APPLIANCE_PACKS=all")
 print("\n".join(packs))
 PY
-)
+)"
+mapfile -t PACK_FILENAMES <<<"${PACK_FILENAMES_TEXT}"
 
 RELEASE_FILE_PAYLOADS=()
 for pack_file in "${PACK_FILENAMES[@]}"; do

@@ -35,14 +35,9 @@ Notes:
   for the overview). Scripts do **not** invent operational defaults — required
   keys must appear in their role file (fixed lab values are fine in YAML).
 - `build_flow.mode` must be `online` or `offline` (exactly one source policy).
-- Optional packs: `build_flow.appliance_packs` literal (`all` default, or
-  `foundation` / `foundation,developer` / `foundation,inference` / `foundation,video`). Skill maps it to
-  `APPLIANCE_PACKS` for product scripts — no Mac env export required.
-  Keep both pull blocks; the inactive one is ignored.
-  - Online: `online_image_pull` names `ONLINE_*` env vars (skill maps → `DEV_*`).
-  - Offline: `offline_image_pull` names the same `DEV_*` LAN vars as `bundle_store`
-    (no separate `OFFLINE_*` family — offline and LAN are identical).
-  - Packaging never branches on `ONLINE_*`; only `DEV_*` + `OFFLINE_BUILD`.
+- Production delivery: use `build_flow.appliance_packs: all`. The complete set is
+  foundation, storage-network, build-workflows, deviceuser, and inference.
+  Installation selects required packs from the chosen profile's capabilities.
 - Bundled offline name for the tooling image is fixed as `registry.local/dev-build`.
 - Local build-host path inputs such as `*_image_archive_source` are rejected.
   K3s: online from GitHub releases; offline from the LAN files API

@@ -3,11 +3,11 @@
 #
 # Env:
 #   APPLIANCE_PACKS   CSV or single token. Default: all
-#                     Values: all | foundation | developer | deviceuser | inference
-#                     Examples: all ; foundation ; foundation,developer ; foundation,deviceuser
+#                     Values: all | foundation | storage-network | build-workflows | deviceuser | inference
+#                     Examples: all ; foundation ; foundation,build-workflows ; foundation,deviceuser
 #
 # After appliance_packs_resolve:
-#   APPLIANCE_PACKS_RESOLVED   space-separated, stable order: foundation [developer] [deviceuser] [inference]
+#   APPLIANCE_PACKS_RESOLVED   space-separated, stable order: foundation [storage-network] [build-workflows] [deviceuser] [inference]
 #   appliance_pack_wanted ID   returns 0 when ID is selected
 #
 # foundation is always included (required deliverable). Unknown ids fail closed.
@@ -19,7 +19,8 @@ appliance_packs_resolve() {
   local token=""
   local want_all=0
   local want_foundation=0
-  local want_developer=0
+  local want_storage_network=0
+  local want_build_workflows=0
   local want_deviceuser=0
   local want_inference=0
   local IFS=','
@@ -41,8 +42,11 @@ appliance_packs_resolve() {
       foundation)
         want_foundation=1
         ;;
-      developer)
-        want_developer=1
+      storage-network)
+        want_storage_network=1
+        ;;
+      build-workflows)
+        want_build_workflows=1
         ;;
       deviceuser)
         want_deviceuser=1
@@ -55,7 +59,7 @@ appliance_packs_resolve() {
         return 2
         ;;
       *)
-        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|developer|deviceuser|inference)" >&2
+        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|storage-network|build-workflows|deviceuser|inference)" >&2
         return 2
         ;;
     esac
@@ -63,7 +67,8 @@ appliance_packs_resolve() {
 
   if [[ "${want_all}" -eq 1 ]]; then
     want_foundation=1
-    want_developer=1
+    want_storage_network=1
+    want_build_workflows=1
     want_deviceuser=1
     want_inference=1
   fi
@@ -74,8 +79,11 @@ appliance_packs_resolve() {
   fi
 
   APPLIANCE_PACKS_RESOLVED="foundation"
-  if [[ "${want_developer}" -eq 1 ]]; then
-    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} developer"
+  if [[ "${want_storage_network}" -eq 1 ]]; then
+    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} storage-network"
+  fi
+  if [[ "${want_build_workflows}" -eq 1 ]]; then
+    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} build-workflows"
   fi
   if [[ "${want_deviceuser}" -eq 1 ]]; then
     APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} deviceuser"
@@ -98,4 +106,16 @@ appliance_pack_wanted() {
     fi
   done
   return 1
+}
+
+# Production publishing requires every delivery group. Explicit partial assembly
+# remains available for local packaging tests, never a production release.
+appliance_packs_require_complete() {
+  local id=""
+  for id in foundation storage-network build-workflows deviceuser inference; do
+    if ! appliance_pack_wanted "${id}"; then
+      echo "appliance-packs: production release requires all delivery packs; missing ${id}; set APPLIANCE_PACKS=all" >&2
+      return 2
+    fi
+  done
 }

@@ -31,7 +31,7 @@ its Argo Workflows integration.
 
 Argo Workflows remains limited to the developer/build workflow capability. The
 Application Management capability must not submit application deployment work
-through Argo or require the developer pack.
+through Argo or require the build-workflows pack.
 
 ## Product Placement
 

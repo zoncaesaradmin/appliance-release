@@ -86,11 +86,12 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
     `make dev-shell`, control-plane image, control-plane UI image, host-agent
     image, and similar tooling-container builds
 - **`dev-build` is not a product runtime image.** It is not packaged into the
-  foundation, developer, or inference packs. Operator build catalogs must use
+  foundation, storage-network, build-workflows, deviceuser, or inference packs. Operator build catalogs must use
   explicit digest-pinned builder images they supply on the appliance.
-- Each platform release publishes three signed deliverables: foundation pack,
-  `developer` pack (Argo + workspace-provisioner), and `inference` pack.
-  Install selects packs from the profile (`core` does not include workflows).
+- Each platform release publishes all five signed delivery packs: foundation,
+  storage-network (registry + LAN DNS), build-workflows (workflow engine +
+  workspace provisioner), deviceuser, and inference. Installation selects the
+  required packs from metadata-derived profile capabilities. Packs do not enable capabilities.
 - `make seed-build-deps` publishes `dev-build` to the **LAN Artifact Server only**.
   That does **not** update GHCR.
 - Whenever `deps/development-container` content changes (Containerfiles, pins,

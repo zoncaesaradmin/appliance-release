@@ -167,5 +167,5 @@ client_verification:
 #     expect_denied_scope: true
 #
 # Related profiles (verification must track capabilities):
-#   builder-lanllm → workflows+builder+artifact on; dns off; needs developer+inference packs
+#   builder-lanllm → workflows+builder+artifact on; dns off; needs storage-network+build-workflows+inference packs
 #   builder-lanllm-storage-landns → workflows+builder+artifact+dns on; needs all packs

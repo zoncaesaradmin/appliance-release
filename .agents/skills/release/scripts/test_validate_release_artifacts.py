@@ -595,8 +595,8 @@ def test_allows_omitted_inference_without_require_flag() -> None:
             raise AssertionError("missing inference accepted with --require-inference")
 
 
-def test_foundation_pack_allows_developer_extra_oci_absent_from_bundle() -> None:
-    """Multi-pack builds put developer extras in release-input but not foundation."""
+def test_foundation_pack_allows_build_workflows_extra_oci_absent_from_bundle() -> None:
+    """Multi-pack builds put build-workflows extras in release-input but not foundation."""
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp)
@@ -614,24 +614,24 @@ def test_foundation_pack_allows_developer_extra_oci_absent_from_bundle() -> None
         result = run_validator(
             tmp,
             "--pack",
-            "developer",
+            "build-workflows",
             "--expected-extra-oci-image-refs",
             "registry.local/buildah",
         )
         if result.returncode == 0:
-            raise AssertionError("developer pack accepted without extraOCIImages in bundle")
+            raise AssertionError("build-workflows pack accepted without extraOCIImages in bundle")
         if "extraOCIImages[0]" not in result.stderr and "missing" not in result.stderr.lower():
             raise AssertionError(result.stderr)
 
 
-def test_developer_pack_skips_foundation_values_file() -> None:
-    """Developer archives do not ship configuration/values.yaml."""
+def test_build_workflows_pack_skips_foundation_values_file() -> None:
+    """Build-workflows archives do not ship configuration/values.yaml."""
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp)
         manifest_path = tmp / "bundle" / "release-manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        # Keep only developer-relevant entries (no values.yaml).
+        # Keep only build-workflows-relevant entries (no values.yaml).
         keep_prefixes = (
             "charts/argo-workflows",
             "kubernetes/crds/",
@@ -654,7 +654,7 @@ def test_developer_pack_skips_foundation_values_file() -> None:
         result = run_validator(
             tmp,
             "--pack",
-            "developer",
+            "build-workflows",
             "--expected-extra-oci-image-refs",
             "registry.local/buildah",
         )
@@ -730,7 +730,61 @@ def test_rejects_unidentified_artifact_server_image_path() -> None:
             raise AssertionError(result.stderr or "unidentified Artifact Server path accepted")
 
 
+def test_storage_network_pack_is_independent_of_workflows() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-storage-pack-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        prefixes = ("oci-images/artifact-server", "charts/appliance-registry",
+                    "oci-images/coredns", "charts/appliance-dns")
+        manifest["entries"] = [
+            entry for entry in manifest["entries"]
+            if str(entry.get("targetPath") or "").startswith(prefixes)
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = run_validator(tmp, "--pack", "storage-network")
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+        manifest["entries"] = [
+            entry for entry in manifest["entries"]
+            if not str(entry.get("targetPath") or "").startswith("oci-images/coredns")
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        if run_validator(tmp, "--pack", "storage-network").returncode == 0:
+            raise AssertionError("storage-network accepted missing CoreDNS")
+
+
+def test_companion_extra_image_reference_is_still_checked() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-companion-pack-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        moved = [entry for entry in manifest["entries"]
+                 if "buildah" in str(entry.get("targetPath") or "")]
+        assert moved
+        manifest["entries"] = [entry for entry in manifest["entries"] if entry not in moved]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        companion = tmp / "companion"
+        companion.mkdir()
+        companion_manifest = companion / "release-manifest.json"
+        companion_manifest.write_text(json.dumps({"entries": moved}), encoding="utf-8")
+        result = run_validator(tmp, "--pack", "build-workflows",
+                               "--companion-bundle-root", str(companion))
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+        moved[0]["imageReference"] = "registry.local/wrong@sha256:" + "a" * 64
+        companion_manifest.write_text(json.dumps({"entries": moved}), encoding="utf-8")
+        result = run_validator(tmp, "--pack", "build-workflows",
+                               "--companion-bundle-root", str(companion))
+        if result.returncode == 0:
+            raise AssertionError("mismatched companion image reference accepted")
+
+
 def main() -> None:
+    test_storage_network_pack_is_independent_of_workflows()
+    test_companion_extra_image_reference_is_still_checked()
     test_positive_case()
     test_rejects_missing_host_packages_when_flags_false()
     test_foundation_pack_allows_host_packages_absent_from_bundle()
@@ -746,8 +800,8 @@ def main() -> None:
     test_rejects_artifact_server_annotation_and_version_mismatch()
     test_rejects_dns_annotation_and_version_mismatch()
     test_allows_omitted_inference_without_require_flag()
-    test_foundation_pack_allows_developer_extra_oci_absent_from_bundle()
-    test_developer_pack_skips_foundation_values_file()
+    test_foundation_pack_allows_build_workflows_extra_oci_absent_from_bundle()
+    test_build_workflows_pack_skips_foundation_values_file()
     test_rejects_inference_annotation_and_version_mismatch()
     test_rejects_legacy_zot_image_path_name()
     test_rejects_unidentified_artifact_server_image_path()

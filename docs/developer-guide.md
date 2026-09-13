@@ -154,9 +154,10 @@ deliverables under `RELEASE_WORK_ROOT/export/` according to `APPLIANCE_PACKS`
 (default `all`):
 
 - `appliance-${PRODUCT_VERSION}-foundation.tar.gz` (foundation; always included)
-- `appliance-${PRODUCT_VERSION}-developer.tar.gz` (when selected)
-- `appliance-${PRODUCT_VERSION}-deviceuser.tar.gz` (when selected; host-agent capability)
-- `appliance-${PRODUCT_VERSION}-inference.tar.gz` (when selected)
+- `appliance-${PRODUCT_VERSION}-storage-network.tar.gz` (included in every production release)
+- `appliance-${PRODUCT_VERSION}-build-workflows.tar.gz` (included in every production release)
+- `appliance-${PRODUCT_VERSION}-deviceuser.tar.gz` (host-agent delivery pack)
+- `appliance-${PRODUCT_VERSION}-inference.tar.gz` (included in every production release)
 - `release-index.yaml` (install contract: packs built this run, full
   `capabilityPacks` map, and a snapshot of `profiles → capabilities` from the
   product profiles catalog). `install-release.sh` derives optional packs as
@@ -167,12 +168,24 @@ deliverables under `RELEASE_WORK_ROOT/export/` according to `APPLIANCE_PACKS`
 # Default: build and stage every pack
 bash ./scripts/build-full-bundle.sh
 
-# Faster iteration examples
-APPLIANCE_PACKS=foundation bash ./scripts/build-full-bundle.sh
-APPLIANCE_PACKS=foundation,developer bash ./scripts/build-full-bundle.sh
-APPLIANCE_PACKS=foundation,deviceuser bash ./scripts/build-full-bundle.sh
-APPLIANCE_PACKS=foundation,inference bash ./scripts/build-full-bundle.sh
+# Production publishing always includes the complete delivery set.
+APPLIANCE_PACKS=all bash ./scripts/build-full-bundle.sh
 ```
+
+Delivery packs describe available software, not enabled functionality:
+
+| Delivery pack | Contents |
+|---|---|
+| `foundation` | Core appliance services, including file storage |
+| `storage-network` | Artifact Server/registry and LAN DNS |
+| `build-workflows` | Workflow controller/executor, CRDs, and workspace provisioner |
+| `deviceuser` | Host-agent and device-user components |
+| `inference` | Local inference runtime |
+
+Profiles enable capabilities; the signed index derives delivery requirements
+from the capability catalog's `packages` fields. For example, `storage-landns`
+needs foundation + storage-network, not build-workflows. Service image contents and
+profile capability lists are unchanged by this packaging split.
 
 That script:
 
@@ -190,7 +203,8 @@ Outputs:
 
 - `${RELEASE_WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-foundation` (foundation pack dir)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-foundation.tar.gz`
-- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-developer.tar.gz` (when developer pack selected)
+- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-storage-network.tar.gz` (when storage-network pack selected)
+- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-build-workflows.tar.gz` (when build-workflows pack selected)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-deviceuser.tar.gz` (when deviceuser pack selected)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-inference.tar.gz` (when inference pack selected)
 - `${RELEASE_WORK_ROOT}/export/release-index.yaml`
@@ -247,9 +261,9 @@ bash ./scripts/build-full-bundle.sh
 bash ./scripts/publish-release.sh
 ```
 
-`publish-release.sh` uploads the packs listed in `export/release-index.yaml`
-(from the last build). Default build is `APPLIANCE_PACKS=all` (foundation +
-developer + deviceuser + inference). Selective builds only publish what was staged.
+`publish-release.sh` requires and uploads the complete delivery set listed in
+`export/release-index.yaml`: foundation, storage-network, build-workflows,
+deviceuser, and inference. Build with `APPLIANCE_PACKS=all`.
 
 Publish uploads to:
 

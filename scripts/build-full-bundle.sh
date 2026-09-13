@@ -74,7 +74,7 @@ Optional overrides:
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
   # Host packages: always export-host-packages for mdns + wifi-client + wifi-ap under OS_VERSION
   # (ubuntu/<version>/amd64/*.deb). Install stages debs; enablement is day-2 only.
-  # BUILD_COMPLETE_PRODUCT=false  # developer slim path only; default true requires workflows
+  # BUILD_COMPLETE_PRODUCT=false  # build-workflows slim path only; default true requires workflows
   # COMPONENT_CACHE_DIR=/var/cache/appliance-build/components  # optional dirty-only rebuild cache
   WORKFLOWS_ENABLED=true                 # complete product always packages the workflows engine (set BUILD_COMPLETE_PRODUCT=false to allow opt-out)
   WORKFLOWS_VERSION=v3.5.10              # pin a different workflows engine version than the chart's appVersion
@@ -101,7 +101,7 @@ Optional overrides:
   INFERENCE_IMAGE_PULL_REF=docker.io/ollama/ollama:0.6.5
   # Inference runtime: always re-export via appliance-code
   # package-inference-runtime-image-archive; digest from index.json.
-  APPLIANCE_PACKS=all                   # all | foundation | foundation,developer | foundation,deviceuser | foundation,inference
+  APPLIANCE_PACKS=all                   # complete production delivery set (required)
 EOF
 }
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -309,24 +309,25 @@ JELLYFIN_CACHE_NAME="${CACHE_NAME}"
 JELLYFIN_CACHE_TAG="${CACHE_TAG}"
 JELLYFIN_RUNTIME_REFERENCE="${RUNTIME_REFERENCE}"
 
-# Pack selection (default all = foundation + developer + deviceuser + inference).
+# Pack selection (default all = foundation + storage-network + build-workflows + deviceuser + inference).
 APPLIANCE_PACKS="${USER_APPLIANCE_PACKS:-${APPLIANCE_PACKS:-all}}"
 appliance_packs_resolve
+appliance_packs_require_complete
 echo "build-full-bundle: APPLIANCE_PACKS=${APPLIANCE_PACKS} → ${APPLIANCE_PACKS_RESOLVED}"
 
 # The workflows engine is a mandatory component of the complete product
-# super-set (ADR 0011) when the developer pack is selected. BUILD_COMPLETE_PRODUCT
+# super-set (ADR 0011) when the build-workflows pack is selected. BUILD_COMPLETE_PRODUCT
 # defaults true and forces WORKFLOWS_ENABLED for that pack. Pack-selective builds
-# that omit developer skip workflows packaging.
+# that omit build-workflows skip workflows packaging.
 BUILD_COMPLETE_PRODUCT="${BUILD_COMPLETE_PRODUCT:-true}"
-if appliance_pack_wanted developer; then
+if appliance_pack_wanted build-workflows; then
   if [[ -z "${WORKFLOWS_ENABLED}" ]]; then
     WORKFLOWS_ENABLED="true"
   fi
 else
   case "$(printf '%s' "${USER_WORKFLOWS_ENABLED:-}" | tr '[:upper:]' '[:lower:]')" in
     1|true|yes|on)
-      echo "build-full-bundle: WORKFLOWS_ENABLED=true ignored because developer pack is not in APPLIANCE_PACKS (${APPLIANCE_PACKS_RESOLVED})" >&2
+      echo "build-full-bundle: WORKFLOWS_ENABLED=true ignored because build-workflows pack is not in APPLIANCE_PACKS (${APPLIANCE_PACKS_RESOLVED})" >&2
       ;;
   esac
   WORKFLOWS_ENABLED="false"
@@ -461,11 +462,13 @@ INPUTS_DIR="${WORKSPACE}/inputs"
 GENERATED_DIR="${WORKSPACE}/generated"
 CONFIG_OUT="${GENERATED_DIR}/product-bundle.env"
 BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-foundation"
-DEVELOPER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-developer"
+STORAGE_NETWORK_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-storage-network"
+BUILD_WORKFLOWS_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-build-workflows"
 DEVICEUSER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 INFERENCE_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-inference"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-foundation.tar.gz"
-DEVELOPER_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-developer.tar.gz"
+STORAGE_NETWORK_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-storage-network.tar.gz"
+BUILD_WORKFLOWS_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-build-workflows.tar.gz"
 DEVICEUSER_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-deviceuser.tar.gz"
 INFERENCE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-inference.tar.gz"
 RELEASE_INDEX="${EXPORT_DIR}/release-index.yaml"
@@ -486,8 +489,8 @@ bool_true() {
   esac
 }
 
-if bool_true "${BUILD_COMPLETE_PRODUCT}" && appliance_pack_wanted developer && ! bool_true "${WORKFLOWS_ENABLED}"; then
-  echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires WORKFLOWS_ENABLED=true when developer pack is selected (developer slim builds: BUILD_COMPLETE_PRODUCT=false)" >&2
+if bool_true "${BUILD_COMPLETE_PRODUCT}" && appliance_pack_wanted build-workflows && ! bool_true "${WORKFLOWS_ENABLED}"; then
+  echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires WORKFLOWS_ENABLED=true when build-workflows pack is selected (build-workflows slim builds: BUILD_COMPLETE_PRODUCT=false)" >&2
   exit 2
 fi
 # Always resolve the build-host tooling image from DEV_*. This image builds
@@ -1605,7 +1608,7 @@ if appliance_pack_wanted inference; then
     exit 2
   fi
 fi
-if appliance_pack_wanted developer; then
+if appliance_pack_wanted build-workflows; then
   if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner || "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner@sha256:* ]]; then
     echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be an upstream or LAN build-cache pull ref (default docker.io/alpine/git:2.49.0); got ${WORKSPACE_PROVISIONER_IMAGE_REF}" >&2
     exit 2
@@ -1670,7 +1673,7 @@ if offline_build_enabled; then
   if appliance_pack_wanted deviceuser; then
     require_seed_package jellyfin
   fi
-  if appliance_pack_wanted developer; then
+  if appliance_pack_wanted build-workflows; then
     WORKSPACE_PROVISIONER_IMAGE_REF="$(lan_cache_ref alpine-git "${ALPINE_GIT_CACHE_TAG}")"
   fi
   ARTIFACT_SERVER_SOURCE_IMAGE="$(lan_cache_ref zot-linux-amd64 "v${ARTIFACT_SERVER_VERSION}")"
@@ -1761,7 +1764,7 @@ if bool_true "${WORKFLOWS_ENABLED}"; then
 fi
 
 # Bundled supplemental images for release-input (--extra-oci-image flags):
-# workspace-provisioner when the developer pack is selected.
+# workspace-provisioner when the build-workflows pack is selected.
 BUNDLED_IMAGE_ARCHIVES=()
 BUNDLED_IMAGE_REFS=()
 
@@ -1779,7 +1782,7 @@ INFERENCE_IMAGE_REF=""
 BLOB_STORAGE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/blob-storage-image.tar"
 BLOB_STORAGE_IMAGE_REF=""
 
-if appliance_pack_wanted developer; then
+if appliance_pack_wanted build-workflows; then
   WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:2.49.0}"
   WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
   WORKSPACE_PROVISIONER_IMAGE_REF="$(export_bundled_oci_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "registry.local/workspace-provisioner" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
@@ -2023,9 +2026,13 @@ if appliance_pack_wanted foundation; then
   tar -C "$(dirname "${BUNDLE_DIR}")" -czf "${BUNDLE_ARCHIVE}" "$(basename "${BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${BUNDLE_ARCHIVE}")
 fi
-if appliance_pack_wanted developer; then
-  tar -C "$(dirname "${DEVELOPER_BUNDLE_DIR}")" -czf "${DEVELOPER_ARCHIVE}" "$(basename "${DEVELOPER_BUNDLE_DIR}")"
-  EXPORTED_ARCHIVES+=("${DEVELOPER_ARCHIVE}")
+if appliance_pack_wanted storage-network; then
+  tar -C "$(dirname "${STORAGE_NETWORK_BUNDLE_DIR}")" -czf "${STORAGE_NETWORK_ARCHIVE}" "$(basename "${STORAGE_NETWORK_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${STORAGE_NETWORK_ARCHIVE}")
+fi
+if appliance_pack_wanted build-workflows; then
+  tar -C "$(dirname "${BUILD_WORKFLOWS_BUNDLE_DIR}")" -czf "${BUILD_WORKFLOWS_ARCHIVE}" "$(basename "${BUILD_WORKFLOWS_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${BUILD_WORKFLOWS_ARCHIVE}")
 fi
 if appliance_pack_wanted deviceuser; then
   tar -C "$(dirname "${DEVICEUSER_BUNDLE_DIR}")" -czf "${DEVICEUSER_ARCHIVE}" "$(basename "${DEVICEUSER_BUNDLE_DIR}")"
@@ -2042,7 +2049,8 @@ python3 - "${RELEASE_INDEX}" "${PRODUCT_VERSION}" \
 	"${CODE_REPO_DIR}/metadata-bundle/base/capabilities/catalog.yaml" \
   ${APPLIANCE_PACKS_RESOLVED} \
   "$(basename "${BUNDLE_ARCHIVE}")" \
-  "$(basename "${DEVELOPER_ARCHIVE}")" \
+  "$(basename "${STORAGE_NETWORK_ARCHIVE}")" \
+  "$(basename "${BUILD_WORKFLOWS_ARCHIVE}")" \
   "$(basename "${DEVICEUSER_ARCHIVE}")" \
   "$(basename "${INFERENCE_ARCHIVE}")" <<'PY'
 from pathlib import Path
@@ -2053,10 +2061,10 @@ version = sys.argv[2]
 profiles_catalog_path = Path(sys.argv[3])
 capabilities_catalog_path = Path(sys.argv[4])
 args = sys.argv[5:]
-if len(args) < 5:
-    raise SystemExit("release-index writer: expected pack ids then four filenames")
-base_name, developer_name, deviceuser_name, inference_name = args[-4:]
-selected = set(args[:-4])
+if len(args) < 6:
+    raise SystemExit("release-index writer: expected pack ids then five filenames")
+base_name, storage_network_name, build_workflows_name, deviceuser_name, inference_name = args[-5:]
+selected = set(args[:-5])
 
 try:
     import yaml  # type: ignore
@@ -2089,9 +2097,9 @@ for capability, entry in capabilities.items():
         raise SystemExit(f"release-index writer: capability {capability!r} must define packages")
     capability_packs[str(capability)] = [str(pack).strip() for pack in packs if str(pack).strip()]
 
-filenames = {"foundation": base_name, "developer": developer_name, "deviceuser": deviceuser_name, "inference": inference_name}
+filenames = {"foundation": base_name, "storage-network": storage_network_name, "build-workflows": build_workflows_name, "deviceuser": deviceuser_name, "inference": inference_name}
 pack_specs = []
-for pack in ("foundation", "developer", "deviceuser", "inference"):
+for pack in ("foundation", "storage-network", "build-workflows", "deviceuser", "inference"):
     if pack not in selected:
         continue
     pack_capabilities = sorted(capability for capability, owners in capability_packs.items() if pack in owners)
@@ -2118,8 +2126,11 @@ echo "final packs (${APPLIANCE_PACKS_RESOLVED}):"
 if appliance_pack_wanted foundation; then
   echo "  ${BUNDLE_DIR}"
 fi
-if appliance_pack_wanted developer; then
-  echo "  ${DEVELOPER_BUNDLE_DIR}"
+if appliance_pack_wanted storage-network; then
+  echo "  ${STORAGE_NETWORK_BUNDLE_DIR}"
+fi
+if appliance_pack_wanted build-workflows; then
+  echo "  ${BUILD_WORKFLOWS_BUNDLE_DIR}"
 fi
 if appliance_pack_wanted deviceuser; then
   echo "  ${DEVICEUSER_BUNDLE_DIR}"
@@ -2152,4 +2163,4 @@ echo "  bash ./scripts/publish-release.sh"
 echo "optional:"
 echo "  bash ./scripts/publish-release.sh --latest-alias"
 echo "  PRODUCT_VERSION=<override>"
-echo "  APPLIANCE_PACKS=foundation|foundation,developer|foundation,deviceuser|all  # default all"
+echo "  APPLIANCE_PACKS=all  # complete production delivery set (required)"

@@ -863,14 +863,16 @@ def main() -> int:
     )
     parser.add_argument("--release-input-root", required=True)
     parser.add_argument("--bundle-root", required=True)
+    parser.add_argument("--companion-bundle-root", action="append", default=[], help="Additional signed delivery pack roots used to locate supplemental OCI images; every image reference remains required and checked.")
     parser.add_argument(
         "--pack",
-        choices=("foundation", "developer", "deviceuser", "inference", "video"),
+        choices=("foundation", "storage-network", "build-workflows", "deviceuser", "inference", "video"),
         default="foundation",
         help=(
             "Which signed pack archive is under --bundle-root. "
-            "foundation: base product checks; developer/deviceuser extras are release-input-only. "
-            "developer: workflows + artifact-server + dns + extraOCI must be present in this pack. "
+            "foundation: base product checks; build-workflows/deviceuser extras are release-input-only. "
+            "storage-network: artifact-server and dns images/charts. "
+            "build-workflows: workflows and supplemental OCI images (including companion delivery packs). "
             "deviceuser: host-agent + host-packages must be present in this pack. "
             "inference: inference chart/image/version must be present in this pack. "
             "video: video chart/image/version must be present in this pack."
@@ -890,12 +892,12 @@ def main() -> int:
     parser.add_argument(
         "--expected-extra-oci-image-refs",
         default="",
-        help="Comma-separated digest-pinned extra OCI image references expected in release-input (and in-bundle when --pack=developer).",
+        help="Comma-separated digest-pinned extra OCI image references expected in release-input (and in-bundle when --pack=build-workflows).",
     )
     args = parser.parse_args()
     expected_extra_refs = parse_csv(args.expected_extra_oci_image_refs)
     pack = args.pack
-    require_workflows = args.require_workflows or pack == "developer"
+    require_workflows = args.require_workflows or pack == "build-workflows"
     require_inference = args.require_inference or pack == "inference"
     require_video = args.require_video or pack == "video"
 
@@ -972,7 +974,7 @@ def main() -> int:
                     entries_by_path,
                     require_in_bundle=False,
                 ),
-                # Developer/inference extras may appear in release-input for a multi-pack
+                # Supplemental images may appear in release-input for a multi-pack
                 # build; they are not in the foundation archive.
                 "extraOCIImages": validate_extra_oci_images(
                     artifacts,
@@ -1009,37 +1011,38 @@ def main() -> int:
             )
         else:
             checked["video"] = []
-    elif pack == "developer":
-        checked.update(
-            {
-                "workflows": validate_workflows(
-                    artifacts, release_input_path.parent, entries_by_path
-                ),
-                "artifactServer": validate_artifact_server(
-                    release_input,
-                    bundle_manifest,
-                    artifacts,
-                    release_input_path.parent,
-                    entries_by_path,
-                    require_in_bundle=True,
-                ),
-                "dns": validate_dns(
-                    release_input,
-                    bundle_manifest,
-                    artifacts,
-                    release_input_path.parent,
-                    entries_by_path,
-                    require_in_bundle=True,
-                ),
-                "extraOCIImages": validate_extra_oci_images(
-                    artifacts,
-                    release_input_path.parent,
-                    entries_by_path,
-                    expected_extra_refs,
-                    require_in_bundle=True,
-                ),
-            }
-        )
+    elif pack == "storage-network":
+        checked.update({
+            "artifactServer": validate_artifact_server(
+                release_input, bundle_manifest, artifacts,
+                release_input_path.parent, entries_by_path, require_in_bundle=True,
+            ),
+            "dns": validate_dns(
+                release_input, bundle_manifest, artifacts,
+                release_input_path.parent, entries_by_path, require_in_bundle=True,
+            ),
+        })
+    elif pack == "build-workflows":
+        supplemental_entries = dict(entries_by_path)
+        for companion_root in args.companion_bundle_root:
+            companion_manifest = first_named(Path(companion_root), "release-manifest.json")
+            if companion_manifest is None:
+                raise ValueError("companion delivery pack is missing release-manifest.json")
+            companion = json.loads(companion_manifest.read_text(encoding="utf-8"))
+            for entry in companion.get("entries", []):
+                path = entry.get("targetPath") or entry.get("path")
+                if path in supplemental_entries and supplemental_entries[path] != entry:
+                    raise ValueError(f"conflicting delivery pack entry: {path}")
+                supplemental_entries[path] = entry
+        checked.update({
+            "workflows": validate_workflows(
+                artifacts, release_input_path.parent, entries_by_path,
+            ),
+            "extraOCIImages": validate_extra_oci_images(
+                artifacts, release_input_path.parent, supplemental_entries,
+                expected_extra_refs, require_in_bundle=True,
+            ),
+        })
     elif pack == "deviceuser":
         checked.update(
             {

@@ -43,7 +43,7 @@ Instead:
 - the software bundle provides the execution engine, APIs, runtime images, and
   safety controls
 - Automation Runtime is part of the foundation and the universal `base`
-  capability, independent of the developer workflows/Argo pack
+  capability, independent of the build-workflows pack
 - the active metadata bundle provides named workflow-bearing metadata sections
   that extend what the appliance can do
 - a metadata-bundle update may add, remove, disable, or revise supported
@@ -534,7 +534,7 @@ API is added to Automation Runtime.
 ## Deployment And Storage Contract
 
 Automation Runtime ships in the foundation pack and is enabled by the universal
-`base` capability. It does not depend on Argo, the developer pack, or the
+`base` capability. It does not depend on Argo, the build-workflows pack, or the
 `workflows` capability.
 
 The first implementation runs exactly one replica so bundle activation and the

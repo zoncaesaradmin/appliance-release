@@ -55,7 +55,7 @@
 #     ONLINE_REGISTRY_USER, ONLINE_REGISTRY_TOKEN, ONLINE_REGISTRY_TLS_VERIFY
 #   Plus APPLIANCE_BUILD_SUDO_PASSWORD.
 #   Pack selection is a config literal (not an env):
-#     build_flow.appliance_packs: all|foundation|foundation,developer|foundation,inference
+#     build_flow.appliance_packs: all (complete production delivery)
 #     (omit or all → full three packs)
 
 # ============================================================================
@@ -90,17 +90,10 @@ build_flow:
   # the inactive one is ignored. Skill unifies the active block → DEV_*.
   mode: online
 
-  # Pack selection (literal, like mode). Omit or all → foundation+developer+inference+video.
-  # Skill exports this as APPLIANCE_PACKS into build-full-bundle.sh.
-  # Pack id is foundation (not base) — capability base is separate.
-  # Match packs to the install profile, for example:
-  #   appliance_packs: all
-  #   appliance_packs: foundation
-  #   appliance_packs: foundation,developer
-  #   appliance_packs: foundation,inference          # lanllm
-  #   appliance_packs: foundation,developer,inference # builder-lanllm
-  #   appliance_packs: foundation,video               # training
-  appliance_packs: foundation
+  # Delivery packs are packaging groups, not appliance profiles.
+  # Production must publish the complete set: foundation, storage-network,
+  # build-workflows, deviceuser, inference. Select functionality at installation.
+  appliance_packs: all
 
   # Used when mode: online (ONLINE_* env vars) — all seven required
   online_image_pull:

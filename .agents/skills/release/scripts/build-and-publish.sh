@@ -388,16 +388,37 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
     --bundle-root "${RUN_DIR}/artifacts/bundle" \
     >"${RUN_DIR}/logs/release-artifact-validation.json"
 
-  local_developer_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-developer.tar.gz")"
-  if [[ -n "${local_developer_archive}" && -f "${local_developer_archive}" ]]; then
-    extract_archive_into_dir "${local_developer_archive}" "${RUN_DIR}/artifacts/developer-bundle"
-    log "validating release-input against developer pack"
+  local_storage_network_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-storage-network.tar.gz")"
+  if [[ -n "${local_storage_network_archive}" && -f "${local_storage_network_archive}" ]]; then
+    extract_archive_into_dir "${local_storage_network_archive}" "${RUN_DIR}/artifacts/storage-network-bundle"
+    log "validating release-input against storage-network pack"
     python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
-      --pack developer \
+      --pack storage-network \
       --release-input-root "${RUN_DIR}/artifacts/release-input" \
-      --bundle-root "${RUN_DIR}/artifacts/developer-bundle" \
+      --bundle-root "${RUN_DIR}/artifacts/storage-network-bundle" \
+      >"${RUN_DIR}/logs/release-artifact-validation-storage-network.json"
+  fi
+
+  companion_args=()
+  for companion_pack in foundation storage-network deviceuser inference; do
+    companion_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-${companion_pack}.tar.gz")"
+    if [[ -n "${companion_archive}" ]]; then
+      companion_root="${RUN_DIR}/artifacts/companions/${companion_pack}"
+      extract_archive_into_dir "${companion_archive}" "${companion_root}"
+      companion_args+=(--companion-bundle-root "${companion_root}")
+    fi
+  done
+  local_build_workflows_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-build-workflows.tar.gz")"
+  if [[ -n "${local_build_workflows_archive}" && -f "${local_build_workflows_archive}" ]]; then
+    extract_archive_into_dir "${local_build_workflows_archive}" "${RUN_DIR}/artifacts/build-workflows-bundle"
+    log "validating release-input against build-workflows pack"
+    python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
+      --pack build-workflows \
+      "${companion_args[@]}" \
+      --release-input-root "${RUN_DIR}/artifacts/release-input" \
+      --bundle-root "${RUN_DIR}/artifacts/build-workflows-bundle" \
       --expected-extra-oci-image-refs "${WORKSPACE_PROVISIONER_LOCAL_REF}" \
-      >"${RUN_DIR}/logs/release-artifact-validation-developer.json"
+      >"${RUN_DIR}/logs/release-artifact-validation-build-workflows.json"
   fi
 
   local_deviceuser_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-deviceuser.tar.gz")"

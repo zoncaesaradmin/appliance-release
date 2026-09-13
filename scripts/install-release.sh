@@ -316,14 +316,16 @@ if [[ "${USE_LATEST}" == "1" ]]; then
 fi
 
 BUNDLE_ARCHIVE="appliance-${PRODUCT_VERSION}-foundation.tar.gz"
-DEVELOPER_ARCHIVE="appliance-${PRODUCT_VERSION}-developer.tar.gz"
+STORAGE_NETWORK_ARCHIVE="appliance-${PRODUCT_VERSION}-storage-network.tar.gz"
+BUILD_WORKFLOWS_ARCHIVE="appliance-${PRODUCT_VERSION}-build-workflows.tar.gz"
 DEVICEUSER_ARCHIVE="appliance-${PRODUCT_VERSION}-deviceuser.tar.gz"
 INFERENCE_ARCHIVE="appliance-${PRODUCT_VERSION}-inference.tar.gz"
 RELEASE_INDEX_FILE="release-index.yaml"
 PUBLIC_KEY_FILE="release-signing.pub"
 CHECKSUM_FILE="sha256sum.txt"
 BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-foundation"
-DEVELOPER_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-developer"
+STORAGE_NETWORK_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-storage-network"
+BUILD_WORKFLOWS_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-build-workflows"
 DEVICEUSER_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-deviceuser"
 INFERENCE_BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-inference"
 PUBLIC_KEY="${OUT_DIR}/release-signing.pub"
@@ -337,7 +339,7 @@ RELEASE_PAYLOAD_FILES=(
 
 # Optional packs required by profile, derived from release-index profiles +
 # capabilityPacks (foundation is always required separately). Prints one pack
-# id per line in stable order: developer, deviceuser, inference.
+# id per line in stable order: build-workflows, deviceuser, inference.
 required_packs_for_profile_from_index() {
   local index_path="$1"
   local profile="$2"
@@ -424,12 +426,20 @@ for cap in caps:
     name = str(cap or "").strip()
     if not name:
         continue
-    pack = str(capability_packs.get(name) or "").strip()
-    if pack:
+    owners = capability_packs.get(name)
+    if not owners:
+        raise SystemExit(f"install-release: capability {name!r} has no delivery pack mapping")
+    if isinstance(owners, str):
+        owners = [p.strip() for p in owners.split(",") if p.strip()]
+    if not isinstance(owners, list):
+        raise SystemExit(f"install-release: invalid delivery packs for {name!r}")
+    for pack in owners:
+        if pack not in ("foundation", "storage-network", "build-workflows", "deviceuser", "inference"):
+            raise SystemExit(f"install-release: unknown delivery pack {pack!r}")
         wanted.add(pack)
 
 # Stable optional-pack order for download/verify.
-for pack_id in ("developer", "deviceuser", "inference"):
+for pack_id in ("storage-network", "build-workflows", "deviceuser", "inference"):
     if pack_id in wanted:
         print(pack_id)
 PY
@@ -477,6 +487,9 @@ else:
                 ids.append(current_id)
 if not ids:
     raise SystemExit(f"install-release: {path} lists no packs")
+known = {"foundation", "storage-network", "build-workflows", "deviceuser", "inference"}
+if any(pack not in known for pack in ids) or len(ids) != len(set(ids)):
+    raise SystemExit("install-release: unknown or duplicate delivery pack in release index")
 print(" ".join(ids))
 PY
 }
@@ -519,11 +532,12 @@ for payload in "${RELEASE_PAYLOAD_FILES[@]}"; do
   curl_download "${OUT_DIR}/${payload}" "${REMOTE_DIR}/${payload}"
 done
 
+REQUIRED_PACKS_TEXT="$(required_packs_for_profile_from_index "${OUT_DIR}/${RELEASE_INDEX_FILE}" "${APPLIANCE_PROFILE}")"
 REQUIRED_PACKS=()
 while IFS= read -r pack_id; do
   [[ -n "${pack_id}" ]] || continue
   REQUIRED_PACKS+=("${pack_id}")
-done < <(required_packs_for_profile_from_index "${OUT_DIR}/${RELEASE_INDEX_FILE}" "${APPLIANCE_PROFILE}")
+done <<<"${REQUIRED_PACKS_TEXT}"
 
 PUBLISHED_PACKS="$(published_pack_ids_from_index "${OUT_DIR}/${RELEASE_INDEX_FILE}")"
 if ! pack_id_is_published "foundation" "${PUBLISHED_PACKS}"; then
@@ -532,7 +546,7 @@ if ! pack_id_is_published "foundation" "${PUBLISHED_PACKS}"; then
 fi
 for pack_id in "${REQUIRED_PACKS[@]}"; do
   if ! pack_id_is_published "${pack_id}" "${PUBLISHED_PACKS}"; then
-    echo "install-release: profile '${APPLIANCE_PROFILE}' requires pack '${pack_id}', but release ${PRODUCT_VERSION} only publishes: ${PUBLISHED_PACKS}" >&2
+    echo "install-release: profile '${APPLIANCE_PROFILE}' requires delivery pack '${pack_id}', but release ${PRODUCT_VERSION} only publishes: ${PUBLISHED_PACKS}" >&2
     echo "install-release: rebuild/publish with APPLIANCE_PACKS including '${pack_id}', or choose a profile that only needs those packs" >&2
     exit 1
   fi
@@ -540,8 +554,11 @@ done
 
 for pack_id in "${REQUIRED_PACKS[@]}"; do
   case "${pack_id}" in
-    developer)
-      curl_download "${OUT_DIR}/${DEVELOPER_ARCHIVE}" "${REMOTE_DIR}/${DEVELOPER_ARCHIVE}"
+    storage-network)
+      curl_download "${OUT_DIR}/${STORAGE_NETWORK_ARCHIVE}" "${REMOTE_DIR}/${STORAGE_NETWORK_ARCHIVE}"
+      ;;
+    build-workflows)
+      curl_download "${OUT_DIR}/${BUILD_WORKFLOWS_ARCHIVE}" "${REMOTE_DIR}/${BUILD_WORKFLOWS_ARCHIVE}"
       ;;
     deviceuser)
       curl_download "${OUT_DIR}/${DEVICEUSER_ARCHIVE}" "${REMOTE_DIR}/${DEVICEUSER_ARCHIVE}"
@@ -562,7 +579,8 @@ VERIFY_LIST=(
 )
 for pack_id in "${REQUIRED_PACKS[@]}"; do
   case "${pack_id}" in
-    developer) VERIFY_LIST+=("${DEVELOPER_ARCHIVE}") ;;
+    storage-network) VERIFY_LIST+=("${STORAGE_NETWORK_ARCHIVE}") ;;
+    build-workflows) VERIFY_LIST+=("${BUILD_WORKFLOWS_ARCHIVE}") ;;
     deviceuser) VERIFY_LIST+=("${DEVICEUSER_ARCHIVE}") ;;
     inference) VERIFY_LIST+=("${INFERENCE_ARCHIVE}") ;;
   esac
@@ -595,10 +613,15 @@ tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${BUNDLE_ARCHIVE}"
 PACK_DIRS=()
 for pack_id in "${REQUIRED_PACKS[@]}"; do
   case "${pack_id}" in
-    developer)
-      rm -rf "${OUT_DIR:?}/$(basename "${DEVELOPER_BUNDLE_DIR}")"
-      tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${DEVELOPER_ARCHIVE}"
-      PACK_DIRS+=("${DEVELOPER_BUNDLE_DIR}")
+    storage-network)
+      rm -rf "${OUT_DIR:?}/$(basename "${STORAGE_NETWORK_BUNDLE_DIR}")"
+      tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${STORAGE_NETWORK_ARCHIVE}"
+      PACK_DIRS+=("${STORAGE_NETWORK_BUNDLE_DIR}")
+      ;;
+    build-workflows)
+      rm -rf "${OUT_DIR:?}/$(basename "${BUILD_WORKFLOWS_BUNDLE_DIR}")"
+      tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${BUILD_WORKFLOWS_ARCHIVE}"
+      PACK_DIRS+=("${BUILD_WORKFLOWS_BUNDLE_DIR}")
       ;;
     deviceuser)
       rm -rf "${OUT_DIR:?}/$(basename "${DEVICEUSER_BUNDLE_DIR}")"
