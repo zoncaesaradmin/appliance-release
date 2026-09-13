@@ -41,8 +41,8 @@ exact host being installed on.
 
 Prefer host names over raw appliance IPs for day-to-day access.
 
-- When host mDNS is enabled (Admin UI day-2) and the host advertises mDNS, use the
-  target host's current `hostname.local` name, for example
+- Profiles with the `lan-discovery` capability enable host mDNS at
+  installation and advertise `<appliance-name>.local`, for example
   `https://appliance.local` or `ssh <user>@appliance.local`.
 - When a DNS-bearing profile is in use and its A record has been published,
   use the derived appliance name `<appliance_name>.<dns_zone>`, for example

@@ -7,10 +7,11 @@ Installers (`zonctl install` / `upgrade`) never write product DNS records.
 Records are added only through the DNS appliance API/UI, or through another
 appliance's base-capability publish API.
 
-This LAN DNS path is separate from host-level mDNS discovery. When
-When host mDNS is enabled day-2 via Admin UI/API and Avahi or an equivalent responder is
-present on the target host, clients may also reach the appliance through the
-host's current `hostname.local` name.
+This LAN DNS path is separate from host-level mDNS discovery. Foundation
+delivers Avahi mDNS support; profiles with `lan-discovery` enable it, so
+same-VLAN clients may reach the appliance through its configured
+`<appliance-name>.local` name. The OS hostname is not advertised as a second
+appliance mDNS name.
 
 ## What You Get
 

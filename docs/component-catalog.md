@@ -2,7 +2,9 @@
 
 This catalog is the stable contract for what lands in every complete product
 `release-input` / signed air-gap super-bundle. It does **not** describe
-install-time profile selection only. Host mDNS/Wi-Fi AP are day-2 Admin UI enablement.
+install-time profile selection only. Foundation delivers host mDNS support;
+the profile's `lan-discovery` capability enables it. Wi-Fi AP remains a
+day-2 Admin UI enablement.
 
 Machine-readable list: [components.yaml](components.yaml).
 

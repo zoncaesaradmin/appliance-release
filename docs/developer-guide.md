@@ -210,10 +210,12 @@ Outputs:
 Product packaging always exports the complete host package super-set
 (`mdns` + `wifi-client` + `wifi-ap`) for the selected `OS_VERSION` baseline under
 `ubuntu/<version>/amd64/*.deb` on the build host (apt download during export).
-That tree is copied into signed `host-packages/`. Install stages the .deb
-payload offline but leaves mDNS and Wi-Fi AP services off; admins enable them
-day-2 via Admin UI / control-plane host APIs (with PSK supplied at enable time
-for Wi-Fi AP). Optional `COMPONENT_CACHE_DIR` enables fingerprint-based reuse
+That tree is copied into signed `host-packages/`. Foundation installation
+delivers mDNS support for local appliance discovery; the selected appliance
+profile enables it through `lan-discovery`. Wi-Fi services remain off until
+an administrator enables them through host APIs (with PSK supplied for Wi-Fi
+AP).
+Optional `COMPONENT_CACHE_DIR` enables fingerprint-based reuse
 of component outputs (Phase C); assemble and sign always re-run.
 
 ## One-Time Build Host Bootstrap
