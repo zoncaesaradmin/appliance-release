@@ -1969,8 +1969,35 @@ chmod +x "${CODE_DEV_SCRIPT_PATH}"
 
 # Tooling image for make/dev-run (DEV_* / OFFLINE_BUILD already exported above).
 export DEV_IMAGE="${BUILDER_PULL_REF:-${DEV_IMAGE:-}}"
-make -C "${CODE_REPO_DIR}" DEV_IMAGE="${DEV_IMAGE}" OFFLINE_BUILD="${OFFLINE_BUILD}" \
-  dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}"
+# An online image pull can fail transiently after some layers have already
+# transferred (for example, a short routing loss to an upstream registry).
+# Retrying the whole generated dev-run is safe: its image/archive outputs are
+# rebuilt in place.  Offline failures must fail immediately so a LAN-cache
+# miss is never disguised as a recoverable upstream error.
+ONLINE_DEV_RUN_ATTEMPTS=3
+DEV_RUN_ATTEMPTS="${ONLINE_DEV_RUN_ATTEMPTS}"
+if offline_build_enabled; then
+  DEV_RUN_ATTEMPTS=1
+fi
+
+for ((dev_run_attempt = 1; dev_run_attempt <= DEV_RUN_ATTEMPTS; dev_run_attempt++)); do
+  dev_run_log="$(mktemp "${TMPDIR:-/tmp}/appliance-dev-run.XXXXXX.log")"
+  if make -C "${CODE_REPO_DIR}" DEV_IMAGE="${DEV_IMAGE}" OFFLINE_BUILD="${OFFLINE_BUILD}" \
+    dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}" 2>&1 | tee "${dev_run_log}"; then
+    rm -f "${dev_run_log}"
+    break
+  fi
+
+  if ((dev_run_attempt == DEV_RUN_ATTEMPTS)) || \
+    ! grep -Eqi 'no route to host|network is unreachable|connection reset by peer|i/o timeout|TLS handshake timeout' "${dev_run_log}"; then
+    rm -f "${dev_run_log}"
+    exit 1
+  fi
+  rm -f "${dev_run_log}"
+  dev_run_delay=$((dev_run_attempt * 15))
+  echo "build-full-bundle: transient online dev-run network failure; retrying in ${dev_run_delay}s (${dev_run_attempt}/${DEV_RUN_ATTEMPTS})" >&2
+  sleep "${dev_run_delay}"
+done
 cp "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"
 ARTIFACT_SERVER_IMAGE_REF="$(tr -d '\r\n' < "${CODE_REPO_DIR}/.run/artifact-server-image.reference")"
 
