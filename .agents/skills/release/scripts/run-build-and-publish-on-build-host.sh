@@ -127,6 +127,9 @@ done < <(collect_build_publish_env_names "${BUILD_PUBLISH_CONFIG}")
 if [[ ${#BUILD_ENV_NAMES[@]} -eq 0 ]]; then
   fail "build-publish config did not name any *_env keys to forward from the devhost"
 fi
+for _env_name in "${BUILD_ENV_NAMES[@]}"; do
+  [[ -n "${!_env_name:-}" ]] || fail "missing required devhost environment variable ${_env_name}; export it before starting the release flow"
+done
 log "forwarding env from devhost: ${BUILD_ENV_NAMES[*]}"
 REMOTE_ENV_EXPORTS="$(render_export_assignments_from_current_env "${BUILD_ENV_NAMES[@]}")"
 
