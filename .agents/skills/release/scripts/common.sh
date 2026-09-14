@@ -805,7 +805,9 @@ collect_build_publish_env_names() {
       "build_flow.online_image_pull.image_tag_env" \
       "build_flow.online_image_pull.username_env" \
       "build_flow.online_image_pull.token_env" \
-      "build_flow.online_image_pull.tls_verify_env"
+      "build_flow.online_image_pull.tls_verify_env" \
+      "build_flow.online_dockerhub_auth.username_env" \
+      "build_flow.online_dockerhub_auth.token_env"
     do
       candidate="$(config_get_optional "${config_path}" "${key}" || true)"
       if [[ -n "${candidate}" ]]; then

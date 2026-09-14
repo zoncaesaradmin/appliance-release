@@ -112,6 +112,11 @@ build_flow:
     token_env: ONLINE_REGISTRY_TOKEN
     tls_verify_env: ONLINE_REGISTRY_TLS_VERIFY
 
+  # Required for direct online Docker Hub base-image pulls. Values stay in env.
+  online_dockerhub_auth:
+    username_env: DOCKERHUB_USER
+    token_env: DOCKERHUB_TOKEN
+
   # Used when mode: offline — same seven roles, LAN DEV_* (no separate OFFLINE_*)
   offline_image_pull:
     registry_env: DEV_REGISTRY

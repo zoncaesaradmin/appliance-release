@@ -1824,9 +1824,19 @@ INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.r
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
 fi
 
+DOCKERHUB_AUTH_FILE=""
+trap 'rm -f "${DOCKERHUB_AUTH_FILE:-}"' EXIT
+if ! offline_build_enabled && { [[ -n "${DOCKERHUB_USER:-}" ]] || [[ -n "${DOCKERHUB_TOKEN:-}" ]]; }; then
+  [[ -n "${DOCKERHUB_USER:-}" && -n "${DOCKERHUB_TOKEN:-}" ]] || { echo "build-full-bundle: Docker Hub credentials require both DOCKERHUB_USER and DOCKERHUB_TOKEN" >&2; exit 2; }
+  DOCKERHUB_AUTH_FILE="${CODE_REPO_DIR}/.run/dockerhub-auth.json"
+  umask 077
+  printf '%s' "${DOCKERHUB_TOKEN}" | podman login --authfile "${DOCKERHUB_AUTH_FILE}" --username "${DOCKERHUB_USER}" --password-stdin docker.io >/dev/null
+fi
+
 cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
+${DOCKERHUB_AUTH_FILE:+export REGISTRY_AUTH_FILE=/workspace/.run/dockerhub-auth.json}
 cd /workspace
 CONTROL_PLANE_IMAGE_OUT="/workspace/.run/control-plane-image.tar"
 UI_IMAGE_OUT="/workspace/.run/appliance-ui-image.tar"
@@ -1998,6 +2008,7 @@ for ((dev_run_attempt = 1; dev_run_attempt <= DEV_RUN_ATTEMPTS; dev_run_attempt+
   echo "build-full-bundle: transient online dev-run network failure; retrying in ${dev_run_delay}s (${dev_run_attempt}/${DEV_RUN_ATTEMPTS})" >&2
   sleep "${dev_run_delay}"
 done
+rm -f "${DOCKERHUB_AUTH_FILE}"
 cp "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"
 ARTIFACT_SERVER_IMAGE_REF="$(tr -d '\r\n' < "${CODE_REPO_DIR}/.run/artifact-server-image.reference")"
 

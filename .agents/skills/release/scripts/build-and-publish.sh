@@ -192,6 +192,19 @@ fi
 DEV_IMAGE="${DEV_REGISTRY}/${DEV_IMAGE_REPO}/${DEV_IMAGE_NAME}:${DEV_IMAGE_TAG}"
 DEV_REGISTRY_HOST="${DEV_REGISTRY}"
 
+DOCKERHUB_USER=""
+DOCKERHUB_TOKEN=""
+if [[ "${BUILD_FLOW_MODE}" == "online" ]]; then
+  dockerhub_user_env="$(config_get_optional "${CONFIG_PATH}" "build_flow.online_dockerhub_auth.username_env" || true)"
+  dockerhub_token_env="$(config_get_optional "${CONFIG_PATH}" "build_flow.online_dockerhub_auth.token_env" || true)"
+  [[ -n "${dockerhub_user_env}" ]] || fail "build_flow.online_dockerhub_auth.username_env is required when mode=online"
+  [[ -n "${dockerhub_token_env}" ]] || fail "build_flow.online_dockerhub_auth.token_env is required when mode=online"
+  DOCKERHUB_USER="$(resolve_secret "${dockerhub_user_env}" "Docker Hub username")"
+  DOCKERHUB_TOKEN="$(resolve_secret "${dockerhub_token_env}" "Docker Hub token")"
+  [[ -n "${DOCKERHUB_USER}" ]] || fail "empty ${dockerhub_user_env}"
+  [[ -n "${DOCKERHUB_TOKEN}" ]] || fail "empty ${dockerhub_token_env}"
+fi
+
 log "build mode=${BUILD_FLOW_MODE} OFFLINE_BUILD=${OFFLINE_BUILD} tooling=${DEV_IMAGE}"
 
 APPLIANCE_PACKS="$(resolve_appliance_packs_from_config "${CONFIG_PATH}")"
@@ -215,6 +228,8 @@ BUILD_PRODUCT_ENV_PREFIX="$(append_env_assignments "${BUILD_PRODUCT_ENV_PREFIX}"
   "DEV_REGISTRY_TLS_VERIFY" "${DEV_REGISTRY_TLS_VERIFY}" \
   "DEV_REGISTRY_USER" "${DEV_REGISTRY_USER}" \
   "DEV_REGISTRY_TOKEN" "${DEV_REGISTRY_TOKEN}" \
+  "DOCKERHUB_USER" "${DOCKERHUB_USER}" \
+  "DOCKERHUB_TOKEN" "${DOCKERHUB_TOKEN}" \
   "DEV_IMAGE_REPO" "${DEV_IMAGE_REPO}" \
   "DEV_IMAGE_NAME" "${DEV_IMAGE_NAME}" \
   "DEV_IMAGE_TAG" "${DEV_IMAGE_TAG}")"
