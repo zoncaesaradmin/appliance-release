@@ -1974,7 +1974,7 @@ export DEV_IMAGE="${BUILDER_PULL_REF:-${DEV_IMAGE:-}}"
 # Retrying the whole generated dev-run is safe: its image/archive outputs are
 # rebuilt in place.  Offline failures must fail immediately so a LAN-cache
 # miss is never disguised as a recoverable upstream error.
-ONLINE_DEV_RUN_ATTEMPTS=3
+ONLINE_DEV_RUN_ATTEMPTS=8
 DEV_RUN_ATTEMPTS="${ONLINE_DEV_RUN_ATTEMPTS}"
 if offline_build_enabled; then
   DEV_RUN_ATTEMPTS=1
