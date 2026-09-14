@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Local tests for build-and-publish.sh config fail-closed behavior."""
 
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -73,6 +74,56 @@ def test_requires_local() -> None:
         if result.returncode == 0:
             raise AssertionError("--local should be required")
         if "requires --local" not in result.stdout:
+            raise AssertionError(result.stdout)
+
+
+def test_dockerhub_source_names_are_not_overwritten_before_lookup() -> None:
+    """Configured DOCKERHUB_* source names must survive worker initialization."""
+    with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        config = tmp / "config.yaml"
+        run_dir = tmp / "run"
+        write(
+            config,
+            MINIMAL_VALID_CONFIG.replace(
+                "bundle_store:",
+                """  online_dockerhub_auth:
+    username_env: DOCKERHUB_USER
+    token_env: DOCKERHUB_TOKEN
+bundle_store:""",
+            ),
+        )
+        env = os.environ.copy()
+        env.update(
+            {
+                "ONLINE_REGISTRY": "ghcr.io",
+                "ONLINE_IMAGE_REPO": "example/dev",
+                "ONLINE_IMAGE_NAME": "dev-build",
+                "ONLINE_IMAGE_TAG": "latest",
+                "ONLINE_REGISTRY_USER": "example",
+                "ONLINE_REGISTRY_TOKEN": "token",
+                "ONLINE_REGISTRY_TLS_VERIFY": "true",
+                "DEV_REGISTRY": "192.0.2.1",
+                "DEV_REGISTRY_USER": "example",
+                "DEV_REGISTRY_TOKEN": "token",
+                "DEV_REGISTRY_TLS_VERIFY": "true",
+                "DOCKERHUB_USER": "zoncaesar",
+                "DOCKERHUB_TOKEN": "docker-token",
+            }
+        )
+        result = subprocess.run(
+            ["bash", str(SCRIPT), "--local", "--config", str(config), "--run-dir", str(run_dir)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            env=env,
+        )
+        if result.returncode == 0:
+            raise AssertionError("worker unexpectedly ran bootstrap")
+        if "missing secret APPLIANCE_BUILD_SUDO_PASSWORD" not in result.stdout:
+            raise AssertionError(result.stdout)
+        if "missing secret DOCKERHUB_" in result.stdout:
             raise AssertionError(result.stdout)
 
 
