@@ -103,6 +103,7 @@ verify-client-config:
 .PHONY: verify-release-artifacts
 verify-release-artifacts:
 	@python3 scripts/test-runtime-packages.py
+	@python3 scripts/test-online-build-retry-scope.py
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_validate_release_artifacts.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_summarize_release_run.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_verify_client_access.py"

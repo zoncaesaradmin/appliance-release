@@ -11,6 +11,12 @@ Exactly **two** packaging modes — one flag for *all* third-party inputs:
 | **Online** | `build_flow.mode: online` / `OFFLINE_BUILD=0` | Public internet only (GHCR tooling + GitHub/Quay/Docker Hub/get.helm.sh). No LAN files API / build-cache. |
 | **Offline** | `build_flow.mode: offline` / `OFFLINE_BUILD=1` | LAN Artifact Server only, after `make seed-build-deps`. Fail closed on miss. |
 
+Online packaging acquires CoreDNS from the official CoreDNS Docker Hub
+repository before the expensive product-image builds. Only CoreDNS acquisition
+is retried; a public-registry failure does not replay the complete no-cache
+development-container build. Offline packaging uses the same ordered packaging
+path with one fail-closed LAN attempt against `build-cache/coredns`.
+
 ## Unification model
 
 Only two input families:

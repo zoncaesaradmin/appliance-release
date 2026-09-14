@@ -95,7 +95,7 @@ Optional overrides:
   # registry.local/artifact-server@sha256:<platform-digest> from index.json
   # (existing install OCI contract name).
   DNS_VERSION=1.14.4
-  DNS_IMAGE_PULL_REF=registry.k8s.io/coredns/coredns:v1.14.4
+  DNS_IMAGE_PULL_REF=docker.io/coredns/coredns:1.14.4
   # DNS server: always wrap upstream CoreDNS via appliance-code package-dns-server-image-archive
   # (dev-run has buildah+skopeo); digest from index.json.
   INFERENCE_VERSION=0.6.5
@@ -272,12 +272,13 @@ ARTIFACT_SERVER_VERSION="${USER_ARTIFACT_SERVER_VERSION:-${ARTIFACT_SERVER_VERSI
 ARTIFACT_SERVER_VERSION="${ARTIFACT_SERVER_VERSION#v}"
 ARTIFACT_SERVER_SOURCE_IMAGE="${USER_ARTIFACT_SERVER_SOURCE_IMAGE:-${ARTIFACT_SERVER_SOURCE_IMAGE:-ghcr.io/project-zot/zot-linux-amd64:v${ARTIFACT_SERVER_VERSION}}}"
 MESSAGE_BROKER_SOURCE_IMAGE="${USER_MESSAGE_BROKER_SOURCE_IMAGE:-${MESSAGE_BROKER_SOURCE_IMAGE:-docker.io/library/nats:2.10.26-alpine}}"
-# compatibility.dnsVersion is unprefixed (1.14.4). Chart appVersion and the
-# upstream registry.k8s.io tag use a leading v (v1.14.4). Normalize before
-# constructing the pull ref, same as ARTIFACT_SERVER_VERSION above.
+# compatibility.dnsVersion and the official CoreDNS Docker Hub tag are both
+# unprefixed (1.14.4). Use the project's own public image instead of the
+# registry.k8s.io mirror so online bootstrap does not depend on that mirror's
+# redirects/backends.
 DNS_VERSION="${USER_DNS_VERSION:-${DNS_VERSION:-1.14.4}}"
 DNS_VERSION="${DNS_VERSION#v}"
-DNS_IMAGE_PULL_REF="${USER_DNS_IMAGE_PULL_REF:-${DNS_IMAGE_PULL_REF:-registry.k8s.io/coredns/coredns:v${DNS_VERSION}}}"
+DNS_IMAGE_PULL_REF="${USER_DNS_IMAGE_PULL_REF:-${DNS_IMAGE_PULL_REF:-docker.io/coredns/coredns:${DNS_VERSION}}}"
 # compatibility.inferenceVersion is unprefixed (0.6.5). Chart appVersion and
 # the upstream docker.io/ollama/ollama tag are unprefixed as well.
 # Use a fully qualified registry host so podman short-name resolution is not required.
@@ -1862,6 +1863,34 @@ bool_true() {
   esac
 }
 
+# Acquire the dependency that has historically been the least reliable before
+# spending time on product image builds. appliance-code's DNS exporter already
+# retries its exact skopeo prefetch five times. Online mode permits one more
+# DNS-only package attempt; offline mode remains one fail-closed LAN attempt.
+DNS_PACKAGE_ATTEMPTS=2
+if bool_true "\${OFFLINE_BUILD:-0}"; then
+  DNS_PACKAGE_ATTEMPTS=1
+fi
+for ((dns_package_attempt = 1; dns_package_attempt <= DNS_PACKAGE_ATTEMPTS; dns_package_attempt++)); do
+  echo "build-full-bundle: CoreDNS acquisition attempt \${dns_package_attempt}/\${DNS_PACKAGE_ATTEMPTS} (before product image builds)" >&2
+  if make package-dns-server-image-archive \
+    OUT_FILE="/workspace/.run/dns-server-image.tar" \
+    DNS_VERSION=$(shell_quote "${DNS_VERSION}") \
+    DNS_SOURCE_IMAGE=$(shell_quote "${DNS_IMAGE_PULL_REF}") \
+    RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \
+    RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}"); then
+    break
+  fi
+  if ((dns_package_attempt == DNS_PACKAGE_ATTEMPTS)); then
+    echo "build-full-bundle: CoreDNS acquisition failed before product builds; giving up after \${DNS_PACKAGE_ATTEMPTS} package attempt(s)" >&2
+    exit 1
+  fi
+  echo "build-full-bundle: transient CoreDNS acquisition failure; retrying only CoreDNS in 15s" >&2
+  sleep 15
+done
+DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/dns-server-image.tar"
+DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/dns-server-image.reference)"
+
 make package-control-plane-image-archive OUT_FILE="\${CONTROL_PLANE_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}" \
   GO_IMAGE=$(shell_quote "${CP_GO_IMAGE}") \
   RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \
@@ -1909,17 +1938,6 @@ make package-artifact-server-image-archive \
   RUNTIME_PACKAGES_INSTALLED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
 ARTIFACT_SERVER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/artifact-server-image.tar"
 ARTIFACT_SERVER_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/artifact-server-image.reference)"
-
-# Appliance-owned dns-server wrapper (upstream CoreDNS): tees stdout/stderr into /data/zon/logs/dns.
-# Always package from upstream pull ref (no pre-supplied archive path).
-make package-dns-server-image-archive \
-  OUT_FILE="/workspace/.run/dns-server-image.tar" \
-  DNS_VERSION=$(shell_quote "${DNS_VERSION}") \
-  DNS_SOURCE_IMAGE=$(shell_quote "${DNS_IMAGE_PULL_REF}") \
-  RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \
-  RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
-DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/dns-server-image.tar"
-DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/dns-server-image.reference)"
 
 ${INFERENCE_PACKAGE_LINES}
 
@@ -1979,35 +1997,11 @@ chmod +x "${CODE_DEV_SCRIPT_PATH}"
 
 # Tooling image for make/dev-run (DEV_* / OFFLINE_BUILD already exported above).
 export DEV_IMAGE="${BUILDER_PULL_REF:-${DEV_IMAGE:-}}"
-# An online image pull can fail transiently after some layers have already
-# transferred (for example, a short routing loss to an upstream registry).
-# Retrying the whole generated dev-run is safe: its image/archive outputs are
-# rebuilt in place.  Offline failures must fail immediately so a LAN-cache
-# miss is never disguised as a recoverable upstream error.
-ONLINE_DEV_RUN_ATTEMPTS=8
-DEV_RUN_ATTEMPTS="${ONLINE_DEV_RUN_ATTEMPTS}"
-if offline_build_enabled; then
-  DEV_RUN_ATTEMPTS=1
-fi
-
-for ((dev_run_attempt = 1; dev_run_attempt <= DEV_RUN_ATTEMPTS; dev_run_attempt++)); do
-  dev_run_log="$(mktemp "${TMPDIR:-/tmp}/appliance-dev-run.XXXXXX.log")"
-  if make -C "${CODE_REPO_DIR}" DEV_IMAGE="${DEV_IMAGE}" OFFLINE_BUILD="${OFFLINE_BUILD}" \
-    dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}" 2>&1 | tee "${dev_run_log}"; then
-    rm -f "${dev_run_log}"
-    break
-  fi
-
-  if ((dev_run_attempt == DEV_RUN_ATTEMPTS)) || \
-    ! grep -Eqi 'no route to host|network is unreachable|connection reset by peer|i/o timeout|TLS handshake timeout' "${dev_run_log}"; then
-    rm -f "${dev_run_log}"
-    exit 1
-  fi
-  rm -f "${dev_run_log}"
-  dev_run_delay=$((dev_run_attempt * 15))
-  echo "build-full-bundle: transient online dev-run network failure; retrying in ${dev_run_delay}s (${dev_run_attempt}/${DEV_RUN_ATTEMPTS})" >&2
-  sleep "${dev_run_delay}"
-done
+# Individual upstream packaging helpers own narrowly scoped retries. Never
+# replay the complete no-cache product build because one late registry transfer
+# failed; that hid the real error and wasted several minutes per attempt.
+make -C "${CODE_REPO_DIR}" DEV_IMAGE="${DEV_IMAGE}" OFFLINE_BUILD="${OFFLINE_BUILD}" \
+  dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}"
 rm -f "${DOCKERHUB_AUTH_FILE}"
 cp "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"
 ARTIFACT_SERVER_IMAGE_REF="$(tr -d '\r\n' < "${CODE_REPO_DIR}/.run/artifact-server-image.reference")"
