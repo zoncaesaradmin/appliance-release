@@ -10,6 +10,11 @@
 # inject) which invokes this script with --local on the build host.
 set -euo pipefail
 set +H
+# This worker is invoked through the devhost SSH wrapper. Never allow a
+# config-named secret lookup to consume that TTY: a missing value must fail
+# with its environment-variable name instead of leaving the release run stuck
+# at an invisible prompt.
+exec </dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
