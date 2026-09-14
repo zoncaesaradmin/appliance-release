@@ -36,7 +36,9 @@ The release skill does **one** early mapping:
 1. Read `online_image_pull` or `offline_image_pull` based on `build_flow.mode`
 2. Copy that set into **`DEV_*`** for bootstrap + `build-full-bundle.sh`
    (offline already references `DEV_*`; online copies `ONLINE_*` → `DEV_*`)
-3. Remap `bundle_store` (also `DEV_*`) for `publish-release.sh`
+3. Resolve `bundle_store` for `publish-release.sh`: normally
+   `appliance_files` (also `DEV_*`), or temporary `static_http` for the first
+   appliance before its files API exists
 
 After step 2, packaging code uses **only** `DEV_*` + `OFFLINE_BUILD`. It must
 not branch on `ONLINE_*`.

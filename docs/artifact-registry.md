@@ -42,6 +42,13 @@ curl examples are in [file-api.md](file-api.md).
 `base_url` must end with `/api/v1/files`. Traefik `/files` (unauthenticated
 nginx static serving) has been removed; do not use that path.
 
+The one bootstrap exception is `bundle_store.mode: static_http` when no
+artifact-capable appliance exists yet. It copies the signed export into a
+temporary document root on the online build host, served only on the trusted
+LAN. This is not an appliance `/files` route and is not the steady-state
+distribution service. After installing the first artifact-server appliance,
+stop the temporary server and return to `appliance_files`.
+
 ## 1. Log In And List Repositories
 
 ```bash

@@ -144,6 +144,116 @@ def test_collects_dockerhub_names_with_existing_env_forwarding_pattern() -> None
             raise AssertionError(f"Docker Hub env names not forwarded exactly once: {names}")
 
 
+def test_static_http_does_not_forward_bundle_store_credentials() -> None:
+    with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
+        config = Path(tmp_dir) / "config.yaml"
+        static_config = MINIMAL_VALID_CONFIG.replace(
+            "bundle_store:\n"
+            "  registry_env: DEV_REGISTRY\n"
+            "  username_env: DEV_REGISTRY_USER\n"
+            "  token_env: DEV_REGISTRY_TOKEN\n"
+            "  tls_verify_env: DEV_REGISTRY_TLS_VERIFY\n",
+            "bundle_store:\n"
+            "  mode: static_http\n"
+            "  base_url: http://192.0.2.152:28081\n"
+            "  publish_directory: /home/build/releases\n",
+        )
+        write(config, static_config)
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f"source {COMMON!s} && collect_build_publish_env_names {config!s}",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise AssertionError(result.stdout)
+        names = result.stdout.splitlines()
+        unexpected = {"DEV_REGISTRY", "DEV_REGISTRY_USER", "DEV_REGISTRY_TOKEN", "DEV_REGISTRY_TLS_VERIFY"}
+        if unexpected.intersection(names):
+            raise AssertionError(f"static HTTP unexpectedly requires bundle credentials: {names}")
+        for expected in ("ONLINE_REGISTRY", "DOCKERHUB_USER", "DOCKERHUB_TOKEN", "APPLIANCE_BUILD_SUDO_PASSWORD"):
+            if expected not in names:
+                raise AssertionError(f"missing build env {expected}: {names}")
+
+
+def test_static_http_worker_does_not_require_bundle_store_credentials() -> None:
+    with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        config = tmp / "config.yaml"
+        run_dir = tmp / "run"
+        static_config = MINIMAL_VALID_CONFIG.replace(
+            "bundle_store:\n"
+            "  registry_env: DEV_REGISTRY\n"
+            "  username_env: DEV_REGISTRY_USER\n"
+            "  token_env: DEV_REGISTRY_TOKEN\n"
+            "  tls_verify_env: DEV_REGISTRY_TLS_VERIFY\n",
+            "bundle_store:\n"
+            "  mode: static_http\n"
+            "  base_url: http://192.0.2.152:28081\n"
+            "  publish_directory: /home/build/releases\n",
+        )
+        write(config, static_config)
+        env = os.environ.copy()
+        for name in ("DEV_REGISTRY", "DEV_REGISTRY_USER", "DEV_REGISTRY_TOKEN", "DEV_REGISTRY_TLS_VERIFY", "APPLIANCE_BUILD_SUDO_PASSWORD"):
+            env.pop(name, None)
+        env.update(
+            {
+                "ONLINE_REGISTRY": "ghcr.io",
+                "ONLINE_IMAGE_REPO": "example/dev",
+                "ONLINE_IMAGE_NAME": "dev-build",
+                "ONLINE_IMAGE_TAG": "latest",
+                "ONLINE_REGISTRY_USER": "example",
+                "ONLINE_REGISTRY_TOKEN": "token",
+                "ONLINE_REGISTRY_TLS_VERIFY": "true",
+                "DOCKERHUB_USER": "example",
+                "DOCKERHUB_TOKEN": "docker-token",
+            }
+        )
+        result = subprocess.run(
+            ["bash", str(SCRIPT), "--local", "--config", str(config), "--run-dir", str(run_dir)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            env=env,
+        )
+        if result.returncode == 0:
+            raise AssertionError("worker unexpectedly ran bootstrap")
+        if "missing secret APPLIANCE_BUILD_SUDO_PASSWORD" not in result.stdout:
+            raise AssertionError(result.stdout)
+        if "bundle_store" in result.stdout and "required" in result.stdout:
+            raise AssertionError(result.stdout)
+
+
+def test_static_http_is_limited_to_online_bootstrap() -> None:
+    with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        config = tmp / "config.yaml"
+        run_dir = tmp / "run"
+        static_offline = MINIMAL_VALID_CONFIG.replace("  mode: online\n", "  mode: offline\n").replace(
+            "bundle_store:\n"
+            "  registry_env: DEV_REGISTRY\n"
+            "  username_env: DEV_REGISTRY_USER\n"
+            "  token_env: DEV_REGISTRY_TOKEN\n"
+            "  tls_verify_env: DEV_REGISTRY_TLS_VERIFY\n",
+            "bundle_store:\n"
+            "  mode: static_http\n"
+            "  base_url: http://192.0.2.152:28081\n"
+            "  publish_directory: /home/build/releases\n",
+        )
+        write(config, static_offline)
+        result = run_build_publish_config(config, run_dir)
+        if result.returncode == 0:
+            raise AssertionError("offline static HTTP mode was accepted")
+        if "only supported for the first online appliance bootstrap" not in result.stdout:
+            raise AssertionError(result.stdout)
+
+
 def test_rejects_legacy_dev_image_pull() -> None:
     with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -394,6 +504,9 @@ def main() -> None:
     test_requires_local()
     test_dockerhub_source_names_are_not_overwritten_before_lookup()
     test_collects_dockerhub_names_with_existing_env_forwarding_pattern()
+    test_static_http_does_not_forward_bundle_store_credentials()
+    test_static_http_worker_does_not_require_bundle_store_credentials()
+    test_static_http_is_limited_to_online_bootstrap()
     test_rejects_legacy_dev_image_pull()
     test_rejects_literal_image_tag()
     test_rejects_missing_mode()

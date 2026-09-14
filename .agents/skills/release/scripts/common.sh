@@ -611,9 +611,10 @@ Skill-fixed layout under release_workspace.remote_build_root:
   inputs/ — local staging for scripts/fetch-k3s-inputs.sh
 Packaging mode (build_flow.mode) selects which pull block to read:
   online  — online_image_pull (ONLINE_*) → unified to DEV_* for packaging
-  offline — offline_image_pull (DEV_* LAN; same as publish — no OFFLINE_* family)
+  offline — offline_image_pull (DEV_* LAN; no OFFLINE_* family)
 After that mapping, bootstrap/build use only DEV_* + OFFLINE_BUILD.
-Publish uses bundle_store (also DEV_*) for publish-release.sh.
+Publish uses bundle_store: appliance_files maps to DEV_*; first-appliance
+bootstrap may use a build-host static_http document root.
 EOF
 }
 
@@ -796,7 +797,8 @@ collect_build_publish_env_names() {
   local mode=""
   mode="$(resolve_build_flow_mode "${config_path}")"
 
-  # Collect *_env names from the active pull block + bundle_store (no hardcoded family).
+  # Collect *_env names from the active pull block. Bundle-store credentials
+  # are needed only by appliance_files; static_http is a local build-host copy.
   if [[ "${mode}" == "online" ]]; then
     for key in \
       "build_flow.online_image_pull.registry_env" \
@@ -831,17 +833,19 @@ collect_build_publish_env_names() {
     done
   fi
 
-  for key in \
-    "bundle_store.registry_env" \
-    "bundle_store.username_env" \
-    "bundle_store.token_env" \
-    "bundle_store.tls_verify_env"
-  do
-    candidate="$(config_get_optional "${config_path}" "${key}" || true)"
-    if [[ -n "${candidate}" ]]; then
-      names+=("${candidate}")
-    fi
-  done
+  if [[ "$(resolve_bundle_store_mode "${config_path}")" == "appliance_files" ]]; then
+    for key in \
+      "bundle_store.registry_env" \
+      "bundle_store.username_env" \
+      "bundle_store.token_env" \
+      "bundle_store.tls_verify_env"
+    do
+      candidate="$(config_get_optional "${config_path}" "${key}" || true)"
+      if [[ -n "${candidate}" ]]; then
+        names+=("${candidate}")
+      fi
+    done
+  fi
 
   # Bootstrap/build always use sudo on the build host.
   names+=("APPLIANCE_BUILD_SUDO_PASSWORD")
@@ -1188,8 +1192,7 @@ expand_legacy_ui_home_command_for_spa() {
 }
 
 
-# Normalize / accept only appliance_files. Empty → appliance_files.
-# static_http and other modes are rejected.
+# Normalize bundle distribution mode. Empty keeps the production default.
 normalize_bundle_store_mode() {
   local mode
   mode="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
@@ -1198,11 +1201,10 @@ normalize_bundle_store_mode() {
       printf 'appliance_files\n'
       ;;
     static_http)
-      echo "bundle_store.mode=static_http was removed; only appliance_files (DEV_REGISTRY file API) is supported" >&2
-      return 2
+      printf 'static_http\n'
       ;;
     *)
-      echo "bundle_store.mode must be appliance_files (got ${mode})" >&2
+      echo "bundle_store.mode must be appliance_files or static_http (got ${mode})" >&2
       return 2
       ;;
   esac
@@ -1216,13 +1218,46 @@ bundle_store_get_optional() {
 
 resolve_bundle_store_mode() {
   local config_path="$1"
-  local mode
+  local mode normalized key
   mode="$(bundle_store_get_optional "${config_path}" "mode" || true)"
   if [[ -n "$(bundle_store_get_optional "${config_path}" "publish_server_alias" || true)" || \
         -n "$(bundle_store_get_optional "${config_path}" "publish_remote_root" || true)" ]]; then
-    fail "bundle_store.publish_server_alias / publish_remote_root were removed with static_http; publish uses DEV_REGISTRY file API only"
+    fail "bundle_store.publish_server_alias / publish_remote_root are obsolete; static_http copies locally on the build host via bundle_store.publish_directory"
   fi
-  normalize_bundle_store_mode "${mode}" || fail "bundle_store.mode must be appliance_files (or omitted)"
+  normalized="$(normalize_bundle_store_mode "${mode}")" || fail "bundle_store.mode must be appliance_files or static_http"
+  if [[ "${normalized}" == "static_http" ]]; then
+    for key in registry_env username_env token_env tls_verify_env files_path access_token cacert_path tls_insecure; do
+      [[ -z "$(bundle_store_get_optional "${config_path}" "${key}" || true)" ]] || \
+        fail "bundle_store.mode=static_http cannot include appliance_files key bundle_store.${key}"
+    done
+    resolve_static_http_base_url "${config_path}" >/dev/null
+    resolve_static_http_publish_directory "${config_path}" >/dev/null
+  elif [[ -n "$(bundle_store_get_optional "${config_path}" "publish_directory" || true)" ]]; then
+    fail "bundle_store.publish_directory is only valid when mode=static_http"
+  fi
+  printf '%s\n' "${normalized}"
+}
+
+resolve_static_http_base_url() {
+  local config_path="$1"
+  local base_url=""
+  base_url="$(bundle_store_get_optional "${config_path}" "base_url" || true)"
+  base_url="$(printf '%s' "${base_url}" | tr -d '[:space:]')"
+  base_url="${base_url%/}"
+  case "${base_url}" in
+    http://*|https://*) printf '%s' "${base_url}" ;;
+    *) fail "bundle_store.mode=static_http requires base_url using http:// or https://" ;;
+  esac
+}
+
+resolve_static_http_publish_directory() {
+  local config_path="$1"
+  local directory=""
+  directory="$(bundle_store_get_optional "${config_path}" "publish_directory" || true)"
+  directory="${directory%/}"
+  [[ "${directory}" == /* && "${directory}" != "/" ]] || \
+    fail "bundle_store.mode=static_http requires an absolute publish_directory other than /"
+  printf '%s' "${directory}"
 }
 
 # Fixed path prefix under the file API (matches publish-release.sh).

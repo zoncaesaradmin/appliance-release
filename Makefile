@@ -69,6 +69,7 @@ verify-help:
 	@bash scripts/install-release.sh --help | grep -q -- 'appliance-name'
 	@bash scripts/publish-release.sh --help | grep -q -- 'DEV_REGISTRY'
 	@bash scripts/publish-release.sh --help | grep -q -- 'appliance file API'
+	@bash scripts/publish-release.sh --help | grep -q -- 'static_http'
 	@bash scripts/test-appliance-packs.sh
 	@bash scripts/test-install-release-index.sh
 
@@ -104,6 +105,7 @@ verify-client-config:
 verify-release-artifacts:
 	@python3 scripts/test-runtime-packages.py
 	@python3 scripts/test-online-build-retry-scope.py
+	@python3 scripts/test-publish-release-static-http.py
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_validate_release_artifacts.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_summarize_release_run.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_verify_client_access.py"

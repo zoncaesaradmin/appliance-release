@@ -122,20 +122,30 @@ BASE_URL=""
 BEARER_TOKEN=""
 TLS_INSECURE="0"
 
-BASE_URL="$(resolve_appliance_files_base_url "${BUILD_PUBLISH_CONFIG}")"
-token_env="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "token_env" || true)"
-if [[ -z "${token_env}" ]]; then
-  token_env="DEV_REGISTRY_TOKEN"
-fi
-BEARER_TOKEN="$(resolve_secret "${token_env}" "Bundle store token (${token_env})")"
-tls_env="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "tls_verify_env" || true)"
-if [[ -z "${tls_env}" ]]; then
-  tls_env="DEV_REGISTRY_TLS_VERIFY"
-fi
-tls_verify="$(resolve_env_value "${tls_env}" "Bundle store TLS verify (${tls_env})")"
-case "$(printf '%s' "${tls_verify}" | tr '[:upper:]' '[:lower:]')" in
-  0|false|no|off) TLS_INSECURE="1" ;;
-  *) TLS_INSECURE="0" ;;
+case "${BUNDLE_MODE}" in
+  static_http)
+    BASE_URL="$(resolve_static_http_base_url "${BUILD_PUBLISH_CONFIG}")"
+    ;;
+  appliance_files)
+    BASE_URL="$(resolve_appliance_files_base_url "${BUILD_PUBLISH_CONFIG}")"
+    token_env="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "token_env" || true)"
+    if [[ -z "${token_env}" ]]; then
+      token_env="DEV_REGISTRY_TOKEN"
+    fi
+    BEARER_TOKEN="$(resolve_secret "${token_env}" "Bundle store token (${token_env})")"
+    tls_env="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "tls_verify_env" || true)"
+    if [[ -z "${tls_env}" ]]; then
+      tls_env="DEV_REGISTRY_TLS_VERIFY"
+    fi
+    tls_verify="$(resolve_env_value "${tls_env}" "Bundle store TLS verify (${tls_env})")"
+    case "$(printf '%s' "${tls_verify}" | tr '[:upper:]' '[:lower:]')" in
+      0|false|no|off) TLS_INSECURE="1" ;;
+      *) TLS_INSECURE="0" ;;
+    esac
+    ;;
+  *)
+    fail "unsupported bundle_store.mode: ${BUNDLE_MODE}"
+    ;;
 esac
 
 HELPER_URL="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-release.sh"

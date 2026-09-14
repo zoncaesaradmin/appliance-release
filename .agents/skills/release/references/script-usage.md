@@ -45,7 +45,10 @@ Notes:
 - Do **not** put a `build_flow.product_publish` block in config. Signed-bundle
   distribution is the fixed product sequence
   `bootstrap-build-host.sh` → `build-full-bundle.sh` → `publish-release.sh`
-  (LAN files API via `bundle_store`). Service image push defaults live in appliance-code
+  (normally the LAN files API via `bundle_store`). For the first appliance only,
+  `bundle_store.mode: static_http` copies into a build-host document root; serve
+  it with `python3 -m http.server` and switch back after the appliance files API
+  is healthy. Service image push defaults live in appliance-code
   `build/service-image.mk` (`SERVICE_IMAGE_*` / `DEV_REGISTRY`).
 - On the build host (product), that is the only sequence. The skill remotes the
   same three scripts. Bootstrap and build always use sudo via the skill

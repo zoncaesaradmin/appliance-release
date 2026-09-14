@@ -64,7 +64,10 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 - Unify early: config may expose `ONLINE_*` (online tooling) and `DEV_*` (LAN).
   After mode selection, map the active pull into one fixed `DEV_*` identity for
   bootstrap/build. Offline pull already *is* `DEV_*` — do not invent a parallel
-  `OFFLINE_*` family. Publish uses `bundle_store` (also `DEV_*`). Packaging
+  `OFFLINE_*` family. Steady-state publish uses `bundle_store.mode:
+  appliance_files` (also `DEV_*`). Before the first appliance files API exists,
+  `bundle_store.mode: static_http` may copy the signed export into a temporary
+  LAN-served build-host directory; switch back after bootstrap. Packaging
   scripts must not branch on `ONLINE_*`.
 - Prefer one implementation path for resolving and packaging a dependency. Online vs offline differs only in **source policy** (upstream vs LAN via `OFFLINE_BUILD`), not in duplicated packaging steps or per-case special cases.
 - Do not add “offline-only” and “online-only” forks of the same script when a common function with a single source policy switch can serve both.

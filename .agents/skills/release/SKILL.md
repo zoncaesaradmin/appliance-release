@@ -5,7 +5,7 @@ description: Orchestrate the Zon appliance developer-to-target workflow across l
 
 # Appliance Release
 
-Use this skill when we need to drive the repeatable Zon appliance release path from a macOS development machine through a build server, the appliance-managed authenticated file API on `DEV_REGISTRY`, and onto a target host.
+Use this skill when we need to drive the repeatable Zon appliance release path from a macOS development machine through a build server and onto a target host. Normal distribution uses the appliance-managed authenticated file API on `DEV_REGISTRY`; the first appliance may bootstrap from a temporary static HTTP directory on the build host.
 
 ## What This Skill Owns
 
@@ -53,7 +53,8 @@ Exactly two bundle modes (config `build_flow.mode` / env `OFFLINE_BUILD`):
   LAN identity as publish/seed — no separate `OFFLINE_*` family).
 
 After that mapping, bootstrap/build use only `DEV_*` + `OFFLINE_BUILD`.
-Publish uses `bundle_store` (also `DEV_*`) for `publish-release.sh`.
+Steady-state publish uses `bundle_store.mode: appliance_files` (also `DEV_*`)
+for `publish-release.sh`; first-appliance bootstrap may use `static_http`.
 
 Both modes must work for every packaging dependency (including `deps/inference`
 / Ollama and `deps/blob-storage` / MinIO). Adding a new third-party input requires a matching `deps/<name>`
@@ -130,10 +131,16 @@ Important rules:
   storage-network, build-workflows, deviceuser, and std-llm-amd64. Select the appliance
   profile at install time; do not omit delivery packs from a production release.
 
-Publish/install download uses the appliance file API only:
+Normal publish/install download uses the appliance file API:
 
 - `https://$DEV_REGISTRY/api/v1/files/appliance/<version>/`
 - token/TLS: `DEV_REGISTRY_TOKEN` / `DEV_REGISTRY_TLS_VERIFY`
+
+When no appliance file API exists yet, `bundle_store.mode: static_http` copies
+the same signed export into `bundle_store.publish_directory` on the build host.
+An operator serves that directory over the LAN at `bundle_store.base_url` only
+for the first install. After the artifact-server appliance is healthy, seed it
+and return to `appliance_files`; static HTTP is not the steady-state store.
 
 ## Scripts (e2e call graph)
 

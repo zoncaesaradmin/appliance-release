@@ -58,7 +58,9 @@ that, `build-full-bundle.sh` / `bootstrap-build-host.sh` / appliance-code
 `Makefile` share one path — no `ONLINE_*` branching in packaging. There is no
 separate `OFFLINE_*` env family: offline and LAN are the same `DEV_*` values.
 
-Publish remaps `bundle_store` (LAN `DEV_*`) for `publish-release.sh` only.
+Publish resolves `bundle_store` separately: steady-state `appliance_files`
+uses LAN `DEV_*`; first-appliance `static_http` copies into a build-host HTTP
+document root. Packaging source mode remains independently online or offline.
 
 See [offline-build-deps.md](offline-build-deps.md) and
 `references/config.build-publish.example.yaml`.
@@ -260,7 +262,7 @@ bash ./scripts/build-full-bundle.sh
 bash ./scripts/publish-release.sh
 ```
 
-`publish-release.sh` uploads the packs listed in `export/release-index.yaml`.
+`publish-release.sh` publishes the packs listed in `export/release-index.yaml`.
 The `foundation` pack is mandatory; the installer rejects any profile whose
 capability packages are absent from that release.
 
@@ -271,6 +273,23 @@ Publish uploads to:
 Optional: `bash ./scripts/publish-release.sh --latest-alias` also
 uploads under `appliance/latest/`. `PRODUCT_VERSION` defaults from
 `configs/default-product-version`.
+
+For the first online appliance build, before an appliance files API exists,
+publish to a temporary build-host HTTP root:
+
+```bash
+export PUBLISH_MODE=static_http
+export PUBLISH_PUBLIC_BASE_URL=http://192.168.1.152:28081
+export PUBLISH_STATIC_ROOT=/home/zonsys/releases
+export RELEASE_WORK_ROOT=/home/zonsys/appliance-build
+bash ./scripts/publish-release.sh
+python3 -m http.server 28081 --directory /home/zonsys/releases
+```
+
+This produces URLs under
+`http://192.168.1.152:28081/appliance/<version>/`. Keep this temporary server
+LAN-restricted. Once the artifact-server appliance is installed and healthy,
+seed it and use `bundle_store.mode: appliance_files` for subsequent releases.
 
 The published `install-release.sh` helper takes a required
 `--appliance-name` and optional `--appliance-profile` (default `core`). Other

@@ -127,28 +127,39 @@ fi
 #    online  → ONLINE_* values copied into DEV_*
 #    offline → already DEV_* (same LAN identity as bundle_store)
 # 3) After that, bootstrap/build only see DEV_* + OFFLINE_BUILD.
-# 4) Publish uses bundle_store → DEV_* (LAN files API).
+# 4) Publish uses bundle_store: appliance_files → DEV_*; static_http → a
+#    build-host document root for first-appliance bootstrap.
 # -----------------------------------------------------------------------------
 
-# --- bundle_store → publish/LAN identity (always) ---
-BUNDLE_REGISTRY_ENV="$(config_get_optional "${CONFIG_PATH}" "bundle_store.registry_env" || true)"
-BUNDLE_USERNAME_ENV="$(config_get_optional "${CONFIG_PATH}" "bundle_store.username_env" || true)"
-BUNDLE_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "bundle_store.token_env" || true)"
-BUNDLE_TLS_VERIFY_ENV="$(config_get_optional "${CONFIG_PATH}" "bundle_store.tls_verify_env" || true)"
-[[ -n "${BUNDLE_REGISTRY_ENV}" ]] || fail "bundle_store.registry_env is required"
-[[ -n "${BUNDLE_USERNAME_ENV}" ]] || fail "bundle_store.username_env is required"
-[[ -n "${BUNDLE_TOKEN_ENV}" ]] || fail "bundle_store.token_env is required"
-[[ -n "${BUNDLE_TLS_VERIFY_ENV}" ]] || fail "bundle_store.tls_verify_env is required"
-PUBLISH_REGISTRY="$(resolve_env_value "${BUNDLE_REGISTRY_ENV}" "bundle_store registry")"
-PUBLISH_USER="$(resolve_secret "${BUNDLE_USERNAME_ENV}" "bundle_store username")"
-PUBLISH_TOKEN="$(resolve_secret "${BUNDLE_TOKEN_ENV}" "bundle_store token")"
-PUBLISH_TLS_VERIFY="$(normalize_bool_value "$(resolve_env_value "${BUNDLE_TLS_VERIFY_ENV}" "bundle_store TLS verify")")"
-[[ -n "${PUBLISH_USER}" ]] || fail "empty ${BUNDLE_USERNAME_ENV}"
-[[ -n "${PUBLISH_TOKEN}" ]] || fail "empty ${BUNDLE_TOKEN_ENV}"
-if bool_true "${PUBLISH_TLS_VERIFY}"; then
-  PUBLISH_TLS_VERIFY="true"
+# --- bundle_store → publish identity ---
+BUNDLE_STORE_MODE="$(resolve_bundle_store_mode "${CONFIG_PATH}")"
+if [[ "${BUNDLE_STORE_MODE}" == "static_http" && "${BUILD_FLOW_MODE}" != "online" ]]; then
+  fail "bundle_store.mode=static_http is only supported for the first online appliance bootstrap"
+fi
+PUBLISH_REGISTRY=""
+PUBLISH_USER=""
+PUBLISH_TOKEN=""
+PUBLISH_TLS_VERIFY="true"
+PUBLISH_PUBLIC_BASE_URL=""
+PUBLISH_STATIC_ROOT=""
+if [[ "${BUNDLE_STORE_MODE}" == "appliance_files" ]]; then
+  BUNDLE_REGISTRY_ENV="$(config_get_optional "${CONFIG_PATH}" "bundle_store.registry_env" || true)"
+  BUNDLE_USERNAME_ENV="$(config_get_optional "${CONFIG_PATH}" "bundle_store.username_env" || true)"
+  BUNDLE_TOKEN_ENV="$(config_get_optional "${CONFIG_PATH}" "bundle_store.token_env" || true)"
+  BUNDLE_TLS_VERIFY_ENV="$(config_get_optional "${CONFIG_PATH}" "bundle_store.tls_verify_env" || true)"
+  [[ -n "${BUNDLE_REGISTRY_ENV}" ]] || fail "bundle_store.registry_env is required for appliance_files"
+  [[ -n "${BUNDLE_USERNAME_ENV}" ]] || fail "bundle_store.username_env is required for appliance_files"
+  [[ -n "${BUNDLE_TOKEN_ENV}" ]] || fail "bundle_store.token_env is required for appliance_files"
+  [[ -n "${BUNDLE_TLS_VERIFY_ENV}" ]] || fail "bundle_store.tls_verify_env is required for appliance_files"
+  PUBLISH_REGISTRY="$(resolve_env_value "${BUNDLE_REGISTRY_ENV}" "bundle_store registry")"
+  PUBLISH_USER="$(resolve_secret "${BUNDLE_USERNAME_ENV}" "bundle_store username")"
+  PUBLISH_TOKEN="$(resolve_secret "${BUNDLE_TOKEN_ENV}" "bundle_store token")"
+  PUBLISH_TLS_VERIFY="$(normalize_bool_value "$(resolve_env_value "${BUNDLE_TLS_VERIFY_ENV}" "bundle_store TLS verify")")"
+  [[ -n "${PUBLISH_USER}" ]] || fail "empty ${BUNDLE_USERNAME_ENV}"
+  [[ -n "${PUBLISH_TOKEN}" ]] || fail "empty ${BUNDLE_TOKEN_ENV}"
 else
-  PUBLISH_TLS_VERIFY="false"
+  PUBLISH_PUBLIC_BASE_URL="$(resolve_static_http_base_url "${CONFIG_PATH}")"
+  PUBLISH_STATIC_ROOT="$(resolve_static_http_publish_directory "${CONFIG_PATH}")"
 fi
 
 # --- active image_pull block → temporary pull_* → unify into DEV_* ---
@@ -237,11 +248,14 @@ BUILD_PRODUCT_ENV_PREFIX="$(append_env_assignments "${BUILD_PRODUCT_ENV_PREFIX}"
   "DEV_IMAGE_NAME" "${DEV_IMAGE_NAME}" \
   "DEV_IMAGE_TAG" "${DEV_IMAGE_TAG}")"
 
-# Publish: LAN files API from bundle_store, still under DEV_* names publish-release expects.
+# Publish: normal appliance file API or first-appliance static HTTP staging.
 PUBLISH_PRODUCT_ENV_PREFIX=""
 PUBLISH_PRODUCT_ENV_PREFIX="$(append_env_assignments "${PUBLISH_PRODUCT_ENV_PREFIX}" \
   "PRODUCT_VERSION" "${RELEASE_VERSION}" \
   "RELEASE_WORK_ROOT" "${REMOTE_BUILD_ROOT}" \
+  "PUBLISH_MODE" "${BUNDLE_STORE_MODE}" \
+  "PUBLISH_PUBLIC_BASE_URL" "${PUBLISH_PUBLIC_BASE_URL}" \
+  "PUBLISH_STATIC_ROOT" "${PUBLISH_STATIC_ROOT}" \
   "DEV_REGISTRY" "${PUBLISH_REGISTRY}" \
   "DEV_REGISTRY_USER" "${PUBLISH_USER}" \
   "DEV_REGISTRY_TOKEN" "${PUBLISH_TOKEN}" \

@@ -5,7 +5,7 @@
 #
 # Cross-step contract for install (must match values the target will download):
 #   product version (release.version optional override, else configs/default-product-version)
-#   bundle_store download base (LAN Artifact Server files API)
+#   bundle_store download base (normal appliance files API or bootstrap HTTP)
 #
 # Example (full flow from Mac):
 #   bash .agents/skills/release/scripts/run-release-from-devhost.sh \
@@ -32,7 +32,8 @@
 #   1) Read online_image_pull OR offline_image_pull based on mode
 #   2) Map that set into DEV_* for bootstrap + build-full-bundle
 #      (offline already is DEV_*; online copies ONLINE_* → DEV_*)
-#   3) Remap bundle_store (also DEV_*) into DEV_* for publish-release
+#   3) Publish through bundle_store: appliance_files (DEV_*) or the temporary
+#      static_http bootstrap directory
 #
 # Offline seed coverage (make seed-build-deps → every deps/* package), including:
 #   development-container, git-runtime-container, workflows, artifact-server-bases,
@@ -47,7 +48,7 @@
 # (see deps/development-container/PACKAGE.md and AGENTS.md "Shared dev-build").
 #
 # Runtime secrets (export on the Mac for full flow, or on the build host):
-#   Always (LAN via DEV_* / bundle_store):
+#   Normal appliance_files distribution / offline build (LAN via DEV_*):
 #     DEV_REGISTRY, DEV_REGISTRY_USER, DEV_REGISTRY_TOKEN, DEV_REGISTRY_TLS_VERIFY
 #     DEV_IMAGE_REPO, DEV_IMAGE_NAME, DEV_IMAGE_TAG   # offline tooling path
 #   Online mode also:
@@ -132,9 +133,19 @@ build_flow:
 # ============================================================================
 
 bundle_store:
-  # Always the LAN Artifact Server files API (same DEV_* as offline tooling):
+  # Normal steady-state mode: LAN Artifact Server files API (same DEV_* as
+  # offline tooling):
   #   https://$DEV_REGISTRY/api/v1/files/appliance/<version>/
+  mode: appliance_files
   registry_env: DEV_REGISTRY
   username_env: DEV_REGISTRY_USER
   token_env: DEV_REGISTRY_TOKEN
   tls_verify_env: DEV_REGISTRY_TLS_VERIFY
+
+  # First-appliance online bootstrap only, when no files API exists yet. Replace the
+  # five appliance_files lines above with these three lines, then serve the
+  # directory on the build host, for example:
+  #   python3 -m http.server 28081 --directory /home/zonsys/releases
+  # mode: static_http
+  # base_url: http://192.168.1.152:28081
+  # publish_directory: /home/zonsys/releases
