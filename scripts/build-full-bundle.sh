@@ -32,6 +32,7 @@ ONLINE_* into this script — unify first (offline already uses DEV_*).
 
   DEV_REGISTRY / DEV_IMAGE_REPO / DEV_IMAGE_NAME / DEV_IMAGE_TAG
   DEV_REGISTRY_USER / DEV_REGISTRY_TOKEN / DEV_REGISTRY_TLS_VERIFY
+  DOCKERHUB_USER / DOCKERHUB_TOKEN (online mode; Docker Hub base-image pulls)
   OFFLINE_BUILD=0|1
 
 Example online (DEV_* already pointed at GHCR):
@@ -1829,8 +1830,7 @@ trap 'rm -f "${DOCKERHUB_AUTH_FILE:-}"' EXIT
 if ! offline_build_enabled && { [[ -n "${DOCKERHUB_USER:-}" ]] || [[ -n "${DOCKERHUB_TOKEN:-}" ]]; }; then
   [[ -n "${DOCKERHUB_USER:-}" && -n "${DOCKERHUB_TOKEN:-}" ]] || { echo "build-full-bundle: Docker Hub credentials require both DOCKERHUB_USER and DOCKERHUB_TOKEN" >&2; exit 2; }
   DOCKERHUB_AUTH_FILE="${CODE_REPO_DIR}/.run/dockerhub-auth.json"
-  umask 077
-  printf '%s' "${DOCKERHUB_TOKEN}" | podman login --authfile "${DOCKERHUB_AUTH_FILE}" --username "${DOCKERHUB_USER}" --password-stdin docker.io >/dev/null
+  (umask 077; printf '%s' "${DOCKERHUB_TOKEN}" | podman login --authfile "${DOCKERHUB_AUTH_FILE}" --username "${DOCKERHUB_USER}" --password-stdin docker.io >/dev/null)
 fi
 
 cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF
@@ -1984,7 +1984,7 @@ export DEV_IMAGE="${BUILDER_PULL_REF:-${DEV_IMAGE:-}}"
 # Retrying the whole generated dev-run is safe: its image/archive outputs are
 # rebuilt in place.  Offline failures must fail immediately so a LAN-cache
 # miss is never disguised as a recoverable upstream error.
-ONLINE_DEV_RUN_ATTEMPTS=16
+ONLINE_DEV_RUN_ATTEMPTS=8
 DEV_RUN_ATTEMPTS="${ONLINE_DEV_RUN_ATTEMPTS}"
 if offline_build_enabled; then
   DEV_RUN_ATTEMPTS=1

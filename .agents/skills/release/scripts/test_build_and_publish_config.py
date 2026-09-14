@@ -27,6 +27,9 @@ build_flow:
     username_env: ONLINE_REGISTRY_USER
     token_env: ONLINE_REGISTRY_TOKEN
     tls_verify_env: ONLINE_REGISTRY_TLS_VERIFY
+  online_dockerhub_auth:
+    username_env: DOCKERHUB_USER
+    token_env: DOCKERHUB_TOKEN
 bundle_store:
   registry_env: DEV_REGISTRY
   username_env: DEV_REGISTRY_USER
@@ -83,17 +86,9 @@ def test_dockerhub_source_names_are_not_overwritten_before_lookup() -> None:
         tmp = Path(tmp_dir)
         config = tmp / "config.yaml"
         run_dir = tmp / "run"
-        write(
-            config,
-            MINIMAL_VALID_CONFIG.replace(
-                "bundle_store:",
-                """  online_dockerhub_auth:
-    username_env: DOCKERHUB_USER
-    token_env: DOCKERHUB_TOKEN
-bundle_store:""",
-            ),
-        )
+        write(config, MINIMAL_VALID_CONFIG)
         env = os.environ.copy()
+        env.pop("APPLIANCE_BUILD_SUDO_PASSWORD", None)
         env.update(
             {
                 "ONLINE_REGISTRY": "ghcr.io",
@@ -125,6 +120,28 @@ bundle_store:""",
             raise AssertionError(result.stdout)
         if "missing secret DOCKERHUB_" in result.stdout:
             raise AssertionError(result.stdout)
+
+
+def test_collects_dockerhub_names_with_existing_env_forwarding_pattern() -> None:
+    with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
+        config = Path(tmp_dir) / "config.yaml"
+        write(config, MINIMAL_VALID_CONFIG)
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f"source {COMMON!s} && collect_build_publish_env_names {config!s}",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise AssertionError(result.stdout)
+        names = result.stdout.splitlines()
+        if names.count("DOCKERHUB_USER") != 1 or names.count("DOCKERHUB_TOKEN") != 1:
+            raise AssertionError(f"Docker Hub env names not forwarded exactly once: {names}")
 
 
 def test_rejects_legacy_dev_image_pull() -> None:
@@ -375,6 +392,8 @@ def test_rejects_appliance_packs_env() -> None:
 
 def main() -> None:
     test_requires_local()
+    test_dockerhub_source_names_are_not_overwritten_before_lookup()
+    test_collects_dockerhub_names_with_existing_env_forwarding_pattern()
     test_rejects_legacy_dev_image_pull()
     test_rejects_literal_image_tag()
     test_rejects_missing_mode()

@@ -116,7 +116,8 @@ Always `zonctl uninstall --confirm yes` then fresh install. Config-preserving
 upgrade is parked.
 
 Secrets stay in the Mac shell as env vars **named** by config `*_env` keys
-(`DEV_*`, `APPLIANCE_BUILD_SUDO_PASSWORD`, `APPLIANCE_TARGET_SUDO_PASSWORD`,
+(`DEV_*`, online `DOCKERHUB_USER` / `DOCKERHUB_TOKEN`,
+`APPLIANCE_BUILD_SUDO_PASSWORD`, `APPLIANCE_TARGET_SUDO_PASSWORD`,
 `APPLIANCE_FIRST_ADMIN_PASSWORD` when `install.bootstrap_admin` is true).
 
 Important rules:

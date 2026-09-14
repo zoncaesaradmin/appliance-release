@@ -24,6 +24,7 @@ usage: run-release-from-devhost.sh \
 
 Export on this Mac as needed:
   DEV_*                          build/publish + bundle download URLs
+  DOCKERHUB_USER/TOKEN           online Docker Hub base-image pulls
   APPLIANCE_BUILD_SUDO_PASSWORD  build host
   APPLIANCE_TARGET_SUDO_PASSWORD install + bootstrap + target verify
   APPLIANCE_FIRST_ADMIN_PASSWORD when install.bootstrap_admin is true
