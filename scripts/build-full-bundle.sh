@@ -1867,13 +1867,21 @@ bool_true() {
 # spending time on product image builds. appliance-code's DNS exporter already
 # retries its exact skopeo prefetch five times. Online mode permits one more
 # DNS-only package attempt; offline mode remains one fail-closed LAN attempt.
+# The wrapper build uses --pull-never, so explicitly preload its Alpine runtime
+# too; previously it only worked because the later DNS build inherited Alpine
+# from the control-plane build's container storage.
+# shellcheck disable=SC1091
+source ./scripts/package/oci-pull.sh
+DNS_RUNTIME_SOURCE_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}")
+DNS_RUNTIME_LOCAL_REF=$(shell_quote "${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}")
 DNS_PACKAGE_ATTEMPTS=2
 if bool_true "\${OFFLINE_BUILD:-0}"; then
   DNS_PACKAGE_ATTEMPTS=1
 fi
 for ((dns_package_attempt = 1; dns_package_attempt <= DNS_PACKAGE_ATTEMPTS; dns_package_attempt++)); do
   echo "build-full-bundle: CoreDNS acquisition attempt \${dns_package_attempt}/\${DNS_PACKAGE_ATTEMPTS} (before product image builds)" >&2
-  if make package-dns-server-image-archive \
+  if oci_skopeo_prefetch_docker "\${DNS_RUNTIME_SOURCE_IMAGE}" "\${DNS_RUNTIME_LOCAL_REF}" && \
+    make package-dns-server-image-archive \
     OUT_FILE="/workspace/.run/dns-server-image.tar" \
     DNS_VERSION=$(shell_quote "${DNS_VERSION}") \
     DNS_SOURCE_IMAGE=$(shell_quote "${DNS_IMAGE_PULL_REF}") \

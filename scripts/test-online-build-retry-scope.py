@@ -19,6 +19,20 @@ def main() -> None:
     if text.index(dns_marker) > text.index(control_plane_marker):
         raise AssertionError("CoreDNS must be acquired before the control-plane build")
 
+    runtime_prefetch = (
+        'oci_skopeo_prefetch_docker "\\${DNS_RUNTIME_SOURCE_IMAGE}" '
+        '"\\${DNS_RUNTIME_LOCAL_REF}"'
+    )
+    dns_package = "make package-dns-server-image-archive"
+    if runtime_prefetch not in text:
+        raise AssertionError("CoreDNS runtime base is not explicitly prefetched")
+    if text.index(runtime_prefetch) > text.index(dns_package):
+        raise AssertionError("CoreDNS runtime base must be present before --pull-never")
+    if '${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}' not in text:
+        raise AssertionError("online CoreDNS runtime source must be fully qualified")
+    if text.count('${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}') != 2:
+        raise AssertionError("online CoreDNS runtime source and local tag must match")
+
     if "DNS_PACKAGE_ATTEMPTS=2" not in text:
         raise AssertionError("online CoreDNS package retries are not narrowly bounded")
     if "DNS_PACKAGE_ATTEMPTS=1" not in text:

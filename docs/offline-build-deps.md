@@ -15,7 +15,10 @@ Online packaging acquires CoreDNS from the official CoreDNS Docker Hub
 repository before the expensive product-image builds. Only CoreDNS acquisition
 is retried; a public-registry failure does not replay the complete no-cache
 development-container build. Offline packaging uses the same ordered packaging
-path with one fail-closed LAN attempt against `build-cache/coredns`.
+path with one fail-closed LAN attempt against `build-cache/coredns`. The early
+step also preloads the wrapper's Alpine runtime because the wrapper is built
+with `--pull-never`; it does not depend on a previous service build having
+incidentally populated shared container storage.
 
 ## Unification model
 
