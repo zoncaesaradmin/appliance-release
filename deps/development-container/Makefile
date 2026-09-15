@@ -57,7 +57,9 @@ test-dev:
 	$(RUN) --rm $(DEV_IMAGE) bash -lc "go version && python3 --version && node --version && npm --version && git --version && gcc --version | head -n 1 && podman --version && buildah --version && skopeo --version"
 
 shell-dev:
-	$(RUN) --rm -it --privileged --device /dev/fuse -v $(CURDIR):/workspace -w /workspace $(DEV_IMAGE) bash
+	$(RUN) --rm -it --privileged --device /dev/fuse \
+		-e STORAGE_DRIVER=overlay \
+		-v $(CURDIR):/workspace -w /workspace $(DEV_IMAGE) bash
 
 login:
 	@test -n "$(DEV_REGISTRY)" || (echo "DEV_REGISTRY is not set" >&2 && exit 1)

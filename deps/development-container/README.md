@@ -210,6 +210,11 @@ The safest places to extend are:
 
 ## Notes
 
-- The container storage driver is set to `vfs` by default for better compatibility when building images inside another container.
+- Image default `STORAGE_DRIVER` is `vfs` for maximum nested-build
+  compatibility when the outer runtime is not privileged or lacks
+  `/dev/fuse`. `storage.conf` also configures `fuse-overlayfs` as the
+  overlay mount program so privileged runtimes (appliance-code
+  `make DEV_RUN`, this tree's `.devcontainer` `runArgs`) can set
+  `STORAGE_DRIVER=overlay` without rewriting config.
 - The upstream copied tree is left in place on purpose so we can keep borrowing patterns for future language images without having to re-clone or re-study it.
 - No upstream files were removed as part of this bootstrap. New project-specific files live alongside the copied implementation.

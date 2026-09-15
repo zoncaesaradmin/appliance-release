@@ -10,7 +10,7 @@
   ],
   "containerEnv": {
     "BUILDAH_ISOLATION": "chroot",
-    "STORAGE_DRIVER": "vfs",
+    "STORAGE_DRIVER": "overlay",
     "XDG_RUNTIME_DIR": "/run/user/1000"
   },
   "remoteUser": "devcontainer",

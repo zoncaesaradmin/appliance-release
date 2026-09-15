@@ -12,6 +12,8 @@ ENV USERNAME=${USERNAME}
 ENV USER_HOME=/home/${USERNAME}
 ENV XDG_RUNTIME_DIR=/run/user/${USER_UID}
 ENV BUILDAH_ISOLATION=chroot
+# Image default for non-privileged runs. Privileged consumers
+# (appliance-code make DEV_RUN, .devcontainer) override to overlay.
 ENV STORAGE_DRIVER=vfs
 
 COPY scripts/install-common.sh /tmp/scripts/install-common.sh

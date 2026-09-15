@@ -52,11 +52,24 @@ echo "${USERNAME} ALL=(root) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}"
 chmod 0440 "/etc/sudoers.d/${USERNAME}"
 
 mkdir -p /etc/containers
+# Default driver is vfs for maximum nested-build compatibility when the
+# outer runtime is not privileged / lacks /dev/fuse. Callers that *do*
+# provide privileged+fuse (appliance-code make DEV_RUN, .devcontainer
+# runArgs) override STORAGE_DRIVER=overlay at runtime. mount_program is
+# always configured so that override can use fuse-overlayfs without a
+# storage.conf rewrite.
 cat > /etc/containers/storage.conf <<EOF
 [storage]
 driver = "vfs"
 runroot = "/run/containers/storage"
 graphroot = "/var/lib/containers/storage"
+
+[storage.options]
+mount_program = "/usr/bin/fuse-overlayfs"
+
+[storage.options.overlay]
+mount_program = "/usr/bin/fuse-overlayfs"
+mountopt = "nodev,fsync=0"
 EOF
 
 cat > /etc/containers/containers.conf <<EOF
@@ -74,12 +87,22 @@ cat > "${USER_HOME}/.config/containers/storage.conf" <<EOF
 driver = "vfs"
 runroot = "/run/user/${USER_UID}/containers"
 graphroot = "${USER_HOME}/.local/share/containers/storage"
+
+[storage.options]
+mount_program = "/usr/bin/fuse-overlayfs"
+
+[storage.options.overlay]
+mount_program = "/usr/bin/fuse-overlayfs"
+mountopt = "nodev,fsync=0"
 EOF
 
 cat > /etc/profile.d/automation-container-tools.sh <<EOF
 export XDG_RUNTIME_DIR=/run/user/${USER_UID}
 export BUILDAH_ISOLATION=chroot
-export STORAGE_DRIVER=vfs
+# Prefer a runtime-provided STORAGE_DRIVER (e.g. overlay from make DEV_RUN);
+# only default to vfs when unset so login shells do not clobber it.
+: "\${STORAGE_DRIVER:=vfs}"
+export STORAGE_DRIVER
 EOF
 
 chown -R "${USERNAME}:${USERNAME}" "${USER_HOME}" "/run/user/${USER_UID}"
