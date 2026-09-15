@@ -1965,6 +1965,16 @@ DNS_EOF
   DNS_ARCHIVE_ARG_LINES+="  --dns-image-reference \"\${DNS_IMAGE_REF}\" \\"$'\n'
 fi
 
+# Host-agentd is a foundation/lan-discovery artifact; the in-cluster
+# appliance-host-agent binary is built only inside package-host-agent-image-archive.
+HOST_AGENTD_PACKAGE_LINES=""
+if [[ "${NEED_HOST_AGENT_BINARY:-0}" == "1" ]]; then
+  HOST_AGENTD_PACKAGE_LINES=$(cat <<'HOST_AGENTD_EOF'
+# Foundation lan-discovery requires appliance-host-agentd.
+make -C ./services/hostagent build-agentd
+HOST_AGENTD_EOF
+)
+fi
 HOST_AGENT_IMAGE_PACKAGE_LINES=""
 HOST_AGENT_IMAGE_ARCHIVE_ARG_LINES=""
 if [[ "${NEED_HOST_AGENT_IMAGE:-0}" == "1" ]]; then
@@ -2048,8 +2058,7 @@ make package-ui-image-archive OUT_FILE="\${UI_IMAGE_OUT}" IMAGE_TAG="\${CODE_VER
   UI_WEB_DEPS_IMAGE=$(shell_quote "${UI_WEB_DEPS_IMAGE}") \
   USE_PREBAKED_NPM=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}") \
   RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
-# Foundation lan-discovery requires the host-agent daemon binary.
-make -C ./services/hostagent build
+${HOST_AGENTD_PACKAGE_LINES}
 ${HOST_AGENT_IMAGE_PACKAGE_LINES}
 make package-blob-storage-image-archive \
   OUT_FILE="\${BLOB_STORAGE_IMAGE_OUT}" \

@@ -50,6 +50,17 @@ def main() -> None:
     if text.count('dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}"') != 1:
         raise AssertionError("expected exactly one complete dev-run invocation")
 
+    # Host-agentd is foundation/lan-discovery only; the in-cluster agent
+    # binary is built inside the image Containerfile when NEED_HOST_AGENT_IMAGE=1.
+    if 'NEED_HOST_AGENT_BINARY:-0' not in text:
+        raise AssertionError("host-agentd packaging must gate on NEED_HOST_AGENT_BINARY")
+    if text.count("make -C ./services/hostagent build-agentd") != 1:
+        raise AssertionError("expected exactly one hostagent build-agentd packaging line")
+    if "make -C ./services/hostagent build\n" in text or 'make -C ./services/hostagent build"' in text:
+        raise AssertionError("unconditional hostagent build returned; use build-agentd only")
+    if "build-daemon" in text:
+        raise AssertionError("legacy build-daemon target returned; use build-agentd")
+
     # acc-llm-arm64 must package the runtime image in the dev script, then tar the
     # assembled pack after product-bundle — never tar workspace/out early.
     arm64_package = "INFERENCE_ARCHITECTURE=arm64"

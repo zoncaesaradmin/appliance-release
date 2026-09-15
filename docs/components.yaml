@@ -46,7 +46,7 @@ components:
 
   - id: host-agent-binary
     owner: appliance-code
-    recipe: make -C services/hostagent build
+    recipe: make -C services/hostagent build-agentd
     outputs:
       - release_input: artifacts.hostAgentBinary
     depends_on: []
