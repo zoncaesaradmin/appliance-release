@@ -104,8 +104,8 @@ Optional overrides:
   VLLM_IMAGE_PULL_REF=docker.io/vllm/vllm-openai-cpu:v0.17.1-x86_64
   VLLM_ARM64_VERSION=0.29.0
   VLLM_ARM64_IMAGE_PULL_REF=docker.io/vllm/vllm-openai:v0.29.0
-  # Inference runtime: always re-export via appliance-code
-  # package-inference-runtime-image-archive; digest from index.json.
+  # Inference: package upstream runtime + thin manager (no wrap);
+  # package-inference-runtime-image-archive + package-inference-manager-image-archive.
   APPLIANCE_PACKS=all                   # default: every delivery pack
 EOF
 }
@@ -1838,6 +1838,8 @@ DNS_IMAGE_REF=""
 
 INFERENCE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/inference-runtime-image.tar"
 INFERENCE_IMAGE_REF=""
+INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/inference-manager-image.tar"
+INFERENCE_MANAGER_IMAGE_REF=""
 
 BLOB_STORAGE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/blob-storage-image.tar"
 BLOB_STORAGE_IMAGE_REF=""
@@ -1874,47 +1876,65 @@ INFERENCE_ARCHIVE_ARG_LINES=""
 if appliance_pack_wanted std-llm-amd64; then
   # Build as a plain double-quoted string (not $(cat <<...)). A nested
   # command-substitution heredoc breaks on the ")" in \$(tr ...).
-  INFERENCE_PACKAGE_LINES="# Appliance inference runtime (upstream Ollama-compatible image re-export).
+  INFERENCE_PACKAGE_LINES="# Appliance inference: upstream runtime + thin manager (no wrap).
 make package-inference-runtime-image-archive \\
   OUT_FILE=\"/workspace/.run/inference-runtime-image.tar\" \\
   INFERENCE_VERSION=$(shell_quote "${INFERENCE_VERSION}") \\
   INFERENCE_SOURCE_IMAGE=$(shell_quote "${INFERENCE_IMAGE_PULL_REF}")
+make package-inference-manager-image-archive \\
+  OUT_FILE=\"/workspace/.run/inference-manager-image.tar\"
 INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
 INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
+INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-manager-image.tar\"
+INFERENCE_MANAGER_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-manager-image.reference)\"
 "
   INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${INFERENCE_VERSION}") \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
+  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image \"\${INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image-reference \"\${INFERENCE_MANAGER_IMAGE_REF}\" \\"$'\n'
 fi
 if appliance_pack_wanted acc-llm-amd64; then
-  INFERENCE_PACKAGE_LINES="# Appliance vLLM CPU runtime with lifecycle manager.
+  INFERENCE_PACKAGE_LINES="# Appliance vLLM CPU runtime + thin manager (no wrap).
 make package-inference-runtime-image-archive \\
   OUT_FILE=\"/workspace/.run/inference-runtime-image.tar\" \\
   INFERENCE_VERSION=$(shell_quote "${VLLM_VERSION}") \\
   INFERENCE_SOURCE_IMAGE=$(shell_quote "${VLLM_IMAGE_PULL_REF}") \\
   INFERENCE_ENGINE=vllm \\
   INFERENCE_ARCHITECTURE=amd64
+make package-inference-manager-image-archive \\
+  OUT_FILE=\"/workspace/.run/inference-manager-image.tar\"
 INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
 INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
+INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-manager-image.tar\"
+INFERENCE_MANAGER_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-manager-image.reference)\"
 "
   INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${VLLM_VERSION}") \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
+  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image \"\${INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image-reference \"\${INFERENCE_MANAGER_IMAGE_REF}\" \\"$'\n'
 fi
 if appliance_pack_wanted acc-llm-arm64; then
-  INFERENCE_PACKAGE_LINES="# Appliance vLLM ARM64 runtime with lifecycle manager.
+  INFERENCE_PACKAGE_LINES="# Appliance vLLM ARM64 runtime + thin manager (no wrap).
 make package-inference-runtime-image-archive \\
   OUT_FILE=\"/workspace/.run/inference-runtime-image.tar\" \\
   INFERENCE_VERSION=$(shell_quote "${VLLM_ARM64_VERSION}") \\
   INFERENCE_SOURCE_IMAGE=$(shell_quote "${VLLM_ARM64_IMAGE_PULL_REF}") \\
   INFERENCE_ENGINE=vllm \\
   INFERENCE_ARCHITECTURE=arm64
+make package-inference-manager-image-archive \\
+  OUT_FILE=\"/workspace/.run/inference-manager-image.tar\"
 INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
 INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
+INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-manager-image.tar\"
+INFERENCE_MANAGER_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-manager-image.reference)\"
 "
   INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${VLLM_ARM64_VERSION}") \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
+  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image \"\${INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image-reference \"\${INFERENCE_MANAGER_IMAGE_REF}\" \\"$'\n'
 fi
 
 DOCKERHUB_AUTH_FILE=""

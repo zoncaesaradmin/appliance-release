@@ -606,7 +606,36 @@ def validate_inference(
     image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "inferenceRuntimeImage")
     require_matching_bundle_digest(image_entry, image, image_bundle_path, "inferenceRuntimeImage")
     require_matching_bundle_image_reference(image_entry, image_ref, image_bundle_path, "inferenceRuntimeImage")
-    return ["inferenceChart", "inferenceRuntimeImage", f"inferenceVersion={inference_version}"]
+
+    manager = require_artifact(artifacts, "inferenceManagerImage")
+    manager_path = require_file_artifact(artifacts, "inferenceManagerImage", release_input_dir)
+    manager_ref = require_image_reference(manager, "inferenceManagerImage")
+    if not re.fullmatch(r"registry\.local/inference-manager@sha256:[0-9a-f]{64}", manager_ref):
+        raise ValueError(
+            "release-input artifacts.inferenceManagerImage.imageReference must be "
+            "registry.local/inference-manager@sha256:<64 lowercase hex>"
+        )
+    if "manager" not in manager_path.name.lower():
+        raise ValueError(
+            f"release-input artifacts.inferenceManagerImage.path must identify inference-manager, got {manager['path']!r}"
+        )
+    require_oci_archive_reference_matches_content(manager_path, manager_ref, "inferenceManagerImage")
+    manager_index = load_oci_archive_index(manager_path)
+    if manager_index is None:
+        raise ValueError(f"inferenceManagerImage OCI archive {manager_path} is missing index.json")
+    manager_annotation = (
+        (manager_index.get("manifests") or [{}])[0].get("annotations") or {}
+    ).get("org.opencontainers.image.ref.name")
+    if manager_annotation != "registry.local/inference-manager:bundled":
+        raise ValueError(
+            "inferenceManagerImage OCI archive annotation must be 'registry.local/inference-manager:bundled', "
+            f"got {manager_annotation!r}"
+        )
+    manager_bundle_path = f"oci-images/{manager_path.name}"
+    manager_entry = require_bundle_entry(entries_by_path, manager_bundle_path, "inferenceManagerImage")
+    require_matching_bundle_digest(manager_entry, manager, manager_bundle_path, "inferenceManagerImage")
+    require_matching_bundle_image_reference(manager_entry, manager_ref, manager_bundle_path, "inferenceManagerImage")
+    return ["inferenceChart", "inferenceRuntimeImage", "inferenceManagerImage", f"inferenceVersion={inference_version}"]
 
 
 def validate_video(

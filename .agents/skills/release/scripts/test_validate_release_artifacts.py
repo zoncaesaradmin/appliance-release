@@ -40,6 +40,7 @@ def populate_positive_case(tmp: Path, *, include_host_packages: bool = True) -> 
     dns_digest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     host_agent_digest = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     inference_digest = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    inference_manager_digest = "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
     write(tmp / "release-input" / "images" / "control-plane.tar", "control")
     write(tmp / "release-input" / "images" / "appliance-ui.tar", "ui")
     write(tmp / "release-input" / "chart" / "appliance-chart-1.0.0.tgz", "appliance chart")
@@ -74,6 +75,11 @@ def populate_positive_case(tmp: Path, *, include_host_packages: bool = True) -> 
         tmp / "release-input" / "images" / "inference-runtime-image.tar",
         "registry.local/inference-runtime:bundled",
         inference_digest,
+    )
+    write_mismatched_oci_archive(
+        tmp / "release-input" / "images" / "inference-manager-image.tar",
+        "registry.local/inference-manager:bundled",
+        inference_manager_digest,
     )
     write_mismatched_oci_archive(
         tmp / "release-input" / "images" / "appliance-host-agent.tar",
@@ -120,6 +126,7 @@ ingress:
     "dnsImage": {"path": "images/coredns-image.tar", "digest": "sha256:dns-archive", "sizeBytes": 512, "imageReference": "registry.local/coredns@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
     "dnsChart": {"path": "chart/appliance-dns-1.14.4.tgz", "digest": "sha256:dns-chart", "sizeBytes": 11},
     "inferenceRuntimeImage": {"path": "images/inference-runtime-image.tar", "digest": "sha256:inference-archive", "sizeBytes": 512, "imageReference": "registry.local/inference-runtime@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+    "inferenceManagerImage": {"path": "images/inference-manager-image.tar", "digest": "sha256:inference-manager-archive", "sizeBytes": 256, "imageReference": "registry.local/inference-manager@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"},
     "inferenceChart": {"path": "chart/appliance-inference-0.6.5.tgz", "digest": "sha256:inference-chart", "sizeBytes": 15},
     "metadataBundle": {"path": "artifacts/appliance-metadata-bundle-1.0.0.0.tar.zst", "digest": "sha256:policy", "sizeBytes": 6},
     "configurationSchema": {"path": "schemas/configuration.schema.json", "digest": "sha256:configuration", "sizeBytes": 2},
@@ -166,6 +173,7 @@ ingress:
     {"targetPath": "oci-images/coredns-image.tar", "digest": "sha256:dns-archive", "sizeBytes": 512, "imageReference": "registry.local/coredns@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
     {"targetPath": "charts/appliance-dns-1.14.4.tgz", "digest": "sha256:dns-chart", "sizeBytes": 11},
     {"targetPath": "oci-images/inference-runtime-image.tar", "digest": "sha256:inference-archive", "sizeBytes": 512, "imageReference": "registry.local/inference-runtime@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+    {"targetPath": "oci-images/inference-manager-image.tar", "digest": "sha256:inference-manager-archive", "sizeBytes": 256, "imageReference": "registry.local/inference-manager@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"},
     {"targetPath": "charts/appliance-inference-0.6.5.tgz", "digest": "sha256:inference-chart", "sizeBytes": 15},
     {"targetPath": "artifacts/appliance-metadata-bundle-1.0.0.0.tar.zst", "digest": "sha256:policy", "sizeBytes": 6},
     {"targetPath": "configuration/values.yaml", "digest": "sha256:values", "sizeBytes": 200},
@@ -258,6 +266,7 @@ def test_foundation_pack_allows_catalog_optional_artifacts_absent_from_release_i
             "dnsImage",
             "dnsChart",
             "inferenceRuntimeImage",
+            "inferenceManagerImage",
             "inferenceChart",
             "workflowsChart",
             "workflowsCRDs",
