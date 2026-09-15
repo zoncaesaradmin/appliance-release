@@ -597,6 +597,53 @@ def test_cpu_llm_pack_requires_verified_runtime() -> None:
             raise AssertionError(result.stderr or "legacy inference pack accepted")
 
 
+def test_inference_runtime_contract() -> None:
+    cases = [
+        ("std-llm-amd64", "ollama", "amd64", ["cpu"]),
+        ("acc-llm-amd64", "vllm", "amd64", ["cpu"]),
+        ("acc-llm-arm64", "vllm", "arm64", ["cpu", "cuda"]),
+    ]
+    with tempfile.TemporaryDirectory(prefix="release-inference-contract-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for package, engine, architecture, modes in cases:
+            runtime = {"package": package, "inferenceEngine": engine, "architecture": architecture, "supportedModes": modes}
+            manifest["runtimes"]["inference"] = runtime
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            result = run_validator(tmp, "--pack", package)
+            if result.returncode != 0:
+                raise AssertionError(result.stderr)
+            for mutation in (
+                {"architecture": "invalid"},
+                {"inferenceEngine": "invalid"},
+                {"package": "unknown"},
+                {"supportedModes": ["cpu", "CPU"]},
+                {"supportedModes": ["rocm"]},
+                {"supportedModes": "cpu"},
+                {"supportedModes": [None]},
+            ):
+                manifest["runtimes"]["inference"] = {**runtime, **mutation}
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                result = run_validator(tmp, "--pack", package)
+                if result.returncode == 0:
+                    raise AssertionError(f"invalid inference runtime accepted: {mutation}")
+            if engine == "vllm":
+                for modes in (None, []):
+                    manifest["runtimes"]["inference"] = {**runtime, "supportedModes": modes}
+                    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                    result = run_validator(tmp, "--pack", package)
+                    if result.returncode == 0:
+                        raise AssertionError("vLLM accepted without supportedModes")
+            manifest["runtimes"]["inference"] = runtime
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            other_pack = "acc-llm-arm64" if package != "acc-llm-arm64" else "std-llm-amd64"
+            result = run_validator(tmp, "--pack", other_pack)
+            if result.returncode == 0 or "must match selected pack" not in result.stderr:
+                raise AssertionError(result.stderr or "mismatched inference pack accepted")
+
+
 def test_allows_omitted_inference_without_require_flag() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -820,6 +867,7 @@ def main() -> None:
     test_rejects_artifact_server_annotation_and_version_mismatch()
     test_rejects_dns_annotation_and_version_mismatch()
     test_cpu_llm_pack_requires_verified_runtime()
+    test_inference_runtime_contract()
     test_allows_omitted_inference_without_require_flag()
     test_foundation_pack_allows_build_workflows_extra_oci_absent_from_bundle()
     test_build_workflows_pack_skips_foundation_values_file()

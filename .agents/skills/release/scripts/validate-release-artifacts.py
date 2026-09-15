@@ -12,6 +12,11 @@ from typing import Optional
 
 IMAGE_DIGEST_RE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
 PLACEHOLDER_IMAGE_DIGEST = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+INFERENCE_PACKAGES = {
+    "std-llm-amd64": ("ollama", "amd64"),
+    "acc-llm-amd64": ("vllm", "amd64"),
+    "acc-llm-arm64": ("vllm", "arm64"),
+}
 
 
 def first_named(root: Path, name: str) -> Optional[Path]:
@@ -542,9 +547,20 @@ def validate_inference(
         )
 
     runtime = (bundle_manifest.get("runtimes") or {}).get("inference")
-    expected_runtime = {"package": "std-llm-amd64", "inferenceEngine": "ollama", "architecture": "amd64"}
-    if runtime != expected_runtime:
+    if not isinstance(runtime, dict) or not isinstance(runtime.get("package"), str):
         raise ValueError("bundle manifest inference runtime must identify one supported inference package and inference engine")
+    expected_runtime = INFERENCE_PACKAGES.get(runtime["package"])
+    if expected_runtime is None or (runtime.get("inferenceEngine"), runtime.get("architecture")) != expected_runtime:
+        raise ValueError(f"bundle manifest has unsupported inference runtime: {runtime!r}")
+    # Match zonctl runtimeconfig.EffectiveModes for legacy standard packages.
+    modes = runtime.get("supportedModes")
+    if (modes is None or modes == []) and runtime["package"] == "std-llm-amd64":
+        modes = ["cpu"]
+    if not isinstance(modes, list) or not modes or any(not isinstance(mode, str) for mode in modes):
+        raise ValueError("bundle manifest inference supportedModes must be a nonempty array of modes")
+    normalized_modes = [mode.strip().lower() for mode in modes]
+    if any(mode not in {"cpu", "cuda"} for mode in normalized_modes) or len(set(normalized_modes)) != len(normalized_modes):
+        raise ValueError("bundle manifest inference supportedModes must contain unique cpu/cuda modes")
 
     chart = require_artifact(artifacts, "inferenceChart")
     chart_path = require_file_artifact(artifacts, "inferenceChart", release_input_dir)
@@ -871,7 +887,7 @@ def main() -> int:
     parser.add_argument("--companion-bundle-root", action="append", default=[], help="Additional signed delivery pack roots used to locate supplemental OCI images; every image reference remains required and checked.")
     parser.add_argument(
         "--pack",
-        choices=("foundation", "storage-network", "build-workflows", "deviceuser", "std-llm-amd64", "acc-llm-arm64", "video"),
+        choices=("foundation", "storage-network", "build-workflows", "deviceuser", *INFERENCE_PACKAGES, "video"),
         default="foundation",
         help=(
             "Which signed pack archive is under --bundle-root. "
@@ -903,7 +919,7 @@ def main() -> int:
     expected_extra_refs = parse_csv(args.expected_extra_oci_image_refs)
     pack = args.pack
     require_workflows = args.require_workflows or pack == "build-workflows"
-    require_inference = args.require_inference or pack in {"std-llm-amd64", "acc-llm-arm64"}
+    require_inference = args.require_inference or pack in INFERENCE_PACKAGES
     require_video = args.require_video or pack == "video"
 
     release_input_root = Path(args.release_input_root)
@@ -1065,7 +1081,10 @@ def main() -> int:
                 ),
             }
         )
-    elif pack in {"std-llm-amd64", "acc-llm-arm64"}:
+    elif pack in INFERENCE_PACKAGES:
+        runtime = (bundle_manifest.get("runtimes") or {}).get("inference")
+        if not isinstance(runtime, dict) or runtime.get("package") != pack:
+            raise ValueError(f"bundle manifest inference runtime package must match selected pack {pack!r}")
         checked["inference"] = validate_inference(
             release_input,
             bundle_manifest,
