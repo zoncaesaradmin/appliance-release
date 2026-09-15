@@ -82,6 +82,8 @@ BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-foundation"
 DEV_PLATFORM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-dev-platform"
 DEVICEUSER_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 CPU_LLM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-std-llm-amd64"
+ACC_LLM_AMD64_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-acc-llm-amd64"
+ACC_LLM_ARM64_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-acc-llm-arm64"
 
 mkdir -p "${WORKDIR}" "${INPUTS_DIR}" "${DOWNLOADS_DIR}"
 
@@ -633,6 +635,8 @@ assemble_all_packs() {
       dev-platform) bundle_dir="${DEV_PLATFORM_BUNDLE_DIR}" ;;
       deviceuser) bundle_dir="${DEVICEUSER_BUNDLE_DIR}" ;;
       std-llm-amd64) bundle_dir="${CPU_LLM_BUNDLE_DIR}" ;;
+      acc-llm-amd64) bundle_dir="${ACC_LLM_AMD64_BUNDLE_DIR}" ;;
+      acc-llm-arm64) bundle_dir="${ACC_LLM_ARM64_BUNDLE_DIR}" ;;
       *)
         echo "assemble-product-bundle: unsupported pack id ${pack_id}" >&2
         exit 2
@@ -682,7 +686,7 @@ if [[ -n "${VALUES_FILE:-}" ]]; then
   cp "${VALUES_FILE}" "${STAGING_DIR}/values-minimal.yaml"
 fi
 
-rm -rf "${BUNDLE_DIR}" "${DEV_PLATFORM_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}"
+rm -rf "${BUNDLE_DIR}" "${DEV_PLATFORM_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}" "${ACC_LLM_AMD64_BUNDLE_DIR}" "${ACC_LLM_ARM64_BUNDLE_DIR}"
 
 assemble_all_packs
 
@@ -698,4 +702,10 @@ if appliance_pack_wanted deviceuser; then
 fi
 if appliance_pack_wanted std-llm-amd64; then
   echo "  std-llm-amd64: ${CPU_LLM_BUNDLE_DIR}"
+fi
+if appliance_pack_wanted acc-llm-amd64; then
+  echo "  acc-llm-amd64: ${ACC_LLM_AMD64_BUNDLE_DIR}"
+fi
+if appliance_pack_wanted acc-llm-arm64; then
+  echo "  acc-llm-arm64: ${ACC_LLM_ARM64_BUNDLE_DIR}"
 fi

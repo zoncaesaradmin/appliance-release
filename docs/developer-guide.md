@@ -159,6 +159,8 @@ deliverables under `RELEASE_WORK_ROOT/export/` according to `APPLIANCE_PACKS`
 - `appliance-${PRODUCT_VERSION}-dev-platform.tar.gz` (when selected)
 - `appliance-${PRODUCT_VERSION}-deviceuser.tar.gz` (when selected)
 - `appliance-${PRODUCT_VERSION}-std-llm-amd64.tar.gz` (when selected)
+- `appliance-${PRODUCT_VERSION}-acc-llm-amd64.tar.gz` (when selected instead of the standard inference pack)
+- `appliance-${PRODUCT_VERSION}-acc-llm-arm64.tar.gz` (when selected instead of the standard inference pack)
 - `release-index.yaml` (install contract: packs built this run, full
   `capabilityPacks` map, and a snapshot of `profiles → capabilities` from the
   product profiles catalog). `install-release.sh` derives optional packs as
@@ -181,6 +183,8 @@ Delivery packs describe available software, not enabled functionality:
 | `dev-platform` | Artifact Server/registry, LAN DNS, workflow controller/executor, CRDs, and workspace provisioner |
 | `deviceuser` | Host-agent and device-user components |
 | `std-llm-amd64` | Standard CPU inference runtime (`inference`) |
+| `acc-llm-amd64` | vLLM x86 CPU runtime with appliance model manager (`inference`) |
+| `acc-llm-arm64` | vLLM ARM64 runtime with appliance model manager (`inference`) |
 
 Profiles enable capabilities; the signed index derives delivery requirements
 from the package catalog. For example, `storage-landns` needs foundation +
@@ -206,6 +210,8 @@ Outputs:
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-dev-platform.tar.gz` (when dev-platform pack selected)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-deviceuser.tar.gz` (when deviceuser pack selected)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-std-llm-amd64.tar.gz` (when std-llm-amd64 pack selected)
+- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-acc-llm-amd64.tar.gz` (when acc-llm-amd64 pack selected)
+- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-acc-llm-arm64.tar.gz` (when acc-llm-arm64 pack selected)
 - `${RELEASE_WORK_ROOT}/export/release-index.yaml`
 - `${RELEASE_WORK_ROOT}/export/release-signing.pub`
 
@@ -328,10 +334,11 @@ If you need to debug a specific stage, these targets still exist:
    workspace files and JSON examples.
 4. If you changed `zonctl`, validate those changes in `appliance-ctl`.
 
-### Standard CPU inference naming
+### CPU inference package naming
 
-The current inference capability is `inference`; its delivery package is
-`std-llm-amd64`. Explicit pack selections must use `std-llm-amd64`, for example
+The inference capability is `inference`; a release selects exactly one runtime
+package. `all` keeps the standard Ollama package. Explicit selections use
+`std-llm-amd64`, `acc-llm-amd64`, or `acc-llm-arm64`, for example
 `APPLIANCE_PACKS=foundation,std-llm-amd64`; `all` includes it. Generated assembly config
 is `bundle-assembly.std-llm-amd64.json`, and the archive is
 `appliance-${PRODUCT_VERSION}-std-llm-amd64.tar.gz`. Regenerate old assembly configs and
@@ -339,10 +346,12 @@ publish the matching signed metadata and release index with the renamed packs.
 The existing `builder-lanllm-storage-landns` profile keeps its ID and now resolves
 to `inference`, requiring foundation, dev-platform, deviceuser, and std-llm-amd64.
 
-The runtime Service, API, image-reference contract, and separate signed model
-packs retain their inference names. `deps/inference` still seeds the same pinned
-Ollama input for offline packaging; the chart explicitly runs it on CPU. The
-upstream image is not rebuilt to remove GPU libraries. A future GPU engine will
-use the same `inference` capability with the `acc-llm-arm64` package and a GPU runtime
-variant; it is not selectable yet. The
+The runtime Service, API, and image-reference contract retain their inference
+names. Model weights are acquired separately after installation and are not
+placed in the appliance pack. `deps/inference` still seeds the same pinned
+Ollama engine input for offline packaging; the chart explicitly runs it on CPU.
+The upstream image is not rebuilt to remove GPU libraries. The CPU-only vLLM
+workflow is selectable as `acc-llm-amd64` and wraps the pinned x86 CPU image
+with the appliance model manager. `acc-llm-arm64` likewise packages its pinned
+runtime image and manager; CUDA use remains runtime-confirmed. The
 cross-repository design is in `appliance-code/docs/inference-capability-phasing.md`.

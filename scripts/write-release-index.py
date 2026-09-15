@@ -72,15 +72,9 @@ def main():
 
     index_path, version, profiles_path, capabilities_path, packages_path = sys.argv[1:6]
     args = sys.argv[6:]
-    if len(args) < 5:
+    if len(args) < 7:
         raise ValueError("expected selected package IDs followed by package filenames")
-    selected_args = set(args[:-4])
-    if {"std-llm-amd64", "acc-llm-arm64"} <= selected_args:
-        filename_names = ("foundation", "dev-platform", "deviceuser", "std-llm-amd64", "acc-llm-arm64")
-    elif "acc-llm-arm64" in selected_args:
-        filename_names = ("foundation", "dev-platform", "deviceuser", "acc-llm-arm64")
-    else:
-        filename_names = ("foundation", "dev-platform", "deviceuser", "std-llm-amd64")
+    filename_names = ("foundation", "dev-platform", "deviceuser", "std-llm-amd64", "acc-llm-amd64", "acc-llm-arm64")
     filenames = dict(zip(filename_names, args[-len(filename_names):]))
     profiles = yaml.safe_load(Path(profiles_path).read_text())["profiles"]
     capabilities = yaml.safe_load(Path(capabilities_path).read_text())["capabilities"]

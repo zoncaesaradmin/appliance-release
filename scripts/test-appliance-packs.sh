@@ -53,7 +53,20 @@ if APPLIANCE_PACKS="nope" appliance_packs_resolve 2>/dev/null; then
   fail "unknown pack should fail"
 fi
 
-for unsupported in inference acc-llm-arm64; do
+APPLIANCE_PACKS="acc-llm-amd64"
+appliance_packs_resolve
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation acc-llm-amd64" "acc-llm-amd64 auto-includes foundation"
+
+APPLIANCE_PACKS="acc-llm-arm64"
+appliance_packs_resolve
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation acc-llm-arm64" "acc-llm-arm64 auto-includes foundation"
+
+APPLIANCE_PACKS="std-llm-amd64,acc-llm-amd64"
+if appliance_packs_resolve 2>/dev/null; then
+  fail "multiple inference runtime packs should fail"
+fi
+
+for unsupported in inference; do
   if APPLIANCE_PACKS="${unsupported}" appliance_packs_resolve 2>/dev/null; then
     fail "legacy capability or unimplemented package '${unsupported}' should fail"
   fi

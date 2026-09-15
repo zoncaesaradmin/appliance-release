@@ -131,10 +131,12 @@ deps_oci_login() {
 }
 
 # Pull upstream SRC into local storage as LOCAL_REF; optionally push to DEST.
+# ARCH defaults to amd64 so existing product dependencies remain unchanged.
 deps_mirror_oci() {
   local src="$1"
   local local_ref="$2"
   local dest="${3:-}"
+  local architecture="${4:-amd64}"
   local tls pull_tls=()
   local bare host
 
@@ -149,7 +151,7 @@ deps_mirror_oci() {
     pull_tls=(${tls})
   fi
   # shellcheck disable=SC2086
-  podman pull --arch amd64 ${pull_tls[@]+"${pull_tls[@]}"} "${src}"
+  podman pull --arch "${architecture}" ${pull_tls[@]+"${pull_tls[@]}"} "${src}"
   podman tag "${src}" "${local_ref}"
 
   if [[ -n "${dest}" ]]; then

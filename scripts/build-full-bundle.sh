@@ -100,6 +100,10 @@ Optional overrides:
   # (dev-run has buildah+skopeo); digest from index.json.
   INFERENCE_VERSION=0.6.5
   INFERENCE_IMAGE_PULL_REF=docker.io/ollama/ollama:0.6.5
+  VLLM_VERSION=0.17.1
+  VLLM_IMAGE_PULL_REF=docker.io/vllm/vllm-openai-cpu:v0.17.1-x86_64
+  VLLM_ARM64_VERSION=0.29.0
+  VLLM_ARM64_IMAGE_PULL_REF=docker.io/vllm/vllm-openai:v0.29.0
   # Inference runtime: always re-export via appliance-code
   # package-inference-runtime-image-archive; digest from index.json.
   APPLIANCE_PACKS=all                   # default: every delivery pack
@@ -137,6 +141,10 @@ USER_DNS_VERSION="${DNS_VERSION-}"
 USER_DNS_IMAGE_PULL_REF="${DNS_IMAGE_PULL_REF-}"
 USER_INFERENCE_VERSION="${INFERENCE_VERSION-}"
 USER_INFERENCE_IMAGE_PULL_REF="${INFERENCE_IMAGE_PULL_REF-}"
+USER_VLLM_VERSION="${VLLM_VERSION-}"
+USER_VLLM_IMAGE_PULL_REF="${VLLM_IMAGE_PULL_REF-}"
+USER_VLLM_ARM64_VERSION="${VLLM_ARM64_VERSION-}"
+USER_VLLM_ARM64_IMAGE_PULL_REF="${VLLM_ARM64_IMAGE_PULL_REF-}"
 USER_DEV_REGISTRY="${DEV_REGISTRY-}"
 USER_DEV_IMAGE_REPO="${DEV_IMAGE_REPO-}"
 USER_DEV_IMAGE_NAME="${DEV_IMAGE_NAME-}"
@@ -285,6 +293,12 @@ DNS_IMAGE_PULL_REF="${USER_DNS_IMAGE_PULL_REF:-${DNS_IMAGE_PULL_REF:-docker.io/c
 INFERENCE_VERSION="${USER_INFERENCE_VERSION:-${INFERENCE_VERSION:-0.6.5}}"
 INFERENCE_VERSION="${INFERENCE_VERSION#v}"
 INFERENCE_IMAGE_PULL_REF="${USER_INFERENCE_IMAGE_PULL_REF:-${INFERENCE_IMAGE_PULL_REF:-docker.io/ollama/ollama:${INFERENCE_VERSION}}}"
+VLLM_VERSION="${USER_VLLM_VERSION:-${VLLM_VERSION:-0.17.1}}"
+VLLM_VERSION="${VLLM_VERSION#v}"
+VLLM_IMAGE_PULL_REF="${USER_VLLM_IMAGE_PULL_REF:-${VLLM_IMAGE_PULL_REF:-docker.io/vllm/vllm-openai-cpu:v${VLLM_VERSION}-x86_64}}"
+VLLM_ARM64_VERSION="${USER_VLLM_ARM64_VERSION:-${VLLM_ARM64_VERSION:-0.29.0}}"
+VLLM_ARM64_VERSION="${VLLM_ARM64_VERSION#v}"
+VLLM_ARM64_IMAGE_PULL_REF="${USER_VLLM_ARM64_IMAGE_PULL_REF:-${VLLM_ARM64_IMAGE_PULL_REF:-docker.io/vllm/vllm-openai:v${VLLM_ARM64_VERSION}}}"
 # The foundation blob implementation has one pinned source. Deployments may
 # later replace its S3 endpoint without changing consumer object keys or APIs.
 BLOB_STORAGE_PINS_FILE="${RELEASE_REPO_DIR}/deps/blob-storage/pins.env"
@@ -466,10 +480,14 @@ BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-foundation"
 DEV_PLATFORM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-dev-platform"
 DEVICEUSER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 CPU_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-std-llm-amd64"
+ACC_LLM_AMD64_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-acc-llm-amd64"
+ACC_LLM_ARM64_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-acc-llm-arm64"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-foundation.tar.gz"
 DEV_PLATFORM_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-dev-platform.tar.gz"
 DEVICEUSER_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-deviceuser.tar.gz"
 CPU_LLM_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-std-llm-amd64.tar.gz"
+ACC_LLM_AMD64_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-acc-llm-amd64.tar.gz"
+ACC_LLM_ARM64_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-acc-llm-arm64.tar.gz"
 RELEASE_INDEX="${EXPORT_DIR}/release-index.yaml"
 PUBLIC_KEY_EXPORT="${EXPORT_DIR}/release-signing.pub"
 
@@ -1607,6 +1625,37 @@ if appliance_pack_wanted std-llm-amd64; then
     exit 2
   fi
 fi
+if appliance_pack_wanted acc-llm-amd64; then
+  if [[ -z "${VLLM_VERSION}" || "${VLLM_VERSION}" == *latest* ]]; then
+    echo "build-full-bundle: VLLM_VERSION must be an exact non-latest version" >&2
+    exit 2
+  fi
+  if [[ "${VLLM_IMAGE_PULL_REF}" == *:latest* || "${VLLM_IMAGE_PULL_REF}" == registry.local/* ]]; then
+    echo "build-full-bundle: VLLM_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
+    exit 2
+  fi
+fi
+if appliance_pack_wanted acc-llm-arm64; then
+  INFERENCE_PACKAGE_LINES="# Appliance vLLM ARM64 runtime with lifecycle manager.
+make package-inference-runtime-image-archive \\
+  OUT_FILE=\"/workspace/.run/inference-runtime-image.tar\" \\
+  INFERENCE_VERSION=$(shell_quote "${VLLM_ARM64_VERSION}") \\
+  INFERENCE_SOURCE_IMAGE=$(shell_quote "${VLLM_ARM64_IMAGE_PULL_REF}") \\
+  INFERENCE_ENGINE=vllm \\
+  INFERENCE_ARCHITECTURE=arm64
+INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
+INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
+"
+  INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${VLLM_ARM64_VERSION}") \\"$'\n'
+  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
+fi
+if appliance_pack_wanted acc-llm-arm64; then
+  if [[ -z "${VLLM_ARM64_VERSION}" || "${VLLM_ARM64_VERSION}" == *latest* ]] || [[ "${VLLM_ARM64_IMAGE_PULL_REF}" == *:latest* || "${VLLM_ARM64_IMAGE_PULL_REF}" == registry.local/* ]]; then
+    echo "build-full-bundle: VLLM_ARM64 image must be an exact pinned upstream ref" >&2
+    exit 2
+  fi
+fi
 if appliance_pack_wanted dev-platform; then
   if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner || "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner@sha256:* ]]; then
     echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be an upstream or LAN build-cache pull ref (default docker.io/alpine/git:2.49.0); got ${WORKSPACE_PROVISIONER_IMAGE_REF}" >&2
@@ -1669,6 +1718,9 @@ if offline_build_enabled; then
   require_var DEV_REGISTRY
   require_seed_package message-broker
   require_seed_package blob-storage
+  if appliance_pack_wanted std-llm-amd64 || appliance_pack_wanted acc-llm-amd64 || appliance_pack_wanted acc-llm-arm64; then
+    require_seed_package inference
+  fi
   if appliance_pack_wanted deviceuser; then
     require_seed_package jellyfin
   fi
@@ -1684,6 +1736,12 @@ if offline_build_enabled; then
   fi
   if appliance_pack_wanted std-llm-amd64; then
     INFERENCE_IMAGE_PULL_REF="$(lan_cache_ref ollama "${INFERENCE_VERSION}")"
+  fi
+  if appliance_pack_wanted acc-llm-amd64; then
+    VLLM_IMAGE_PULL_REF="$(lan_cache_ref vllm-openai-cpu "${VLLM_VERSION}-x86_64")"
+  fi
+  if appliance_pack_wanted acc-llm-arm64; then
+    VLLM_ARM64_IMAGE_PULL_REF="$(lan_cache_ref vllm-openai "${VLLM_ARM64_VERSION}-arm64")"
   fi
   if bool_true "${WORKFLOWS_ENABLED}"; then
     WORKFLOW_EXECUTOR_IMAGE_REF="$(lan_cache_ref argoexec "${WORKFLOWS_VERSION}")"
@@ -1824,6 +1882,25 @@ INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.r
   INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${INFERENCE_VERSION}") \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
+fi
+if appliance_pack_wanted acc-llm-amd64; then
+  INFERENCE_PACKAGE_LINES="# Appliance vLLM CPU runtime with lifecycle manager.
+make package-inference-runtime-image-archive \\
+  OUT_FILE=\"/workspace/.run/inference-runtime-image.tar\" \\
+  INFERENCE_VERSION=$(shell_quote "${VLLM_VERSION}") \\
+  INFERENCE_SOURCE_IMAGE=$(shell_quote "${VLLM_IMAGE_PULL_REF}") \\
+  INFERENCE_ENGINE=vllm \\
+  INFERENCE_ARCHITECTURE=amd64
+INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
+INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
+"
+  INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${VLLM_VERSION}") \\"$'\n'
+  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
+fi
+if appliance_pack_wanted acc-llm-arm64; then
+  tar -C "$(dirname "${ACC_LLM_ARM64_BUNDLE_DIR}")" -czf "${ACC_LLM_ARM64_ARCHIVE}" "$(basename "${ACC_LLM_ARM64_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${ACC_LLM_ARM64_ARCHIVE}")
 fi
 
 DOCKERHUB_AUTH_FILE=""
@@ -2075,6 +2152,10 @@ if appliance_pack_wanted std-llm-amd64; then
   tar -C "$(dirname "${CPU_LLM_BUNDLE_DIR}")" -czf "${CPU_LLM_ARCHIVE}" "$(basename "${CPU_LLM_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${CPU_LLM_ARCHIVE}")
 fi
+if appliance_pack_wanted acc-llm-amd64; then
+  tar -C "$(dirname "${ACC_LLM_AMD64_BUNDLE_DIR}")" -czf "${ACC_LLM_AMD64_ARCHIVE}" "$(basename "${ACC_LLM_AMD64_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${ACC_LLM_AMD64_ARCHIVE}")
+fi
 cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
 
 python3 "${SCRIPT_DIR}/write-release-index.py" "${RELEASE_INDEX}" "${PRODUCT_VERSION}" \
@@ -2085,7 +2166,9 @@ python3 "${SCRIPT_DIR}/write-release-index.py" "${RELEASE_INDEX}" "${PRODUCT_VER
   "$(basename "${BUNDLE_ARCHIVE}")" \
   "$(basename "${DEV_PLATFORM_ARCHIVE}")" \
   "$(basename "${DEVICEUSER_ARCHIVE}")" \
-  "$(basename "${CPU_LLM_ARCHIVE}")"
+  "$(basename "${CPU_LLM_ARCHIVE}")" \
+  "$(basename "${ACC_LLM_AMD64_ARCHIVE}")" \
+  "$(basename "${ACC_LLM_ARM64_ARCHIVE}")"
 
 echo
 echo "release-input tarball:"
@@ -2103,6 +2186,12 @@ if appliance_pack_wanted deviceuser; then
 fi
 if appliance_pack_wanted std-llm-amd64; then
   echo "  ${CPU_LLM_BUNDLE_DIR}"
+fi
+if appliance_pack_wanted acc-llm-amd64; then
+  echo "  ${ACC_LLM_AMD64_BUNDLE_DIR}"
+fi
+if appliance_pack_wanted acc-llm-arm64; then
+  echo "  ${ACC_LLM_ARM64_BUNDLE_DIR}"
 fi
 echo
 echo "bundled artifact-server image:"

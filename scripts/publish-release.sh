@@ -217,7 +217,7 @@ else:
             pack_ids.append(line.split("id:", 1)[1].strip())
         if in_packs and "filename:" in line:
             packs.append(line.split("filename:", 1)[1].strip())
-known = {"foundation", "dev-platform", "deviceuser", "std-llm-amd64", "acc-llm-arm64"}
+known = {"foundation", "dev-platform", "deviceuser", "std-llm-amd64", "acc-llm-amd64", "acc-llm-arm64"}
 if not pack_ids or "foundation" not in pack_ids:
     raise SystemExit("publish-release: release index must include the mandatory foundation pack")
 if any(pack not in known for pack in pack_ids) or len(pack_ids) != len(set(pack_ids)):
