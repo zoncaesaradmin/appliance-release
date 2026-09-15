@@ -1599,21 +1599,23 @@ warn_if_local_repo_source "${CTL_REPO_SOURCE}" "CTL_REPO"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   require_file "${VALUES_FILE_SOURCE}" "values file"
 fi
-if [[ -z "${ARTIFACT_SERVER_VERSION}" || "${ARTIFACT_SERVER_VERSION}" == *latest* ]]; then
-  echo "build-full-bundle: ARTIFACT_SERVER_VERSION must be an exact non-latest version" >&2
-  exit 2
-fi
-if [[ "${ARTIFACT_SERVER_SOURCE_IMAGE}" == *:latest || "${ARTIFACT_SERVER_SOURCE_IMAGE}" == registry.local/* ]]; then
-  echo "build-full-bundle: ARTIFACT_SERVER_SOURCE_IMAGE must be a version-pinned upstream image ref" >&2
-  exit 2
-fi
-if [[ -z "${DNS_VERSION}" || "${DNS_VERSION}" == *latest* ]]; then
-  echo "build-full-bundle: DNS_VERSION must be an exact non-latest version" >&2
-  exit 2
-fi
-if [[ "${DNS_IMAGE_PULL_REF}" == *:latest || "${DNS_IMAGE_PULL_REF}" == registry.local/* ]]; then
-  echo "build-full-bundle: DNS_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
-  exit 2
+if appliance_pack_wanted dev-platform; then
+  if [[ -z "${ARTIFACT_SERVER_VERSION}" || "${ARTIFACT_SERVER_VERSION}" == *latest* ]]; then
+    echo "build-full-bundle: ARTIFACT_SERVER_VERSION must be an exact non-latest version" >&2
+    exit 2
+  fi
+  if [[ "${ARTIFACT_SERVER_SOURCE_IMAGE}" == *:latest || "${ARTIFACT_SERVER_SOURCE_IMAGE}" == registry.local/* ]]; then
+    echo "build-full-bundle: ARTIFACT_SERVER_SOURCE_IMAGE must be a version-pinned upstream image ref" >&2
+    exit 2
+  fi
+  if [[ -z "${DNS_VERSION}" || "${DNS_VERSION}" == *latest* ]]; then
+    echo "build-full-bundle: DNS_VERSION must be an exact non-latest version" >&2
+    exit 2
+  fi
+  if [[ "${DNS_IMAGE_PULL_REF}" == *:latest || "${DNS_IMAGE_PULL_REF}" == registry.local/* ]]; then
+    echo "build-full-bundle: DNS_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
+    exit 2
+  fi
 fi
 if appliance_pack_wanted std-llm-amd64; then
   if [[ -z "${INFERENCE_VERSION}" || "${INFERENCE_VERSION}" == *latest* ]]; then
@@ -1660,18 +1662,30 @@ mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}" "$
 clone_repo "${CODE_REPO_SOURCE}" "${code_git_ref}" "${CODE_REPO_DIR}"
 clone_repo "${CTL_REPO_SOURCE}" "${ctl_git_ref}" "${CTL_REPO_DIR}"
 
-ARTIFACT_SERVER_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-registry/Chart.yaml")"
-# Chart.yaml may use Helm/upstream form v2.1.8 while ARTIFACT_SERVER_VERSION is 2.1.8.
-if [[ -z "${ARTIFACT_SERVER_CHART_APP_VERSION}" || "${ARTIFACT_SERVER_CHART_APP_VERSION#v}" != "${ARTIFACT_SERVER_VERSION}" ]]; then
-  echo "build-full-bundle: ARTIFACT_SERVER_VERSION ${ARTIFACT_SERVER_VERSION} must match appliance-registry chart appVersion ${ARTIFACT_SERVER_CHART_APP_VERSION:-<missing>}" >&2
-  exit 2
+# Catalog SSOT: selected packs → capabilities → artifacts.required.
+eval "$(python3 "${SCRIPT_DIR}/lib/resolve-pack-artifacts.py" \
+  --packages "${CODE_REPO_DIR}/metadata-bundle/base/packages/catalog.yaml" \
+  --capabilities "${CODE_REPO_DIR}/metadata-bundle/base/capabilities/catalog.yaml" \
+  --packs "${APPLIANCE_PACKS_RESOLVED}" \
+  --format shell)"
+echo "build-full-bundle: catalog-required artifacts: ${PACK_REQUIRED_ARTIFACTS}" >&2
+
+if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" || "${NEED_ARTIFACT_SERVER_CHART:-0}" == "1" ]]; then
+  ARTIFACT_SERVER_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-registry/Chart.yaml")"
+  # Chart.yaml may use Helm/upstream form v2.1.8 while ARTIFACT_SERVER_VERSION is 2.1.8.
+  if [[ -z "${ARTIFACT_SERVER_CHART_APP_VERSION}" || "${ARTIFACT_SERVER_CHART_APP_VERSION#v}" != "${ARTIFACT_SERVER_VERSION}" ]]; then
+    echo "build-full-bundle: ARTIFACT_SERVER_VERSION ${ARTIFACT_SERVER_VERSION} must match appliance-registry chart appVersion ${ARTIFACT_SERVER_CHART_APP_VERSION:-<missing>}" >&2
+    exit 2
+  fi
 fi
 
-DNS_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-dns/Chart.yaml")"
-# Chart.yaml may use Helm/upstream form v1.14.4 while DNS_VERSION is 1.14.4.
-if [[ -z "${DNS_CHART_APP_VERSION}" || "${DNS_CHART_APP_VERSION#v}" != "${DNS_VERSION}" ]]; then
-  echo "build-full-bundle: DNS_VERSION ${DNS_VERSION} must match appliance-dns chart appVersion ${DNS_CHART_APP_VERSION:-<missing>}" >&2
-  exit 2
+if [[ "${NEED_DNS_IMAGE:-0}" == "1" || "${NEED_DNS_CHART:-0}" == "1" ]]; then
+  DNS_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-dns/Chart.yaml")"
+  # Chart.yaml may use Helm/upstream form v1.14.4 while DNS_VERSION is 1.14.4.
+  if [[ -z "${DNS_CHART_APP_VERSION}" || "${DNS_CHART_APP_VERSION#v}" != "${DNS_VERSION}" ]]; then
+    echo "build-full-bundle: DNS_VERSION ${DNS_VERSION} must match appliance-dns chart appVersion ${DNS_CHART_APP_VERSION:-<missing>}" >&2
+    exit 2
+  fi
 fi
 
 INFERENCE_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-inference/Chart.yaml")"
@@ -1712,9 +1726,13 @@ if offline_build_enabled; then
   if appliance_pack_wanted dev-platform; then
     WORKSPACE_PROVISIONER_IMAGE_REF="$(lan_cache_ref alpine-git "${ALPINE_GIT_CACHE_TAG}")"
   fi
-  ARTIFACT_SERVER_SOURCE_IMAGE="$(lan_cache_ref zot-linux-amd64 "v${ARTIFACT_SERVER_VERSION}")"
+  if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]]; then
+    ARTIFACT_SERVER_SOURCE_IMAGE="$(lan_cache_ref zot-linux-amd64 "v${ARTIFACT_SERVER_VERSION}")"
+  fi
   MESSAGE_BROKER_SOURCE_IMAGE="$(lan_cache_ref nats "2.10.26-alpine")"
-  DNS_IMAGE_PULL_REF="$(lan_cache_ref coredns "v${DNS_VERSION}")"
+  if [[ "${NEED_DNS_IMAGE:-0}" == "1" ]]; then
+    DNS_IMAGE_PULL_REF="$(lan_cache_ref coredns "v${DNS_VERSION}")"
+  fi
   BLOB_STORAGE_SOURCE_IMAGE="$(lan_cache_ref "${BLOB_STORAGE_CACHE_NAME}" "${BLOB_STORAGE_CACHE_TAG}")"
   if appliance_pack_wanted deviceuser; then
     JELLYFIN_SOURCE_IMAGE="$(lan_cache_ref "${JELLYFIN_CACHE_NAME}" "${JELLYFIN_CACHE_TAG}")"
@@ -1812,10 +1830,10 @@ BUNDLED_IMAGE_REFS=()
 
 ensure_lan_build_cache_login
 
-ARTIFACT_SERVER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/artifact-server-image.tar"
+ARTIFACT_SERVER_IMAGE_ARCHIVE_FOR_DEV=""
 ARTIFACT_SERVER_IMAGE_REF=""
 
-DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/dns-server-image.tar"
+DNS_IMAGE_ARCHIVE_FOR_DEV=""
 DNS_IMAGE_REF=""
 
 INFERENCE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/inference-runtime-image.tar"
@@ -1824,7 +1842,7 @@ INFERENCE_IMAGE_REF=""
 BLOB_STORAGE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/blob-storage-image.tar"
 BLOB_STORAGE_IMAGE_REF=""
 
-if appliance_pack_wanted dev-platform; then
+if [[ "${NEED_WORKSPACE_PROVISIONER_IMAGE:-0}" == "1" ]]; then
   WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:2.49.0}"
   WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
   WORKSPACE_PROVISIONER_IMAGE_REF="$(export_bundled_oci_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "registry.local/workspace-provisioner" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
@@ -1832,7 +1850,7 @@ if appliance_pack_wanted dev-platform; then
   BUNDLED_IMAGE_REFS+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
 fi
 
-if appliance_pack_wanted deviceuser; then
+if [[ "${NEED_JELLYFIN_IMAGE:-0}" == "1" ]]; then
   JELLYFIN_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/jellyfin-image.tar"
   JELLYFIN_IMAGE_REF="$(export_bundled_oci_archive "${JELLYFIN_SOURCE_IMAGE}" "registry.local/jellyfin" "${CODE_REPO_DIR}/.run/jellyfin-image.tar")"
   if [[ "${JELLYFIN_IMAGE_REF}" != "${JELLYFIN_RUNTIME_REFERENCE}" ]]; then
@@ -1907,6 +1925,87 @@ if ! offline_build_enabled && { [[ -n "${DOCKERHUB_USER:-}" ]] || [[ -n "${DOCKE
   (umask 077; printf '%s' "${DOCKERHUB_TOKEN}" | podman login --authfile "${DOCKERHUB_AUTH_FILE}" --username "${DOCKERHUB_USER}" --password-stdin docker.io >/dev/null)
 fi
 
+DNS_PACKAGE_LINES=""
+DNS_ARCHIVE_ARG_LINES=""
+if [[ "${NEED_DNS_IMAGE:-0}" == "1" ]]; then
+  DNS_PACKAGE_LINES=$(cat <<DNS_EOF
+# Acquire CoreDNS before product image builds (catalog: dns capability).
+# shellcheck disable=SC1091
+source ./scripts/package/oci-pull.sh
+DNS_RUNTIME_SOURCE_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}")
+DNS_RUNTIME_LOCAL_REF=$(shell_quote "${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}")
+DNS_PACKAGE_ATTEMPTS=2
+if bool_true "\${OFFLINE_BUILD:-0}"; then
+  DNS_PACKAGE_ATTEMPTS=1
+fi
+for ((dns_package_attempt = 1; dns_package_attempt <= DNS_PACKAGE_ATTEMPTS; dns_package_attempt++)); do
+  echo "build-full-bundle: CoreDNS acquisition attempt \${dns_package_attempt}/\${DNS_PACKAGE_ATTEMPTS} (before product image builds)" >&2
+  if oci_skopeo_prefetch_docker "\${DNS_RUNTIME_SOURCE_IMAGE}" "\${DNS_RUNTIME_LOCAL_REF}" && \\
+    make package-dns-server-image-archive \\
+    OUT_FILE="/workspace/.run/dns-server-image.tar" \\
+    DNS_VERSION=$(shell_quote "${DNS_VERSION}") \\
+    DNS_SOURCE_IMAGE=$(shell_quote "${DNS_IMAGE_PULL_REF}") \\
+    RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \\
+    RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}"); then
+    break
+  fi
+  if ((dns_package_attempt == DNS_PACKAGE_ATTEMPTS)); then
+    echo "build-full-bundle: CoreDNS acquisition failed before product builds; giving up after \${DNS_PACKAGE_ATTEMPTS} package attempt(s)" >&2
+    exit 1
+  fi
+  echo "build-full-bundle: transient CoreDNS acquisition failure; retrying only CoreDNS in 15s" >&2
+  sleep 15
+done
+DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/dns-server-image.tar"
+DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/dns-server-image.reference)"
+DNS_EOF
+)
+  DNS_ARCHIVE_ARG_LINES="  --dns-version $(shell_quote "${DNS_VERSION}") \\"$'\n'
+  DNS_ARCHIVE_ARG_LINES+="  --dns-image \"\${DNS_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+  DNS_ARCHIVE_ARG_LINES+="  --dns-image-reference \"\${DNS_IMAGE_REF}\" \\"$'\n'
+fi
+
+HOST_AGENT_IMAGE_PACKAGE_LINES=""
+HOST_AGENT_IMAGE_ARCHIVE_ARG_LINES=""
+if [[ "${NEED_HOST_AGENT_IMAGE:-0}" == "1" ]]; then
+  HOST_AGENT_IMAGE_PACKAGE_LINES=$(cat <<'HOST_EOF'
+make package-host-agent-image-archive \
+  OUT_FILE="${HOST_AGENT_IMAGE_OUT}" \
+  REFERENCE_OUT_FILE="${HOST_AGENT_IMAGE_REF_FILE}" \
+  IMAGE_TAG="${CODE_VERSION}" \
+  GO_IMAGE=GO_IMAGE_PLACEHOLDER \
+  RUNTIME_IMAGE=RUNTIME_IMAGE_PLACEHOLDER \
+  RUNTIME_PREBAKED=RUNTIME_PREBAKED_PLACEHOLDER
+HOST_AGENT_IMAGE_REF="$(tr -d '\r\n' < "${HOST_AGENT_IMAGE_REF_FILE}")"
+HOST_EOF
+)
+  HOST_AGENT_IMAGE_PACKAGE_LINES="${HOST_AGENT_IMAGE_PACKAGE_LINES//GO_IMAGE_PLACEHOLDER/$(shell_quote "${CP_GO_IMAGE}")}"
+  HOST_AGENT_IMAGE_PACKAGE_LINES="${HOST_AGENT_IMAGE_PACKAGE_LINES//RUNTIME_IMAGE_PLACEHOLDER/$(shell_quote "${CP_RUNTIME_IMAGE}")}"
+  HOST_AGENT_IMAGE_PACKAGE_LINES="${HOST_AGENT_IMAGE_PACKAGE_LINES//RUNTIME_PREBAKED_PLACEHOLDER/$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")}"
+  HOST_AGENT_IMAGE_ARCHIVE_ARG_LINES="  --host-agent-image \"\${HOST_AGENT_IMAGE_OUT}\" \\"$'\n'
+  HOST_AGENT_IMAGE_ARCHIVE_ARG_LINES+="  --host-agent-image-reference \"\${HOST_AGENT_IMAGE_REF}\" \\"$'\n'
+fi
+
+ARTIFACT_SERVER_PACKAGE_LINES=""
+ARTIFACT_SERVER_ARCHIVE_ARG_LINES=""
+if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]]; then
+  ARTIFACT_SERVER_PACKAGE_LINES=$(cat <<ART_EOF
+# Appliance-owned artifact-server wrapper (catalog: artifact capability).
+make package-artifact-server-image-archive \\
+  OUT_FILE="/workspace/.run/artifact-server-image.tar" \\
+  ARTIFACT_SERVER_VERSION=$(shell_quote "${ARTIFACT_SERVER_VERSION}") \\
+  ARTIFACT_SERVER_SOURCE_IMAGE=$(shell_quote "${ARTIFACT_SERVER_SOURCE_IMAGE}") \\
+  RUNTIME_SOURCE_IMAGE=$(shell_quote "${ARTIFACT_RUNTIME_SOURCE_IMAGE}") \\
+  RUNTIME_PACKAGES_INSTALLED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
+ARTIFACT_SERVER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/artifact-server-image.tar"
+ARTIFACT_SERVER_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/artifact-server-image.reference)"
+ART_EOF
+)
+  ARTIFACT_SERVER_ARCHIVE_ARG_LINES="  --artifact-server-version $(shell_quote "${ARTIFACT_SERVER_VERSION}") \\"$'\n'
+  ARTIFACT_SERVER_ARCHIVE_ARG_LINES+="  --artifact-server-image \"\${ARTIFACT_SERVER_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+  ARTIFACT_SERVER_ARCHIVE_ARG_LINES+="  --artifact-server-image-reference \"\${ARTIFACT_SERVER_IMAGE_REF}\" \\"$'\n'
+fi
+
 cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1936,41 +2035,7 @@ bool_true() {
   esac
 }
 
-# Acquire the dependency that has historically been the least reliable before
-# spending time on product image builds. appliance-code's DNS exporter already
-# retries its exact skopeo prefetch five times. Online mode permits one more
-# DNS-only package attempt; offline mode remains one fail-closed LAN attempt.
-# The wrapper build uses --pull-never, so explicitly preload its Alpine runtime
-# too; previously it only worked because the later DNS build inherited Alpine
-# from the control-plane build's container storage.
-# shellcheck disable=SC1091
-source ./scripts/package/oci-pull.sh
-DNS_RUNTIME_SOURCE_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}")
-DNS_RUNTIME_LOCAL_REF=$(shell_quote "${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}")
-DNS_PACKAGE_ATTEMPTS=2
-if bool_true "\${OFFLINE_BUILD:-0}"; then
-  DNS_PACKAGE_ATTEMPTS=1
-fi
-for ((dns_package_attempt = 1; dns_package_attempt <= DNS_PACKAGE_ATTEMPTS; dns_package_attempt++)); do
-  echo "build-full-bundle: CoreDNS acquisition attempt \${dns_package_attempt}/\${DNS_PACKAGE_ATTEMPTS} (before product image builds)" >&2
-  if oci_skopeo_prefetch_docker "\${DNS_RUNTIME_SOURCE_IMAGE}" "\${DNS_RUNTIME_LOCAL_REF}" && \
-    make package-dns-server-image-archive \
-    OUT_FILE="/workspace/.run/dns-server-image.tar" \
-    DNS_VERSION=$(shell_quote "${DNS_VERSION}") \
-    DNS_SOURCE_IMAGE=$(shell_quote "${DNS_IMAGE_PULL_REF}") \
-    RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \
-    RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}"); then
-    break
-  fi
-  if ((dns_package_attempt == DNS_PACKAGE_ATTEMPTS)); then
-    echo "build-full-bundle: CoreDNS acquisition failed before product builds; giving up after \${DNS_PACKAGE_ATTEMPTS} package attempt(s)" >&2
-    exit 1
-  fi
-  echo "build-full-bundle: transient CoreDNS acquisition failure; retrying only CoreDNS in 15s" >&2
-  sleep 15
-done
-DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/dns-server-image.tar"
-DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/dns-server-image.reference)"
+${DNS_PACKAGE_LINES}
 
 make package-control-plane-image-archive OUT_FILE="\${CONTROL_PLANE_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}" \
   GO_IMAGE=$(shell_quote "${CP_GO_IMAGE}") \
@@ -1983,14 +2048,9 @@ make package-ui-image-archive OUT_FILE="\${UI_IMAGE_OUT}" IMAGE_TAG="\${CODE_VER
   UI_WEB_DEPS_IMAGE=$(shell_quote "${UI_WEB_DEPS_IMAGE}") \
   USE_PREBAKED_NPM=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}") \
   RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
-make package-host-agent-image-archive \
-  OUT_FILE="\${HOST_AGENT_IMAGE_OUT}" \
-  REFERENCE_OUT_FILE="\${HOST_AGENT_IMAGE_REF_FILE}" \
-  IMAGE_TAG="\${CODE_VERSION}" \
-  GO_IMAGE=$(shell_quote "${CP_GO_IMAGE}") \
-  RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \
-  RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
-HOST_AGENT_IMAGE_REF="\$(tr -d '\r\n' < "\${HOST_AGENT_IMAGE_REF_FILE}")"
+# Foundation lan-discovery requires the host-agent daemon binary.
+make -C ./services/hostagent build
+${HOST_AGENT_IMAGE_PACKAGE_LINES}
 make package-blob-storage-image-archive \
   OUT_FILE="\${BLOB_STORAGE_IMAGE_OUT}" \
   REFERENCE_OUT_FILE="\${BLOB_STORAGE_IMAGE_REF_FILE}" \
@@ -2008,17 +2068,7 @@ HOST_PACKAGES_ARGS=(
   --host-packages-os-version "\${HOST_PACKAGES_OS_VERSION}"
 )
 
-# Appliance-owned artifact-server wrapper: upstream registry binary + thin
-# entrypoint; native application.log under /data/zon/logs/artifactserver via
-# chart config. Always package from upstream pull ref (no pre-supplied archive).
-make package-artifact-server-image-archive \
-  OUT_FILE="/workspace/.run/artifact-server-image.tar" \
-  ARTIFACT_SERVER_VERSION=$(shell_quote "${ARTIFACT_SERVER_VERSION}") \
-  ARTIFACT_SERVER_SOURCE_IMAGE=$(shell_quote "${ARTIFACT_SERVER_SOURCE_IMAGE}") \
-  RUNTIME_SOURCE_IMAGE=$(shell_quote "${ARTIFACT_RUNTIME_SOURCE_IMAGE}") \
-  RUNTIME_PACKAGES_INSTALLED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
-ARTIFACT_SERVER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/artifact-server-image.tar"
-ARTIFACT_SERVER_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/artifact-server-image.reference)"
+${ARTIFACT_SERVER_PACKAGE_LINES}
 
 ${INFERENCE_PACKAGE_LINES}
 
@@ -2056,21 +2106,13 @@ bash ./scripts/package/archive-release-input.sh \
   --control-plane-image-reference "localhost/appliance-control-plane:\${CODE_VERSION}" \
   --ui-image "\${UI_IMAGE_OUT}" \
   --ui-image-reference "localhost/appliance-ui:\${CODE_VERSION}" \
-  --host-agent-image "\${HOST_AGENT_IMAGE_OUT}" \
-  --host-agent-image-reference "\${HOST_AGENT_IMAGE_REF}" \
-  --blob-storage-image "\${BLOB_STORAGE_IMAGE_OUT}" \
+${HOST_AGENT_IMAGE_ARCHIVE_ARG_LINES}  --blob-storage-image "\${BLOB_STORAGE_IMAGE_OUT}" \
   --blob-storage-image-reference "\${BLOB_STORAGE_IMAGE_REF}" \
   --message-broker-image "\${MESSAGE_BROKER_IMAGE_OUT}" \
   --message-broker-image-reference "\${MESSAGE_BROKER_IMAGE_REF}" \
   "\${HOST_PACKAGES_ARGS[@]}" \
   --k3s-version $(shell_quote "${K3S_VERSION}") \
-  --artifact-server-version $(shell_quote "${ARTIFACT_SERVER_VERSION}") \
-  --artifact-server-image "\${ARTIFACT_SERVER_IMAGE_ARCHIVE_FOR_DEV}" \
-  --artifact-server-image-reference "\${ARTIFACT_SERVER_IMAGE_REF}" \
-  --dns-version $(shell_quote "${DNS_VERSION}") \
-  --dns-image "\${DNS_IMAGE_ARCHIVE_FOR_DEV}" \
-  --dns-image-reference "\${DNS_IMAGE_REF}" \
-${INFERENCE_ARCHIVE_ARG_LINES}  --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \
+${ARTIFACT_SERVER_ARCHIVE_ARG_LINES}${DNS_ARCHIVE_ARG_LINES}${INFERENCE_ARCHIVE_ARG_LINES}  --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \
   "\${WORKFLOWS_ARGS[@]}" \
   "\${BUNDLED_IMAGE_ARGS[@]}"
 EOF
@@ -2085,7 +2127,9 @@ make -C "${CODE_REPO_DIR}" DEV_IMAGE="${DEV_IMAGE}" OFFLINE_BUILD="${OFFLINE_BUI
   dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}"
 rm -f "${DOCKERHUB_AUTH_FILE}"
 cp "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"
-ARTIFACT_SERVER_IMAGE_REF="$(tr -d '\r\n' < "${CODE_REPO_DIR}/.run/artifact-server-image.reference")"
+if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]]; then
+  ARTIFACT_SERVER_IMAGE_REF="$(tr -d '\r\n' < "${CODE_REPO_DIR}/.run/artifact-server-image.reference")"
+fi
 
 fetch_k3s_inputs "${INPUTS_DIR}"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
@@ -2194,9 +2238,11 @@ if appliance_pack_wanted acc-llm-arm64; then
   echo "  ${ACC_LLM_ARM64_BUNDLE_DIR}"
 fi
 echo
-echo "bundled artifact-server image:"
-echo "  ${ARTIFACT_SERVER_IMAGE_REF}"
-echo
+if [[ -n "${ARTIFACT_SERVER_IMAGE_REF}" ]]; then
+  echo "bundled artifact-server image:"
+  echo "  ${ARTIFACT_SERVER_IMAGE_REF}"
+  echo
+fi
 echo "generated bundle config:"
 echo "  ${WORKSPACE}/generated/product-bundle.env"
 echo

@@ -122,3 +122,16 @@ appliance_pack_wanted() {
   done
   return 1
 }
+
+# True when catalog-derived PACK_REQUIRED_ARTIFACTS includes the artifact id.
+pack_artifact_needed() {
+  local id="$1"
+  local item=""
+  # shellcheck disable=SC2086
+  for item in ${PACK_REQUIRED_ARTIFACTS:-}; do
+    if [[ "${item}" == "${id}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}

@@ -685,42 +685,46 @@ def validate_host_agent(
     entries_by_path: dict[str, dict],
     *,
     require_in_bundle: bool,
+    require_image: bool = True,
 ) -> list:
-    image = require_artifact(artifacts, "hostAgentImage")
-    image_path = require_file_artifact(artifacts, "hostAgentImage", release_input_dir)
-    image_ref = require_image_reference(image, "hostAgentImage")
-    if not re.fullmatch(
-        r"registry\.local/appliance-host-agent@sha256:[0-9a-f]{64}", image_ref
-    ):
-        raise ValueError(
-            "release-input artifacts.hostAgentImage.imageReference must be "
-            "registry.local/appliance-host-agent@sha256:<64 lowercase hex>"
-        )
-    if "host-agent" not in image_path.name.lower() and "hostagent" not in image_path.name.lower():
-        raise ValueError(
-            "release-input artifacts.hostAgentImage.path must identify "
-            f"appliance-host-agent, got {image['path']!r}"
-        )
-    require_oci_archive_reference_matches_content(image_path, image_ref, "hostAgentImage")
-    index = load_oci_archive_index(image_path)
-    if index is None:
-        raise ValueError(f"hostAgentImage OCI archive {image_path} is missing index.json")
-    annotation = (
-        (index.get("manifests") or [{}])[0].get("annotations") or {}
-    ).get("org.opencontainers.image.ref.name")
-    if annotation != "registry.local/appliance-host-agent:bundled":
-        raise ValueError(
-            "hostAgentImage OCI archive annotation must be "
-            "'registry.local/appliance-host-agent:bundled', "
-            f"got {annotation!r}"
-        )
-    if require_in_bundle:
-        image_bundle_path = f"oci-images/{image_path.name}"
-        image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "hostAgentImage")
-        require_matching_bundle_digest(image_entry, image, image_bundle_path, "hostAgentImage")
-        require_matching_bundle_image_reference(
-            image_entry, image_ref, image_bundle_path, "hostAgentImage"
-        )
+    checked = []
+    if require_image or artifacts.get("hostAgentImage"):
+        image = require_artifact(artifacts, "hostAgentImage")
+        image_path = require_file_artifact(artifacts, "hostAgentImage", release_input_dir)
+        image_ref = require_image_reference(image, "hostAgentImage")
+        if not re.fullmatch(
+            r"registry\.local/appliance-host-agent@sha256:[0-9a-f]{64}", image_ref
+        ):
+            raise ValueError(
+                "release-input artifacts.hostAgentImage.imageReference must be "
+                "registry.local/appliance-host-agent@sha256:<64 lowercase hex>"
+            )
+        if "host-agent" not in image_path.name.lower() and "hostagent" not in image_path.name.lower():
+            raise ValueError(
+                "release-input artifacts.hostAgentImage.path must identify "
+                f"appliance-host-agent, got {image['path']!r}"
+            )
+        require_oci_archive_reference_matches_content(image_path, image_ref, "hostAgentImage")
+        index = load_oci_archive_index(image_path)
+        if index is None:
+            raise ValueError(f"hostAgentImage OCI archive {image_path} is missing index.json")
+        annotation = (
+            (index.get("manifests") or [{}])[0].get("annotations") or {}
+        ).get("org.opencontainers.image.ref.name")
+        if annotation != "registry.local/appliance-host-agent:bundled":
+            raise ValueError(
+                "hostAgentImage OCI archive annotation must be "
+                "'registry.local/appliance-host-agent:bundled', "
+                f"got {annotation!r}"
+            )
+        if require_in_bundle:
+            image_bundle_path = f"oci-images/{image_path.name}"
+            image_entry = require_bundle_entry(entries_by_path, image_bundle_path, "hostAgentImage")
+            require_matching_bundle_digest(image_entry, image, image_bundle_path, "hostAgentImage")
+            require_matching_bundle_image_reference(
+                image_entry, image_ref, image_bundle_path, "hostAgentImage"
+            )
+        checked.append("hostAgentImage")
 
     binary = require_artifact(artifacts, "hostAgentBinary")
     binary_path = require_file_artifact(artifacts, "hostAgentBinary", release_input_dir)
@@ -733,7 +737,8 @@ def validate_host_agent(
         binary_bundle_path = f"bin/{binary_path.name}"
         binary_entry = require_bundle_entry(entries_by_path, binary_bundle_path, "hostAgentBinary")
         require_matching_bundle_digest(binary_entry, binary, binary_bundle_path, "hostAgentBinary")
-    return ["hostAgentImage", "hostAgentBinary"]
+    checked.append("hostAgentBinary")
+    return checked
 
 
 def validate_host_packages(
@@ -959,23 +964,31 @@ def main() -> int:
                     entries_by_path,
                 ),
                 "runtimeValues": validate_runtime_values(artifacts, bundle_values),
-                # Artifact-server, DNS, host-agent, and host-packages live in other
-                # packs; foundation still checks release-input presence/content.
-                "artifactServer": validate_artifact_server(
-                    release_input,
-                    bundle_manifest,
-                    artifacts,
-                    release_input_path.parent,
-                    entries_by_path,
-                    require_in_bundle=False,
+                # Catalog SSOT: artifact-server/DNS/host-agent-image belong to
+                # other packs. Validate them in release-input only when present.
+                "artifactServer": (
+                    validate_artifact_server(
+                        release_input,
+                        bundle_manifest,
+                        artifacts,
+                        release_input_path.parent,
+                        entries_by_path,
+                        require_in_bundle=False,
+                    )
+                    if artifacts.get("artifactServerImage") or artifacts.get("artifactServerChart")
+                    else []
                 ),
-                "dns": validate_dns(
-                    release_input,
-                    bundle_manifest,
-                    artifacts,
-                    release_input_path.parent,
-                    entries_by_path,
-                    require_in_bundle=False,
+                "dns": (
+                    validate_dns(
+                        release_input,
+                        bundle_manifest,
+                        artifacts,
+                        release_input_path.parent,
+                        entries_by_path,
+                        require_in_bundle=False,
+                    )
+                    if artifacts.get("dnsImage") or artifacts.get("dnsChart")
+                    else []
                 ),
                 "metadataBundle": validate_metadata_bundle(
                     release_input,
@@ -988,6 +1001,7 @@ def main() -> int:
                     release_input_path.parent,
                     entries_by_path,
                     require_in_bundle=False,
+                    require_image=bool(artifacts.get("hostAgentImage")),
                 ),
                 "hostPackages": validate_host_packages(
                     artifacts,

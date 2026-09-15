@@ -244,6 +244,74 @@ def test_foundation_pack_allows_host_packages_absent_from_bundle() -> None:
             raise AssertionError(result.stderr)
 
 
+def test_foundation_pack_allows_catalog_optional_artifacts_absent_from_release_input() -> None:
+    """Pack-selective builds omit catalog-unowned artifacts from release-input."""
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        release_input_path = tmp / "release-input" / "release-input.json"
+        release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
+        for key in (
+            "hostAgentImage",
+            "artifactServerImage",
+            "artifactServerChart",
+            "dnsImage",
+            "dnsChart",
+            "inferenceRuntimeImage",
+            "inferenceChart",
+            "workflowsChart",
+            "workflowsCRDs",
+            "workflowControllerImage",
+            "workflowExecutorImage",
+            "extraOCIImages",
+        ):
+            release_input["artifacts"].pop(key, None)
+        release_input["compatibility"] = {
+            "k3sVersion": "v1.30.4+k3s1",
+            "chartVersion": "1.0.0",
+        }
+        release_input_path.write_text(json.dumps(release_input), encoding="utf-8")
+        for relative in (
+            "images/appliance-host-agent.tar",
+            "images/artifact-server-image.tar",
+            "chart/appliance-registry-2.1.11.tgz",
+            "images/coredns-image.tar",
+            "chart/appliance-dns-1.14.4.tgz",
+        ):
+            path = tmp / "release-input" / relative
+            if path.exists():
+                path.unlink()
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["compatibility"] = {
+            "k3sVersion": "v1.30.4+k3s1",
+            "chartVersion": "1.0.0",
+        }
+        manifest["entries"] = [
+            entry
+            for entry in manifest["entries"]
+            if not any(
+                token in str(entry.get("targetPath") or "")
+                for token in (
+                    "host-agent",
+                    "artifact-server",
+                    "appliance-registry",
+                    "coredns",
+                    "appliance-dns",
+                    "inference",
+                    "argo-workflows",
+                    "workflow-",
+                    "buildah",
+                    "host-packages/",
+                )
+            )
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = run_validator(tmp, "--pack", "foundation")
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+
+
 def test_positive_case_with_nested_bundle_root() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -855,6 +923,7 @@ def main() -> None:
     test_positive_case()
     test_rejects_missing_host_packages_when_flags_false()
     test_foundation_pack_allows_host_packages_absent_from_bundle()
+    test_foundation_pack_allows_catalog_optional_artifacts_absent_from_release_input()
     test_positive_case_with_nested_bundle_root()
     test_allows_empty_directory_artifacts()
     test_rejects_tag_only_extra_oci_image()
