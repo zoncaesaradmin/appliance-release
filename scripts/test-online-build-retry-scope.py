@@ -50,6 +50,20 @@ def main() -> None:
     if text.count('dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}"') != 1:
         raise AssertionError("expected exactly one complete dev-run invocation")
 
+    # acc-llm-arm64 must package the runtime image in the dev script, then tar the
+    # assembled pack after product-bundle — never tar workspace/out early.
+    arm64_package = "INFERENCE_ARCHITECTURE=arm64"
+    arm64_export = 'tar -C "$(dirname "${ACC_LLM_ARM64_BUNDLE_DIR}")"'
+    product_bundle = 'make -C "${RELEASE_REPO_DIR}" product-bundle'
+    if text.count(arm64_package) != 1:
+        raise AssertionError("expected exactly one acc-llm-arm64 inference package wiring block")
+    if text.count(arm64_export) != 1:
+        raise AssertionError("expected exactly one post-assemble acc-llm-arm64 archive export")
+    if text.index(arm64_package) > text.index('cat >"${CODE_DEV_SCRIPT_PATH}"'):
+        raise AssertionError("acc-llm-arm64 package lines must be prepared before the dev script")
+    if text.index(arm64_export) < text.index(product_bundle):
+        raise AssertionError("acc-llm-arm64 archive export must run after product-bundle")
+
     official_source = "docker.io/coredns/coredns:"
     if f"{official_source}${{DNS_VERSION}}" not in text:
         raise AssertionError("online CoreDNS must use the official Docker Hub source")

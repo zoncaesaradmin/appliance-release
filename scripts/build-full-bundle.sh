@@ -1636,21 +1636,6 @@ if appliance_pack_wanted acc-llm-amd64; then
   fi
 fi
 if appliance_pack_wanted acc-llm-arm64; then
-  INFERENCE_PACKAGE_LINES="# Appliance vLLM ARM64 runtime with lifecycle manager.
-make package-inference-runtime-image-archive \\
-  OUT_FILE=\"/workspace/.run/inference-runtime-image.tar\" \\
-  INFERENCE_VERSION=$(shell_quote "${VLLM_ARM64_VERSION}") \\
-  INFERENCE_SOURCE_IMAGE=$(shell_quote "${VLLM_ARM64_IMAGE_PULL_REF}") \\
-  INFERENCE_ENGINE=vllm \\
-  INFERENCE_ARCHITECTURE=arm64
-INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
-INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
-"
-  INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${VLLM_ARM64_VERSION}") \\"$'\n'
-  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
-  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
-fi
-if appliance_pack_wanted acc-llm-arm64; then
   if [[ -z "${VLLM_ARM64_VERSION}" || "${VLLM_ARM64_VERSION}" == *latest* ]] || [[ "${VLLM_ARM64_IMAGE_PULL_REF}" == *:latest* || "${VLLM_ARM64_IMAGE_PULL_REF}" == registry.local/* ]]; then
     echo "build-full-bundle: VLLM_ARM64 image must be an exact pinned upstream ref" >&2
     exit 2
@@ -1899,8 +1884,19 @@ INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.r
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
 fi
 if appliance_pack_wanted acc-llm-arm64; then
-  tar -C "$(dirname "${ACC_LLM_ARM64_BUNDLE_DIR}")" -czf "${ACC_LLM_ARM64_ARCHIVE}" "$(basename "${ACC_LLM_ARM64_BUNDLE_DIR}")"
-  EXPORTED_ARCHIVES+=("${ACC_LLM_ARM64_ARCHIVE}")
+  INFERENCE_PACKAGE_LINES="# Appliance vLLM ARM64 runtime with lifecycle manager.
+make package-inference-runtime-image-archive \\
+  OUT_FILE=\"/workspace/.run/inference-runtime-image.tar\" \\
+  INFERENCE_VERSION=$(shell_quote "${VLLM_ARM64_VERSION}") \\
+  INFERENCE_SOURCE_IMAGE=$(shell_quote "${VLLM_ARM64_IMAGE_PULL_REF}") \\
+  INFERENCE_ENGINE=vllm \\
+  INFERENCE_ARCHITECTURE=arm64
+INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
+INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
+"
+  INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${VLLM_ARM64_VERSION}") \\"$'\n'
+  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
 fi
 
 DOCKERHUB_AUTH_FILE=""
@@ -2155,6 +2151,10 @@ fi
 if appliance_pack_wanted acc-llm-amd64; then
   tar -C "$(dirname "${ACC_LLM_AMD64_BUNDLE_DIR}")" -czf "${ACC_LLM_AMD64_ARCHIVE}" "$(basename "${ACC_LLM_AMD64_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${ACC_LLM_AMD64_ARCHIVE}")
+fi
+if appliance_pack_wanted acc-llm-arm64; then
+  tar -C "$(dirname "${ACC_LLM_ARM64_BUNDLE_DIR}")" -czf "${ACC_LLM_ARM64_ARCHIVE}" "$(basename "${ACC_LLM_ARM64_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${ACC_LLM_ARM64_ARCHIVE}")
 fi
 cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
 
