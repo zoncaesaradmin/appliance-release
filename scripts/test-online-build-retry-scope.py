@@ -64,7 +64,7 @@ def main() -> None:
     # acc-llm-arm64 must package the runtime image in the dev script, then tar the
     # assembled pack after product-bundle — never tar workspace/out early.
     arm64_package = "INFERENCE_ARCHITECTURE=arm64"
-    arm64_export = 'tar -C "$(dirname "${ACC_LLM_ARM64_BUNDLE_DIR}")"'
+    arm64_export = 'create_gzip_tarball "${ACC_LLM_ARM64_ARCHIVE}"'
     product_bundle = 'make -C "${RELEASE_REPO_DIR}" product-bundle'
     if text.count(arm64_package) != 1:
         raise AssertionError("expected exactly one acc-llm-arm64 inference package wiring block")

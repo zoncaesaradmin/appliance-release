@@ -43,3 +43,14 @@ if [[ "${src_tree_inode}" != "${dest_tree_inode}" ]]; then
 fi
 
 echo "test-fs-link: ok"
+
+# create_gzip_tarball must produce a readable .tar.gz (pigz or gzip).
+gzip_src="${TMP}/gzip-src"
+gzip_archive="${TMP}/pack.tar.gz"
+mkdir -p "${gzip_src}/nested"
+printf 'gzip-payload\n' >"${gzip_src}/nested/blob.bin"
+create_gzip_tarball "${gzip_archive}" "${TMP}" "gzip-src"
+[[ -f "${gzip_archive}" ]] || fail "gzip archive missing"
+tar -tzf "${gzip_archive}" | grep -q 'gzip-src/nested/blob.bin' || fail "gzip archive missing expected entry"
+
+echo "test-fs-link: gzip ok"

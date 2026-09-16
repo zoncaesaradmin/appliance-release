@@ -48,3 +48,22 @@ link_or_copy_tree() {
   fi
   cp -a "${src}" "${dest}"
 }
+
+# create_gzip_tarball DEST_ARCHIVE PARENT_DIR ENTRY_NAME
+# Prefer pigz when available for multi-gigabyte pack archives; fall back to gzip.
+create_gzip_tarball() {
+  local dest="$1"
+  local parent="$2"
+  local entry="$3"
+  if [[ -z "${dest}" || -z "${parent}" || -z "${entry}" ]]; then
+    echo "create_gzip_tarball: DEST PARENT ENTRY are required" >&2
+    return 2
+  fi
+  mkdir -p "$(dirname "${dest}")"
+  rm -f "${dest}"
+  if command -v pigz >/dev/null 2>&1; then
+    tar -C "${parent}" -I pigz -cf "${dest}" "${entry}"
+    return 0
+  fi
+  tar -C "${parent}" -czf "${dest}" "${entry}"
+}

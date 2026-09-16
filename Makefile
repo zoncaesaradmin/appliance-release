@@ -107,6 +107,7 @@ verify-client-config:
 verify-release-artifacts:
 	@python3 scripts/test-runtime-packages.py
 	@python3 scripts/test-online-build-retry-scope.py
+	@python3 scripts/test-oci-relabel-noop.py
 	@python3 scripts/test-publish-release-static-http.py
 	@python3 scripts/lib/resolve_pack_artifacts_test.py
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_validate_release_artifacts.py"

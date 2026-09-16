@@ -497,6 +497,7 @@ CODE_REPO_DIR="${REPOS_DIR}/appliance-code"
 CTL_REPO_DIR="${REPOS_DIR}/appliance-ctl"
 RELEASE_INPUT_TAR="${ARTIFACTS_DIR}/release-input-${PRODUCT_VERSION}.tar.gz"
 CODE_RELEASE_INPUT_TAR="${CODE_REPO_DIR}/.run/release-input-${PRODUCT_VERSION}.tar.gz"
+CODE_RELEASE_INPUT_DIR="${CODE_REPO_DIR}/.run/release-input-${PRODUCT_VERSION}"
 CODE_DEV_SCRIPT_REL=".run/package-release-input-in-dev-container.sh"
 CODE_DEV_SCRIPT_PATH="${CODE_REPO_DIR}/${CODE_DEV_SCRIPT_REL}"
 
@@ -802,26 +803,36 @@ archive, annotation_ref = sys.argv[1], sys.argv[2]
 
 with tarfile.open(archive) as tar:
     members = tar.getmembers()
-    files = {}
     index_member_name = None
+    index_bytes = None
     for member in members:
-        if member.isfile():
+        if member.isfile() and member.name.lstrip("./") == "index.json":
+            extracted = tar.extractfile(member)
+            if extracted is None:
+                raise SystemExit(f"failed to read {member.name} from {archive}")
+            index_member_name = member.name
+            index_bytes = extracted.read()
+            break
+    if index_member_name is None or index_bytes is None:
+        raise SystemExit(f"oci archive {archive} is missing index.json")
+
+    index = json.loads(index_bytes)
+    manifests = index.get("manifests") or []
+    if not manifests:
+        raise SystemExit(f"oci archive {archive} has no manifests in index.json")
+    annotations = dict(manifests[0].get("annotations") or {})
+    if annotations.get("org.opencontainers.image.ref.name") == annotation_ref:
+        # Already labeled; skip the multi-gigabyte rewrite.
+        sys.exit(0)
+
+    files = {index_member_name: index_bytes}
+    for member in members:
+        if member.isfile() and member.name != index_member_name:
             extracted = tar.extractfile(member)
             if extracted is None:
                 raise SystemExit(f"failed to read {member.name} from {archive}")
             files[member.name] = extracted.read()
-            if member.name.lstrip("./") == "index.json":
-                index_member_name = member.name
 
-if index_member_name is None:
-    raise SystemExit(f"oci archive {archive} is missing index.json")
-
-index = json.loads(files[index_member_name])
-manifests = index.get("manifests") or []
-if not manifests:
-    raise SystemExit(f"oci archive {archive} has no manifests in index.json")
-
-annotations = dict(manifests[0].get("annotations") or {})
 annotations["org.opencontainers.image.ref.name"] = annotation_ref
 manifests[0]["annotations"] = annotations
 index["manifests"] = manifests
@@ -2172,7 +2183,14 @@ set_env_var "${CONFIG_OUT}" WORKDIR "${WORKSPACE}"
 set_env_var "${CONFIG_OUT}" PRODUCT_VERSION "${PRODUCT_VERSION}"
 set_env_var "${CONFIG_OUT}" OS_VERSION "${OS_VERSION}"
 set_env_var "${CONFIG_OUT}" K3S_VERSION "${K3S_VERSION}"
-set_env_var "${CONFIG_OUT}" RELEASE_INPUT_SOURCE "${RELEASE_INPUT_TAR}"
+# Prefer the durable release-input directory for local assemble so we do not
+# gunzip/extract the multi-gigabyte tarball we just wrote. Keep the tarball for
+# publish and any remote fetch path.
+if [[ -d "${CODE_RELEASE_INPUT_DIR}" && -f "${CODE_RELEASE_INPUT_DIR}/release-input.json" ]]; then
+  set_env_var "${CONFIG_OUT}" RELEASE_INPUT_SOURCE "${CODE_RELEASE_INPUT_DIR}"
+else
+  set_env_var "${CONFIG_OUT}" RELEASE_INPUT_SOURCE "${RELEASE_INPUT_TAR}"
+fi
 set_env_var "${CONFIG_OUT}" RELEASE_INPUT_VERSION ""
 set_env_var "${CONFIG_OUT}" RELEASE_INPUT_FETCH_TEMPLATE ""
 set_env_var "${CONFIG_OUT}" CTL_REPO_SOURCE "${CTL_REPO_DIR}"
@@ -2208,27 +2226,27 @@ make -C "${RELEASE_REPO_DIR}" product-bundle CONFIG="${CONFIG_OUT}"
 
 EXPORTED_ARCHIVES=()
 if appliance_pack_wanted foundation; then
-  tar -C "$(dirname "${BUNDLE_DIR}")" -czf "${BUNDLE_ARCHIVE}" "$(basename "${BUNDLE_DIR}")"
+  create_gzip_tarball "${BUNDLE_ARCHIVE}" "$(dirname "${BUNDLE_DIR}")" "$(basename "${BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${BUNDLE_ARCHIVE}")
 fi
 if appliance_pack_wanted dev-platform; then
-  tar -C "$(dirname "${DEV_PLATFORM_BUNDLE_DIR}")" -czf "${DEV_PLATFORM_ARCHIVE}" "$(basename "${DEV_PLATFORM_BUNDLE_DIR}")"
+  create_gzip_tarball "${DEV_PLATFORM_ARCHIVE}" "$(dirname "${DEV_PLATFORM_BUNDLE_DIR}")" "$(basename "${DEV_PLATFORM_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${DEV_PLATFORM_ARCHIVE}")
 fi
 if appliance_pack_wanted deviceuser; then
-  tar -C "$(dirname "${DEVICEUSER_BUNDLE_DIR}")" -czf "${DEVICEUSER_ARCHIVE}" "$(basename "${DEVICEUSER_BUNDLE_DIR}")"
+  create_gzip_tarball "${DEVICEUSER_ARCHIVE}" "$(dirname "${DEVICEUSER_BUNDLE_DIR}")" "$(basename "${DEVICEUSER_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${DEVICEUSER_ARCHIVE}")
 fi
 if appliance_pack_wanted std-llm-amd64; then
-  tar -C "$(dirname "${CPU_LLM_BUNDLE_DIR}")" -czf "${CPU_LLM_ARCHIVE}" "$(basename "${CPU_LLM_BUNDLE_DIR}")"
+  create_gzip_tarball "${CPU_LLM_ARCHIVE}" "$(dirname "${CPU_LLM_BUNDLE_DIR}")" "$(basename "${CPU_LLM_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${CPU_LLM_ARCHIVE}")
 fi
 if appliance_pack_wanted acc-llm-amd64; then
-  tar -C "$(dirname "${ACC_LLM_AMD64_BUNDLE_DIR}")" -czf "${ACC_LLM_AMD64_ARCHIVE}" "$(basename "${ACC_LLM_AMD64_BUNDLE_DIR}")"
+  create_gzip_tarball "${ACC_LLM_AMD64_ARCHIVE}" "$(dirname "${ACC_LLM_AMD64_BUNDLE_DIR}")" "$(basename "${ACC_LLM_AMD64_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${ACC_LLM_AMD64_ARCHIVE}")
 fi
 if appliance_pack_wanted acc-llm-arm64; then
-  tar -C "$(dirname "${ACC_LLM_ARM64_BUNDLE_DIR}")" -czf "${ACC_LLM_ARM64_ARCHIVE}" "$(basename "${ACC_LLM_ARM64_BUNDLE_DIR}")"
+  create_gzip_tarball "${ACC_LLM_ARM64_ARCHIVE}" "$(dirname "${ACC_LLM_ARM64_BUNDLE_DIR}")" "$(basename "${ACC_LLM_ARM64_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${ACC_LLM_ARM64_ARCHIVE}")
 fi
 cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
@@ -2250,7 +2268,13 @@ echo "release-input tarball:"
 echo "  ${RELEASE_INPUT_TAR}"
 echo
 echo "release-input directory:"
-echo "  ${WORKSPACE}/release-input"
+if [[ -d "${CODE_RELEASE_INPUT_DIR}" && -f "${CODE_RELEASE_INPUT_DIR}/release-input.json" ]]; then
+  echo "  ${CODE_RELEASE_INPUT_DIR}"
+elif [[ -d "${WORKSPACE}/release-input" && -f "${WORKSPACE}/release-input/release-input.json" ]]; then
+  echo "  ${WORKSPACE}/release-input"
+else
+  echo "  ${CODE_RELEASE_INPUT_DIR}"
+fi
 echo
 echo "final packs (${APPLIANCE_PACKS_RESOLVED}):"
 if appliance_pack_wanted foundation; then
