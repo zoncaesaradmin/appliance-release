@@ -118,6 +118,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RELEASE_REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/appliance-packs.sh"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/fs-link.sh"
 DEFAULTS_FILE="${RELEASE_REPO_DIR}/configs/product-bundle.ci.env"
 
 USER_PRODUCT_VERSION="${PRODUCT_VERSION-}"
@@ -2155,7 +2157,7 @@ export DEV_IMAGE="${BUILDER_PULL_REF:-${DEV_IMAGE:-}}"
 make -C "${CODE_REPO_DIR}" DEV_IMAGE="${DEV_IMAGE}" OFFLINE_BUILD="${OFFLINE_BUILD}" \
   dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}"
 rm -f "${DOCKERHUB_AUTH_FILE}"
-cp "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"
+link_or_copy_file "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"
 if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]]; then
   ARTIFACT_SERVER_IMAGE_REF="$(tr -d '\r\n' < "${CODE_REPO_DIR}/.run/artifact-server-image.reference")"
 fi
@@ -2246,6 +2248,9 @@ python3 "${SCRIPT_DIR}/write-release-index.py" "${RELEASE_INDEX}" "${PRODUCT_VER
 echo
 echo "release-input tarball:"
 echo "  ${RELEASE_INPUT_TAR}"
+echo
+echo "release-input directory:"
+echo "  ${WORKSPACE}/release-input"
 echo
 echo "final packs (${APPLIANCE_PACKS_RESOLVED}):"
 if appliance_pack_wanted foundation; then

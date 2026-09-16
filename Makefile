@@ -72,6 +72,7 @@ verify-help:
 	@bash scripts/publish-release.sh --help | grep -q -- 'static_http'
 	@bash scripts/test-appliance-packs.sh
 	@bash scripts/test-install-release-index.sh
+	@bash scripts/test-fs-link.sh
 	@bash deps/development-container/scripts/test-storage-conf.sh
 
 .PHONY: verify-json

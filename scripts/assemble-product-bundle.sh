@@ -15,6 +15,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/appliance-packs.sh"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/fs-link.sh"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -569,7 +571,7 @@ import_release_input() {
     fi
     local_source="${cache_dir}/${filename}"
     if [[ "${source}" =~ ^file:// ]]; then
-      cp "${source#file://}" "${local_source}"
+      link_or_copy_file "${source#file://}" "${local_source}"
     else
       curl -fsSL "${source}" -o "${local_source}"
     fi
@@ -584,7 +586,7 @@ import_release_input() {
     *.tar) tar -xf "${local_source}" -C "${release_input_dir}" ;;
     *)
       if [[ -d "${local_source}" ]]; then
-        cp -R "${local_source}/." "${release_input_dir}/"
+        link_or_copy_tree "${local_source}" "${release_input_dir}"
       else
         echo "assemble-product-bundle: unsupported release-input source: ${local_source}" >&2
         exit 1

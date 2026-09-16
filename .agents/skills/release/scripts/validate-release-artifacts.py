@@ -552,15 +552,8 @@ def validate_inference(
     expected_runtime = INFERENCE_PACKAGES.get(runtime["package"])
     if expected_runtime is None or (runtime.get("inferenceEngine"), runtime.get("architecture")) != expected_runtime:
         raise ValueError(f"bundle manifest has unsupported inference runtime: {runtime!r}")
-    # Match zonctl runtimeconfig.EffectiveModes for legacy standard packages.
-    modes = runtime.get("supportedModes")
-    if (modes is None or modes == []) and runtime["package"] == "std-llm-amd64":
-        modes = ["cpu"]
-    if not isinstance(modes, list) or not modes or any(not isinstance(mode, str) for mode in modes):
-        raise ValueError("bundle manifest inference supportedModes must be a nonempty array of modes")
-    normalized_modes = [mode.strip().lower() for mode in modes]
-    if any(mode not in {"cpu", "cuda"} for mode in normalized_modes) or len(set(normalized_modes)) != len(normalized_modes):
-        raise ValueError("bundle manifest inference supportedModes must contain unique cpu/cuda modes")
+    if "supportedModes" in runtime:
+        raise ValueError("bundle manifest inference runtime must not declare supportedModes")
 
     chart = require_artifact(artifacts, "inferenceChart")
     chart_path = require_file_artifact(artifacts, "inferenceChart", release_input_dir)

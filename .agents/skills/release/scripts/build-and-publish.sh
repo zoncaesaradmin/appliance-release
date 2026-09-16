@@ -96,6 +96,8 @@ REMOTE_REPO_REF="$(config_get "${CONFIG_PATH}" "release_workspace.remote_repo_re
 REMOTE_REPO_SOURCE="$(config_get_optional "${CONFIG_PATH}" "release_workspace.remote_repo_source" || true)"
 
 SKILL_RELEASE_REPO_ROOT="$(skill_release_repo_root "${SCRIPT_DIR}")"
+# shellcheck source=/dev/null
+source "${SKILL_RELEASE_REPO_ROOT}/scripts/lib/fs-link.sh"
 if [[ -z "${RELEASE_VERSION}" && -n "${PRODUCT_VERSION:-}" ]]; then
   RELEASE_VERSION="${PRODUCT_VERSION}"
 fi
@@ -320,6 +322,18 @@ def collect_block(label: str):
 
 export_paths = collect_block("exported customer delivery files:")
 release_input_paths = collect_block("release-input tarball:")
+release_input_dirs = collect_block("release-input directory:")
+pack_dirs = []
+for index, line in enumerate(lines):
+    if line.startswith("final packs (") and line.endswith(":"):
+        for next_line in lines[index + 1 :]:
+            if next_line.startswith("  "):
+                value = next_line.strip()
+                if value:
+                    pack_dirs.append(value)
+                continue
+            break
+        break
 bundle_paths = collect_block("final bundle:")
 export_dir = ""
 bundle_archive = ""
@@ -334,9 +348,12 @@ def emit(name: str, value: str):
     print(f"{name}={shlex.quote(value)}")
 
 emit("DETECTED_RELEASE_INPUT_TAR", release_input_paths[0] if release_input_paths else "")
+emit("DETECTED_RELEASE_INPUT_DIR", release_input_dirs[0] if release_input_dirs else "")
 emit("DETECTED_BUNDLE_DIR", bundle_paths[0] if bundle_paths else "")
 emit("DETECTED_EXPORT_DIR", export_dir)
 emit("DETECTED_BUNDLE_ARCHIVE", bundle_archive)
+# Space-separated pack directories for hardlink-based validation.
+emit("DETECTED_PACK_DIRS", " ".join(pack_dirs))
 PY
 )"
 
@@ -345,13 +362,12 @@ copy_local_path() {
   local dest="$2"
   [[ -n "${src}" ]] || return 0
   if [[ -d "${src}" ]]; then
-    ensure_dir "${dest}"
-    rsync -az "${src}/" "${dest}/"
+    link_or_copy_tree "${src}" "${dest}"
     return 0
   fi
   if [[ -e "${src}" ]]; then
     ensure_dir "${dest}"
-    rsync -az "${src}" "${dest}/"
+    link_or_copy_file "${src}" "${dest}/$(basename "${src}")"
     return 0
   fi
   log "warning: path not found for collection: ${src}"
@@ -380,23 +396,57 @@ if search_dir.is_dir():
 PY
 }
 
+find_pack_dir() {
+  local pack_suffix="$1"
+  local candidate
+  # Prefer unpacked pack directories from the build (hardlink/reuse).
+  for candidate in ${DETECTED_PACK_DIRS:-}; do
+    if [[ -d "${candidate}" && "${candidate}" == *"-${pack_suffix}" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+materialize_pack_root() {
+  local pack_suffix="$1"
+  local dest="$2"
+  local pack_dir=""
+  local archive=""
+  if pack_dir="$(find_pack_dir "${pack_suffix}")"; then
+    link_or_copy_tree "${pack_dir}" "${dest}"
+    return 0
+  fi
+  archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-${pack_suffix}.tar.gz")"
+  if [[ -n "${archive}" && -f "${archive}" ]]; then
+    extract_archive_into_dir "${archive}" "${dest}"
+    return 0
+  fi
+  return 1
+}
+
 if [[ -n "${DETECTED_EXPORT_DIR}" ]]; then
   REMOTE_EXPORT_DIR="${DETECTED_EXPORT_DIR}"
 fi
 copy_local_path "${REMOTE_EXPORT_DIR}" "${RUN_DIR}/artifacts/export"
-if [[ -n "${DETECTED_RELEASE_INPUT_TAR}" ]]; then
-  copy_local_path "${DETECTED_RELEASE_INPUT_TAR}" "${RUN_DIR}/artifacts/release-input-src"
-fi
 
-local_release_input_archive="$(find_first_file "${RUN_DIR}/artifacts/release-input-src" "*.tar.gz")"
-if [[ -z "${local_release_input_archive}" ]]; then
-  local_release_input_archive="$(find_first_file "${RUN_DIR}/artifacts/release-input-src" "*.tgz")"
-fi
-if [[ -n "${local_release_input_archive}" ]]; then
-  extract_archive_into_dir "${local_release_input_archive}" "${RUN_DIR}/artifacts/release-input"
-elif [[ -d "${RUN_DIR}/artifacts/release-input-src" ]]; then
-  rm -rf "${RUN_DIR}/artifacts/release-input"
-  mv "${RUN_DIR}/artifacts/release-input-src" "${RUN_DIR}/artifacts/release-input"
+# Prefer the already-extracted release-input directory from assemble (hardlink
+# tree). Fall back to linking the tarball and extracting only when needed.
+if [[ -n "${DETECTED_RELEASE_INPUT_DIR}" && -d "${DETECTED_RELEASE_INPUT_DIR}" && -f "${DETECTED_RELEASE_INPUT_DIR}/release-input.json" ]]; then
+  link_or_copy_tree "${DETECTED_RELEASE_INPUT_DIR}" "${RUN_DIR}/artifacts/release-input"
+elif [[ -n "${DETECTED_RELEASE_INPUT_TAR}" ]]; then
+  copy_local_path "${DETECTED_RELEASE_INPUT_TAR}" "${RUN_DIR}/artifacts/release-input-src"
+  local_release_input_archive="$(find_first_file "${RUN_DIR}/artifacts/release-input-src" "*.tar.gz")"
+  if [[ -z "${local_release_input_archive}" ]]; then
+    local_release_input_archive="$(find_first_file "${RUN_DIR}/artifacts/release-input-src" "*.tgz")"
+  fi
+  if [[ -n "${local_release_input_archive}" ]]; then
+    extract_archive_into_dir "${local_release_input_archive}" "${RUN_DIR}/artifacts/release-input"
+  elif [[ -d "${RUN_DIR}/artifacts/release-input-src" ]]; then
+    rm -rf "${RUN_DIR}/artifacts/release-input"
+    mv "${RUN_DIR}/artifacts/release-input-src" "${RUN_DIR}/artifacts/release-input"
+  fi
 fi
 
 local_bundle_archive=""
@@ -406,7 +456,9 @@ fi
 if [[ -z "${local_bundle_archive}" || ! -f "${local_bundle_archive}" ]]; then
   local_bundle_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-foundation.tar.gz")"
 fi
-if [[ -n "${local_bundle_archive}" && -f "${local_bundle_archive}" ]]; then
+if materialize_pack_root "foundation" "${RUN_DIR}/artifacts/bundle"; then
+  :
+elif [[ -n "${local_bundle_archive}" && -f "${local_bundle_archive}" ]]; then
   extract_archive_into_dir "${local_bundle_archive}" "${RUN_DIR}/artifacts/bundle"
 elif [[ -n "${DETECTED_BUNDLE_DIR}" ]]; then
   copy_local_path "${DETECTED_BUNDLE_DIR}" "${RUN_DIR}/artifacts/bundle"
@@ -420,9 +472,7 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
     --bundle-root "${RUN_DIR}/artifacts/bundle" \
     >"${RUN_DIR}/logs/release-artifact-validation.json"
 
-  local_storage_network_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-storage-network.tar.gz")"
-  if [[ -n "${local_storage_network_archive}" && -f "${local_storage_network_archive}" ]]; then
-    extract_archive_into_dir "${local_storage_network_archive}" "${RUN_DIR}/artifacts/storage-network-bundle"
+  if materialize_pack_root "storage-network" "${RUN_DIR}/artifacts/storage-network-bundle"; then
     log "validating release-input against storage-network pack"
     python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
       --pack storage-network \
@@ -433,16 +483,12 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
 
   companion_args=()
   for companion_pack in foundation storage-network deviceuser std-llm-amd64; do
-    companion_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-${companion_pack}.tar.gz")"
-    if [[ -n "${companion_archive}" ]]; then
-      companion_root="${RUN_DIR}/artifacts/companions/${companion_pack}"
-      extract_archive_into_dir "${companion_archive}" "${companion_root}"
+    companion_root="${RUN_DIR}/artifacts/companions/${companion_pack}"
+    if materialize_pack_root "${companion_pack}" "${companion_root}"; then
       companion_args+=(--companion-bundle-root "${companion_root}")
     fi
   done
-  local_build_workflows_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-build-workflows.tar.gz")"
-  if [[ -n "${local_build_workflows_archive}" && -f "${local_build_workflows_archive}" ]]; then
-    extract_archive_into_dir "${local_build_workflows_archive}" "${RUN_DIR}/artifacts/build-workflows-bundle"
+  if materialize_pack_root "build-workflows" "${RUN_DIR}/artifacts/build-workflows-bundle"; then
     log "validating release-input against build-workflows pack"
     python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
       --pack build-workflows \
@@ -453,9 +499,7 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
       >"${RUN_DIR}/logs/release-artifact-validation-build-workflows.json"
   fi
 
-  local_deviceuser_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-deviceuser.tar.gz")"
-  if [[ -n "${local_deviceuser_archive}" && -f "${local_deviceuser_archive}" ]]; then
-    extract_archive_into_dir "${local_deviceuser_archive}" "${RUN_DIR}/artifacts/deviceuser-bundle"
+  if materialize_pack_root "deviceuser" "${RUN_DIR}/artifacts/deviceuser-bundle"; then
     log "validating release-input against deviceuser pack"
     python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
       --pack deviceuser \
@@ -464,9 +508,7 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
       >"${RUN_DIR}/logs/release-artifact-validation-deviceuser.json"
   fi
 
-  local_inference_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-std-llm-amd64.tar.gz")"
-  if [[ -n "${local_inference_archive}" && -f "${local_inference_archive}" ]]; then
-    extract_archive_into_dir "${local_inference_archive}" "${RUN_DIR}/artifacts/std-llm-amd64-bundle"
+  if materialize_pack_root "std-llm-amd64" "${RUN_DIR}/artifacts/std-llm-amd64-bundle"; then
     log "validating release-input against std-llm-amd64 pack"
     python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
       --pack std-llm-amd64 \
@@ -475,9 +517,7 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
       >"${RUN_DIR}/logs/release-artifact-validation-std-llm-amd64.json"
   fi
 
-  local_video_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-video.tar.gz")"
-  if [[ -n "${local_video_archive}" && -f "${local_video_archive}" ]]; then
-    extract_archive_into_dir "${local_video_archive}" "${RUN_DIR}/artifacts/video-bundle"
+  if materialize_pack_root "video" "${RUN_DIR}/artifacts/video-bundle"; then
     log "validating release-input against video pack"
     python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
       --pack video \
