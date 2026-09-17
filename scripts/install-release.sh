@@ -315,16 +315,15 @@ if [[ "${USE_LATEST}" == "1" ]]; then
   REMOTE_DIR="${BASE_URL}/${PATH_PREFIX}/latest"
 fi
 
-BUNDLE_ARCHIVE="appliance-${PRODUCT_VERSION}-foundation.tar.gz"
+BUNDLE_ARCHIVE=""
 RELEASE_INDEX_FILE="release-index.yaml"
 PUBLIC_KEY_FILE="release-signing.pub"
 CHECKSUM_FILE="sha256sum.txt"
-BUNDLE_DIR="${OUT_DIR}/appliance-${PRODUCT_VERSION}-foundation"
+BUNDLE_DIR=""
 PUBLIC_KEY="${OUT_DIR}/release-signing.pub"
-ZONCTL="${BUNDLE_DIR}/zonctl"
-RELEASE_PAYLOAD_FILES=(
+ZONCTL=""
+RELEASE_METADATA_FILES=(
   "${RELEASE_INDEX_FILE}"
-  "${BUNDLE_ARCHIVE}"
   "${PUBLIC_KEY_FILE}"
   "${CHECKSUM_FILE}"
 )
@@ -587,9 +586,11 @@ curl_download() {
 }
 
 echo "[1/5] Downloading release metadata from ${REMOTE_DIR} ..."
-for payload in "${RELEASE_PAYLOAD_FILES[@]}"; do
+for payload in "${RELEASE_METADATA_FILES[@]}"; do
   curl_download "${OUT_DIR}/${payload}" "${REMOTE_DIR}/${payload}"
 done
+
+BUNDLE_ARCHIVE="$(pack_filename_from_index "${OUT_DIR}/${RELEASE_INDEX_FILE}" "foundation")"
 
 REQUIRED_PACKS_TEXT="$(required_packs_for_profile_from_index "${OUT_DIR}/${RELEASE_INDEX_FILE}" "${APPLIANCE_PROFILE}")"
 REQUIRED_PACKS=()
@@ -615,6 +616,9 @@ REQUIRED_PACK_ARCHIVES=()
 for pack_id in "${REQUIRED_PACKS[@]}"; do
   REQUIRED_PACK_ARCHIVES+=("$(pack_filename_from_index "${OUT_DIR}/${RELEASE_INDEX_FILE}" "${pack_id}")")
 done
+
+echo "[1/5] Downloading delivery packs from ${REMOTE_DIR} ..."
+curl_download "${OUT_DIR}/${BUNDLE_ARCHIVE}" "${REMOTE_DIR}/${BUNDLE_ARCHIVE}"
 for archive in "${REQUIRED_PACK_ARCHIVES[@]}"; do
   curl_download "${OUT_DIR}/${archive}" "${REMOTE_DIR}/${archive}"
 done
@@ -653,7 +657,10 @@ rm -f "${tmp_checksums}"
 echo "[2/5] Release checksums verified."
 
 echo "[3/5] Extracting packs..."
-rm -rf "${OUT_DIR:?}/$(basename "${BUNDLE_DIR}")"
+foundation_dirname="$(pack_bundle_dirname_from_archive "${OUT_DIR}/${BUNDLE_ARCHIVE}")"
+BUNDLE_DIR="${OUT_DIR}/${foundation_dirname}"
+ZONCTL="${BUNDLE_DIR}/zonctl"
+rm -rf "${BUNDLE_DIR}"
 tar -C "${OUT_DIR}" -xzf "${OUT_DIR}/${BUNDLE_ARCHIVE}"
 PACK_DIRS=()
 for archive in "${REQUIRED_PACK_ARCHIVES[@]}"; do

@@ -121,14 +121,18 @@ Suggested layout:
 
 ```text
 api/v1/files/appliance/<version>/
-  appliance-<version>-foundation.tar.gz
-  appliance-<version>-dev-platform.tar.gz
-  appliance-<version>-std-llm.tar.gz   # when built
-  release-index.yaml
+  appliance-<version>-foundation-<arch>.tar.gz
+  appliance-<version>-dev-platform-<arch>.tar.gz
+  appliance-<version>-std-llm-<arch>.tar.gz   # when built
+  appliance-<version>-acc-llm-<arch>.tar.gz   # when built
+  release-index.yaml   # architecture: + per-pack filename
   release-signing.pub
   sha256sum.txt
   install-release.sh
 ```
+
+Installers must download archive names from `release-index.yaml` (not hardcode
+`appliance-<version>-foundation.tar.gz`).
 
 Upload the standard release bundle files (always stream with `-T`):
 

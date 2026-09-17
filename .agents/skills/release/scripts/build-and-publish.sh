@@ -344,8 +344,13 @@ for path in export_paths:
     candidate = Path(path)
     if not export_dir:
         export_dir = str(candidate.parent)
-    if candidate.name.endswith("-foundation.tar.gz") and not bundle_archive:
-        bundle_archive = str(candidate)
+    # Match appliance-<ver>-foundation.tar.gz (legacy) or
+    # appliance-<ver>-foundation-<arch>.tar.gz (product TARGET_ARCH).
+    name = candidate.name
+    if name.endswith(".tar.gz") and "-foundation" in name and not bundle_archive:
+        stem = name[: -len(".tar.gz")]
+        if stem.endswith("-foundation") or "-foundation-" in stem:
+            bundle_archive = str(candidate)
 
 def emit(name: str, value: str):
     print(f"{name}={shlex.quote(value)}")
@@ -457,7 +462,10 @@ if [[ -n "${DETECTED_BUNDLE_ARCHIVE}" ]]; then
   local_bundle_archive="${RUN_DIR}/artifacts/export/$(basename "${DETECTED_BUNDLE_ARCHIVE}")"
 fi
 if [[ -z "${local_bundle_archive}" || ! -f "${local_bundle_archive}" ]]; then
-  local_bundle_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-foundation.tar.gz")"
+  local_bundle_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-foundation-*.tar.gz")"
+  if [[ -z "${local_bundle_archive}" || ! -f "${local_bundle_archive}" ]]; then
+    local_bundle_archive="$(find_first_file "${RUN_DIR}/artifacts/export" "*-foundation.tar.gz")"
+  fi
 fi
 if materialize_pack_root "foundation" "${RUN_DIR}/artifacts/bundle"; then
   :
