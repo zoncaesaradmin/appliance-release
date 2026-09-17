@@ -99,15 +99,27 @@ forward_env=(
 echo "run-in-dev-build: ${TOOLING_IMAGE} --arch ${TARGET_ARCH} -- $*"
 # Root inside the tooling container so nested podman/buildah seed steps work
 # (image default USER is non-root for interactive appliance-code dev-shell).
+#
+# Nested podman does not share the host auth.json written by seed-build-deps-login.
+# When DEV_REGISTRY credentials are forwarded, login inside before the command
+# so push/pull to the LAN registry works.
+run_args=(
+  --rm --privileged --device /dev/fuse
+  --arch "${TARGET_ARCH}"
+  --user 0
+  --entrypoint ""
+  "${tls_run[@]+"${tls_run[@]}"}"
+  "${forward_env[@]}"
+  -v "${REPO_ROOT}:/workspace:Z"
+  -v "${SYSTEM_STORAGE}:/var/lib/containers:Z"
+  -w /workspace
+  "${TOOLING_IMAGE}"
+)
+if [[ -n "${DEV_REGISTRY:-}" && -n "${DEV_REGISTRY_USER:-}" && -n "${DEV_REGISTRY_TOKEN:-}" ]]; then
+  # shellcheck disable=SC2086
+  exec podman run "${run_args[@]}" \
+    bash -c 'set -euo pipefail; source /workspace/scripts/deps-common.sh; deps_oci_login; exec "$@"' \
+    bash "$@"
+fi
 # shellcheck disable=SC2086
-exec podman run --rm --privileged --device /dev/fuse \
-  --arch "${TARGET_ARCH}" \
-  --user 0 \
-  --entrypoint "" \
-  "${tls_run[@]+"${tls_run[@]}"}" \
-  "${forward_env[@]}" \
-  -v "${REPO_ROOT}:/workspace:Z" \
-  -v "${SYSTEM_STORAGE}:/var/lib/containers:Z" \
-  -w /workspace \
-  "${TOOLING_IMAGE}" \
-  "$@"
+exec podman run "${run_args[@]}" "$@"

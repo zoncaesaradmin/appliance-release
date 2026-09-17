@@ -248,12 +248,17 @@ deps_mirror_oci() {
 }
 
 # Push a local image reference to a remote docker registry ref.
+# Logs in when DEV_REGISTRY_USER/TOKEN are set so nested tooling pushes work
+# even when the host's podman login is not visible inside the container.
 deps_push_oci() {
   local local_ref="$1"
   local dest="$2"
   local tls
 
   deps_require_podman
+  if [[ -n "${DEV_REGISTRY_USER:-}" && -n "${DEV_REGISTRY_TOKEN:-}" ]]; then
+    deps_oci_login
+  fi
   echo "push: ${local_ref} -> ${dest}"
   tls="$(deps_podman_tls_flag)"
   podman tag "${local_ref}" "${dest}"
