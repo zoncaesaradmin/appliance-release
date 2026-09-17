@@ -105,6 +105,11 @@ TARGET_ARCH=arm64 make -C deps/platform-inputs release
 ```
 
 `build_flow.target_arch` is likewise required in the build-publish config.
+
+Containerfile seeds that run `apt`/`apk` (`artifact-server-bases`,
+`service-build-bases`) must execute on the host. If `TARGET_ARCH` differs from
+the build host CPU, install `qemu-user-static` + binfmt first, or seed on a
+matching-arch host — otherwise you get `Exec format error`.
 ### Special case: `development-container` / `dev-build` (LAN + GHCR)
 
 Unlike most `deps/*` packages (LAN seed is enough for offline packaging, while

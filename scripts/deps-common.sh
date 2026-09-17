@@ -113,6 +113,53 @@ deps_files_upload() {
   esac
 }
 
+deps_host_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64) printf 'amd64\n' ;;
+    aarch64|arm64) printf 'arm64\n' ;;
+    *)
+      echo "deps-common: unsupported host machine $(uname -m) (want x86_64|aarch64)" >&2
+      return 2
+      ;;
+  esac
+}
+
+# Containerfile RUN steps must execute on the host (or via qemu/binfmt).
+# Call before podman build --arch when the build has RUN instructions.
+deps_require_build_arch_runnable() {
+  local want="${1-}"
+  local host=""
+  if [[ -z "${want}" ]]; then
+    want="${TARGET_ARCH-}"
+  fi
+  if [[ -z "${want}" ]]; then
+    echo "deps-common: deps_require_build_arch_runnable requires TARGET_ARCH or an arch argument" >&2
+    return 2
+  fi
+  host="$(deps_host_arch)" || return 2
+  if [[ "${want}" == "${host}" ]]; then
+    return 0
+  fi
+  case "${want}" in
+    arm64)
+      if [[ -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]]; then
+        return 0
+      fi
+      ;;
+    amd64)
+      if [[ -e /proc/sys/fs/binfmt_misc/qemu-x86_64 ]]; then
+        return 0
+      fi
+      ;;
+  esac
+  echo "deps-common: cannot run Containerfile steps for TARGET_ARCH=${want} on this host (${host})." >&2
+  echo "deps-common: that causes 'Exec format error' without qemu-user-static/binfmt." >&2
+  echo "deps-common: either:" >&2
+  echo "deps-common:   1) seed matching this host: TARGET_ARCH=${host} make seed-build-deps" >&2
+  echo "deps-common:   2) install qemu-user-static + binfmt for ${want}, then re-run" >&2
+  return 2
+}
+
 deps_default_build_cmd() {
   # Product-arch local builds must pass --arch so seed/build never silently
   # uses the host architecture when TARGET_ARCH differs.
