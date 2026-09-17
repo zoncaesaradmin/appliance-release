@@ -643,6 +643,7 @@ fetch_k3s_inputs_from_files_api() {
   require_var K3S_VERSION
   files_base="https://${registry}/api/v1/files"
   remote_bin="${files_base}/k3s/${K3S_VERSION}/${TARGET_ARCH}/k3s"
+  remote_bin_legacy="${files_base}/k3s/${K3S_VERSION}/k3s"
   remote_airgap="${files_base}/k3s/${K3S_VERSION}/k3s-airgap-images-${TARGET_ARCH}.tar.zst"
   bin_dest="${dest_dir}/k3s"
   airgap_dest="${dest_dir}/k3s-airgap-images-${TARGET_ARCH}.tar.zst"
@@ -650,10 +651,17 @@ fetch_k3s_inputs_from_files_api() {
   rm -f "${bin_dest}" "${airgap_dest}"
 
   echo "build-full-bundle: downloading K3s ${K3S_VERSION} (${TARGET_ARCH}) from files API" >&2
-  if ! curl -fsSL "${curl_tls[@]}" \
+  if curl -fsSL "${curl_tls[@]}" \
     -H "Authorization: Bearer ${token}" \
     -o "${bin_dest}" \
     "${remote_bin}"; then
+    :
+  elif [[ "${TARGET_ARCH}" == "amd64" ]] && curl -fsSL "${curl_tls[@]}" \
+    -H "Authorization: Bearer ${token}" \
+    -o "${bin_dest}" \
+    "${remote_bin_legacy}"; then
+    echo "build-full-bundle: used legacy k3s files path ${remote_bin_legacy} (re-seed with TARGET_ARCH=${TARGET_ARCH} to publish the arch-scoped path)" >&2
+  else
     echo "build-full-bundle: failed to download k3s binary from ${remote_bin} (seed with make -C deps/platform-inputs release TARGET_ARCH=${TARGET_ARCH})" >&2
     exit 1
   fi
