@@ -13,11 +13,11 @@ Publish path:
 
 | Consumer | Typical pull source |
 |---|---|
-| Offline `build-full-bundle` / `make seed-build-deps` | LAN Artifact Server |
+| Offline `build-full-bundle` / `TARGET_ARCH=amd64 make seed-build-deps` | LAN Artifact Server |
 | Online `build-full-bundle` (`ONLINE_*` → unified `DEV_*`) | GHCR |
 | Local / day-2 image builds in `appliance-code` (`make dev-shell`, control-plane image, control-plane UI image, host-agent image, …) | GHCR by default |
 
-`make seed-build-deps` only publishes to the **LAN** registry configured in
+`TARGET_ARCH=amd64 make seed-build-deps` only publishes to the **LAN** registry configured in
 `DEV_*`. That is **not** enough. After changing this package (Containerfiles,
 pins, toolchain versions), also publish the same image to **GHCR** so online
 and local service builds keep working.
@@ -27,7 +27,7 @@ Do not treat LAN seed alone as “dev-build is updated.”
 ### 1) LAN (offline seed / Artifact Server)
 
 ```bash
-# usually covered by: make seed-build-deps
+# usually covered by: TARGET_ARCH=amd64 make seed-build-deps
 # or explicitly:
 cd deps/development-container
 export DEV_REGISTRY=<lan-artifact-host>

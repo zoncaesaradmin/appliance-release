@@ -3,7 +3,7 @@
 #
 # Preferred:
 #   make -C deps/platform-inputs release
-#   # or: make seed-build-deps
+#   # or: TARGET_ARCH=amd64 make seed-build-deps
 #
 # Usage:
 #   export RELEASE_WORK_ROOT=... DEV_REGISTRY=... DEV_REGISTRY_TOKEN=...

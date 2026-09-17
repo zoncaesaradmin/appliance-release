@@ -1831,10 +1831,10 @@ rm -rf "${CODE_REPO_DIR}/.run/host-packages"
 HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
 HOST_CAPABILITIES=(mdns wifi-client wifi-ap)
 mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
-host_packages_fingerprint_inputs=("${OS_VERSION}" "mdns" "wifi-client" "wifi-ap" "${HOST_PACKAGES_FINGERPRINT}")
+host_packages_fingerprint_inputs=("${OS_VERSION}" "${TARGET_ARCH}" "mdns" "wifi-client" "wifi-ap" "${HOST_PACKAGES_FINGERPRINT}")
 if ! component_cache_try_restore "host-packages" "${CODE_REPO_DIR}/.run/host-packages" "${host_packages_fingerprint_inputs[@]}"; then
   host_pkg_archive="${CODE_REPO_DIR}/.run/host-packages-seed.tar.zst"
-  host_pkg_remote="host-packages/ubuntu-${OS_VERSION}/${HOST_PACKAGES_FINGERPRINT}/host-packages.tar.zst"
+  host_pkg_remote="host-packages/ubuntu-${OS_VERSION}/${TARGET_ARCH}/${HOST_PACKAGES_FINGERPRINT}/host-packages.tar.zst"
   if files_api_download "${host_pkg_remote}" "${host_pkg_archive}"; then
     echo "build-full-bundle: unpacking host-packages from files API ${host_pkg_remote}" >&2
     if tar --help 2>&1 | grep -q zstd; then
@@ -1845,7 +1845,7 @@ if ! component_cache_try_restore "host-packages" "${CODE_REPO_DIR}/.run/host-pac
     rm -f "${host_pkg_archive}"
   elif offline_build_enabled; then
     echo "build-full-bundle: OFFLINE_BUILD=1 and files API miss for ${host_pkg_remote}" >&2
-    echo "build-full-bundle: seed deps/host-packages (make -C deps/host-packages release)" >&2
+    echo "build-full-bundle: seed deps/host-packages (TARGET_ARCH=${TARGET_ARCH} make -C deps/host-packages release)" >&2
     exit 1
   else
     CAP_ARGS=()

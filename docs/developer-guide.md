@@ -51,7 +51,7 @@ of them. Not a mix of GHCR-here / LAN-there.
 | Mode | Config / flag | Inputs |
 |---|---|---|
 | Online | `build_flow.mode: online` / `OFFLINE_BUILD=0` | Public internet; tooling via unified `DEV_*` (mapped from `ONLINE_*`) |
-| Offline | `build_flow.mode: offline` / `OFFLINE_BUILD=1` | LAN only after `make seed-build-deps`; tooling is already `DEV_*` |
+| Offline | `build_flow.mode: offline` / `OFFLINE_BUILD=1` | LAN only after `TARGET_ARCH=amd64 make seed-build-deps`; tooling is already `DEV_*` |
 
 The skill (or hand-run) **unifies once** into `DEV_*` + `OFFLINE_BUILD`. After
 that, `build-full-bundle.sh` / `bootstrap-build-host.sh` / appliance-code
@@ -71,7 +71,7 @@ Seeds every `deps/*` package into the LAN Artifact Server (including
 `dns`/coredns, `inference`/ollama, and `development-container`/`dev-build`).
 Both online and offline packaging must work for each of those pins.
 
-**`dev-build` dual publish:** `make seed-build-deps` updates the LAN copy only.
+**`dev-build` dual publish:** `TARGET_ARCH=amd64 make seed-build-deps` updates the LAN copy only.
 After changing `deps/development-container`, also publish manually to GHCR so
 online packaging and `appliance-code` local service builds (`make dev-shell`,
 control-plane / UI images, …) stay current. Exact commands:
@@ -83,12 +83,13 @@ export DEV_REGISTRY_USER=admin
 export DEV_REGISTRY_TOKEN=...
 export DEV_REGISTRY_TLS_VERIFY=false
 export DEV_IMAGE_REPO=development-container
-make seed-build-deps
+TARGET_ARCH=amd64 make seed-build-deps
 ```
 
 ### Online bundle (hand-run — DEV_* already unified to GHCR)
 
 ```bash
+TARGET_ARCH=amd64 \
 DEV_REGISTRY=ghcr.io \
 DEV_IMAGE_REPO=zoncaesaradmin/development-container \
 DEV_IMAGE_NAME=dev-build DEV_IMAGE_TAG=latest \
@@ -100,6 +101,7 @@ bash ./scripts/build-full-bundle.sh
 ### Offline bundle (hand-run — DEV_* already unified to LAN)
 
 ```bash
+TARGET_ARCH=amd64 \
 OFFLINE_BUILD=1 \
 DEV_REGISTRY=... DEV_IMAGE_REPO=development-container \
 DEV_REGISTRY_USER=... DEV_REGISTRY_TOKEN=... DEV_REGISTRY_TLS_VERIFY=false \
@@ -196,7 +198,7 @@ That script:
 - clones or refreshes `appliance-code` and `appliance-ctl`
   (with `OFFLINE_BUILD=1` / `USE_LOCAL_CHECKOUTS=1`, uses synced local trees)
 - packages OCI/host payloads under one source policy: public upstreams (online)
-  or LAN only (offline; seed with `make seed-build-deps` first)
+  or LAN only (offline; seed with `TARGET_ARCH=amd64 make seed-build-deps` first)
 - asks `appliance-code` to build `release-input-${PRODUCT_VERSION}.tar.gz`
 - assembles and verifies the final signed bundle
 - exports the delivery files into `RELEASE_WORK_ROOT/export`

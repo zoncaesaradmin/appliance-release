@@ -108,10 +108,10 @@ Build locally, then publish with the same targets every time: `login`, `publish`
 **Important — dual publish:** this image is not only a full-bundle packaging
 input. `appliance-code` also pulls it for local / day-2 builds (`make
 dev-shell`, control-plane image, control-plane UI image, and related service
-images). `make seed-build-deps` updates the **LAN Artifact Server only**.
+images). `TARGET_ARCH=amd64 make seed-build-deps` updates the **LAN Artifact Server only**.
 Whenever you rebuild `dev-build`, publish to **both**:
 
-1. **LAN** (offline packaging / seed) — covered by `make seed-build-deps` or Way 2 below.
+1. **LAN** (offline packaging / seed) — covered by `TARGET_ARCH=amd64 make seed-build-deps` or Way 2 below.
 2. **GHCR** (online packaging + local service builds) — Way 1 below; this is a **manual** second publish.
 
 Shipping only the LAN copy leaves online/`make dev-shell` on a stale GHCR tag.
@@ -174,7 +174,7 @@ Or: `make DEV_REGISTRY_TLS_VERIFY=false VERSION=v0.1.0 release`
 
 → `artifact-dns-1.appliance.internal/development-container/dev-build:v0.1.0`
 
-`make seed-build-deps` from the repo root runs this LAN publish as part of seeding every `deps/*` package. It does **not** push GHCR — run Way 1 after (or before) when the image content changed.
+`TARGET_ARCH=amd64 make seed-build-deps` from the repo root runs this LAN publish as part of seeding every `deps/*` package. It does **not** push GHCR — run Way 1 after (or before) when the image content changed.
 
 ## Dev container config
 

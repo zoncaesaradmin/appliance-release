@@ -64,7 +64,7 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 - Core packaging must stay **minimal and shared**. Online and offline build-host flows must not grow parallel copies of the same logic.
 - There are exactly **two** build-host modes — not a mix per dependency:
   - **Online:** every third-party / tooling input is fetched from the public internet (or the configured public registry path such as GHCR). No LAN Artifact Server seed is required; do not probe LAN build-cache and fall back upstream per image.
-  - **Offline:** every such input is fetched only from the LAN Artifact Server (`DEV_REGISTRY` OCI + files API) after `make seed-build-deps` (or equivalent). Misses fail closed; no public upstream fallback.
+  - **Offline:** every such input is fetched only from the LAN Artifact Server (`DEV_REGISTRY` OCI + files API) after `TARGET_ARCH=amd64 make seed-build-deps` (or equivalent). Misses fail closed; no public upstream fallback.
 - One flag / mode selects the policy for **all** dependencies together (dev-build, git-runtime, Argo, zot, CoreDNS, Ollama/inference-runtime, build bases, Helm, K3s, CRDs, host-packages, …). Do not keep separate “this one from GHCR, that one from LAN, that one from Docker Hub with cache” paths.
 - Unify early: config may expose `ONLINE_*` (online tooling) and `DEV_*` (LAN).
   After mode selection, map the active pull into one fixed `DEV_*` identity for
@@ -75,7 +75,7 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 - Do not add “offline-only” and “online-only” forks of the same script when a common function with a single source policy switch can serve both.
 - New dependency seeding under `deps/` must feed the offline mode of that shared path. Seed helpers and packaging consumers share code (for example `scripts/deps-common.sh`) rather than re-implementing pull/push/upload separately.
 - **Whenever you add a new third-party / upstream image or file input to packaging** (export script, `build-full-bundle`, release-input, chart wrap, etc.), you **must** also:
-  1. Add or extend a `deps/<name>/` seed package (`pins.env`, `scripts/build.sh`, `scripts/push.sh`, Makefile, README) so `make seed-build-deps` publishes it to LAN `build-cache` / files API.
+  1. Add or extend a `deps/<name>/` seed package (`pins.env`, `scripts/build.sh`, `scripts/push.sh`, Makefile, README) so `TARGET_ARCH=amd64 make seed-build-deps` publishes it to LAN `build-cache` / files API.
   2. Remap that input in the offline branch of the shared packaging path (`lan_cache_ref` / files API) so `OFFLINE_BUILD=1` never pulls public upstream.
   3. Keep the online path pulling the same pinned upstream directly.
   4. Update `docs/offline-build-deps.md`, example configs / comments that list seeded packages, and any validator that asserts pairing.
@@ -90,11 +90,11 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
   - **local / day-2 service builds** outside the full bundle flow — `appliance-code`
     `make dev-shell`, control-plane image, control-plane UI image, host-agent
     image, and similar tooling-container builds
-- `make seed-build-deps` publishes `dev-build` to the **LAN Artifact Server only**.
+- `TARGET_ARCH=amd64 make seed-build-deps` publishes `dev-build` to the **LAN Artifact Server only**.
   That does **not** update GHCR.
 - Whenever `deps/development-container` content changes (Containerfiles, pins,
   toolchain versions), operators must publish the **same** image to **both**:
-  1. LAN — `make seed-build-deps` or `make -C deps/development-container release` with LAN `DEV_*`
+  1. LAN — `TARGET_ARCH=amd64 make seed-build-deps` or `TARGET_ARCH=amd64 make -C deps/development-container release` with LAN `DEV_*`
   2. GHCR — **manual** second publish with `DEV_REGISTRY=ghcr.io` and
      `DEV_IMAGE_REPO=<owner>/development-container` (see
      `deps/development-container/PACKAGE.md`)

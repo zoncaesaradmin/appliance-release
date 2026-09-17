@@ -9,7 +9,7 @@ Exactly **two** packaging modes — one flag for *all* third-party inputs:
 | Mode | How | Third-party sources |
 |---|---|---|
 | **Online** | `build_flow.mode: online` / `OFFLINE_BUILD=0` | Public internet only (GHCR tooling + GitHub/Quay/Docker Hub/get.helm.sh). No LAN files API / build-cache. |
-| **Offline** | `build_flow.mode: offline` / `OFFLINE_BUILD=1` | LAN Artifact Server only, after `make seed-build-deps`. Fail closed on miss. |
+| **Offline** | `build_flow.mode: offline` / `OFFLINE_BUILD=1` | LAN Artifact Server only, after `TARGET_ARCH=amd64 make seed-build-deps`. Fail closed on miss. |
 
 Online packaging acquires CoreDNS from the official CoreDNS Docker Hub
 repository before the expensive product-image builds. Only CoreDNS acquisition
@@ -46,7 +46,7 @@ not branch on `ONLINE_*`.
 
 **Operator shape:**
 
-1. Optional once (offline prerequisite): `make seed-build-deps` → LAN
+1. Optional once (offline prerequisite): `TARGET_ARCH=amd64 make seed-build-deps` → LAN
 2. Bundle: online **or** offline — never a mix of LAN cache probes + public fallbacks
 
 Product source (`appliance-code`, `appliance-ctl`) is **not** seeded here. Use
@@ -82,11 +82,11 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | `message-broker` | `build-cache/nats:2.10.26-alpine` | NATS JetStream broker image |
 | `artifact-server-bases` | `build-cache/zot-linux-${TARGET_ARCH}:…`, `debian-bookworm-slim-runtime` | artifact-server wrap (seed once per TARGET_ARCH) |
 | `dns` | `build-cache/coredns:…` | dns wrap |
-| `inference` | `build-cache/ollama:…`, `build-cache/vllm-openai-cpu:…`, `build-cache/vllm-openai:…` | Runtimes for `std-llm` / `acc-llm` selected by product `TARGET_ARCH` (`export-inference-runtime-image-archive.sh`) |
+| `inference` | `build-cache/ollama:…` plus arch-specific vLLM (`vllm-openai-cpu` for amd64, `vllm-openai` for arm64) | Runtimes for `std-llm` / `acc-llm` for that `TARGET_ARCH` only |
 | `blob-storage` | `build-cache/minio:…` | foundation S3-compatible blob-storage wrap (`export-blob-storage-image-archive.sh`) |
-| `jellyfin` | `build-cache/jellyfin:10.10.7-amd64` | reviewed Jellyfin application runtime |
-| `service-build-bases` | golang/node/alpine/ui-npm cache images | CP/UI/hostagent build-args |
-| `host-packages` | files `host-packages/ubuntu-…` | host-packages unpack |
+| `jellyfin` | `build-cache/jellyfin:10.10.7-amd64` | reviewed Jellyfin runtime (**amd64 only**; skipped when `TARGET_ARCH=arm64`) |
+| `service-build-bases` | golang/node/alpine/ui-npm cache images | CP/UI/hostagent build-args (`podman build --arch ${TARGET_ARCH}`) |
+| `host-packages` | files `host-packages/ubuntu-…/${TARGET_ARCH}/…` | host-packages unpack |
 | `platform-inputs` | files `k3s/${TARGET_ARCH}/…`, `helm/…-linux-${TARGET_ARCH}` | K3s + Helm (seed once per TARGET_ARCH) |
 
 Pins live in each package’s `pins.env`. Bump the pin, then `make -C deps/<name> release`.
@@ -114,7 +114,7 @@ host-agent images). Those default to **GHCR**.
 
 So after changing `deps/development-container`:
 
-1. Publish to **LAN** via `make seed-build-deps` (or `make -C deps/development-container release` with LAN `DEV_*`).
+1. Publish to **LAN** via `TARGET_ARCH=amd64 make seed-build-deps` (or `TARGET_ARCH=amd64 make -C deps/development-container release` with LAN `DEV_*`).
 2. Separately publish the **same** image to **GHCR** (manual — seed does not do this). See [`deps/development-container/PACKAGE.md`](../deps/development-container/PACKAGE.md).
 
 Skipping GHCR leaves online packaging and day-2 local builds on a stale image.
@@ -128,13 +128,13 @@ Whenever packaging gains a new third-party image or file input:
 3. Keep online packaging on the same pinned public upstream.
 4. Document the row in this table and mention the seed in example configs / AGENTS.md invariants.
 
-`make seed-build-deps` auto-discovers every `deps/*` directory. A new package that is only wired for online pulls is incomplete.
+`TARGET_ARCH=amd64 make seed-build-deps` auto-discovers every `deps/*` directory (`TARGET_ARCH` required). A new package that is only wired for online pulls is incomplete.
 
 ## Commands
 
 ```bash
-make seed-build-deps
-make -C deps/platform-inputs release
+TARGET_ARCH=amd64 make seed-build-deps
+TARGET_ARCH=amd64 make -C deps/platform-inputs release
 make list-deps
 ```
 
@@ -153,7 +153,7 @@ make list-deps
 
 ### Egress-denied smoke (operator)
 
-1. Seed with `make seed-build-deps` while online.
+1. Seed with `TARGET_ARCH=amd64 make seed-build-deps` while online.
 2. Deny public egress; keep LAN registry reachable.
 3. `OFFLINE_BUILD=1` with unified `DEV_*=LAN` → `bash scripts/build-full-bundle.sh` (synced trees).
 4. Confirm signed bundle assembles.
@@ -165,7 +165,7 @@ When `appliance-code/services/controlplane-ui/package-lock.json` changes, copy
 `deps/service-build-bases/ui-npm/` and run:
 
 ```bash
-make -C deps/service-build-bases release
+TARGET_ARCH=amd64 make -C deps/service-build-bases release
 ```
 
 ## `fetch-k3s-inputs.sh`

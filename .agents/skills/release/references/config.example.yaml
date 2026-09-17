@@ -25,8 +25,9 @@
 # - Packaging pack set is build_flow.appliance_packs (all|foundation|…); install.appliance_profile
 #   selects what the target turns on from the published packs. verification.*.enabled must match
 #   that profile (lanllm → workflows/builder/artifact/dns all false; see config.install.example.yaml).
-# - Offline builds require make seed-build-deps first (every deps/* package, including
+# - Offline builds require TARGET_ARCH=amd64 make seed-build-deps first (every deps/* package, including
 #   dns/coredns, inference/ollama, and blob-storage/minio). Online builds pull the same pins from upstream.
+#   Set build_flow.target_arch: amd64 (or arm64) in the build-publish config; required, no default.
 #   New packaging deps must update deps/ + offline remap; see docs/offline-build-deps.md.
 # - Appliance state dir is product-fixed /var/lib/zon/state (not config).
 # - Host mDNS / Wi-Fi AP enablement is day-2 Admin UI/API only.

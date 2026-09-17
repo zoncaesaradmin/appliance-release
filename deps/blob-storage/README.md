@@ -6,4 +6,4 @@ foundation blob-storage image export and offline `build-full-bundle`.
 
 Online packaging pulls the exact `UPSTREAM_IMAGE` in `pins.env`. Offline
 packaging remaps it to this LAN build-cache reference after
-`make seed-build-deps` (or `make -C deps/blob-storage release`).
+`TARGET_ARCH=amd64 make seed-build-deps` (or `TARGET_ARCH=amd64 make -C deps/blob-storage release`).

@@ -114,8 +114,25 @@ deps_files_upload() {
 }
 
 deps_default_build_cmd() {
+  # Product-arch local builds must pass --arch so seed/build never silently
+  # uses the host architecture when TARGET_ARCH differs.
+  local architecture="${1-}"
+  if [[ -z "${architecture}" ]]; then
+    architecture="${TARGET_ARCH-}"
+  fi
+  if [[ -z "${architecture}" ]]; then
+    echo "deps-common: deps_default_build_cmd requires TARGET_ARCH or an arch argument" >&2
+    return 2
+  fi
+  case "${architecture}" in
+    amd64|arm64) ;;
+    *)
+      echo "deps-common: unsupported architecture ${architecture} (want amd64|arm64)" >&2
+      return 2
+      ;;
+  esac
   deps_require_podman
-  printf '%s' "podman build"
+  printf 'podman build --arch %s' "${architecture}"
 }
 
 deps_oci_login() {

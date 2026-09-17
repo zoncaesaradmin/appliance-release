@@ -49,7 +49,7 @@ Exactly two bundle modes (config `build_flow.mode` / env `OFFLINE_BUILD`):
 - **Online:** all third-party pulls from the public internet. Skill maps
   `online_image_pull` (`ONLINE_*`) → unified `DEV_*` for packaging.
 - **Offline:** all third-party pulls only from the LAN Artifact Server after
-  `make seed-build-deps`. `offline_image_pull` already names `DEV_*` (same
+  `TARGET_ARCH=amd64 make seed-build-deps`. `offline_image_pull` already names `DEV_*` (same
   LAN identity as publish/seed — no separate `OFFLINE_*` family).
 
 After that mapping, bootstrap/build use only `DEV_*` + `OFFLINE_BUILD`.
@@ -63,7 +63,7 @@ seed package and an offline `lan_cache_ref` / files remap — see AGENTS.md and
 
 `deps/development-container` (`dev-build`) is **build-host tooling only** (not a
 product pack image). It is also the tooling
-image for local `appliance-code` service builds. `make seed-build-deps` updates
+image for local `appliance-code` service builds. `TARGET_ARCH=amd64 make seed-build-deps` updates
 LAN only; after changing that package, also publish manually to GHCR — see
 `deps/development-container/PACKAGE.md` and AGENTS.md “Shared `dev-build`”.
 
@@ -74,7 +74,7 @@ cd /path/to/appliance-release
 export DEV_REGISTRY=... DEV_REGISTRY_USER=... DEV_REGISTRY_TOKEN=...
 export DEV_REGISTRY_TLS_VERIFY=false
 export DEV_IMAGE_REPO=development-container
-make seed-build-deps
+TARGET_ARCH=amd64 make seed-build-deps
 ```
 
 Skill config: see `references/config.build-publish.example.yaml`

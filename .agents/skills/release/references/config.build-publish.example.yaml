@@ -22,7 +22,7 @@
 # Build-host modes (exactly one — no mix):
 #   mode: online  — all third-party inputs from the public internet / GHCR
 #   mode: offline — all third-party inputs from the LAN Artifact Server
-#                   (after make seed-build-deps)
+#                   (after TARGET_ARCH=amd64 make seed-build-deps)
 #
 # Env families (only two — do not invent OFFLINE_*):
 #   ONLINE_*  — public/GHCR tooling when mode=online
@@ -35,7 +35,7 @@
 #   3) Publish through bundle_store: appliance_files (DEV_*) or the temporary
 #      static_http bootstrap directory
 #
-# Offline seed coverage (make seed-build-deps → every deps/* package), including:
+# Offline seed coverage (TARGET_ARCH=amd64 make seed-build-deps → every deps/* package), including:
 #   development-container, git-runtime-container, workflows, artifact-server-bases,
 #   dns (coredns), inference (ollama), service-build-bases, host-packages,
 #   platform-inputs (k3s/helm). TARGET_ARCH is required when seeding (no default):

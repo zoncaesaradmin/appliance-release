@@ -22,9 +22,11 @@ build-and-publish:
 	bash ./scripts/publish-release.sh
 
 # Offline build-host dependency seeds (deps/*). Online machine → LAN Artifact Server.
-# TARGET_ARCH is required (amd64|arm64) — no default.
+# TARGET_ARCH is required (amd64|arm64) — no default. Each package seeds only that arch
+# (inference does not pull both vLLM pins; jellyfin is amd64-only and skips otherwise).
 #   TARGET_ARCH=amd64 make seed-build-deps
 #   TARGET_ARCH=arm64 make seed-build-deps
+# Note: deps/development-container is build-host tooling (host arch), not product TARGET_ARCH.
 DEPS := $(sort $(notdir $(wildcard deps/*)))
 
 .PHONY: list-deps seed-build-deps seed-build-deps-build seed-build-deps-push seed-build-deps-login
