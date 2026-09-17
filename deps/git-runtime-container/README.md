@@ -1,9 +1,11 @@
 # git-runtime-container
 
-Mirrors a pinned `docker.io/alpine/git` image into
-`$DEV_REGISTRY/build-cache/alpine-git:<tag>`.
+Seeds `alpine/git` for the workspace-provisioner image. LAN tags are
+**arch-suffixed**:
 
-Product packaging re-exports that seed as `registry.local/workspace-provisioner`
-for workspace-prepare workflow pods (git clone / prepare). Kept separate from
-`development-container` so the appliance does not preload the fat `dev-build`
-toolchain for that role.
+`build-cache/alpine-git:2.49.0-${TARGET_ARCH}`
+
+```bash
+TARGET_ARCH=amd64 make -C deps/git-runtime-container release
+TARGET_ARCH=arm64 make -C deps/git-runtime-container release
+```

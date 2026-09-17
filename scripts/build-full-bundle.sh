@@ -200,7 +200,7 @@ LAN_BUILD_CACHE_TIMEOUT_SECONDS="15"
 OFFLINE_BUILD="${OFFLINE_BUILD:-0}"
 export OFFLINE_BUILD
 HOST_PACKAGES_FINGERPRINT="${HOST_PACKAGES_FINGERPRINT:-mdns-wifi-client-wifi-ap-v1}"
-ALPINE_GIT_CACHE_TAG="${ALPINE_GIT_CACHE_TAG:-2.49.0}"
+ALPINE_GIT_CACHE_TAG_BASE="${ALPINE_GIT_CACHE_TAG_BASE:-2.49.0}"
 
 offline_build_enabled() {
   case "$(printf '%s' "${OFFLINE_BUILD}" | tr '[:upper:]' '[:lower:]')" in
@@ -316,10 +316,10 @@ if [[ ! -f "${BLOB_STORAGE_PINS_FILE}" ]]; then
 fi
 # shellcheck disable=SC1090
 source "${BLOB_STORAGE_PINS_FILE}"
-BLOB_STORAGE_VERSION="${CACHE_TAG}"
+BLOB_STORAGE_VERSION="${CACHE_TAG_BASE}"
 BLOB_STORAGE_SOURCE_IMAGE="${UPSTREAM_IMAGE}"
 BLOB_STORAGE_CACHE_NAME="${CACHE_NAME}"
-BLOB_STORAGE_CACHE_TAG="${CACHE_TAG}"
+BLOB_STORAGE_CACHE_TAG_BASE="${CACHE_TAG_BASE}"
 
 JELLYFIN_PINS_FILE="${RELEASE_REPO_DIR}/deps/jellyfin/pins.env"
 if [[ ! -f "${JELLYFIN_PINS_FILE}" ]]; then
@@ -1798,21 +1798,21 @@ if offline_build_enabled; then
     require_seed_package jellyfin
   fi
   if appliance_pack_wanted dev-platform; then
-    WORKSPACE_PROVISIONER_IMAGE_REF="$(lan_cache_ref alpine-git "${ALPINE_GIT_CACHE_TAG}")"
+    WORKSPACE_PROVISIONER_IMAGE_REF="$(lan_cache_ref alpine-git "${ALPINE_GIT_CACHE_TAG_BASE}-${TARGET_ARCH}")"
   fi
   if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]]; then
     ARTIFACT_SERVER_SOURCE_IMAGE="$(lan_cache_ref "zot-linux-${TARGET_ARCH}" "v${ARTIFACT_SERVER_VERSION}")"
   fi
   MESSAGE_BROKER_SOURCE_IMAGE="$(lan_cache_ref nats "2.10.26-alpine-${TARGET_ARCH}")"
   if [[ "${NEED_DNS_IMAGE:-0}" == "1" ]]; then
-    DNS_IMAGE_PULL_REF="$(lan_cache_ref coredns "v${DNS_VERSION}")"
+    DNS_IMAGE_PULL_REF="$(lan_cache_ref coredns "v${DNS_VERSION}-${TARGET_ARCH}")"
   fi
-  BLOB_STORAGE_SOURCE_IMAGE="$(lan_cache_ref "${BLOB_STORAGE_CACHE_NAME}" "${BLOB_STORAGE_CACHE_TAG}")"
+  BLOB_STORAGE_SOURCE_IMAGE="$(lan_cache_ref "${BLOB_STORAGE_CACHE_NAME}" "${BLOB_STORAGE_CACHE_TAG_BASE}-${TARGET_ARCH}")"
   if appliance_pack_wanted deviceuser; then
     JELLYFIN_SOURCE_IMAGE="$(lan_cache_ref "${JELLYFIN_CACHE_NAME}" "${JELLYFIN_CACHE_TAG}")"
   fi
   if appliance_pack_wanted std-llm; then
-    INFERENCE_IMAGE_PULL_REF="$(lan_cache_ref ollama "${INFERENCE_VERSION}")"
+    INFERENCE_IMAGE_PULL_REF="$(lan_cache_ref ollama "${INFERENCE_VERSION}-${TARGET_ARCH}")"
   fi
   if appliance_pack_wanted acc-llm; then
     if [[ "${TARGET_ARCH}" == "arm64" ]]; then
@@ -1822,8 +1822,8 @@ if offline_build_enabled; then
     fi
   fi
   if bool_true "${WORKFLOWS_ENABLED}"; then
-    WORKFLOW_EXECUTOR_IMAGE_REF="$(lan_cache_ref argoexec "${WORKFLOWS_VERSION}")"
-    WORKFLOW_CONTROLLER_BASE_IMAGE="$(lan_cache_ref workflow-controller "${WORKFLOWS_VERSION}")"
+    WORKFLOW_EXECUTOR_IMAGE_REF="$(lan_cache_ref argoexec "${WORKFLOWS_VERSION}-${TARGET_ARCH}")"
+    WORKFLOW_CONTROLLER_BASE_IMAGE="$(lan_cache_ref workflow-controller "${WORKFLOWS_VERSION}-${TARGET_ARCH}")"
   fi
   CP_GO_IMAGE="$(lan_cache_ref golang "1.26-${HOST_ARCH}")"
   CP_RUNTIME_IMAGE="$(lan_cache_ref alpine-3.24.1-runtime "3.24.1-${TARGET_ARCH}")"
@@ -1831,7 +1831,7 @@ if offline_build_enabled; then
   UI_GO_IMAGE="$(lan_cache_ref golang "1.26-${HOST_ARCH}")"
   UI_RUNTIME_IMAGE="$(lan_cache_ref alpine-3.24.1-runtime "3.24.1-${TARGET_ARCH}")"
   UI_WEB_DEPS_IMAGE="$(lan_cache_ref controlplane-ui-web-deps "lockfile-${HOST_ARCH}")"
-  ARTIFACT_RUNTIME_SOURCE_IMAGE="$(lan_cache_ref debian-bookworm-slim-runtime bookworm-slim)"
+  ARTIFACT_RUNTIME_SOURCE_IMAGE="$(lan_cache_ref debian-bookworm-slim-runtime "bookworm-slim-${TARGET_ARCH}")"
   RUNTIME_PACKAGES_INSTALLED=1
   echo "build-full-bundle: OFFLINE_BUILD=1 using LAN build-cache refs on ${DEV_REGISTRY}" >&2
   echo "build-full-bundle: service build bases compile=${HOST_ARCH} runtime=${TARGET_ARCH} (BUILDPLATFORM native cross-compile)" >&2

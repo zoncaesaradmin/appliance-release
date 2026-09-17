@@ -77,19 +77,32 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | Package | LAN artifact | Consumed by |
 |---|---|---|
 | `development-container` | `$DEV_REGISTRY/$DEV_IMAGE_REPO/dev-build:<tag>` | **Build-host tooling only** (online GHCR + offline LAN); also `appliance-code` local service builds. Not packaged into appliance packs. |
-| `git-runtime-container` | `$DEV_REGISTRY/build-cache/alpine-git:2.49.0` | workspace-provisioner (dev-platform pack) |
-| `workflows` | `build-cache/argoexec` / `workflow-controller`; files `argo-workflows/…` | executor + CRDs |
-| `message-broker` | `build-cache/nats:2.10.26-alpine-${TARGET_ARCH}` | NATS JetStream broker image (arch-suffixed; amd64/arm64 must not share a tag) |
-| `artifact-server-bases` | `build-cache/zot-linux-${TARGET_ARCH}:…`, `debian-bookworm-slim-runtime` | artifact-server wrap (seed once per TARGET_ARCH) |
-| `dns` | `build-cache/coredns:…` | dns wrap |
-| `inference` | `build-cache/ollama:…` plus arch-specific vLLM (`vllm-openai-cpu` for amd64, `vllm-openai` for arm64) | Runtimes for `std-llm` / `acc-llm` for that `TARGET_ARCH` only |
-| `blob-storage` | `build-cache/minio:…` | foundation S3-compatible blob-storage wrap (`export-blob-storage-image-archive.sh`) |
+| `git-runtime-container` | `build-cache/alpine-git:2.49.0-${TARGET_ARCH}` | workspace-provisioner (dev-platform pack) |
+| `workflows` | `build-cache/argoexec:v…-${TARGET_ARCH}` / `workflow-controller:v…-${TARGET_ARCH}`; files `argo-workflows/…` | executor + CRDs |
+| `message-broker` | `build-cache/nats:2.10.26-alpine-${TARGET_ARCH}` | NATS JetStream broker image |
+| `artifact-server-bases` | `build-cache/zot-linux-${TARGET_ARCH}:…`, `debian-bookworm-slim-runtime:bookworm-slim-${TARGET_ARCH}` | artifact-server wrap |
+| `dns` | `build-cache/coredns:v1.14.4-${TARGET_ARCH}` | dns wrap |
+| `inference` | `build-cache/ollama:…-${TARGET_ARCH}` plus arch-specific vLLM (`vllm-openai-cpu:…-x86_64` / `vllm-openai:…-arm64`) | `std-llm` / `acc-llm` |
+| `blob-storage` | `build-cache/minio:…-${TARGET_ARCH}` | foundation blob-storage wrap |
 | `jellyfin` | `build-cache/jellyfin:10.10.7-amd64` | reviewed Jellyfin runtime (**amd64 only**; skipped when `TARGET_ARCH=arm64`) |
-| `service-build-bases` | `golang`/`node`/`alpine-3.24.1-runtime`/`controlplane-ui-web-deps` with `-${TARGET_ARCH}` tags | CP/UI/hostagent: host-arch compile bases + target-arch runtime (`BUILDPLATFORM` cross-compile) |
+| `service-build-bases` | `golang`/`node`/`alpine-3.24.1-runtime`/`controlplane-ui-web-deps` with `-${TARGET_ARCH}` (or host-arch for compile) | CP/UI/hostagent |
 | `host-packages` | files `host-packages/ubuntu-…/${TARGET_ARCH}/…` | host-packages unpack |
-| `platform-inputs` | files `k3s/${TARGET_ARCH}/…`, `helm/…-linux-${TARGET_ARCH}` | K3s + Helm (seed once per TARGET_ARCH) |
+| `platform-inputs` | files `k3s/${TARGET_ARCH}/…`, `helm/…-linux-${TARGET_ARCH}` | K3s + Helm |
 
-Pins live in each package’s `pins.env`. Bump the pin, then `make -C deps/<name> release`.
+### Arch-scoped OCI build-cache tags (mandatory)
+
+Every arch-specific OCI image seeded into `$DEV_REGISTRY/build-cache/` must
+encode the architecture in the **tag** (or in the image name, as with
+`zot-linux-${TARGET_ARCH}`). Shared tags across amd64/arm64 are forbidden —
+the last seed wins and offline packaging pulls the wrong arch.
+
+Contract test: `python3 scripts/test-arch-scoped-build-cache-tags.py` (run by
+`make verify`). Re-seed **both** arches after changing these pins:
+
+```bash
+TARGET_ARCH=amd64 make seed-build-deps
+TARGET_ARCH=arm64 make seed-build-deps
+```
 
 ### Product architecture (`TARGET_ARCH`)
 

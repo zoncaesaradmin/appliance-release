@@ -1,9 +1,11 @@
 # blob-storage
 
-Mirrors the pinned S3-compatible MinIO runtime from Quay into
-`$DEV_REGISTRY/build-cache/minio:RELEASE.2025-05-24T17-08-30Z` for the
-foundation blob-storage image export and offline `build-full-bundle`.
+Seeds the pinned MinIO image used by the foundation blob-storage wrap. LAN
+tags are **arch-suffixed**:
 
-Online packaging pulls the exact `UPSTREAM_IMAGE` in `pins.env`. Offline
-packaging remaps it to this LAN build-cache reference after
-`TARGET_ARCH=amd64 make seed-build-deps` (or `TARGET_ARCH=amd64 make -C deps/blob-storage release`).
+`build-cache/minio:RELEASE.2025-05-24T17-08-30Z-${TARGET_ARCH}`
+
+```bash
+TARGET_ARCH=amd64 make -C deps/blob-storage release
+TARGET_ARCH=arm64 make -C deps/blob-storage release
+```

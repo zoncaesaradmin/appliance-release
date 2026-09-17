@@ -161,6 +161,7 @@ verify-client-config:
 .PHONY: verify-release-artifacts
 verify-release-artifacts:
 	@python3 scripts/test-runtime-packages.py
+	@python3 scripts/test-arch-scoped-build-cache-tags.py
 	@python3 scripts/test-online-build-retry-scope.py
 	@python3 scripts/test-oci-relabel-noop.py
 	@python3 scripts/test-publish-release-static-http.py

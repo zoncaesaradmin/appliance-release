@@ -80,14 +80,14 @@ def main() -> None:
     official_source = "docker.io/coredns/coredns:"
     if f"{official_source}${{DNS_VERSION}}" not in text:
         raise AssertionError("online CoreDNS must use the official Docker Hub source")
-    if 'lan_cache_ref coredns "v${DNS_VERSION}"' not in text:
+    if 'lan_cache_ref coredns "v${DNS_VERSION}-${TARGET_ARCH}"' not in text:
         raise AssertionError("offline CoreDNS must remain mapped to the LAN cache")
 
     dns_pins = DNS_PINS.read_text(encoding="utf-8")
     if "UPSTREAM_IMAGE=docker.io/coredns/coredns:1.14.4" not in dns_pins:
         raise AssertionError("CoreDNS seed and online upstream are not paired")
-    if "CACHE_TAG=v1.14.4" not in dns_pins:
-        raise AssertionError("CoreDNS LAN cache tag changed unexpectedly")
+    if "CACHE_TAG_BASE=v1.14.4" not in dns_pins:
+        raise AssertionError("CoreDNS LAN cache tag base changed unexpectedly")
 
     print("online build retry-scope tests passed")
 

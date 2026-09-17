@@ -7,6 +7,9 @@ source "$(cd "$(dirname "$0")/../../.." && pwd)/scripts/lib/target-arch.sh"
 target_arch_resolve
 mkdir -p "${ROOT}/.staging"
 
+CACHE_TAG="${CACHE_TAG_BASE}-${TARGET_ARCH}"
+LOCAL_REF="localhost/build-cache/${CACHE_NAME}:${CACHE_TAG}"
+
 # One TARGET_ARCH → seed only that arch's inputs (never both).
 # Ollama (std-llm) is multi-arch upstream; vLLM pins differ per arch.
 deps_mirror_oci "${UPSTREAM_IMAGE}" "${LOCAL_REF}" "" "${TARGET_ARCH}"

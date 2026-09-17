@@ -12,6 +12,8 @@ ZOT_CACHE_NAME="zot-linux-${TARGET_ARCH}"
 ZOT_CACHE_TAG="${ZOT_VERSION}"
 ZOT_IMAGE="ghcr.io/project-zot/${ZOT_CACHE_NAME}:${ZOT_CACHE_TAG}"
 ZOT_LOCAL="localhost/build-cache/${ZOT_CACHE_NAME}:${ZOT_CACHE_TAG}"
+DEBIAN_CACHE_TAG="${DEBIAN_CACHE_TAG_BASE}-${TARGET_ARCH}"
+DEBIAN_LOCAL="localhost/build-cache/${DEBIAN_CACHE_NAME}:${DEBIAN_CACHE_TAG}"
 # Prefetch the matching-arch debian base into an explicit local tag so the
 # Containerfile never reuses a wrong-arch cached docker.io/...:bookworm-slim.
 DEBIAN_SRC_LOCAL="localhost/build-cache/debian-bookworm-slim:bookworm-slim-${TARGET_ARCH}"
