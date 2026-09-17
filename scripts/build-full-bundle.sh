@@ -1861,6 +1861,10 @@ if bool_true "${WORKFLOWS_ENABLED}"; then
   if [[ -z "${WORKFLOW_EXECUTOR_IMAGE_REF}" ]]; then
     WORKFLOW_EXECUTOR_IMAGE_REF="quay.io/argoproj/argoexec:${WORKFLOWS_VERSION}"
   fi
+  # Default upstream base; offline remap below may replace with LAN build-cache.
+  WORKFLOW_CONTROLLER_BASE_IMAGE="${WORKFLOW_CONTROLLER_BASE_IMAGE:-quay.io/argoproj/workflow-controller:${WORKFLOWS_VERSION}}"
+else
+  WORKFLOW_CONTROLLER_BASE_IMAGE="${WORKFLOW_CONTROLLER_BASE_IMAGE:-}"
 fi
 
 # When offline (or when DEV_REGISTRY is available and refs still point at
@@ -1914,6 +1918,7 @@ if offline_build_enabled; then
   echo "build-full-bundle: OFFLINE_BUILD=1 using LAN build-cache refs on ${DEV_REGISTRY}" >&2
   echo "build-full-bundle: service build bases compile=${HOST_ARCH} runtime=${TARGET_ARCH} (BUILDPLATFORM native cross-compile)" >&2
 else
+  # Online defaults (workflows base already set above when WORKFLOWS_ENABLED).
   WORKFLOW_CONTROLLER_BASE_IMAGE="${WORKFLOW_CONTROLLER_BASE_IMAGE:-quay.io/argoproj/workflow-controller:${WORKFLOWS_VERSION:-v3.5.10}}"
   CP_GO_IMAGE="${CP_GO_IMAGE:-}"
   CP_RUNTIME_IMAGE="${CP_RUNTIME_IMAGE:-}"
@@ -2574,7 +2579,10 @@ if tpf_active; then
       "registry.local/nats" >/dev/null || true
     tpf_store_oci "message-broker" "${CODE_REPO_DIR}/.run/message-broker-image.tar" || true
   fi
-  if [[ "${WORKFLOW_CONTROLLER_FREEZE_HIT:-0}" != "1" && -f "${CODE_REPO_DIR}/.run/workflow-controller-image.tar" ]]; then
+  if bool_true "${WORKFLOWS_ENABLED:-false}" \
+    && [[ "${WORKFLOW_CONTROLLER_FREEZE_HIT:-0}" != "1" ]] \
+    && [[ -n "${WORKFLOW_CONTROLLER_BASE_IMAGE:-}" ]] \
+    && [[ -f "${CODE_REPO_DIR}/.run/workflow-controller-image.tar" ]]; then
     TPF_FP_INPUTS=(
       "${WORKFLOW_CONTROLLER_BASE_IMAGE}"
       "${WORKFLOWS_VERSION}"
