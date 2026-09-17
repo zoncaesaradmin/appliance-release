@@ -115,6 +115,12 @@ Containerfile seeds that run `apt`/`apk` (`artifact-server-bases`,
   `podman build --arch` + qemu/binfmt. Nested podman inside a qemu-emulated
   tooling container fails (`Error during reexec(...): No such file or directory`).
 
+Full-bundle packaging (`build-full-bundle` → `make DEV_RUN`) follows the same
+rule: the outer tooling container is always **host-native**. Product
+`TARGET_ARCH` is forwarded for `GOARCH` / `buildah --arch` / skopeo overrides.
+Running nested Buildah under qemu-foreign tooling fails with
+`unshare(CLONE_NEWUSER): Invalid argument`.
+
 Bootstrap the tooling image first (host build of `deps/development-container`).
 
 Cross-arch on an amd64 host (product `TARGET_ARCH=arm64`):

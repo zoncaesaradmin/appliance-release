@@ -537,15 +537,33 @@ fi
 # Always resolve the build-host tooling image from DEV_*. This image builds
 # control-plane/UI/etc. on the packaging host and is never exported into the
 # signed appliance bundle (operator-supplied builder images at runtime).
-# Fail-closed: tooling tags are arch-suffixed (latest-amd64 / latest-arm64).
-case "${DEV_IMAGE_TAG}" in
-  *-amd64|*-arm64) ;;
+# Nested buildah/skopeo under qemu-foreign tooling fails (CLONE_NEWUSER). Use
+# host-native tooling; product TARGET_ARCH still drives GOARCH / image --arch.
+case "$(uname -m)" in
+  x86_64|amd64) HOST_ARCH=amd64 ;;
+  aarch64|arm64) HOST_ARCH=arm64 ;;
   *)
-    DEV_IMAGE_TAG="${DEV_IMAGE_TAG}-${TARGET_ARCH}"
+    echo "build-full-bundle: unsupported build-host machine $(uname -m) (want x86_64|aarch64)" >&2
+    exit 2
+    ;;
+esac
+TOOLING_ARCH="${HOST_ARCH}"
+if [[ "${TARGET_ARCH}" != "${HOST_ARCH}" ]]; then
+  echo "build-full-bundle: cross-arch packaging host=${HOST_ARCH} TARGET_ARCH=${TARGET_ARCH}; using host-native tooling (nested buildah under qemu unsupported)" >&2
+fi
+# Fail-closed: tooling tags are arch-suffixed (latest-amd64 / latest-arm64).
+# Force the host tooling suffix even if a foreign-arch tag was supplied.
+case "${DEV_IMAGE_TAG}" in
+  *-amd64|*-arm64)
+    DEV_IMAGE_TAG="${DEV_IMAGE_TAG%-amd64}"
+    DEV_IMAGE_TAG="${DEV_IMAGE_TAG%-arm64}-${TOOLING_ARCH}"
+    ;;
+  *)
+    DEV_IMAGE_TAG="${DEV_IMAGE_TAG}-${TOOLING_ARCH}"
     ;;
 esac
 BUILDER_PULL_REF="${DEV_REGISTRY}/${DEV_IMAGE_REPO}/${DEV_IMAGE_NAME}:${DEV_IMAGE_TAG}"
-echo "build-full-bundle: tooling image ${BUILDER_PULL_REF} (TARGET_ARCH=${TARGET_ARCH})"
+echo "build-full-bundle: tooling image ${BUILDER_PULL_REF} (tooling=${TOOLING_ARCH} TARGET_ARCH=${TARGET_ARCH})"
 
 shell_quote() {
   printf '%q' "${1:-}"
