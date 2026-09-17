@@ -79,7 +79,7 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | `development-container` | `$DEV_REGISTRY/$DEV_IMAGE_REPO/dev-build:<tag>` | **Build-host tooling only** (online GHCR + offline LAN); also `appliance-code` local service builds. Not packaged into appliance packs. |
 | `git-runtime-container` | `$DEV_REGISTRY/build-cache/alpine-git:2.49.0` | workspace-provisioner (dev-platform pack) |
 | `workflows` | `build-cache/argoexec` / `workflow-controller`; files `argo-workflows/…` | executor + CRDs |
-| `message-broker` | `build-cache/nats:2.10.26-alpine` | NATS JetStream broker image |
+| `message-broker` | `build-cache/nats:2.10.26-alpine-${TARGET_ARCH}` | NATS JetStream broker image (arch-suffixed; amd64/arm64 must not share a tag) |
 | `artifact-server-bases` | `build-cache/zot-linux-${TARGET_ARCH}:…`, `debian-bookworm-slim-runtime` | artifact-server wrap (seed once per TARGET_ARCH) |
 | `dns` | `build-cache/coredns:…` | dns wrap |
 | `inference` | `build-cache/ollama:…` plus arch-specific vLLM (`vllm-openai-cpu` for amd64, `vllm-openai` for arm64) | Runtimes for `std-llm` / `acc-llm` for that `TARGET_ARCH` only |

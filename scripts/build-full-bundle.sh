@@ -1785,7 +1785,7 @@ if offline_build_enabled; then
   if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]]; then
     ARTIFACT_SERVER_SOURCE_IMAGE="$(lan_cache_ref "zot-linux-${TARGET_ARCH}" "v${ARTIFACT_SERVER_VERSION}")"
   fi
-  MESSAGE_BROKER_SOURCE_IMAGE="$(lan_cache_ref nats "2.10.26-alpine")"
+  MESSAGE_BROKER_SOURCE_IMAGE="$(lan_cache_ref nats "2.10.26-alpine-${TARGET_ARCH}")"
   if [[ "${NEED_DNS_IMAGE:-0}" == "1" ]]; then
     DNS_IMAGE_PULL_REF="$(lan_cache_ref coredns "v${DNS_VERSION}")"
   fi
