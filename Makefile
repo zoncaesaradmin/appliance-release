@@ -34,7 +34,7 @@ build-and-publish:
 DEPS := $(sort $(notdir $(wildcard deps/*)))
 SEED_IN_TOOLING_DEPS := artifact-server-bases service-build-bases
 
-.PHONY: list-deps seed-build-deps seed-build-deps-build seed-build-deps-push seed-build-deps-login
+.PHONY: list-deps seed-build-deps seed-build-deps-build seed-build-deps-push seed-build-deps-login freeze-third-party
 list-deps:
 	@for d in $(DEPS); do echo "$$d"; done
 
@@ -103,6 +103,18 @@ seed-build-deps: seed-build-deps-build
 	$(MAKE) seed-build-deps-login
 	$(MAKE) seed-build-deps-push
 
+# Durable third-party packaging freeze (product vs upstream).
+# Requires TARGET_ARCH and the same DEV_*/OFFLINE_BUILD env as build-full-bundle.
+# Optional: THIRD_PARTY_FREEZE_ROOT (default /var/cache/zon-third-party).
+#   TARGET_ARCH=amd64 make freeze-third-party
+#   TARGET_ARCH=arm64 THIRD_PARTY_FREEZE_ROOT=/var/cache/zon-third-party make freeze-third-party
+freeze-third-party:
+	@if [ -z "$(TARGET_ARCH)" ]; then echo "freeze-third-party: TARGET_ARCH is required (amd64|arm64)" >&2; exit 2; fi
+	TARGET_ARCH="$(TARGET_ARCH)" \
+	THIRD_PARTY_FREEZE_ROOT="$(if $(THIRD_PARTY_FREEZE_ROOT),$(THIRD_PARTY_FREEZE_ROOT),/var/cache/zon-third-party)" \
+	THIRD_PARTY_FREEZE_MODE="$(if $(THIRD_PARTY_FREEZE_MODE),$(THIRD_PARTY_FREEZE_MODE),auto)" \
+	bash ./scripts/freeze-third-party.sh
+
 .PHONY: verify-shell
 verify-shell:
 	@bash -n $$(find scripts -type f -name '*.sh' | LC_ALL=C sort)
@@ -128,6 +140,7 @@ verify-help:
 	@bash scripts/test-appliance-packs.sh
 	@bash scripts/test-install-release-index.sh
 	@bash scripts/test-fs-link.sh
+	@bash scripts/test-third-party-freeze.sh
 	@bash deps/development-container/scripts/test-storage-conf.sh
 
 .PHONY: verify-json

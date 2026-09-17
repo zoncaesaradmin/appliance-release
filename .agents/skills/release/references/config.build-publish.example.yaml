@@ -120,6 +120,22 @@ build_flow:
   # target_arch: arm64
   target_arch: amd64
 
+  # Optional durable third-party packaging freeze (large OCI archives / host-packages).
+  # Seed once per TARGET_ARCH, then product rebuilds skip re-exporting unchanged
+  # upstream pins. Product images (control-plane, UI, host-agent, inference-manager)
+  # always rebuild.
+  #
+  # Populate on the build host:
+  #   TARGET_ARCH=arm64 THIRD_PARTY_FREEZE_ROOT=/var/cache/zon-third-party \
+  #     make freeze-third-party
+  # Modes:
+  #   ignore  — default; freeze unused
+  #   auto    — restore on hit; package+store on miss
+  #   require — restore on hit; fail closed on miss
+  # third_party_freeze:
+  #   mode: auto
+  #   root: /var/cache/zon-third-party
+
   # Used when mode: online (ONLINE_* env vars) — all seven required
   online_image_pull:
     registry_env: ONLINE_REGISTRY

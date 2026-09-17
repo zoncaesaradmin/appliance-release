@@ -227,6 +227,8 @@ APPLIANCE_PACKS="$(resolve_appliance_packs_from_config "${CONFIG_PATH}")"
 log "APPLIANCE_PACKS=${APPLIANCE_PACKS}"
 TARGET_ARCH="$(resolve_target_arch_from_config "${CONFIG_PATH}")"
 log "TARGET_ARCH=${TARGET_ARCH}"
+resolve_third_party_freeze_from_config "${CONFIG_PATH}"
+log "third_party_freeze mode=${THIRD_PARTY_FREEZE_MODE} root=${THIRD_PARTY_FREEZE_ROOT:-}"
 
 # Fail-closed: tooling tags are arch-suffixed (latest-amd64 / latest-arm64).
 case "${DEV_IMAGE_TAG}" in
@@ -251,6 +253,8 @@ BUILD_PRODUCT_ENV_PREFIX="$(append_env_assignments "${BUILD_PRODUCT_ENV_PREFIX}"
   "OFFLINE_BUILD" "${OFFLINE_BUILD}" \
   "APPLIANCE_PACKS" "${APPLIANCE_PACKS}" \
   "TARGET_ARCH" "${TARGET_ARCH}" \
+  "THIRD_PARTY_FREEZE_MODE" "${THIRD_PARTY_FREEZE_MODE}" \
+  "THIRD_PARTY_FREEZE_ROOT" "${THIRD_PARTY_FREEZE_ROOT}" \
   "DEV_IMAGE" "${DEV_IMAGE}" \
   "DEV_REGISTRY" "${DEV_REGISTRY}" \
   "DEV_REGISTRY_HOST" "${DEV_REGISTRY_HOST}" \

@@ -225,6 +225,11 @@ AP).
 Optional `COMPONENT_CACHE_DIR` enables fingerprint-based reuse
 of component outputs (Phase C); assemble and sign always re-run.
 
+Optional durable **third-party freeze** (`THIRD_PARTY_FREEZE_ROOT` +
+`THIRD_PARTY_FREEZE_MODE`, or `build_flow.third_party_freeze` in build-publish
+config) stores upstream packaging archives across product rebuilds. Populate with
+`TARGET_ARCH=… make freeze-third-party`. See `docs/offline-build-deps.md`.
+
 ## One-Time Build Host Bootstrap
 
 Because `appliance-code` builds the control-plane image inside its shared dev

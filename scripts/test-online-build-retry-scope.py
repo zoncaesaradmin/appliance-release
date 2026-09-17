@@ -30,7 +30,9 @@ def main() -> None:
         raise AssertionError("CoreDNS runtime base must be present before --pull-never")
     if '${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}' not in text:
         raise AssertionError("online CoreDNS runtime source must be fully qualified")
-    if text.count('${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}') != 2:
+    # DNS package lines use the default twice (SOURCE + LOCAL_REF); freeze
+    # fingerprint wiring may reference the same default elsewhere.
+    if text.count('${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}') < 2:
         raise AssertionError("online CoreDNS runtime source and local tag must match")
 
     if "DNS_PACKAGE_ATTEMPTS=2" not in text:

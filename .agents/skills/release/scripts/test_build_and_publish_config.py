@@ -517,6 +517,57 @@ def test_rejects_appliance_packs_env() -> None:
             raise AssertionError(result.stdout)
 
 
+def test_resolve_third_party_freeze_from_config() -> None:
+    with tempfile.TemporaryDirectory(prefix="tpf-config-") as tmp_dir:
+        tmp = Path(tmp_dir)
+
+        config = tmp / "ignore.yaml"
+        write(config, MINIMAL_VALID_CONFIG)
+        cmd = (
+            f"source {COMMON} && resolve_third_party_freeze_from_config {config} "
+            f"&& printf '%s|%s' \"$THIRD_PARTY_FREEZE_MODE\" \"$THIRD_PARTY_FREEZE_ROOT\""
+        )
+        result = subprocess.run(["bash", "-c", cmd], text=True, capture_output=True, check=False)
+        if result.returncode != 0:
+            raise AssertionError(result.stdout + result.stderr)
+        if result.stdout.strip() != "ignore|":
+            raise AssertionError(f"expected ignore|, got {result.stdout!r}")
+
+        config = tmp / "auto.yaml"
+        write(
+            config,
+            MINIMAL_VALID_CONFIG.replace(
+                "  target_arch: amd64\n",
+                "  target_arch: amd64\n  third_party_freeze:\n    mode: auto\n"
+                "    root: /var/cache/zon-third-party\n",
+            ),
+        )
+        cmd = (
+            f"source {COMMON} && resolve_third_party_freeze_from_config {config} "
+            f"&& printf '%s|%s' \"$THIRD_PARTY_FREEZE_MODE\" \"$THIRD_PARTY_FREEZE_ROOT\""
+        )
+        result = subprocess.run(["bash", "-c", cmd], text=True, capture_output=True, check=False)
+        if result.returncode != 0:
+            raise AssertionError(result.stdout + result.stderr)
+        if result.stdout.strip() != "auto|/var/cache/zon-third-party":
+            raise AssertionError(f"expected auto|root, got {result.stdout!r}")
+
+        config = tmp / "bad.yaml"
+        write(
+            config,
+            MINIMAL_VALID_CONFIG.replace(
+                "  target_arch: amd64\n",
+                "  target_arch: amd64\n  third_party_freeze:\n    mode: require\n",
+            ),
+        )
+        cmd = f"source {COMMON} && resolve_third_party_freeze_from_config {config}"
+        result = subprocess.run(["bash", "-c", cmd], text=True, capture_output=True, check=False)
+        if result.returncode == 0:
+            raise AssertionError("require without root was accepted")
+        if "third_party_freeze.root is required" not in (result.stdout + result.stderr):
+            raise AssertionError(result.stdout + result.stderr)
+
+
 def main() -> None:
     test_requires_local()
     test_dockerhub_source_names_are_not_overwritten_before_lookup()
@@ -535,6 +586,7 @@ def main() -> None:
     test_rejects_removed_build_publish_path_keys()
     test_resolve_appliance_packs_from_config()
     test_rejects_appliance_packs_env()
+    test_resolve_third_party_freeze_from_config()
     print("build-and-publish config tests passed")
 
 

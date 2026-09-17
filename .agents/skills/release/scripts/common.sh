@@ -670,6 +670,34 @@ resolve_target_arch_from_config() {
   esac
 }
 
+# Config: build_flow.third_party_freeze.{mode,root}
+# mode: ignore (default) | auto | require
+# root: absolute path on the build host; required when mode is auto|require
+resolve_third_party_freeze_from_config() {
+  local config_path="$1"
+  local mode root
+  mode="$(config_get_optional "${config_path}" "build_flow.third_party_freeze.mode" || true)"
+  root="$(config_get_optional "${config_path}" "build_flow.third_party_freeze.root" || true)"
+  mode="$(printf '%s' "${mode}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  root="$(printf '%s' "${root}" | tr -d '[:space:]')"
+  if [[ -z "${mode}" ]]; then
+    mode="ignore"
+  fi
+  case "${mode}" in
+    ignore|auto|require) ;;
+    *)
+      fail "build_flow.third_party_freeze.mode must be ignore|auto|require (got: ${mode})"
+      ;;
+  esac
+  if [[ "${mode}" != "ignore" ]]; then
+    [[ -n "${root}" ]] || fail "build_flow.third_party_freeze.root is required when mode=${mode}"
+    [[ "${root}" == /* ]] || fail "build_flow.third_party_freeze.root must be an absolute path (got: ${root})"
+  fi
+  THIRD_PARTY_FREEZE_MODE="${mode}"
+  THIRD_PARTY_FREEZE_ROOT="${root}"
+  export THIRD_PARTY_FREEZE_MODE THIRD_PARTY_FREEZE_ROOT
+}
+
 # Repo-owned default product version (configs/default-product-version).
 # PRODUCT_VERSION / release.version may override it.
 read_default_product_version() {

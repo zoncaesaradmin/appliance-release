@@ -210,6 +210,38 @@ make list-deps
 1. Tooling image + OCI build-cache + files API from unified `DEV_*` (LAN) only.
 2. Misses fail closed; no public upstream fallback.
 
+## Third-party freeze (product vs upstream)
+
+Seed populates the LAN Artifact Server. Packaging still re-exports multi-gigabyte
+OCI archives (vLLM, CoreDNS, provisioner, host-packages, …) into `.run/` on every
+product build unless a durable freeze is configured.
+
+| Layer | What | Command |
+|---|---|---|
+| Seed | Upstream → LAN build-cache / files API | `TARGET_ARCH=… make seed-build-deps` |
+| Freeze | LAN/online → durable packaging archives | `TARGET_ARCH=… make freeze-third-party` |
+| Product | Always rebuild CP/UI/host-agent/manager | `build-full-bundle` / release skill |
+
+Freeze layout: `$THIRD_PARTY_FREEZE_ROOT/$TARGET_ARCH/artifacts/<id>/<fingerprint>/`
+plus `manifest.yaml`. Fingerprints include upstream pull refs + arch (+ version).
+
+Build-publish config (`build_flow.third_party_freeze`):
+
+```yaml
+third_party_freeze:
+  mode: auto          # ignore | auto | require
+  root: /var/cache/zon-third-party
+```
+
+- `ignore` (default): freeze unused
+- `auto`: restore on hit; package + store on miss
+- `require`: restore on hit; fail closed on miss (run `make freeze-third-party`)
+
+Frozen today: inference-runtime, dns-server, workspace-provisioner / jellyfin /
+workflow-executor (via bundled/plain OCI export helpers), host-packages,
+blob-storage, message-broker. Product wrappers (artifact-server, inference-manager,
+control-plane, UI, host-agent) stay out of the freeze.
+
 ### Egress-denied smoke (operator)
 
 1. Seed with `TARGET_ARCH=amd64 make seed-build-deps` while online.

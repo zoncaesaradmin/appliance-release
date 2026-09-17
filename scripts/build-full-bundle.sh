@@ -77,6 +77,9 @@ Optional overrides:
   # (ubuntu/<version>/amd64/*.deb). Install stages debs; enablement is day-2 only.
   # BUILD_COMPLETE_PRODUCT=false  # dev-platform slim path only; default true requires workflows
   # COMPONENT_CACHE_DIR=/var/cache/appliance-build/components  # optional dirty-only rebuild cache
+  # THIRD_PARTY_FREEZE_ROOT=/var/cache/zon-third-party  # durable third-party OCI/host-packages freeze
+  # THIRD_PARTY_FREEZE_MODE=ignore|auto|require          # default ignore; see docs/offline-build-deps.md
+  # FREEZE_THIRD_PARTY_ONLY=1                            # package+store third-party only (make freeze-third-party)
   WORKFLOWS_ENABLED=true                 # complete product always packages the workflows engine (set BUILD_COMPLETE_PRODUCT=false to allow opt-out)
   WORKFLOWS_VERSION=v3.5.10              # pin a different workflows engine version than the chart's appVersion
   WORKFLOW_CONTROLLER_IMAGE_REF=localhost/appliance-workflow-controller:v3.5.10
@@ -123,6 +126,8 @@ source "${SCRIPT_DIR}/lib/appliance-packs.sh"
 source "${SCRIPT_DIR}/lib/target-arch.sh"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/fs-link.sh"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/third-party-freeze.sh"
 DEFAULTS_FILE="${RELEASE_REPO_DIR}/configs/product-bundle.ci.env"
 
 USER_PRODUCT_VERSION="${PRODUCT_VERSION-}"
@@ -344,6 +349,24 @@ BUNDLE_IMAGE_OS="${USER_BUNDLE_IMAGE_OS:-${BUNDLE_IMAGE_OS:-}}"
 BUNDLE_IMAGE_ARCH="${USER_BUNDLE_IMAGE_ARCH:-${BUNDLE_IMAGE_ARCH:-}}"
 target_arch_resolve
 echo "build-full-bundle: TARGET_ARCH=${TARGET_ARCH} BUNDLE_IMAGE_ARCH=${BUNDLE_IMAGE_ARCH}"
+
+# Durable third-party freeze (optional). Product images always rebuild.
+THIRD_PARTY_FREEZE_ROOT="${THIRD_PARTY_FREEZE_ROOT:-}"
+THIRD_PARTY_FREEZE_MODE="${THIRD_PARTY_FREEZE_MODE:-ignore}"
+FREEZE_THIRD_PARTY_ONLY="${FREEZE_THIRD_PARTY_ONLY:-0}"
+export THIRD_PARTY_FREEZE_ROOT THIRD_PARTY_FREEZE_MODE TARGET_ARCH
+tpf_normalize_env
+if tpf_active; then
+  echo "build-full-bundle: third-party-freeze mode=$(tpf_mode) root=${THIRD_PARTY_FREEZE_ROOT}"
+fi
+case "$(printf '%s' "${FREEZE_THIRD_PARTY_ONLY}" | tr '[:upper:]' '[:lower:]')" in
+  1|true|yes|on)
+    if ! tpf_active; then
+      echo "build-full-bundle: FREEZE_THIRD_PARTY_ONLY=1 requires an active third-party freeze (set ROOT + mode auto|require)" >&2
+      exit 2
+    fi
+    ;;
+esac
 
 # Upstream zot publishes per-arch image names (zot-linux-amd64 / zot-linux-arm64).
 if [[ -z "${USER_ARTIFACT_SERVER_SOURCE_IMAGE}" ]]; then
@@ -791,9 +814,25 @@ export_container_image_archive() {
   local image_ref="$1"
   local output_path="$2"
   local dest_name="${3:-$(basename "${image_ref%%:*}")}"
+  local artifact_id rc
+
+  artifact_id="oci-${dest_name//\//-}"
+  TPF_FP_INPUTS=("${image_ref}" "${dest_name}" "${TARGET_ARCH}" "${BUNDLE_IMAGE_OS:-linux}")
+  set +e
+  tpf_try_restore_oci "${artifact_id}" "${output_path}"
+  rc=$?
+  set -e
+  if [[ "${rc}" -eq 0 ]]; then
+    return 0
+  fi
+  if [[ "${rc}" -eq 2 ]]; then
+    exit 2
+  fi
 
   # Prefer the same LAN build-cache path as other OCI exports.
   skopeo_copy_oci_archive "docker://${image_ref#docker://}" "${output_path}" "${dest_name}"
+  TPF_FP_INPUTS=("${image_ref}" "${dest_name}" "${TARGET_ARCH}" "${BUNDLE_IMAGE_OS:-linux}")
+  tpf_store_oci "${artifact_id}" "${output_path}" || true
 }
 
 # Target platform for bundled OCI images. One build = one TARGET_ARCH
@@ -1428,7 +1467,7 @@ export_bundled_oci_archive() {
   local pull_ref="$1"
   local local_or_expected_ref="$2"
   local output_path="$3"
-  local local_name
+  local local_name artifact_id rc
 
   local_name="$(oci_bundle_local_name "${local_or_expected_ref}")"
   if [[ "${local_name}" != registry.local/* ]]; then
@@ -1436,8 +1475,25 @@ export_bundled_oci_archive() {
     exit 2
   fi
 
+  artifact_id="bundled-${local_name#registry.local/}"
+  artifact_id="${artifact_id//\//-}"
+  TPF_FP_INPUTS=("${pull_ref}" "${local_name}" "${TARGET_ARCH}" "${BUNDLE_IMAGE_OS:-linux}")
+  set +e
+  tpf_try_restore_oci "${artifact_id}" "${output_path}"
+  rc=$?
+  set -e
+  if [[ "${rc}" -eq 0 ]]; then
+    finalize_bundled_oci_archive "${output_path}" "${local_name}" "${local_or_expected_ref}"
+    return 0
+  fi
+  if [[ "${rc}" -eq 2 ]]; then
+    exit 2
+  fi
+
   skopeo_copy_oci_archive "${pull_ref}" "${output_path}" "${local_name}:bundled"
   finalize_bundled_oci_archive "${output_path}" "${local_name}" "${local_or_expected_ref}"
+  TPF_FP_INPUTS=("${pull_ref}" "${local_name}" "${TARGET_ARCH}" "${BUNDLE_IMAGE_OS:-linux}")
+  tpf_store_oci "${artifact_id}" "${output_path}" || true
 }
 
 # derive_workflows_version_from_code_repo reads the pinned workflows engine
@@ -1859,7 +1915,20 @@ HOST_PACKAGES_DIR_FOR_DEV="/workspace/.run/host-packages"
 HOST_CAPABILITIES=(mdns wifi-client wifi-ap)
 mkdir -p "${CODE_REPO_DIR}/.run/host-packages"
 host_packages_fingerprint_inputs=("${OS_VERSION}" "${TARGET_ARCH}" "mdns" "wifi-client" "wifi-ap" "${HOST_PACKAGES_FINGERPRINT}")
-if ! component_cache_try_restore "host-packages" "${CODE_REPO_DIR}/.run/host-packages" "${host_packages_fingerprint_inputs[@]}"; then
+host_packages_restored=0
+TPF_FP_INPUTS=("${host_packages_fingerprint_inputs[@]}")
+set +e
+tpf_try_restore_dir "host-packages" "${CODE_REPO_DIR}/.run/host-packages"
+_tpf_hp_rc=$?
+set -e
+if [[ "${_tpf_hp_rc}" -eq 0 ]]; then
+  host_packages_restored=1
+elif [[ "${_tpf_hp_rc}" -eq 2 ]]; then
+  exit 2
+elif component_cache_try_restore "host-packages" "${CODE_REPO_DIR}/.run/host-packages" "${host_packages_fingerprint_inputs[@]}"; then
+  host_packages_restored=1
+fi
+if [[ "${host_packages_restored}" != "1" ]]; then
   host_pkg_archive="${CODE_REPO_DIR}/.run/host-packages-seed.tar.zst"
   host_pkg_remote="host-packages/ubuntu-${OS_VERSION}/${TARGET_ARCH}/${HOST_PACKAGES_FINGERPRINT}/host-packages.tar.zst"
   if files_api_download "${host_pkg_remote}" "${host_pkg_archive}"; then
@@ -1886,6 +1955,8 @@ if ! component_cache_try_restore "host-packages" "${CODE_REPO_DIR}/.run/host-pac
       "${CAP_ARGS[@]}"
   fi
   component_cache_store "host-packages" "${CODE_REPO_DIR}/.run/host-packages" "${host_packages_fingerprint_inputs[@]}"
+  TPF_FP_INPUTS=("${host_packages_fingerprint_inputs[@]}")
+  tpf_store_dir "host-packages" "${CODE_REPO_DIR}/.run/host-packages" || true
 fi
 
 if bool_true "${WORKFLOWS_ENABLED}"; then
@@ -1950,27 +2021,72 @@ done
 
 INFERENCE_PACKAGE_LINES=""
 INFERENCE_ARCHIVE_ARG_LINES=""
+INFERENCE_RUNTIME_FREEZE_HIT=0
+if appliance_pack_wanted std-llm || appliance_pack_wanted acc-llm; then
+  if appliance_pack_wanted acc-llm; then
+    if [[ "${TARGET_ARCH}" == "arm64" ]]; then
+      _inf_version="${VLLM_ARM64_VERSION}"
+      _inf_image="${VLLM_ARM64_IMAGE_PULL_REF}"
+    else
+      _inf_version="${VLLM_VERSION}"
+      _inf_image="${VLLM_IMAGE_PULL_REF}"
+    fi
+    _inf_engine=vllm
+  else
+    _inf_version="${INFERENCE_VERSION}"
+    _inf_image="${INFERENCE_IMAGE_PULL_REF}"
+    _inf_engine=ollama
+  fi
+  TPF_FP_INPUTS=("${_inf_image}" "${_inf_engine}" "${_inf_version}" "${TARGET_ARCH}")
+  set +e
+  tpf_try_restore_oci "inference-runtime" "${CODE_REPO_DIR}/.run/inference-runtime-image.tar"
+  _tpf_inf_rc=$?
+  set -e
+  if [[ "${_tpf_inf_rc}" -eq 0 ]]; then
+    INFERENCE_RUNTIME_FREEZE_HIT=1
+  elif [[ "${_tpf_inf_rc}" -eq 2 ]]; then
+    exit 2
+  fi
+fi
 if appliance_pack_wanted std-llm; then
-  # Build as a plain double-quoted string (not $(cat <<...)). A nested
-  # command-substitution heredoc breaks on the ")" in \$(tr ...).
-  INFERENCE_PACKAGE_LINES="# Appliance inference: upstream runtime + thin manager (no wrap).
+  if [[ "${INFERENCE_RUNTIME_FREEZE_HIT}" == "1" ]]; then
+    INFERENCE_PACKAGE_LINES="# third-party-freeze hit: inference-runtime (ollama)
+INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
+INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
+"
+    if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
+      INFERENCE_PACKAGE_LINES+="make package-inference-manager-image-archive \\
+  OUT_FILE=\"/workspace/.run/inference-manager-image.tar\"
+INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-manager-image.tar\"
+INFERENCE_MANAGER_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-manager-image.reference)\"
+"
+    fi
+  else
+    INFERENCE_PACKAGE_LINES="# Appliance inference: upstream runtime + thin manager (no wrap).
 make package-inference-runtime-image-archive \\
   OUT_FILE=\"/workspace/.run/inference-runtime-image.tar\" \\
   INFERENCE_VERSION=$(shell_quote "${INFERENCE_VERSION}") \\
   INFERENCE_SOURCE_IMAGE=$(shell_quote "${INFERENCE_IMAGE_PULL_REF}") \\
   INFERENCE_ARCHITECTURE=$(shell_quote "${TARGET_ARCH}")
-make package-inference-manager-image-archive \\
+"
+    if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
+      INFERENCE_PACKAGE_LINES+="make package-inference-manager-image-archive \\
   OUT_FILE=\"/workspace/.run/inference-manager-image.tar\"
-INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
-INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
 INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-manager-image.tar\"
 INFERENCE_MANAGER_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-manager-image.reference)\"
 "
-  INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${INFERENCE_VERSION}") \\"$'\n'
-  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
-  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
-  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image \"\${INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
-  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image-reference \"\${INFERENCE_MANAGER_IMAGE_REF}\" \\"$'\n'
+    fi
+    INFERENCE_PACKAGE_LINES+="INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
+INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
+"
+  fi
+  if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
+    INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${INFERENCE_VERSION}") \\"$'\n'
+    INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+    INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
+    INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image \"\${INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+    INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image-reference \"\${INFERENCE_MANAGER_IMAGE_REF}\" \\"$'\n'
+  fi
 fi
 if appliance_pack_wanted acc-llm; then
   if [[ "${TARGET_ARCH}" == "arm64" ]]; then
@@ -1980,25 +2096,45 @@ if appliance_pack_wanted acc-llm; then
     _acc_version="${VLLM_VERSION}"
     _acc_image="${VLLM_IMAGE_PULL_REF}"
   fi
-  INFERENCE_PACKAGE_LINES="# Appliance vLLM runtime + thin manager (TARGET_ARCH=${TARGET_ARCH}).
+  if [[ "${INFERENCE_RUNTIME_FREEZE_HIT}" == "1" ]]; then
+    INFERENCE_PACKAGE_LINES="# third-party-freeze hit: inference-runtime (vllm/${TARGET_ARCH})
+INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
+INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
+"
+    if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
+      INFERENCE_PACKAGE_LINES+="make package-inference-manager-image-archive \\
+  OUT_FILE=\"/workspace/.run/inference-manager-image.tar\"
+INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-manager-image.tar\"
+INFERENCE_MANAGER_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-manager-image.reference)\"
+"
+    fi
+  else
+    INFERENCE_PACKAGE_LINES="# Appliance vLLM runtime + thin manager (TARGET_ARCH=${TARGET_ARCH}).
 make package-inference-runtime-image-archive \\
   OUT_FILE=\"/workspace/.run/inference-runtime-image.tar\" \\
   INFERENCE_VERSION=$(shell_quote "${_acc_version}") \\
   INFERENCE_SOURCE_IMAGE=$(shell_quote "${_acc_image}") \\
   INFERENCE_ENGINE=vllm \\
   INFERENCE_ARCHITECTURE=$(shell_quote "${TARGET_ARCH}")
-make package-inference-manager-image-archive \\
+"
+    if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
+      INFERENCE_PACKAGE_LINES+="make package-inference-manager-image-archive \\
   OUT_FILE=\"/workspace/.run/inference-manager-image.tar\"
-INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
-INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
 INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-manager-image.tar\"
 INFERENCE_MANAGER_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-manager-image.reference)\"
 "
-  INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${_acc_version}") \\"$'\n'
-  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
-  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
-  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image \"\${INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
-  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image-reference \"\${INFERENCE_MANAGER_IMAGE_REF}\" \\"$'\n'
+    fi
+    INFERENCE_PACKAGE_LINES+="INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
+INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
+"
+  fi
+  if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
+    INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${_acc_version}") \\"$'\n'
+    INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+    INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
+    INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image \"\${INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+    INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image-reference \"\${INFERENCE_MANAGER_IMAGE_REF}\" \\"$'\n'
+  fi
 fi
 
 DOCKERHUB_AUTH_FILE=""
@@ -2011,8 +2147,23 @@ fi
 
 DNS_PACKAGE_LINES=""
 DNS_ARCHIVE_ARG_LINES=""
+DNS_FREEZE_HIT=0
 if [[ "${NEED_DNS_IMAGE:-0}" == "1" ]]; then
-  DNS_PACKAGE_LINES=$(cat <<DNS_EOF
+  TPF_FP_INPUTS=("${DNS_IMAGE_PULL_REF}" "${DNS_VERSION}" "${TARGET_ARCH}" "${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}")
+  set +e
+  tpf_try_restore_oci "dns-server" "${CODE_REPO_DIR}/.run/dns-server-image.tar"
+  _tpf_dns_rc=$?
+  set -e
+  if [[ "${_tpf_dns_rc}" -eq 0 ]]; then
+    DNS_FREEZE_HIT=1
+    DNS_PACKAGE_LINES="# third-party-freeze hit: dns-server
+DNS_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/dns-server-image.tar\"
+DNS_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/dns-server-image.reference)\"
+"
+  elif [[ "${_tpf_dns_rc}" -eq 2 ]]; then
+    exit 2
+  else
+    DNS_PACKAGE_LINES=$(cat <<DNS_EOF
 # Acquire CoreDNS before product image builds (catalog: dns capability).
 # shellcheck disable=SC1091
 source ./scripts/package/oci-pull.sh
@@ -2044,9 +2195,12 @@ DNS_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/dns-server-image.tar"
 DNS_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/dns-server-image.reference)"
 DNS_EOF
 )
-  DNS_ARCHIVE_ARG_LINES="  --dns-version $(shell_quote "${DNS_VERSION}") \\"$'\n'
-  DNS_ARCHIVE_ARG_LINES+="  --dns-image \"\${DNS_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
-  DNS_ARCHIVE_ARG_LINES+="  --dns-image-reference \"\${DNS_IMAGE_REF}\" \\"$'\n'
+  fi
+  if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
+    DNS_ARCHIVE_ARG_LINES="  --dns-version $(shell_quote "${DNS_VERSION}") \\"$'\n'
+    DNS_ARCHIVE_ARG_LINES+="  --dns-image \"\${DNS_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
+    DNS_ARCHIVE_ARG_LINES+="  --dns-image-reference \"\${DNS_IMAGE_REF}\" \\"$'\n'
+  fi
 fi
 
 # Host-agentd is a foundation/lan-discovery artifact; the in-cluster
@@ -2104,7 +2258,7 @@ fi
 
 ARTIFACT_SERVER_PACKAGE_LINES=""
 ARTIFACT_SERVER_ARCHIVE_ARG_LINES=""
-if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]]; then
+if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]] && ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
   ARTIFACT_SERVER_PACKAGE_LINES=$(cat <<ART_EOF
 # Appliance-owned artifact-server wrapper (catalog: artifact capability).
 make package-artifact-server-image-archive \\
@@ -2121,6 +2275,87 @@ ART_EOF
   ARTIFACT_SERVER_ARCHIVE_ARG_LINES="  --artifact-server-version $(shell_quote "${ARTIFACT_SERVER_VERSION}") \\"$'\n'
   ARTIFACT_SERVER_ARCHIVE_ARG_LINES+="  --artifact-server-image \"\${ARTIFACT_SERVER_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
   ARTIFACT_SERVER_ARCHIVE_ARG_LINES+="  --artifact-server-image-reference \"\${ARTIFACT_SERVER_IMAGE_REF}\" \\"$'\n'
+fi
+
+if bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
+  HOST_AGENTD_PACKAGE_LINES=""
+  HOST_AGENT_IMAGE_PACKAGE_LINES=""
+  HOST_AGENT_IMAGE_ARCHIVE_ARG_LINES=""
+fi
+
+PRODUCT_PACKAGE_LINES=""
+if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
+  PRODUCT_PACKAGE_LINES=$(cat <<PRODUCT_EOF
+make package-control-plane-image-archive OUT_FILE="\${CONTROL_PLANE_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}" \\
+  GO_IMAGE=$(shell_quote "${CP_GO_IMAGE}") \\
+  RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \\
+  RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
+make package-ui-image-archive OUT_FILE="\${UI_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}" \\
+  UI_NODE_IMAGE=$(shell_quote "${UI_NODE_IMAGE}") \\
+  UI_GO_IMAGE=$(shell_quote "${UI_GO_IMAGE}") \\
+  UI_RUNTIME_IMAGE=$(shell_quote "${UI_RUNTIME_IMAGE}") \\
+  UI_WEB_DEPS_IMAGE=$(shell_quote "${UI_WEB_DEPS_IMAGE}") \\
+  USE_PREBAKED_NPM=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}") \\
+  RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
+${HOST_AGENTD_PACKAGE_LINES}
+${HOST_AGENT_IMAGE_PACKAGE_LINES}
+PRODUCT_EOF
+)
+fi
+
+ARCHIVE_RELEASE_INPUT_LINES=""
+if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
+  ARCHIVE_RELEASE_INPUT_LINES=$(cat <<ARCHIVE_EOF
+METADATA_BUNDLE_ARCHIVE_FOR_DEV="\$(bash ./scripts/package/generate-metadata-bundle.sh --software-version "\${CODE_VERSION}" --out-dir "/workspace/.run/metadata-bundle")"
+
+if bool_true $(shell_quote "${WORKFLOWS_ENABLED}"); then
+  WORKFLOWS_ARGS+=(--workflows-version $(shell_quote "${WORKFLOWS_VERSION}"))
+
+  if [[ -n $(shell_quote "${WORKFLOWS_CRDS_DIR_FOR_DEV}") ]]; then
+    WORKFLOWS_ARGS+=(--workflows-crds-dir $(shell_quote "${WORKFLOWS_CRDS_DIR_FOR_DEV}"))
+  fi
+
+  # Always wrap the upstream controller inside the code-repo dev environment.
+  make package-workflow-controller-image-archive \\
+    OUT_FILE="/workspace/.run/workflow-controller-image.tar" \\
+    WORKFLOWS_VERSION=$(shell_quote "${WORKFLOWS_VERSION}") \\
+    WORKFLOW_CONTROLLER_BASE_IMAGE=$(shell_quote "${WORKFLOW_CONTROLLER_BASE_IMAGE}") \\
+    RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \\
+    RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
+  WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workflow-controller-image.tar"
+
+  WORKFLOWS_ARGS+=(--workflow-controller-image "\${WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}")
+  WORKFLOWS_ARGS+=(--workflow-controller-image-reference $(shell_quote "${WORKFLOW_CONTROLLER_IMAGE_REF}"))
+
+  WORKFLOWS_ARGS+=(--workflow-executor-image $(shell_quote "${WORKFLOW_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV}"))
+  WORKFLOWS_ARGS+=(--workflow-executor-image-reference $(shell_quote "${WORKFLOW_EXECUTOR_IMAGE_REF}"))
+fi
+
+${BUNDLED_IMAGE_ARG_LINES}
+
+bash ./scripts/package/archive-release-input.sh \\
+  --out-file "/workspace/.run/release-input-${PRODUCT_VERSION}.tar.gz" \\
+  --code-version "\${CODE_VERSION}" \\
+  --control-plane-image "\${CONTROL_PLANE_IMAGE_OUT}" \\
+  --control-plane-image-reference "localhost/appliance-control-plane:\${CODE_VERSION}" \\
+  --ui-image "\${UI_IMAGE_OUT}" \\
+  --ui-image-reference "localhost/appliance-ui:\${CODE_VERSION}" \\
+${HOST_AGENT_IMAGE_ARCHIVE_ARG_LINES}  --blob-storage-image "\${BLOB_STORAGE_IMAGE_OUT}" \\
+  --blob-storage-image-reference "\${BLOB_STORAGE_IMAGE_REF}" \\
+  --message-broker-image "\${MESSAGE_BROKER_IMAGE_OUT}" \\
+  --message-broker-image-reference "\${MESSAGE_BROKER_IMAGE_REF}" \\
+  "\${HOST_PACKAGES_ARGS[@]}" \\
+  --k3s-version $(shell_quote "${K3S_VERSION}") \\
+${ARTIFACT_SERVER_ARCHIVE_ARG_LINES}${DNS_ARCHIVE_ARG_LINES}${INFERENCE_ARCHIVE_ARG_LINES}  --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \\
+  "\${WORKFLOWS_ARGS[@]}" \\
+  "\${BUNDLED_IMAGE_ARGS[@]}"
+ARCHIVE_EOF
+)
+else
+  ARCHIVE_RELEASE_INPUT_LINES=$(cat <<'ARCHIVE_EOF'
+echo "freeze-third-party: skipping product images, metadata bundle, and archive-release-input"
+ARCHIVE_EOF
+)
 fi
 
 cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF
@@ -2156,32 +2391,20 @@ bool_true() {
   esac
 }
 
-echo "package-release-input: TARGET_ARCH=\${TARGET_ARCH}"
+echo "package-release-input: TARGET_ARCH=\${TARGET_ARCH} freeze_only=$(shell_quote "${FREEZE_THIRD_PARTY_ONLY}")"
 
 ${DNS_PACKAGE_LINES}
 
-make package-control-plane-image-archive OUT_FILE="\${CONTROL_PLANE_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}" \
-  GO_IMAGE=$(shell_quote "${CP_GO_IMAGE}") \
-  RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \
-  RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
-make package-ui-image-archive OUT_FILE="\${UI_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}" \
-  UI_NODE_IMAGE=$(shell_quote "${UI_NODE_IMAGE}") \
-  UI_GO_IMAGE=$(shell_quote "${UI_GO_IMAGE}") \
-  UI_RUNTIME_IMAGE=$(shell_quote "${UI_RUNTIME_IMAGE}") \
-  UI_WEB_DEPS_IMAGE=$(shell_quote "${UI_WEB_DEPS_IMAGE}") \
-  USE_PREBAKED_NPM=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}") \
-  RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
-${HOST_AGENTD_PACKAGE_LINES}
-${HOST_AGENT_IMAGE_PACKAGE_LINES}
-make package-blob-storage-image-archive \
-  OUT_FILE="\${BLOB_STORAGE_IMAGE_OUT}" \
-  REFERENCE_OUT_FILE="\${BLOB_STORAGE_IMAGE_REF_FILE}" \
-  BLOB_STORAGE_VERSION=$(shell_quote "${BLOB_STORAGE_VERSION}") \
+${PRODUCT_PACKAGE_LINES}
+make package-blob-storage-image-archive \\
+  OUT_FILE="\${BLOB_STORAGE_IMAGE_OUT}" \\
+  REFERENCE_OUT_FILE="\${BLOB_STORAGE_IMAGE_REF_FILE}" \\
+  BLOB_STORAGE_VERSION=$(shell_quote "${BLOB_STORAGE_VERSION}") \\
   BLOB_STORAGE_SOURCE_IMAGE=$(shell_quote "${BLOB_STORAGE_SOURCE_IMAGE}")
 BLOB_STORAGE_IMAGE_REF="\$(tr -d '\r\n' < "\${BLOB_STORAGE_IMAGE_REF_FILE}")"
-make package-message-broker-image-archive \
-  OUT_FILE="\${MESSAGE_BROKER_IMAGE_OUT}" \
-  REFERENCE_OUT_FILE="\${MESSAGE_BROKER_IMAGE_REF_FILE}" \
+make package-message-broker-image-archive \\
+  OUT_FILE="\${MESSAGE_BROKER_IMAGE_OUT}" \\
+  REFERENCE_OUT_FILE="\${MESSAGE_BROKER_IMAGE_REF_FILE}" \\
   MESSAGE_BROKER_SOURCE_IMAGE=$(shell_quote "${MESSAGE_BROKER_SOURCE_IMAGE:-docker.io/library/nats:2.10.26-alpine}")
 MESSAGE_BROKER_IMAGE_REF="\$(tr -d '\r\n' < "\${MESSAGE_BROKER_IMAGE_REF_FILE}")"
 # Super-set: always pass host-packages (packages staged at install; services off).
@@ -2194,49 +2417,7 @@ ${ARTIFACT_SERVER_PACKAGE_LINES}
 
 ${INFERENCE_PACKAGE_LINES}
 
-METADATA_BUNDLE_ARCHIVE_FOR_DEV="\$(bash ./scripts/package/generate-metadata-bundle.sh --software-version "\${CODE_VERSION}" --out-dir "/workspace/.run/metadata-bundle")"
-
-if bool_true $(shell_quote "${WORKFLOWS_ENABLED}"); then
-  WORKFLOWS_ARGS+=(--workflows-version $(shell_quote "${WORKFLOWS_VERSION}"))
-
-  if [[ -n $(shell_quote "${WORKFLOWS_CRDS_DIR_FOR_DEV}") ]]; then
-    WORKFLOWS_ARGS+=(--workflows-crds-dir $(shell_quote "${WORKFLOWS_CRDS_DIR_FOR_DEV}"))
-  fi
-
-  # Always wrap the upstream controller inside the code-repo dev environment.
-  make package-workflow-controller-image-archive \
-    OUT_FILE="/workspace/.run/workflow-controller-image.tar" \
-    WORKFLOWS_VERSION=$(shell_quote "${WORKFLOWS_VERSION}") \
-    WORKFLOW_CONTROLLER_BASE_IMAGE=$(shell_quote "${WORKFLOW_CONTROLLER_BASE_IMAGE}") \
-    RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \
-    RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
-  WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workflow-controller-image.tar"
-
-  WORKFLOWS_ARGS+=(--workflow-controller-image "\${WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}")
-  WORKFLOWS_ARGS+=(--workflow-controller-image-reference $(shell_quote "${WORKFLOW_CONTROLLER_IMAGE_REF}"))
-
-  WORKFLOWS_ARGS+=(--workflow-executor-image $(shell_quote "${WORKFLOW_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV}"))
-  WORKFLOWS_ARGS+=(--workflow-executor-image-reference $(shell_quote "${WORKFLOW_EXECUTOR_IMAGE_REF}"))
-fi
-
-${BUNDLED_IMAGE_ARG_LINES}
-
-bash ./scripts/package/archive-release-input.sh \
-  --out-file "/workspace/.run/release-input-${PRODUCT_VERSION}.tar.gz" \
-  --code-version "\${CODE_VERSION}" \
-  --control-plane-image "\${CONTROL_PLANE_IMAGE_OUT}" \
-  --control-plane-image-reference "localhost/appliance-control-plane:\${CODE_VERSION}" \
-  --ui-image "\${UI_IMAGE_OUT}" \
-  --ui-image-reference "localhost/appliance-ui:\${CODE_VERSION}" \
-${HOST_AGENT_IMAGE_ARCHIVE_ARG_LINES}  --blob-storage-image "\${BLOB_STORAGE_IMAGE_OUT}" \
-  --blob-storage-image-reference "\${BLOB_STORAGE_IMAGE_REF}" \
-  --message-broker-image "\${MESSAGE_BROKER_IMAGE_OUT}" \
-  --message-broker-image-reference "\${MESSAGE_BROKER_IMAGE_REF}" \
-  "\${HOST_PACKAGES_ARGS[@]}" \
-  --k3s-version $(shell_quote "${K3S_VERSION}") \
-${ARTIFACT_SERVER_ARCHIVE_ARG_LINES}${DNS_ARCHIVE_ARG_LINES}${INFERENCE_ARCHIVE_ARG_LINES}  --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \
-  "\${WORKFLOWS_ARGS[@]}" \
-  "\${BUNDLED_IMAGE_ARGS[@]}"
+${ARCHIVE_RELEASE_INPUT_LINES}
 EOF
 chmod +x "${CODE_DEV_SCRIPT_PATH}"
 
@@ -2249,6 +2430,51 @@ make -C "${CODE_REPO_DIR}" DEV_IMAGE="${DEV_IMAGE}" OFFLINE_BUILD="${OFFLINE_BUI
   TARGET_ARCH="${TARGET_ARCH}" \
   dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}"
 rm -f "${DOCKERHUB_AUTH_FILE}"
+
+# Persist third-party packaging outputs into the durable freeze after a miss.
+if tpf_active; then
+  if [[ "${INFERENCE_RUNTIME_FREEZE_HIT:-0}" != "1" && -f "${CODE_REPO_DIR}/.run/inference-runtime-image.tar" ]]; then
+    if appliance_pack_wanted acc-llm; then
+      if [[ "${TARGET_ARCH}" == "arm64" ]]; then
+        TPF_FP_INPUTS=("${VLLM_ARM64_IMAGE_PULL_REF}" "vllm" "${VLLM_ARM64_VERSION}" "${TARGET_ARCH}")
+      else
+        TPF_FP_INPUTS=("${VLLM_IMAGE_PULL_REF}" "vllm" "${VLLM_VERSION}" "${TARGET_ARCH}")
+      fi
+    elif appliance_pack_wanted std-llm; then
+      TPF_FP_INPUTS=("${INFERENCE_IMAGE_PULL_REF}" "ollama" "${INFERENCE_VERSION}" "${TARGET_ARCH}")
+    else
+      TPF_FP_INPUTS=()
+    fi
+    if [[ ${#TPF_FP_INPUTS[@]} -gt 0 ]]; then
+      tpf_store_oci "inference-runtime" "${CODE_REPO_DIR}/.run/inference-runtime-image.tar" || true
+    fi
+  fi
+  if [[ "${DNS_FREEZE_HIT:-0}" != "1" && -f "${CODE_REPO_DIR}/.run/dns-server-image.tar" ]]; then
+    TPF_FP_INPUTS=("${DNS_IMAGE_PULL_REF}" "${DNS_VERSION}" "${TARGET_ARCH}" "${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}")
+    tpf_store_oci "dns-server" "${CODE_REPO_DIR}/.run/dns-server-image.tar" || true
+  fi
+  if [[ -f "${CODE_REPO_DIR}/.run/blob-storage-image.tar" ]]; then
+    TPF_FP_INPUTS=("${BLOB_STORAGE_SOURCE_IMAGE}" "${BLOB_STORAGE_VERSION}" "${TARGET_ARCH}")
+    tpf_store_oci "blob-storage" "${CODE_REPO_DIR}/.run/blob-storage-image.tar" || true
+  fi
+  if [[ -f "${CODE_REPO_DIR}/.run/message-broker-image.tar" ]]; then
+    TPF_FP_INPUTS=("${MESSAGE_BROKER_SOURCE_IMAGE:-docker.io/library/nats:2.10.26-alpine}" "${TARGET_ARCH}")
+    tpf_store_oci "message-broker" "${CODE_REPO_DIR}/.run/message-broker-image.tar" || true
+  fi
+  tpf_refresh_manifest || true
+fi
+
+if bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
+  echo
+  echo "freeze-third-party: complete"
+  echo "  arch: ${TARGET_ARCH}"
+  echo "  root: ${THIRD_PARTY_FREEZE_ROOT}/${TARGET_ARCH}"
+  if [[ -f "$(tpf_arch_root)/manifest.yaml" ]]; then
+    echo "  manifest: $(tpf_arch_root)/manifest.yaml"
+  fi
+  exit 0
+fi
+
 link_or_copy_file "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"
 if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]]; then
   ARTIFACT_SERVER_IMAGE_REF="$(tr -d '\r\n' < "${CODE_REPO_DIR}/.run/artifact-server-image.reference")"
