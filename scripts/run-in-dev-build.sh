@@ -7,7 +7,8 @@
 # Optional:
 #   DEV_IMAGE                 Full image ref (overrides composition)
 #   DEV_REGISTRY / DEV_IMAGE_REPO / DEV_IMAGE_NAME / DEV_IMAGE_TAG
-#     Default tag: latest-${TARGET_ARCH}
+#     Default tag: latest → latest-${TARGET_ARCH} (bare tags are auto-suffixed)
+
 #   DEV_REGISTRY_TLS_VERIFY   true|false (pull TLS)
 #
 # Usage:
@@ -46,12 +47,13 @@ deps_require_build_arch_runnable "${TARGET_ARCH}"
 
 DEV_IMAGE_NAME="${DEV_IMAGE_NAME:-dev-build}"
 DEV_IMAGE_REPO="${DEV_IMAGE_REPO:-development-container}"
-DEV_IMAGE_TAG="${DEV_IMAGE_TAG:-latest-${TARGET_ARCH}}"
-# Reject bare :latest — arch must be explicit for tooling.
+# Packaging configs often export bare DEV_IMAGE_TAG=latest; compose to latest-${TARGET_ARCH}
+# (same contract as build-full-bundle / appliance-code DEV_IMAGE_REF_TAG).
+DEV_IMAGE_TAG="${DEV_IMAGE_TAG:-latest}"
 case "${DEV_IMAGE_TAG}" in
-  latest|latest:)
-    echo "run-in-dev-build: DEV_IMAGE_TAG must be arch-suffixed (got '${DEV_IMAGE_TAG}'; use latest-${TARGET_ARCH}" >&2
-    exit 2
+  *-amd64|*-arm64) ;;
+  *)
+    DEV_IMAGE_TAG="${DEV_IMAGE_TAG}-${TARGET_ARCH}"
     ;;
 esac
 
