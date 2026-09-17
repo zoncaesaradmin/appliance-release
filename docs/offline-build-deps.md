@@ -115,16 +115,20 @@ appliance-code uses for `make dev-shell`). Bootstrap that tooling image first
 Cross-arch on an amd64 host (product `TARGET_ARCH=arm64`):
 
 ```bash
-# One-time: allow starting an arm64 tooling container
+# One-time: qemu/binfmt so host podman can RUN arm64 (bootstrap tooling) and
+# later start arm64 tooling containers for other seed packages.
 sudo apt-get install -y qemu-user-static binfmt-support
 sudo systemctl restart systemd-binfmt || true
+test -e /proc/sys/fs/binfmt_misc/qemu-aarch64 && grep enabled /proc/sys/fs/binfmt_misc/qemu-aarch64
 # Build/publish arm64 tooling, then seed (RUN-heavy deps inside tooling)
 TARGET_ARCH=arm64 make -C deps/development-container release
 TARGET_ARCH=arm64 make seed-build-deps
 ```
 
-Or seed on a matching-arch host. Without binfmt, starting the arm64
-`dev-build` container fails closed with a clear message.
+Or seed on a matching-arch host. Without binfmt, the host build of
+`deps/development-container` (and starting an arm64 `dev-build` container)
+fails closed with a clear `deps_require_build_arch_runnable` message instead
+of a late `Exec format error`.
 
 ### Special case: `development-container` / `dev-build` (LAN + GHCR)
 

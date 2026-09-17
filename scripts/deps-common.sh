@@ -125,10 +125,12 @@ deps_host_arch() {
 }
 
 # Containerfile RUN steps must execute on the host (or via qemu/binfmt).
-# Call before podman build --arch when the build has RUN instructions.
+# Call before podman build --arch when the build has RUN instructions
+# (includes bootstrapping the first foreign-arch dev-build image).
 deps_require_build_arch_runnable() {
   local want="${1-}"
   local host=""
+  local binfmt=""
   if [[ -z "${want}" ]]; then
     want="${TARGET_ARCH-}"
   fi
@@ -141,25 +143,32 @@ deps_require_build_arch_runnable() {
     return 0
   fi
   case "${want}" in
-    arm64)
-      if [[ -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]]; then
-        return 0
-      fi
-      ;;
-    amd64)
-      if [[ -e /proc/sys/fs/binfmt_misc/qemu-x86_64 ]]; then
-        return 0
-      fi
+    arm64) binfmt=/proc/sys/fs/binfmt_misc/qemu-aarch64 ;;
+    amd64) binfmt=/proc/sys/fs/binfmt_misc/qemu-x86_64 ;;
+    *)
+      echo "deps-common: unsupported TARGET_ARCH=${want}" >&2
+      return 2
       ;;
   esac
+  if [[ -e "${binfmt}" ]] && grep -q '^enabled$' "${binfmt}" 2>/dev/null; then
+    return 0
+  fi
   echo "deps-common: cannot run Containerfile steps for TARGET_ARCH=${want} on this host (${host})." >&2
   echo "deps-common: that causes 'Exec format error' without qemu-user-static/binfmt." >&2
+  if [[ -e "${binfmt}" ]]; then
+    echo "deps-common: found ${binfmt} but it is not enabled." >&2
+  else
+    echo "deps-common: missing ${binfmt}." >&2
+  fi
   echo "deps-common: either:" >&2
   echo "deps-common:   1) seed matching this host: TARGET_ARCH=${host} make seed-build-deps" >&2
   echo "deps-common:   2) on Ubuntu, enable ${want} emulation then re-run:" >&2
   echo "deps-common:        sudo apt-get install -y qemu-user-static binfmt-support" >&2
   echo "deps-common:        sudo systemctl restart systemd-binfmt || true" >&2
+  echo "deps-common:        # confirm: test -e ${binfmt} && grep enabled ${binfmt}" >&2
   echo "deps-common:        TARGET_ARCH=${want} make seed-build-deps" >&2
+  echo "deps-common: (first foreign-arch build of deps/development-container also needs this;" >&2
+  echo "deps-common:  later RUN-heavy seeds run inside that tooling image.)" >&2
   return 2
 }
 

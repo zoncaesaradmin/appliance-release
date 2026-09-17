@@ -41,9 +41,17 @@ export DEV_REGISTRY_USER=...
 export DEV_REGISTRY_TOKEN=...
 export DEV_REGISTRY_TLS_VERIFY=false
 TARGET_ARCH=amd64 make VERSION=<tag> release
-# arm64 product tooling (needs qemu-user-static on an amd64 host for the build):
+# First arm64 tooling image on an amd64 host (one-time qemu/binfmt):
+#   sudo apt-get install -y qemu-user-static binfmt-support
+#   sudo systemctl restart systemd-binfmt || true
+#   test -e /proc/sys/fs/binfmt_misc/qemu-aarch64 && grep enabled /proc/sys/fs/binfmt_misc/qemu-aarch64
 TARGET_ARCH=arm64 make VERSION=<tag> release
 ```
+
+Without binfmt, `podman build --arch arm64` fails at the first `RUN` with
+`Exec format error`. The Makefile fails closed via `deps_require_build_arch_runnable`
+before that opaque error.
+
 
 Example: `artifact-dns-1.appliance.internal/development-container/dev-build:latest-amd64`
 

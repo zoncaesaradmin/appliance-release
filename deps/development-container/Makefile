@@ -47,19 +47,26 @@ ifeq ($(filter false 0 no FALSE NO,$(DEV_REGISTRY_TLS_VERIFY)),$(DEV_REGISTRY_TL
 TLS_VERIFY_FLAG := --tls-verify=false
 endif
 
+# Cross-arch Containerfile RUN needs qemu/binfmt on the host (chicken-egg for
+# the first foreign-arch tooling image). Same gate as scripts/run-in-dev-build.sh.
+REPO_ROOT := $(abspath $(CURDIR)/../..)
+
 .PHONY: build-base build-go build-python build-dev build-all test-dev shell-dev clean \
 	login tag-dev push-dev publish release \
-	build push test require-target-arch
+	build push test require-target-arch require-build-arch-runnable
 
 require-target-arch:
 	@true
+
+require-build-arch-runnable:
+	@bash -c 'source "$(REPO_ROOT)/scripts/deps-common.sh" && deps_require_build_arch_runnable "$(TARGET_ARCH)"'
 
 # Shared deps/ package surface (aliases).
 build: build-dev
 push: push-dev
 test: test-dev
 
-build-base: require-target-arch
+build-base: require-target-arch require-build-arch-runnable
 	$(BUILD) --build-arg DEBIAN_VARIANT=$(DEBIAN_VARIANT) \
 		--build-arg TARGETARCH=$(TARGET_ARCH) \
 		-f Containerfile.base -t $(BASE_IMAGE) .
@@ -75,7 +82,7 @@ build-python: build-base
 		--build-arg TARGETARCH=$(TARGET_ARCH) \
 		-f Containerfile.python -t $(PYTHON_IMAGE) .
 
-build-dev: require-target-arch
+build-dev: require-target-arch require-build-arch-runnable
 	$(BUILD) --build-arg DEBIAN_VARIANT=$(DEBIAN_VARIANT) \
 		--build-arg TARGETARCH=$(TARGET_ARCH) \
 		--build-arg GO_VERSION=$(GO_VERSION) \

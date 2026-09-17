@@ -47,6 +47,7 @@ seed-build-deps-build:
 	@set -e; \
 	if echo " $(DEPS) " | grep -q ' development-container '; then \
 		echo "==> build deps/development-container (TARGET_ARCH=$(TARGET_ARCH)) [host]"; \
+		bash -c 'source ./scripts/deps-common.sh && deps_require_build_arch_runnable "$(TARGET_ARCH)"'; \
 		$(MAKE) -C deps/development-container build TARGET_ARCH=$(TARGET_ARCH); \
 	fi; \
 	for d in $(DEPS); do \
