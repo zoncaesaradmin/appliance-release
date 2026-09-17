@@ -537,7 +537,15 @@ fi
 # Always resolve the build-host tooling image from DEV_*. This image builds
 # control-plane/UI/etc. on the packaging host and is never exported into the
 # signed appliance bundle (operator-supplied builder images at runtime).
+# Fail-closed: tooling tags are arch-suffixed (latest-amd64 / latest-arm64).
+case "${DEV_IMAGE_TAG}" in
+  *-amd64|*-arm64) ;;
+  *)
+    DEV_IMAGE_TAG="${DEV_IMAGE_TAG}-${TARGET_ARCH}"
+    ;;
+esac
 BUILDER_PULL_REF="${DEV_REGISTRY}/${DEV_IMAGE_REPO}/${DEV_IMAGE_NAME}:${DEV_IMAGE_TAG}"
+echo "build-full-bundle: tooling image ${BUILDER_PULL_REF} (TARGET_ARCH=${TARGET_ARCH})"
 
 shell_quote() {
   printf '%q' "${1:-}"
@@ -2196,6 +2204,7 @@ export DEV_IMAGE="${BUILDER_PULL_REF:-${DEV_IMAGE:-}}"
 # replay the complete no-cache product build because one late registry transfer
 # failed; that hid the real error and wasted several minutes per attempt.
 make -C "${CODE_REPO_DIR}" DEV_IMAGE="${DEV_IMAGE}" OFFLINE_BUILD="${OFFLINE_BUILD}" \
+  TARGET_ARCH="${TARGET_ARCH}" \
   dev-run SCRIPT="${CODE_DEV_SCRIPT_REL}"
 rm -f "${DOCKERHUB_AUTH_FILE}"
 link_or_copy_file "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"

@@ -62,9 +62,11 @@ seed package and an offline `lan_cache_ref` / files remap — see AGENTS.md and
 `docs/offline-build-deps.md`.
 
 `deps/development-container` (`dev-build`) is **build-host tooling only** (not a
-product pack image). It is also the tooling
-image for local `appliance-code` service builds. `TARGET_ARCH=amd64 make seed-build-deps` updates
-LAN only; after changing that package, also publish manually to GHCR — see
+product pack image). Tags are arch-suffixed (`latest-amd64` / `latest-arm64`).
+It is also the tooling image for local `appliance-code` service builds and for
+RUN-heavy seed packages (`scripts/run-in-dev-build.sh`).
+`TARGET_ARCH=amd64 make seed-build-deps` updates LAN only; after changing that
+package, also publish manually to GHCR — see
 `deps/development-container/PACKAGE.md` and AGENTS.md “Shared `dev-build`”.
 
 Seed (offline prerequisite):
@@ -74,6 +76,7 @@ cd /path/to/appliance-release
 export DEV_REGISTRY=... DEV_REGISTRY_USER=... DEV_REGISTRY_TOKEN=...
 export DEV_REGISTRY_TLS_VERIFY=false
 export DEV_IMAGE_REPO=development-container
+# Publishes …/dev-build:latest-${TARGET_ARCH}; RUN-heavy deps use that tooling.
 TARGET_ARCH=amd64 make seed-build-deps
 ```
 

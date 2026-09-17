@@ -1,7 +1,22 @@
-BUILD ?= podman build
+# Product / tooling TARGET_ARCH is required (amd64|arm64). No host default for
+# release builds — one published image = one arch.
+#   TARGET_ARCH=amd64 make release
+#   TARGET_ARCH=arm64 make release
+#
+# Published tags: $(VERSION)-$(TARGET_ARCH) and latest-$(TARGET_ARCH)
+# e.g. …/dev-build:v0.1.0-arm64 and …/dev-build:latest-arm64
+
+ifeq ($(strip $(TARGET_ARCH)),)
+$(error TARGET_ARCH is required (amd64|arm64); no default)
+endif
+ifeq ($(filter $(TARGET_ARCH),amd64 arm64),)
+$(error TARGET_ARCH must be amd64|arm64 (got "$(TARGET_ARCH)"))
+endif
+
+BUILD ?= podman build --arch $(TARGET_ARCH)
 OCI_TOOL ?= podman
-RUN ?= podman run
-TAG ?= latest
+RUN ?= podman run --arch $(TARGET_ARCH)
+TAG ?= latest-$(TARGET_ARCH)
 DEBIAN_VARIANT ?= bookworm
 GO_VERSION ?= 1.26.0
 NODE_VERSION ?= 22.19.0
@@ -20,6 +35,8 @@ DEV_REGISTRY ?=
 DEV_IMAGE_REPO ?= zoncaesaradmin/development-container
 DEV_IMAGE_NAME ?= dev-build
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION_TAG := $(VERSION)-$(TARGET_ARCH)
+LATEST_TAG := latest-$(TARGET_ARCH)
 DEV_REGISTRY_TLS_VERIFY ?= true
 
 REMOTE_IMAGE := $(DEV_REGISTRY)/$(DEV_IMAGE_REPO)/$(DEV_IMAGE_NAME)
@@ -32,24 +49,38 @@ endif
 
 .PHONY: build-base build-go build-python build-dev build-all test-dev shell-dev clean \
 	login tag-dev push-dev publish release \
-	build push test
+	build push test require-target-arch
+
+require-target-arch:
+	@true
 
 # Shared deps/ package surface (aliases).
 build: build-dev
 push: push-dev
 test: test-dev
 
-build-base:
-	$(BUILD) --build-arg DEBIAN_VARIANT=$(DEBIAN_VARIANT) -f Containerfile.base -t $(BASE_IMAGE) .
+build-base: require-target-arch
+	$(BUILD) --build-arg DEBIAN_VARIANT=$(DEBIAN_VARIANT) \
+		--build-arg TARGETARCH=$(TARGET_ARCH) \
+		-f Containerfile.base -t $(BASE_IMAGE) .
 
 build-go: build-base
-	$(BUILD) --build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg GO_VERSION=$(GO_VERSION) -f Containerfile.go -t $(GO_IMAGE) .
+	$(BUILD) --build-arg BASE_IMAGE=$(BASE_IMAGE) \
+		--build-arg TARGETARCH=$(TARGET_ARCH) \
+		--build-arg GO_VERSION=$(GO_VERSION) \
+		-f Containerfile.go -t $(GO_IMAGE) .
 
 build-python: build-base
-	$(BUILD) --build-arg BASE_IMAGE=$(BASE_IMAGE) -f Containerfile.python -t $(PYTHON_IMAGE) .
+	$(BUILD) --build-arg BASE_IMAGE=$(BASE_IMAGE) \
+		--build-arg TARGETARCH=$(TARGET_ARCH) \
+		-f Containerfile.python -t $(PYTHON_IMAGE) .
 
-build-dev:
-	$(BUILD) --build-arg DEBIAN_VARIANT=$(DEBIAN_VARIANT) --build-arg GO_VERSION=$(GO_VERSION) --build-arg NODE_VERSION=$(NODE_VERSION) -f Containerfile.dev -t $(DEV_IMAGE) .
+build-dev: require-target-arch
+	$(BUILD) --build-arg DEBIAN_VARIANT=$(DEBIAN_VARIANT) \
+		--build-arg TARGETARCH=$(TARGET_ARCH) \
+		--build-arg GO_VERSION=$(GO_VERSION) \
+		--build-arg NODE_VERSION=$(NODE_VERSION) \
+		-f Containerfile.dev -t $(DEV_IMAGE) .
 
 build-all: build-base build-go build-python build-dev
 
@@ -69,21 +100,22 @@ login:
 	echo "$(DEV_REGISTRY_TOKEN)" | $(OCI_TOOL) login $(TLS_VERIFY_FLAG) --username "$(DEV_REGISTRY_USER)" --password-stdin $(DEV_REGISTRY)
 
 tag-dev:
-	$(OCI_TOOL) tag $(DEV_IMAGE) $(REMOTE_IMAGE):$(VERSION)
-	$(OCI_TOOL) tag $(DEV_IMAGE) $(REMOTE_IMAGE):latest
+	@test -n "$(DEV_REGISTRY)" || (echo "DEV_REGISTRY is not set" >&2 && exit 1)
+	$(OCI_TOOL) tag $(DEV_IMAGE) $(REMOTE_IMAGE):$(VERSION_TAG)
+	$(OCI_TOOL) tag $(DEV_IMAGE) $(REMOTE_IMAGE):$(LATEST_TAG)
 
 push-dev: tag-dev
-	$(OCI_TOOL) push $(TLS_VERIFY_FLAG) $(REMOTE_IMAGE):$(VERSION)
-	$(OCI_TOOL) push $(TLS_VERIFY_FLAG) $(REMOTE_IMAGE):latest
+	$(OCI_TOOL) push $(TLS_VERIFY_FLAG) $(REMOTE_IMAGE):$(VERSION_TAG)
+	$(OCI_TOOL) push $(TLS_VERIFY_FLAG) $(REMOTE_IMAGE):$(LATEST_TAG)
 
 publish: login
-	$(MAKE) push-dev
-	@echo "Published $(REMOTE_IMAGE):$(VERSION) and $(REMOTE_IMAGE):latest"
+	$(MAKE) push-dev TARGET_ARCH=$(TARGET_ARCH)
+	@echo "Published $(REMOTE_IMAGE):$(VERSION_TAG) and $(REMOTE_IMAGE):$(LATEST_TAG)"
 
 # login before publish so the push only proceeds after a successful registry login.
 release:
-	$(MAKE) build-dev
-	$(MAKE) publish
+	$(MAKE) build-dev TARGET_ARCH=$(TARGET_ARCH)
+	$(MAKE) publish TARGET_ARCH=$(TARGET_ARCH)
 
 clean:
 	find . -type d \( -name __pycache__ -o -name .pytest_cache -o -name .mypy_cache -o -name .ruff_cache -o -name .cache -o -name .local \) -prune -exec rm -rf {} +

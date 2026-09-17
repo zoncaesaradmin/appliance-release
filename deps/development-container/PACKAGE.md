@@ -3,9 +3,13 @@
 Canonical sources for the appliance shared tooling image `dev-build`
 (vendored into `appliance-release/deps/`; there is no separate git repo required).
 
-Publish path:
+**One recipe, one published arch per build.** `TARGET_ARCH` is required
+(`amd64|arm64`). Published tags are arch-suffixed:
 
-`$DEV_REGISTRY/$DEV_IMAGE_REPO/dev-build:$(VERSION)` and `:latest`
+`$DEV_REGISTRY/$DEV_IMAGE_REPO/dev-build:$(VERSION)-$(TARGET_ARCH)`
+and `:latest-$(TARGET_ARCH)`
+
+Examples: `…/dev-build:v0.1.0-arm64`, `…/dev-build:latest-amd64`.
 
 ## Dual publish is mandatory (LAN + GHCR)
 
@@ -13,13 +17,13 @@ Publish path:
 
 | Consumer | Typical pull source |
 |---|---|
-| Offline `build-full-bundle` / `TARGET_ARCH=amd64 make seed-build-deps` | LAN Artifact Server |
-| Online `build-full-bundle` (`ONLINE_*` → unified `DEV_*`) | GHCR |
-| Local / day-2 image builds in `appliance-code` (`make dev-shell`, control-plane image, control-plane UI image, host-agent image, …) | GHCR by default |
+| Offline `build-full-bundle` / `TARGET_ARCH=… make seed-build-deps` | LAN Artifact Server (`latest-${TARGET_ARCH}`) |
+| Online `build-full-bundle` (`ONLINE_*` → unified `DEV_*`) | GHCR (`latest-${TARGET_ARCH}`) |
+| Local / day-2 image builds in `appliance-code` (`make dev-shell`, control-plane image, …) | GHCR by default (`latest-<host-or-TARGET_ARCH>`) |
 
-`TARGET_ARCH=amd64 make seed-build-deps` only publishes to the **LAN** registry configured in
+`TARGET_ARCH=… make seed-build-deps` only publishes to the **LAN** registry configured in
 `DEV_*`. That is **not** enough. After changing this package (Containerfiles,
-pins, toolchain versions), also publish the same image to **GHCR** so online
+pins, toolchain versions), also publish the **same arch** to **GHCR** so online
 and local service builds keep working.
 
 Do not treat LAN seed alone as “dev-build is updated.”
@@ -36,10 +40,12 @@ export DEV_IMAGE_NAME=dev-build
 export DEV_REGISTRY_USER=...
 export DEV_REGISTRY_TOKEN=...
 export DEV_REGISTRY_TLS_VERIFY=false
-make VERSION=<tag> release
+TARGET_ARCH=amd64 make VERSION=<tag> release
+# arm64 product tooling (needs qemu-user-static on an amd64 host for the build):
+TARGET_ARCH=arm64 make VERSION=<tag> release
 ```
 
-Example: `artifact-dns-1.appliance.internal/development-container/dev-build:latest`
+Example: `artifact-dns-1.appliance.internal/development-container/dev-build:latest-amd64`
 
 ### 2) GHCR (online bundle + local service builds) — manual
 
@@ -51,21 +57,22 @@ export DEV_IMAGE_REPO=$DEV_REGISTRY_USER/development-container
 export DEV_IMAGE_NAME=dev-build
 export DEV_REGISTRY_TOKEN=<PAT with write:packages>
 export DEV_REGISTRY_TLS_VERIFY=true
-make VERSION=<tag> release
+TARGET_ARCH=amd64 make VERSION=<tag> release
+TARGET_ARCH=arm64 make VERSION=<tag> release
 ```
 
-Example: `ghcr.io/zoncaesaradmin/development-container/dev-build:v0.1.0`
-(and `:latest`)
+Example: `ghcr.io/zoncaesaradmin/development-container/dev-build:v0.1.0-amd64`
+(and `:latest-amd64`)
 
 Auth details: [docs/PUBLISHING_AUTH.md](docs/PUBLISHING_AUTH.md).
 
 ## Commands
 
 ```bash
-make build      # alias for build-dev
-make test
-make publish    # login + push-dev (uses current DEV_*)
-make release    # build-dev + publish
+TARGET_ARCH=amd64 make build      # alias for build-dev
+TARGET_ARCH=amd64 make test
+TARGET_ARCH=amd64 make publish    # login + push-dev (uses current DEV_*)
+TARGET_ARCH=amd64 make release    # build-dev + publish
 ```
 
 Pins: [pins.env](pins.env). Full docs: [README.md](README.md) in this directory.

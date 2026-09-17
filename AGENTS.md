@@ -83,11 +83,15 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 ## Shared `dev-build` tooling image (LAN + GHCR)
 
 - Canonical sources live in `deps/development-container/` (not a separate git repo).
-- The published image name is `dev-build`. It is used for:
-  - **build-host packaging only** (online pull from GHCR; offline pull from LAN after seed)
+- The published image name is `dev-build`. Tags are **arch-suffixed**:
+  `dev-build:<version>-<TARGET_ARCH>` and `latest-<TARGET_ARCH>` (e.g. `latest-arm64`).
+- It is used for:
+  - **build-host packaging** (online pull from GHCR; offline pull from LAN after seed)
   - **local / day-2 service builds** outside packaging — `appliance-code`
     `make dev-shell`, control-plane image, control-plane UI image, host-agent
     image, and similar tooling-container builds
+  - **seed RUN-heavy deps** (`artifact-server-bases`, `service-build-bases`) via
+    `scripts/run-in-dev-build.sh`
 - **`dev-build` is not a product runtime image.** It is not packaged into the
   foundation, dev-platform, deviceuser, or std-llm packs. Operator build catalogs must use
   explicit digest-pinned builder images they supply on the appliance.
@@ -96,8 +100,8 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
   + LAN DNS, workflow engine, and workspace provisioner), deviceuser, and
   std-llm are optional. Installation selects the required packs from
   metadata-derived profile capabilities. Packs do not enable capabilities.
-- `TARGET_ARCH=amd64 make seed-build-deps` publishes `dev-build` to the **LAN Artifact Server only**.
-  That does **not** update GHCR.
+- `TARGET_ARCH=amd64 make seed-build-deps` publishes `dev-build:…-amd64` to the
+  **LAN Artifact Server only**. That does **not** update GHCR.
 - Whenever `deps/development-container` content changes (Containerfiles, pins,
   toolchain versions), operators must publish the **same** image to **both**:
   1. LAN — `TARGET_ARCH=amd64 make seed-build-deps` or `TARGET_ARCH=amd64 make -C deps/development-container release` with LAN `DEV_*`

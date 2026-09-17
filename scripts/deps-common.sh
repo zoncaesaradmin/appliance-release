@@ -156,7 +156,10 @@ deps_require_build_arch_runnable() {
   echo "deps-common: that causes 'Exec format error' without qemu-user-static/binfmt." >&2
   echo "deps-common: either:" >&2
   echo "deps-common:   1) seed matching this host: TARGET_ARCH=${host} make seed-build-deps" >&2
-  echo "deps-common:   2) install qemu-user-static + binfmt for ${want}, then re-run" >&2
+  echo "deps-common:   2) on Ubuntu, enable ${want} emulation then re-run:" >&2
+  echo "deps-common:        sudo apt-get install -y qemu-user-static binfmt-support" >&2
+  echo "deps-common:        sudo systemctl restart systemd-binfmt || true" >&2
+  echo "deps-common:        TARGET_ARCH=${want} make seed-build-deps" >&2
   return 2
 }
 

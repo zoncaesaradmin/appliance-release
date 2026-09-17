@@ -107,20 +107,40 @@ TARGET_ARCH=arm64 make -C deps/platform-inputs release
 `build_flow.target_arch` is likewise required in the build-publish config.
 
 Containerfile seeds that run `apt`/`apk` (`artifact-server-bases`,
-`service-build-bases`) must execute on the host. If `TARGET_ARCH` differs from
-the build host CPU, install `qemu-user-static` + binfmt first, or seed on a
-matching-arch host — otherwise you get `Exec format error`.
+`service-build-bases`) run **inside** the arch-matched shared tooling image
+`dev-build:latest-${TARGET_ARCH}` via `scripts/run-in-dev-build.sh` (same image
+appliance-code uses for `make dev-shell`). Bootstrap that tooling image first
+(host build of `deps/development-container` for `TARGET_ARCH`).
+
+Cross-arch on an amd64 host (product `TARGET_ARCH=arm64`):
+
+```bash
+# One-time: allow starting an arm64 tooling container
+sudo apt-get install -y qemu-user-static binfmt-support
+sudo systemctl restart systemd-binfmt || true
+# Build/publish arm64 tooling, then seed (RUN-heavy deps inside tooling)
+TARGET_ARCH=arm64 make -C deps/development-container release
+TARGET_ARCH=arm64 make seed-build-deps
+```
+
+Or seed on a matching-arch host. Without binfmt, starting the arm64
+`dev-build` container fails closed with a clear message.
+
 ### Special case: `development-container` / `dev-build` (LAN + GHCR)
 
 Unlike most `deps/*` packages (LAN seed is enough for offline packaging, while
 online pulls public upstream), `dev-build` is also the shared tooling image for
 **local** `appliance-code` builds (`make dev-shell`, control-plane / UI /
-host-agent images). Those default to **GHCR**.
+host-agent images) and for seed packages that `RUN` apt/apk. Publish **per
+`TARGET_ARCH`** as `…/dev-build:<version>-<arch>` and `…:latest-<arch>`.
 
 So after changing `deps/development-container`:
 
-1. Publish to **LAN** via `TARGET_ARCH=amd64 make seed-build-deps` (or `TARGET_ARCH=amd64 make -C deps/development-container release` with LAN `DEV_*`).
-2. Separately publish the **same** image to **GHCR** (manual — seed does not do this). See [`deps/development-container/PACKAGE.md`](../deps/development-container/PACKAGE.md).
+1. Publish to **LAN** via `TARGET_ARCH=amd64 make seed-build-deps` (or
+   `TARGET_ARCH=amd64 make -C deps/development-container release` with LAN `DEV_*`).
+   Repeat with `TARGET_ARCH=arm64` when you need arm64 tooling.
+2. Separately publish the **same arch** image(s) to **GHCR** (manual — seed does
+   not do this). See [`deps/development-container/PACKAGE.md`](../deps/development-container/PACKAGE.md).
 
 Skipping GHCR leaves online packaging and day-2 local builds on a stale image.
 

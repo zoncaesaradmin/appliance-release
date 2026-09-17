@@ -22,12 +22,16 @@ build-and-publish:
 	bash ./scripts/publish-release.sh
 
 # Offline build-host dependency seeds (deps/*). Online machine → LAN Artifact Server.
-# TARGET_ARCH is required (amd64|arm64) — no default. Each package seeds only that arch
-# (inference does not pull both vLLM pins; jellyfin is amd64-only and skips otherwise).
+# TARGET_ARCH is required (amd64|arm64) — no default. Each package seeds only that arch.
 #   TARGET_ARCH=amd64 make seed-build-deps
 #   TARGET_ARCH=arm64 make seed-build-deps
-# Note: deps/development-container is build-host tooling (host arch), not product TARGET_ARCH.
+#
+# development-container is built on the host (bootstrap tooling for TARGET_ARCH).
+# Packages that RUN apt/apk (artifact-server-bases, service-build-bases) run inside
+# that arch-matched dev-build via scripts/run-in-dev-build.sh.
 DEPS := $(sort $(notdir $(wildcard deps/*)))
+# Containerfile RUN seeds — execute inside arch-matched tooling, not on the host.
+SEED_IN_TOOLING_DEPS := artifact-server-bases service-build-bases
 
 .PHONY: list-deps seed-build-deps seed-build-deps-build seed-build-deps-push seed-build-deps-login
 list-deps:
@@ -36,18 +40,48 @@ list-deps:
 seed-build-deps-login:
 	@bash -c 'source ./scripts/deps-common.sh && deps_oci_login'
 
+# Build order: tooling image first on the host, then remaining deps (RUN-heavy
+# packages inside tooling).
 seed-build-deps-build:
 	@if [ -z "$(TARGET_ARCH)" ]; then echo "seed-build-deps: TARGET_ARCH is required (amd64|arm64)" >&2; exit 2; fi
-	@for d in $(DEPS); do \
-		echo "==> build deps/$$d (TARGET_ARCH=$(TARGET_ARCH))"; \
-		$(MAKE) -C deps/$$d build TARGET_ARCH=$(TARGET_ARCH); \
+	@set -e; \
+	if echo " $(DEPS) " | grep -q ' development-container '; then \
+		echo "==> build deps/development-container (TARGET_ARCH=$(TARGET_ARCH)) [host]"; \
+		$(MAKE) -C deps/development-container build TARGET_ARCH=$(TARGET_ARCH); \
+	fi; \
+	for d in $(DEPS); do \
+		[ "$$d" = "development-container" ] && continue; \
+		case " $(SEED_IN_TOOLING_DEPS) " in \
+			*" $$d "*) \
+				echo "==> build deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [in dev-build]"; \
+				bash ./scripts/run-in-dev-build.sh make -C deps/$$d build TARGET_ARCH=$(TARGET_ARCH); \
+				;; \
+			*) \
+				echo "==> build deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [host]"; \
+				$(MAKE) -C deps/$$d build TARGET_ARCH=$(TARGET_ARCH); \
+				;; \
+		esac; \
 	done
 
 seed-build-deps-push:
 	@if [ -z "$(TARGET_ARCH)" ]; then echo "seed-build-deps: TARGET_ARCH is required (amd64|arm64)" >&2; exit 2; fi
-	@for d in $(DEPS); do \
-		echo "==> push deps/$$d (TARGET_ARCH=$(TARGET_ARCH))"; \
-		$(MAKE) -C deps/$$d push TARGET_ARCH=$(TARGET_ARCH); \
+	@set -e; \
+	if echo " $(DEPS) " | grep -q ' development-container '; then \
+		echo "==> push deps/development-container (TARGET_ARCH=$(TARGET_ARCH)) [host]"; \
+		$(MAKE) -C deps/development-container push TARGET_ARCH=$(TARGET_ARCH); \
+	fi; \
+	for d in $(DEPS); do \
+		[ "$$d" = "development-container" ] && continue; \
+		case " $(SEED_IN_TOOLING_DEPS) " in \
+			*" $$d "*) \
+				echo "==> push deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [in dev-build]"; \
+				bash ./scripts/run-in-dev-build.sh make -C deps/$$d push TARGET_ARCH=$(TARGET_ARCH); \
+				;; \
+			*) \
+				echo "==> push deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [host]"; \
+				$(MAKE) -C deps/$$d push TARGET_ARCH=$(TARGET_ARCH); \
+				;; \
+		esac; \
 	done
 
 # Build every deps package then publish to DEV_REGISTRY (OCI + files API).

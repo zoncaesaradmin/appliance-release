@@ -221,12 +221,22 @@ if [[ "${BUILD_FLOW_MODE}" == "online" ]]; then
   [[ -n "${DOCKERHUB_AUTH_TOKEN}" ]] || fail "empty ${dockerhub_token_env}"
 fi
 
-log "build mode=${BUILD_FLOW_MODE} OFFLINE_BUILD=${OFFLINE_BUILD} tooling=${DEV_IMAGE}"
+log "build mode=${BUILD_FLOW_MODE} OFFLINE_BUILD=${OFFLINE_BUILD} tooling(raw)=${DEV_IMAGE}"
 
 APPLIANCE_PACKS="$(resolve_appliance_packs_from_config "${CONFIG_PATH}")"
 log "APPLIANCE_PACKS=${APPLIANCE_PACKS}"
 TARGET_ARCH="$(resolve_target_arch_from_config "${CONFIG_PATH}")"
 log "TARGET_ARCH=${TARGET_ARCH}"
+
+# Fail-closed: tooling tags are arch-suffixed (latest-amd64 / latest-arm64).
+case "${DEV_IMAGE_TAG}" in
+  *-amd64|*-arm64) ;;
+  *)
+    DEV_IMAGE_TAG="${DEV_IMAGE_TAG}-${TARGET_ARCH}"
+    ;;
+esac
+DEV_IMAGE="${DEV_REGISTRY}/${DEV_IMAGE_REPO}/${DEV_IMAGE_NAME}:${DEV_IMAGE_TAG}"
+log "tooling=${DEV_IMAGE}"
 
 PUBLISH_LATEST_ALIAS="$(config_get_optional "${CONFIG_PATH}" "release.publish_latest_alias" || true)"
 if [[ -z "${PUBLISH_LATEST_ALIAS}" ]]; then

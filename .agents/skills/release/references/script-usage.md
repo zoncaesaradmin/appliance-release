@@ -11,6 +11,7 @@ export DEV_REGISTRY_TOKEN='...'
 export DEV_REGISTRY_TLS_VERIFY=false
 export DEV_IMAGE_REPO=development-container
 export DEV_IMAGE_NAME=dev-build
+# Bare latest is auto-suffixed to latest-${build_flow.target_arch} (e.g. latest-amd64).
 export DEV_IMAGE_TAG=latest
 # Online tooling inputs (skill maps ONLINE_* → DEV_* when mode=online)
 export ONLINE_REGISTRY=ghcr.io
