@@ -45,9 +45,10 @@
 # see docs/offline-build-deps.md and AGENTS.md "Packaging Code Reuse".
 #
 # Special: development-container / dev-build is also used for local appliance-code
-# service builds (make dev-shell, control-plane / UI images) and for RUN-heavy
-# seed packages (artifact-server-bases, service-build-bases) via
-# scripts/run-in-dev-build.sh. Tags are arch-suffixed (latest-amd64 / latest-arm64);
+# service builds (make dev-shell, control-plane / UI images) and for same-arch
+# RUN-heavy seed packages (artifact-server-bases, service-build-bases) via
+# scripts/run-in-dev-build.sh. Cross-arch RUN-heavy seeds use host+qemu instead.
+# Tags are arch-suffixed (latest-amd64 / latest-arm64);
 # bare "latest" in *_IMAGE_TAG is auto-suffixed from build_flow.target_arch.
 # seed-build-deps only updates LAN — after changing that package, also publish
 # manually to GHCR (see deps/development-container/PACKAGE.md and AGENTS.md

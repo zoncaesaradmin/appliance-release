@@ -168,7 +168,7 @@ deps_require_build_arch_runnable() {
   echo "deps-common:        # confirm: test -e ${binfmt} && grep enabled ${binfmt}" >&2
   echo "deps-common:        TARGET_ARCH=${want} make seed-build-deps" >&2
   echo "deps-common: (first foreign-arch build of deps/development-container also needs this;" >&2
-  echo "deps-common:  later RUN-heavy seeds run inside that tooling image.)" >&2
+  echo "deps-common:  cross-arch RUN-heavy seeds use the same host+qemu path.)" >&2
   return 2
 }
 

@@ -107,28 +107,29 @@ TARGET_ARCH=arm64 make -C deps/platform-inputs release
 `build_flow.target_arch` is likewise required in the build-publish config.
 
 Containerfile seeds that run `apt`/`apk` (`artifact-server-bases`,
-`service-build-bases`) run **inside** the arch-matched shared tooling image
-`dev-build:latest-${TARGET_ARCH}` via `scripts/run-in-dev-build.sh` (same image
-appliance-code uses for `make dev-shell`). Bootstrap that tooling image first
-(host build of `deps/development-container` for `TARGET_ARCH`).
+`service-build-bases`):
+
+- **Same-arch host** (e.g. arm64 seed on arm64): run inside
+  `dev-build:latest-${TARGET_ARCH}` via `scripts/run-in-dev-build.sh`.
+- **Cross-arch host** (e.g. arm64 seed on amd64): run on the **host** with
+  `podman build --arch` + qemu/binfmt. Nested podman inside a qemu-emulated
+  tooling container fails (`Error during reexec(...): No such file or directory`).
+
+Bootstrap the tooling image first (host build of `deps/development-container`).
 
 Cross-arch on an amd64 host (product `TARGET_ARCH=arm64`):
 
 ```bash
-# One-time: qemu/binfmt so host podman can RUN arm64 (bootstrap tooling) and
-# later start arm64 tooling containers for other seed packages.
+# One-time: qemu/binfmt for host podman build --arch arm64 (tooling + RUN-heavy seeds)
 sudo apt-get install -y qemu-user-static binfmt-support
 sudo systemctl restart systemd-binfmt || true
 test -e /proc/sys/fs/binfmt_misc/qemu-aarch64 && grep enabled /proc/sys/fs/binfmt_misc/qemu-aarch64
-# Build/publish arm64 tooling, then seed (RUN-heavy deps inside tooling)
 TARGET_ARCH=arm64 make -C deps/development-container release
 TARGET_ARCH=arm64 make seed-build-deps
 ```
 
-Or seed on a matching-arch host. Without binfmt, the host build of
-`deps/development-container` (and starting an arm64 `dev-build` container)
-fails closed with a clear `deps_require_build_arch_runnable` message instead
-of a late `Exec format error`.
+Or seed on a matching-arch host (RUN-heavy deps then use in-tooling). Without
+binfmt, cross-arch host builds fail closed via `deps_require_build_arch_runnable`.
 
 ### Special case: `development-container` / `dev-build` (LAN + GHCR)
 

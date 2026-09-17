@@ -64,7 +64,9 @@ seed package and an offline `lan_cache_ref` / files remap — see AGENTS.md and
 `deps/development-container` (`dev-build`) is **build-host tooling only** (not a
 product pack image). Tags are arch-suffixed (`latest-amd64` / `latest-arm64`).
 It is also the tooling image for local `appliance-code` service builds and for
-RUN-heavy seed packages (`scripts/run-in-dev-build.sh`).
+same-arch RUN-heavy seed packages (`scripts/run-in-dev-build.sh`). Cross-arch
+RUN-heavy seeds use host `podman build --arch` + binfmt instead (nested podman
+under qemu fails).
 `TARGET_ARCH=amd64 make seed-build-deps` updates LAN only; after changing that
 package, also publish manually to GHCR — see
 `deps/development-container/PACKAGE.md` and AGENTS.md “Shared `dev-build`”.

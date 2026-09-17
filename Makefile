@@ -26,11 +26,12 @@ build-and-publish:
 #   TARGET_ARCH=amd64 make seed-build-deps
 #   TARGET_ARCH=arm64 make seed-build-deps
 #
-# development-container is built on the host (bootstrap tooling for TARGET_ARCH).
-# Packages that RUN apt/apk (artifact-server-bases, service-build-bases) run inside
-# that arch-matched dev-build via scripts/run-in-dev-build.sh.
+# development-container is always built on the host (bootstrap tooling).
+# RUN-heavy packages (artifact-server-bases, service-build-bases):
+#   - same-arch host → inside arch-matched dev-build (run-in-dev-build.sh)
+#   - cross-arch host → host podman build --arch + binfmt
+#     (nested podman under qemu-emulated tooling fails: reexec ENOENT)
 DEPS := $(sort $(notdir $(wildcard deps/*)))
-# Containerfile RUN seeds — execute inside arch-matched tooling, not on the host.
 SEED_IN_TOOLING_DEPS := artifact-server-bases service-build-bases
 
 .PHONY: list-deps seed-build-deps seed-build-deps-build seed-build-deps-push seed-build-deps-login
@@ -40,11 +41,11 @@ list-deps:
 seed-build-deps-login:
 	@bash -c 'source ./scripts/deps-common.sh && deps_oci_login'
 
-# Build order: tooling image first on the host, then remaining deps (RUN-heavy
-# packages inside tooling).
+# Build order: tooling image first on the host, then remaining deps.
 seed-build-deps-build:
 	@if [ -z "$(TARGET_ARCH)" ]; then echo "seed-build-deps: TARGET_ARCH is required (amd64|arm64)" >&2; exit 2; fi
 	@set -e; \
+	host_arch="$$(bash -c 'source ./scripts/deps-common.sh && deps_host_arch')"; \
 	if echo " $(DEPS) " | grep -q ' development-container '; then \
 		echo "==> build deps/development-container (TARGET_ARCH=$(TARGET_ARCH)) [host]"; \
 		bash -c 'source ./scripts/deps-common.sh && deps_require_build_arch_runnable "$(TARGET_ARCH)"'; \
@@ -54,8 +55,14 @@ seed-build-deps-build:
 		[ "$$d" = "development-container" ] && continue; \
 		case " $(SEED_IN_TOOLING_DEPS) " in \
 			*" $$d "*) \
-				echo "==> build deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [in dev-build]"; \
-				bash ./scripts/run-in-dev-build.sh make -C deps/$$d build TARGET_ARCH=$(TARGET_ARCH); \
+				if [ "$$host_arch" = "$(TARGET_ARCH)" ]; then \
+					echo "==> build deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [in dev-build]"; \
+					bash ./scripts/run-in-dev-build.sh make -C deps/$$d build TARGET_ARCH=$(TARGET_ARCH); \
+				else \
+					echo "==> build deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [host+qemu; nested build under foreign-arch tooling unsupported]"; \
+					bash -c 'source ./scripts/deps-common.sh && deps_require_build_arch_runnable "$(TARGET_ARCH)"'; \
+					$(MAKE) -C deps/$$d build TARGET_ARCH=$(TARGET_ARCH); \
+				fi; \
 				;; \
 			*) \
 				echo "==> build deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [host]"; \
@@ -67,6 +74,7 @@ seed-build-deps-build:
 seed-build-deps-push:
 	@if [ -z "$(TARGET_ARCH)" ]; then echo "seed-build-deps: TARGET_ARCH is required (amd64|arm64)" >&2; exit 2; fi
 	@set -e; \
+	host_arch="$$(bash -c 'source ./scripts/deps-common.sh && deps_host_arch')"; \
 	if echo " $(DEPS) " | grep -q ' development-container '; then \
 		echo "==> push deps/development-container (TARGET_ARCH=$(TARGET_ARCH)) [host]"; \
 		$(MAKE) -C deps/development-container push TARGET_ARCH=$(TARGET_ARCH); \
@@ -75,8 +83,13 @@ seed-build-deps-push:
 		[ "$$d" = "development-container" ] && continue; \
 		case " $(SEED_IN_TOOLING_DEPS) " in \
 			*" $$d "*) \
-				echo "==> push deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [in dev-build]"; \
-				bash ./scripts/run-in-dev-build.sh make -C deps/$$d push TARGET_ARCH=$(TARGET_ARCH); \
+				if [ "$$host_arch" = "$(TARGET_ARCH)" ]; then \
+					echo "==> push deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [in dev-build]"; \
+					bash ./scripts/run-in-dev-build.sh make -C deps/$$d push TARGET_ARCH=$(TARGET_ARCH); \
+				else \
+					echo "==> push deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [host]"; \
+					$(MAKE) -C deps/$$d push TARGET_ARCH=$(TARGET_ARCH); \
+				fi; \
 				;; \
 			*) \
 				echo "==> push deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [host]"; \

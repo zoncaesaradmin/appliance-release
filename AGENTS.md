@@ -90,8 +90,9 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
   - **local / day-2 service builds** outside packaging — `appliance-code`
     `make dev-shell`, control-plane image, control-plane UI image, host-agent
     image, and similar tooling-container builds
-  - **seed RUN-heavy deps** (`artifact-server-bases`, `service-build-bases`) via
-    `scripts/run-in-dev-build.sh`
+  - **seed RUN-heavy deps** (`artifact-server-bases`, `service-build-bases`):
+    same-arch via `scripts/run-in-dev-build.sh`; cross-arch via host
+    `podman build --arch` + binfmt (nested podman under qemu is unsupported)
 - **`dev-build` is not a product runtime image.** It is not packaged into the
   foundation, dev-platform, deviceuser, or std-llm packs. Operator build catalogs must use
   explicit digest-pinned builder images they supply on the appliance.
