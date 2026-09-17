@@ -28,6 +28,13 @@ if [[ -z "${EXPORT_SCRIPT}" ]]; then
   echo "host-packages: set APPLIANCE_CODE_DIR to appliance-code checkout containing export-host-packages.sh" >&2
   exit 2
 fi
+echo "host-packages: using ${EXPORT_SCRIPT}"
+
+# Fail closed with a clear sync hint if the sibling tree is older than arm64 support.
+if grep -q 'only amd64 is supported' "${EXPORT_SCRIPT}" 2>/dev/null; then
+  echo "host-packages: ${EXPORT_SCRIPT} is amd64-only; update appliance-code (main has arm64) and re-run" >&2
+  exit 2
+fi
 
 IFS=',' read -r -a caps <<< "${CAPABILITIES}"
 cap_args=()
