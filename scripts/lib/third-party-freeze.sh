@@ -393,3 +393,37 @@ tpf_normalize_env() {
   fi
   return 0
 }
+
+# Ensure THIRD_PARTY_FREEZE_ROOT exists and is writable by the current user.
+# /var/cache/... normally needs root once; use passwordless sudo when available.
+tpf_ensure_root_writable() {
+  local root owner
+  root="${THIRD_PARTY_FREEZE_ROOT:-}"
+  [[ -n "${root}" ]] || return 0
+  if [[ -d "${root}" && -w "${root}" ]]; then
+    mkdir -p "${root}/${TARGET_ARCH:-}" 2>/dev/null || true
+    return 0
+  fi
+  if mkdir -p "${root}" 2>/dev/null && [[ -w "${root}" ]]; then
+    return 0
+  fi
+  owner="$(id -u):$(id -g)"
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    if sudo -n mkdir -p "${root}" \
+      && sudo -n chown "${owner}" "${root}" \
+      && sudo -n chmod 0755 "${root}"; then
+      if [[ -d "${root}" && -w "${root}" ]]; then
+        echo "third-party-freeze: prepared writable root ${root} (owner ${owner})" >&2
+        return 0
+      fi
+    fi
+  fi
+  cat >&2 <<EOF
+third-party-freeze: cannot create or write ${root}
+third-party-freeze: prepare it once as root, then rerun:
+third-party-freeze:   sudo mkdir -p ${root}
+third-party-freeze:   sudo chown $(id -un):$(id -gn) ${root}
+third-party-freeze: or point THIRD_PARTY_FREEZE_ROOT at a user-writable path
+EOF
+  return 1
+}

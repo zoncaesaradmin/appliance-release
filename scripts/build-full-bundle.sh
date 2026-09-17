@@ -358,6 +358,7 @@ export THIRD_PARTY_FREEZE_ROOT THIRD_PARTY_FREEZE_MODE TARGET_ARCH
 tpf_normalize_env
 if tpf_active; then
   echo "build-full-bundle: third-party-freeze mode=$(tpf_mode) root=${THIRD_PARTY_FREEZE_ROOT}"
+  tpf_ensure_root_writable
 fi
 case "$(printf '%s' "${FREEZE_THIRD_PARTY_ONLY}" | tr '[:upper:]' '[:lower:]')" in
   1|true|yes|on)

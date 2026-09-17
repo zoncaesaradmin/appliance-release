@@ -105,9 +105,10 @@ seed-build-deps: seed-build-deps-build
 
 # Durable third-party packaging freeze (product vs upstream).
 # Requires TARGET_ARCH and the same DEV_*/OFFLINE_BUILD env as build-full-bundle.
+# One-time prerequisite: bash ./scripts/bootstrap-build-host.sh
 # Optional: THIRD_PARTY_FREEZE_ROOT (default /var/cache/zon-third-party).
-#   TARGET_ARCH=amd64 make freeze-third-party
-#   TARGET_ARCH=arm64 THIRD_PARTY_FREEZE_ROOT=/var/cache/zon-third-party make freeze-third-party
+# For vLLM / private-ai: APPLIANCE_PACKS=foundation,acc-llm (all → std-llm only).
+#   TARGET_ARCH=arm64 APPLIANCE_PACKS=foundation,acc-llm make freeze-third-party
 freeze-third-party:
 	@if [ -z "$(TARGET_ARCH)" ]; then echo "freeze-third-party: TARGET_ARCH is required (amd64|arm64)" >&2; exit 2; fi
 	TARGET_ARCH="$(TARGET_ARCH)" \

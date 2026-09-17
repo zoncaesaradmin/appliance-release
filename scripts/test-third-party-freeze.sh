@@ -80,4 +80,10 @@ TPF_FP_INPUTS=("host-packages" "24.04" "arm64")
 tpf_try_restore_dir "host-packages" "${host_dest}" || fail "restore-dir failed"
 [[ -f "${host_dest}/ubuntu/24.04/arm64/pkg.deb" ]] || fail "deb not restored"
 
+# ensure writable root (user-owned temp path)
+export THIRD_PARTY_FREEZE_ROOT="${TMP}/freeze-ensure"
+tpf_normalize_env
+tpf_ensure_root_writable || fail "ensure writable failed for user path"
+[[ -d "${THIRD_PARTY_FREEZE_ROOT}" && -w "${THIRD_PARTY_FREEZE_ROOT}" ]] || fail "root not writable after ensure"
+
 echo "test-third-party-freeze: ok"
