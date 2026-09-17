@@ -160,7 +160,7 @@ ingress:
         tmp / "bundle" / "release-manifest.json",
         """
 {
-  "runtimes": {"inference": {"package": "std-llm-amd64", "inferenceEngine": "ollama", "architecture": "amd64"}},
+  "runtimes": {"inference": {"package": "std-llm", "inferenceEngine": "ollama", "architecture": "amd64"}},
   "compatibility": {"k3sVersion": "v1.30.4+k3s1", "chartVersion": "1.0.0", "artifactServerVersion": "2.1.11", "dnsVersion": "1.14.4", "inferenceVersion": "0.6.5"},
   "entries": [
     {"targetPath": "oci-images/control-plane.tar", "digest": "sha256:control", "sizeBytes": 7, "imageReference": "internal/control-plane:1.0.0"},
@@ -656,19 +656,19 @@ def test_rejects_dns_annotation_and_version_mismatch() -> None:
 
 
 def test_cpu_llm_pack_requires_verified_runtime() -> None:
-    with tempfile.TemporaryDirectory(prefix="release-std-llm-amd64-validator-") as tmp_dir:
+    with tempfile.TemporaryDirectory(prefix="release-std-llm-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp)
-        result = run_validator(tmp, "--pack", "std-llm-amd64")
+        result = run_validator(tmp, "--pack", "std-llm")
         if result.returncode != 0:
             raise AssertionError(result.stderr)
         manifest_path = tmp / "bundle" / "release-manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["entries"] = [entry for entry in manifest["entries"] if "inference-runtime" not in entry.get("targetPath", "")]
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        result = run_validator(tmp, "--pack", "std-llm-amd64")
+        result = run_validator(tmp, "--pack", "std-llm")
         if result.returncode == 0 or "inferenceRuntimeImage" not in result.stderr:
-            raise AssertionError(result.stderr or "std-llm-amd64 accepted without runtime image")
+            raise AssertionError(result.stderr or "std-llm accepted without runtime image")
         result = run_validator(tmp, "--pack", "inference")
         if result.returncode == 0 or "invalid choice" not in result.stderr:
             raise AssertionError(result.stderr or "legacy inference pack accepted")
@@ -676,9 +676,9 @@ def test_cpu_llm_pack_requires_verified_runtime() -> None:
 
 def test_inference_runtime_contract() -> None:
     cases = [
-        ("std-llm-amd64", "ollama", "amd64"),
-        ("acc-llm-amd64", "vllm", "amd64"),
-        ("acc-llm-arm64", "vllm", "arm64"),
+        ("std-llm", "ollama", "amd64"),
+        ("acc-llm", "vllm", "amd64"),
+        ("acc-llm", "vllm", "arm64"),
     ]
     with tempfile.TemporaryDirectory(prefix="release-inference-contract-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -706,7 +706,7 @@ def test_inference_runtime_contract() -> None:
                     raise AssertionError(f"invalid inference runtime accepted: {mutation}")
             manifest["runtimes"]["inference"] = runtime
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-            other_pack = "acc-llm-arm64" if package != "acc-llm-arm64" else "std-llm-amd64"
+            other_pack = "acc-llm" if package != "acc-llm" else "std-llm"
             result = run_validator(tmp, "--pack", other_pack)
             if result.returncode == 0 or "must match selected pack" not in result.stderr:
                 raise AssertionError(result.stderr or "mismatched inference pack accepted")

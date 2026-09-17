@@ -3,16 +3,17 @@
 #
 # Env:
 #   APPLIANCE_PACKS   CSV or single token. Default: all
-#                     Values: all | foundation | dev-platform | deviceuser | std-llm-amd64 | acc-llm-amd64 | acc-llm-arm64
-#                     Examples: all ; foundation ; foundation,dev-platform ; foundation,deviceuser
+#                     Values: all | foundation | dev-platform | deviceuser | std-llm | acc-llm
+#                     Examples: all ; foundation ; foundation,dev-platform ; foundation,acc-llm
 #
 # After appliance_packs_resolve:
-#   APPLIANCE_PACKS_RESOLVED   space-separated, stable order: foundation [dev-platform] [deviceuser] [std-llm-amd64]
+#   APPLIANCE_PACKS_RESOLVED   space-separated, stable order: foundation [dev-platform] [deviceuser] [std-llm|acc-llm]
 #   appliance_pack_wanted ID   returns 0 when ID is selected
 #
 # foundation is always included (required deliverable). Unknown ids fail closed.
 # Compatible with Bash 3.2 (no associative arrays).
 # Pack id is "foundation" (not "base") so it does not collide with capability "base".
+# Architecture is product-level (TARGET_ARCH), not encoded in pack IDs.
 
 appliance_packs_resolve() {
   local raw="${APPLIANCE_PACKS-}"
@@ -21,9 +22,8 @@ appliance_packs_resolve() {
   local want_foundation=0
   local want_dev_platform=0
   local want_deviceuser=0
-  local want_cpu_llm=0
-  local want_acc_cpu_llm=0
-  local want_acc_arm_llm=0
+  local want_std_llm=0
+  local want_acc_llm=0
   local IFS=','
 
   raw="$(printf '%s' "${raw}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
@@ -49,17 +49,18 @@ appliance_packs_resolve() {
       deviceuser)
         want_deviceuser=1
         ;;
-      std-llm-amd64)
-        want_cpu_llm=1
+      std-llm)
+        want_std_llm=1
         ;;
-      acc-llm-amd64)
-        want_acc_cpu_llm=1
+      acc-llm)
+        want_acc_llm=1
         ;;
-      acc-llm-arm64)
-        want_acc_arm_llm=1
+      std-llm-amd64|acc-llm-amd64|acc-llm-arm64)
+        echo "appliance-packs: pack id '${token}' was renamed; use std-llm or acc-llm (architecture is TARGET_ARCH)" >&2
+        return 2
         ;;
       inference)
-        echo "appliance-packs: pack id 'inference' was renamed to 'std-llm-amd64' (capability 'inference')" >&2
+        echo "appliance-packs: pack id 'inference' was renamed to 'std-llm' (capability 'inference')" >&2
         return 2
         ;;
       base)
@@ -67,7 +68,7 @@ appliance_packs_resolve() {
         return 2
         ;;
       *)
-        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|dev-platform|deviceuser|std-llm-amd64|acc-llm-amd64|acc-llm-arm64)" >&2
+        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|dev-platform|deviceuser|std-llm|acc-llm)" >&2
         return 2
         ;;
     esac
@@ -77,10 +78,10 @@ appliance_packs_resolve() {
     want_foundation=1
     want_dev_platform=1
     want_deviceuser=1
-    want_cpu_llm=1
+    want_std_llm=1
   fi
 
-  if (( want_cpu_llm + want_acc_cpu_llm + want_acc_arm_llm > 1 )); then
+  if (( want_std_llm + want_acc_llm > 1 )); then
     echo "appliance-packs: select only one inference runtime pack" >&2
     return 2
   fi
@@ -97,14 +98,11 @@ appliance_packs_resolve() {
   if [[ "${want_deviceuser}" -eq 1 ]]; then
     APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} deviceuser"
   fi
-  if [[ "${want_cpu_llm}" -eq 1 ]]; then
-    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} std-llm-amd64"
+  if [[ "${want_std_llm}" -eq 1 ]]; then
+    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} std-llm"
   fi
-  if [[ "${want_acc_cpu_llm}" -eq 1 ]]; then
-    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} acc-llm-amd64"
-  fi
-  if [[ "${want_acc_arm_llm}" -eq 1 ]]; then
-    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} acc-llm-arm64"
+  if [[ "${want_acc_llm}" -eq 1 ]]; then
+    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} acc-llm"
   fi
 
   export APPLIANCE_PACKS

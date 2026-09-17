@@ -56,7 +56,8 @@
 #     ONLINE_REGISTRY_USER, ONLINE_REGISTRY_TOKEN, ONLINE_REGISTRY_TLS_VERIFY
 #   Plus APPLIANCE_BUILD_SUDO_PASSWORD.
 #   Pack selection is a config literal (not an env):
-#     build_flow.appliance_packs: all|foundation|foundation,dev-platform|foundation,std-llm-amd64
+#     build_flow.appliance_packs: all|foundation|foundation,dev-platform|foundation,std-llm
+#     build_flow.target_arch: amd64|arm64 (default amd64; one build = one arch)
 #     (omit or all → every available pack; partial releases support only profiles
 #     whose capability packages are included)
 
@@ -95,13 +96,21 @@ build_flow:
   # Pack selection (literal, like mode). Omit or all → every delivery pack.
   # Skill exports this as APPLIANCE_PACKS into build-full-bundle.sh.
   # Pack id is foundation (not base) — capability base is separate.
+  # Inference packs are std-llm / acc-llm (architecture is target_arch).
   # Match packs to the install profile, for example:
   #   appliance_packs: all
   #   appliance_packs: foundation
   #   appliance_packs: foundation,dev-platform
-  #   appliance_packs: foundation,dev-platform,std-llm-amd64  # builder+lanllm
-  #   appliance_packs: foundation,std-llm-amd64               # inference-only
+  #   appliance_packs: foundation,dev-platform,std-llm  # builder+lanllm
+  #   appliance_packs: foundation,std-llm               # inference-only
+  #   appliance_packs: foundation,acc-llm               # vLLM (TARGET_ARCH)
   appliance_packs: foundation,dev-platform
+
+  # Product architecture for this build (one build = one TARGET_ARCH).
+  # Archive names: appliance-<version>-<pack>-<arch>.tar.gz
+  # target_arch: amd64
+  # target_arch: arm64
+  target_arch: amd64
 
   # Used when mode: online (ONLINE_* env vars) — all seven required
   online_image_pull:

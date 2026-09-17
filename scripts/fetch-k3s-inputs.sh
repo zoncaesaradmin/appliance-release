@@ -30,25 +30,28 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PLATFORM_DIR="${REPO_ROOT}/deps/platform-inputs"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/target-arch.sh"
+target_arch_resolve
 
 if [[ ! -d "${PLATFORM_DIR}" ]]; then
   echo "fetch-k3s-inputs: missing ${PLATFORM_DIR}" >&2
   exit 2
 fi
 
-echo "fetch-k3s-inputs: forwarding to ${PLATFORM_DIR}" >&2
+echo "fetch-k3s-inputs: forwarding to ${PLATFORM_DIR} (TARGET_ARCH=${TARGET_ARCH})" >&2
 if [[ "${SKIP_PUBLISH:-}" == "1" ]]; then
-  make -C "${PLATFORM_DIR}" build
+  make -C "${PLATFORM_DIR}" build TARGET_ARCH="${TARGET_ARCH}"
   if [[ -n "${RELEASE_WORK_ROOT:-}" ]]; then
     # shellcheck disable=SC1091
     source "${PLATFORM_DIR}/pins.env"
     mkdir -p "${RELEASE_WORK_ROOT}/inputs"
     cp -f "${PLATFORM_DIR}/.staging/k3s/k3s" "${RELEASE_WORK_ROOT}/inputs/k3s"
-    cp -f "${PLATFORM_DIR}/.staging/k3s/k3s-airgap-images-amd64.tar.zst" \
-      "${RELEASE_WORK_ROOT}/inputs/k3s-airgap-images-amd64.tar.zst"
+    cp -f "${PLATFORM_DIR}/.staging/k3s/k3s-airgap-images-${TARGET_ARCH}.tar.zst" \
+      "${RELEASE_WORK_ROOT}/inputs/k3s-airgap-images-${TARGET_ARCH}.tar.zst"
     chmod +x "${RELEASE_WORK_ROOT}/inputs/k3s"
   fi
   exit 0
 fi
 
-make -C "${PLATFORM_DIR}" release
+make -C "${PLATFORM_DIR}" release TARGET_ARCH="${TARGET_ARCH}"

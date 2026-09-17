@@ -197,8 +197,10 @@ except ImportError:
 text = Path(sys.argv[1]).read_text(encoding="utf-8")
 packs = []
 pack_ids = []
+architecture = ""
 if yaml is not None:
     data = yaml.safe_load(text) or {}
+    architecture = str(data.get("architecture") or "").strip()
     for item in data.get("packs") or []:
         pack_ids.append(str((item or {}).get("id") or "").strip())
         name = str((item or {}).get("filename") or "").strip()
@@ -208,6 +210,9 @@ else:
     # Minimal fallback without PyYAML: read "filename:" lines under packs.
     in_packs = False
     for line in text.splitlines():
+        if line.startswith("architecture:"):
+            architecture = line.split(":", 1)[1].strip()
+            continue
         if line.startswith("packs:"):
             in_packs = True
             continue
@@ -217,7 +222,9 @@ else:
             pack_ids.append(line.split("id:", 1)[1].strip())
         if in_packs and "filename:" in line:
             packs.append(line.split("filename:", 1)[1].strip())
-known = {"foundation", "dev-platform", "deviceuser", "std-llm-amd64", "acc-llm-amd64", "acc-llm-arm64"}
+if architecture not in {"amd64", "arm64"}:
+    raise SystemExit("publish-release: release index must declare architecture amd64|arm64")
+known = {"foundation", "dev-platform", "deviceuser", "std-llm", "acc-llm"}
 if not pack_ids or "foundation" not in pack_ids:
     raise SystemExit("publish-release: release index must include the mandatory foundation pack")
 if any(pack not in known for pack in pack_ids) or len(pack_ids) != len(set(pack_ids)):

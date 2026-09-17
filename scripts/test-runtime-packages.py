@@ -20,16 +20,24 @@ class PackageSelectionTest(unittest.TestCase):
         self.capabilities = {"base": {}, "inference": {}}
         self.packages = {
             "foundation": {"capabilities": ["base"]},
-            "std-llm-amd64": {"capabilities": ["inference"], "runtime": {"inferenceEngine": "ollama", "architecture": "amd64"}},
-            "acc-llm-amd64": {"capabilities": ["inference"], "runtime": {"inferenceEngine": "vllm", "architecture": "amd64"}},
-            "acc-llm-arm64": {"capabilities": ["inference"], "runtime": {"inferenceEngine": "vllm", "architecture": "arm64"}},
+            "std-llm": {"capabilities": ["inference"], "runtime": {"inferenceEngine": "ollama"}},
+            "acc-llm": {"capabilities": ["inference"], "runtime": {"inferenceEngine": "vllm"}},
         }
         self.profiles = {"cpu-host": {"capabilities": ["base", "inference"]}, "core": {"capabilities": ["base"]}}
-        self.filenames = {p: f"appliance-1.0.0-{p}.tar.gz" for p in self.packages}
+        self.filenames = {p: f"appliance-1.0.0-{p}-amd64.tar.gz" for p in self.packages}
+        self.architecture = "amd64"
 
     def build(self):
-        selected = getattr(self, "selected", {"foundation", "std-llm-amd64"})
-        return index_writer.build_index("1.0.0", self.profiles, self.capabilities, self.packages, selected, self.filenames)
+        selected = getattr(self, "selected", {"foundation", "std-llm"})
+        return index_writer.build_index(
+            "1.0.0",
+            self.architecture,
+            self.profiles,
+            self.capabilities,
+            self.packages,
+            selected,
+            self.filenames,
+        )
 
     def resolve(self, index, profile):
         script = (SCRIPTS / "install-release.sh").read_text()
@@ -42,16 +50,17 @@ class PackageSelectionTest(unittest.TestCase):
 
     def test_single_capability_owner_selects_package(self):
         index = self.build()
-        self.assertEqual(index["capabilityPacks"]["inference"], "std-llm-amd64")
-        for profile, package in (("cpu-host", "std-llm-amd64"), ("core", "")):
+        self.assertEqual(index["architecture"], "amd64")
+        self.assertEqual(index["capabilityPacks"]["inference"], "std-llm")
+        for profile, package in (("cpu-host", "std-llm"), ("core", "")):
             result = self.resolve(index, profile)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.strip(), package)
 
     def test_duplicate_capability_ownership_fails_closed(self):
-        self.packages["another-llm"] = copy.deepcopy(self.packages["std-llm-amd64"])
-        self.filenames["another-llm"] = "appliance-1.0.0-another-llm.tar.gz"
-        self.selected = {"foundation", "std-llm-amd64", "another-llm"}
+        self.packages["another-llm"] = copy.deepcopy(self.packages["std-llm"])
+        self.filenames["another-llm"] = "appliance-1.0.0-another-llm-amd64.tar.gz"
+        self.selected = {"foundation", "std-llm", "another-llm"}
         with self.assertRaises(ValueError):
             self.build()
 
@@ -63,10 +72,15 @@ class PackageSelectionTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "")
 
-    def test_vllm_amd64_can_be_the_selected_inference_owner(self):
-        self.selected = {"foundation", "acc-llm-amd64"}
+    def test_vllm_can_be_the_selected_inference_owner(self):
+        self.selected = {"foundation", "acc-llm"}
         index = self.build()
-        self.assertEqual(index["capabilityPacks"]["inference"], "acc-llm-amd64")
+        self.assertEqual(index["capabilityPacks"]["inference"], "acc-llm")
+
+    def test_package_catalog_must_not_embed_architecture(self):
+        self.packages["std-llm"]["runtime"]["architecture"] = "amd64"
+        with self.assertRaises(ValueError):
+            self.build()
 
     def test_missing_package_mapping_fails_closed(self):
         index = self.build()

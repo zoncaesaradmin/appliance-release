@@ -61,19 +61,21 @@ def main() -> None:
     if "build-daemon" in text:
         raise AssertionError("legacy build-daemon target returned; use build-agentd")
 
-    # acc-llm-arm64 must package the runtime image in the dev script, then tar the
-    # assembled pack after product-bundle — never tar workspace/out early.
-    arm64_package = "INFERENCE_ARCHITECTURE=arm64"
-    arm64_export = 'create_gzip_tarball "${ACC_LLM_ARM64_ARCHIVE}"'
+    # acc-llm must package the runtime image in the dev script (TARGET_ARCH),
+    # then tar the assembled pack after product-bundle — never tar workspace/out early.
+    acc_package = 'INFERENCE_ARCHITECTURE=$(shell_quote "${TARGET_ARCH}")'
+    acc_export = 'create_gzip_tarball "${ACC_LLM_ARCHIVE}"'
     product_bundle = 'make -C "${RELEASE_REPO_DIR}" product-bundle'
-    if text.count(arm64_package) != 1:
-        raise AssertionError("expected exactly one acc-llm-arm64 inference package wiring block")
-    if text.count(arm64_export) != 1:
-        raise AssertionError("expected exactly one post-assemble acc-llm-arm64 archive export")
-    if text.index(arm64_package) > text.index('cat >"${CODE_DEV_SCRIPT_PATH}"'):
-        raise AssertionError("acc-llm-arm64 package lines must be prepared before the dev script")
-    if text.index(arm64_export) < text.index(product_bundle):
-        raise AssertionError("acc-llm-arm64 archive export must run after product-bundle")
+    if text.count(acc_package) < 1:
+        raise AssertionError("expected TARGET_ARCH-driven inference package wiring")
+    if text.count(acc_export) != 1:
+        raise AssertionError("expected exactly one post-assemble acc-llm archive export")
+    if text.index(acc_package) > text.index('cat >"${CODE_DEV_SCRIPT_PATH}"'):
+        raise AssertionError("acc-llm package lines must be prepared before the dev script")
+    if text.index(acc_export) < text.index(product_bundle):
+        raise AssertionError("acc-llm archive export must run after product-bundle")
+    if "acc-llm-arm64" in text or "acc-llm-amd64" in text or "std-llm-amd64" in text:
+        raise AssertionError("legacy arch-suffixed pack IDs must not remain in build-full-bundle.sh")
 
     official_source = "docker.io/coredns/coredns:"
     if f"{official_source}${{DNS_VERSION}}" not in text:

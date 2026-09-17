@@ -225,6 +225,8 @@ log "build mode=${BUILD_FLOW_MODE} OFFLINE_BUILD=${OFFLINE_BUILD} tooling=${DEV_
 
 APPLIANCE_PACKS="$(resolve_appliance_packs_from_config "${CONFIG_PATH}")"
 log "APPLIANCE_PACKS=${APPLIANCE_PACKS}"
+TARGET_ARCH="$(resolve_target_arch_from_config "${CONFIG_PATH}")"
+log "TARGET_ARCH=${TARGET_ARCH}"
 
 PUBLISH_LATEST_ALIAS="$(config_get_optional "${CONFIG_PATH}" "release.publish_latest_alias" || true)"
 if [[ -z "${PUBLISH_LATEST_ALIAS}" ]]; then
@@ -238,6 +240,7 @@ BUILD_PRODUCT_ENV_PREFIX="$(append_env_assignments "${BUILD_PRODUCT_ENV_PREFIX}"
   "RELEASE_WORK_ROOT" "${REMOTE_BUILD_ROOT}" \
   "OFFLINE_BUILD" "${OFFLINE_BUILD}" \
   "APPLIANCE_PACKS" "${APPLIANCE_PACKS}" \
+  "TARGET_ARCH" "${TARGET_ARCH}" \
   "DEV_IMAGE" "${DEV_IMAGE}" \
   "DEV_REGISTRY" "${DEV_REGISTRY}" \
   "DEV_REGISTRY_HOST" "${DEV_REGISTRY_HOST}" \
@@ -482,7 +485,7 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
   fi
 
   companion_args=()
-  for companion_pack in foundation storage-network deviceuser std-llm-amd64; do
+  for companion_pack in foundation storage-network deviceuser std-llm; do
     companion_root="${RUN_DIR}/artifacts/companions/${companion_pack}"
     if materialize_pack_root "${companion_pack}" "${companion_root}"; then
       companion_args+=(--companion-bundle-root "${companion_root}")
@@ -508,13 +511,13 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
       >"${RUN_DIR}/logs/release-artifact-validation-deviceuser.json"
   fi
 
-  if materialize_pack_root "std-llm-amd64" "${RUN_DIR}/artifacts/std-llm-amd64-bundle"; then
-    log "validating release-input against std-llm-amd64 pack"
+  if materialize_pack_root "std-llm" "${RUN_DIR}/artifacts/std-llm-bundle"; then
+    log "validating release-input against std-llm pack"
     python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
-      --pack std-llm-amd64 \
+      --pack std-llm \
       --release-input-root "${RUN_DIR}/artifacts/release-input" \
-      --bundle-root "${RUN_DIR}/artifacts/std-llm-amd64-bundle" \
-      >"${RUN_DIR}/logs/release-artifact-validation-std-llm-amd64.json"
+      --bundle-root "${RUN_DIR}/artifacts/std-llm-bundle" \
+      >"${RUN_DIR}/logs/release-artifact-validation-std-llm.json"
   fi
 
   if materialize_pack_root "video" "${RUN_DIR}/artifacts/video-bundle"; then

@@ -38,7 +38,7 @@ done
 bash "${EXPORT_SCRIPT}" \
   --out-dir "${STAGE}/payload" \
   --os-version "${OS_VERSION}" \
-  --arch "${ARCH}" \
+  --arch "${TARGET_ARCH:-${ARCH}}" \
   "${cap_args[@]}"
 
 archive="${STAGE}/host-packages.tar.zst"

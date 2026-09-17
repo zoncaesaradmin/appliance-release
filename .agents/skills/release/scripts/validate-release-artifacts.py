@@ -13,10 +13,10 @@ from typing import Optional
 IMAGE_DIGEST_RE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
 PLACEHOLDER_IMAGE_DIGEST = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 INFERENCE_PACKAGES = {
-    "std-llm-amd64": ("ollama", "amd64"),
-    "acc-llm-amd64": ("vllm", "amd64"),
-    "acc-llm-arm64": ("vllm", "arm64"),
+    "std-llm": "ollama",
+    "acc-llm": "vllm",
 }
+SUPPORTED_INFERENCE_ARCHITECTURES = frozenset({"amd64", "arm64"})
 
 
 def first_named(root: Path, name: str) -> Optional[Path]:
@@ -549,9 +549,11 @@ def validate_inference(
     runtime = (bundle_manifest.get("runtimes") or {}).get("inference")
     if not isinstance(runtime, dict) or not isinstance(runtime.get("package"), str):
         raise ValueError("bundle manifest inference runtime must identify one supported inference package and inference engine")
-    expected_runtime = INFERENCE_PACKAGES.get(runtime["package"])
-    if expected_runtime is None or (runtime.get("inferenceEngine"), runtime.get("architecture")) != expected_runtime:
+    expected_engine = INFERENCE_PACKAGES.get(runtime["package"])
+    if expected_engine is None or runtime.get("inferenceEngine") != expected_engine:
         raise ValueError(f"bundle manifest has unsupported inference runtime: {runtime!r}")
+    if runtime.get("architecture") not in SUPPORTED_INFERENCE_ARCHITECTURES:
+        raise ValueError(f"bundle manifest inference runtime architecture must be amd64|arm64: {runtime!r}")
     if "supportedModes" in runtime:
         raise ValueError("bundle manifest inference runtime must not declare supportedModes")
 

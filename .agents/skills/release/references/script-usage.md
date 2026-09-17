@@ -36,7 +36,8 @@ Notes:
   keys must appear in their role file (fixed lab values are fine in YAML).
 - `build_flow.mode` must be `online` or `offline` (exactly one source policy).
 - Production delivery: use `build_flow.appliance_packs: all`. The complete set is
-  foundation, storage-network, build-workflows, deviceuser, and std-llm-amd64.
+  foundation, storage-network, build-workflows, deviceuser, and std-llm
+  (architecture is `build_flow.target_arch`, default amd64).
   Installation selects required packs from the chosen profile's capabilities.
 - Bundled offline name for the tooling image is fixed as `registry.local/dev-build`.
 - Local build-host path inputs such as `*_image_archive_source` are rejected.

@@ -6,7 +6,7 @@
 # Must agree with build-publish on values (roles are never merged):
 #   product version (release.version optional; else configs/default-product-version)
 #   bundle_store download base (from the build-publish file)
-#   published packs must cover the profile (e.g. lanllm needs foundation+std-llm-amd64)
+#   published packs must cover the profile (e.g. lanllm needs foundation+std-llm)
 #
 # Example:
 #   bash .agents/skills/release/scripts/run-release-from-devhost.sh \
@@ -120,8 +120,8 @@ client_verification:
 # Alternate: lanllm (inference-only)
 # ============================================================================
 #
-# Publish packs must include std-llm-amd64 (build_flow.appliance_packs:
-# foundation,std-llm-amd64 or all). lanllm enables base+inference only —
+# Publish packs must include std-llm (build_flow.appliance_packs:
+# foundation,std-llm or all). lanllm enables base+inference only —
 # do not leave workflows/builder/artifact/dns verification enabled.
 #
 # install:
@@ -167,5 +167,5 @@ client_verification:
 #     expect_denied_scope: true
 #
 # Related profiles (verification must track capabilities):
-#   builder-lanllm → workflows+builder+artifact on; dns off; needs storage-network+build-workflows+std-llm-amd64 packs
+#   builder-lanllm → workflows+builder+artifact on; dns off; needs storage-network+build-workflows+std-llm packs
 #   builder-lanllm-storage-landns → workflows+builder+artifact+dns on; needs all packs

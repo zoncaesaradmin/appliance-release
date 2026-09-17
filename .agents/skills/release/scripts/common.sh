@@ -651,6 +651,25 @@ resolve_appliance_packs_from_config() {
   printf '%s' "${value}"
 }
 
+# Resolve product TARGET_ARCH (one build = one arch).
+# Config: build_flow.target_arch. Empty/omitted → amd64.
+resolve_target_arch_from_config() {
+  local config_path="$1"
+  local value=""
+  value="$(config_get_optional "${config_path}" "build_flow.target_arch" || true)"
+  value="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  if [[ -z "${value}" ]]; then
+    value="amd64"
+  fi
+  case "${value}" in
+    amd64|x86_64|x86-64) printf '%s' "amd64" ;;
+    arm64|aarch64) printf '%s' "arm64" ;;
+    *)
+      fail "build_flow.target_arch must be amd64|arm64 (got: ${value})"
+      ;;
+  esac
+}
+
 # Repo-owned default product version (configs/default-product-version).
 # PRODUCT_VERSION / release.version may override it.
 read_default_product_version() {
@@ -765,7 +784,7 @@ reject_removed_build_publish_packaging_keys() {
     fail "build_flow workflows engine/Zot/DNS/provisioner pin keys were removed from build-publish config; product scripts/build-full-bundle.sh owns those defaults"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "build_flow.appliance_packs_env" || true)" ]]; then
-    fail "build_flow.appliance_packs_env was removed; set build_flow.appliance_packs to a literal value (all|foundation|foundation,storage-network,build-workflows|foundation,std-llm-amd64|foundation,video)"
+    fail "build_flow.appliance_packs_env was removed; set build_flow.appliance_packs to a literal value (all|foundation|foundation,dev-platform|foundation,std-llm|foundation,acc-llm)"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "verification.workflows.enabled" || true)" \
     || -n "$(config_get_optional "${config_path}" "install.appliance_profile" || true)" ]]; then

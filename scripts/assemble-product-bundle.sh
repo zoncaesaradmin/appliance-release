@@ -16,6 +16,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/appliance-packs.sh"
 # shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/target-arch.sh"
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/fs-link.sh"
 
 while [[ $# -gt 0 ]]; do
@@ -47,6 +49,8 @@ set -a
 source "${CONFIG_PATH}"
 set +a
 
+target_arch_resolve
+
 require_var() {
   local name="$1"
   if [[ -z "${!name:-}" ]]; then
@@ -73,7 +77,7 @@ WORKFLOWS_VERSION="${WORKFLOWS_VERSION:-}"
 WORKFLOW_CONTROLLER_IMAGE_REF="${WORKFLOW_CONTROLLER_IMAGE_REF:-}"
 WORKFLOW_EXECUTOR_IMAGE_REF="${WORKFLOW_EXECUTOR_IMAGE_REF:-}"
 K3S_BINARY="${K3S_BINARY:-${INPUTS_DIR}/k3s}"
-K3S_AIRGAP_IMAGES="${K3S_AIRGAP_IMAGES:-${INPUTS_DIR}/k3s-airgap-images-amd64.tar.zst}"
+K3S_AIRGAP_IMAGES="${K3S_AIRGAP_IMAGES:-${INPUTS_DIR}/k3s-airgap-images-${TARGET_ARCH}.tar.zst}"
 HELM_BINARY="${HELM_BINARY:-}"
 HELM_VERSION="${HELM_VERSION:-v3.21.1}"
 HELM_DOWNLOAD_BASE_URL="${HELM_DOWNLOAD_BASE_URL:-https://get.helm.sh}"
@@ -83,9 +87,8 @@ RELEASE_INPUT_DIR="${WORKDIR}/release-input"
 BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-foundation"
 DEV_PLATFORM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-dev-platform"
 DEVICEUSER_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-deviceuser"
-CPU_LLM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-std-llm-amd64"
-ACC_LLM_AMD64_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-acc-llm-amd64"
-ACC_LLM_ARM64_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-acc-llm-arm64"
+CPU_LLM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-std-llm"
+ACC_LLM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-acc-llm"
 
 mkdir -p "${WORKDIR}" "${INPUTS_DIR}" "${DOWNLOADS_DIR}"
 
@@ -401,7 +404,7 @@ resolve_helm_binary() {
     return 0
   fi
 
-  local resolved_path="${DOWNLOADS_DIR}/helm/${HELM_VERSION}/linux-amd64/helm"
+  local resolved_path="${DOWNLOADS_DIR}/helm/${HELM_VERSION}/linux-${TARGET_ARCH}/helm"
   if [[ -x "${resolved_path}" ]]; then
     HELM_BINARY="${resolved_path}"
     return 0
@@ -419,7 +422,7 @@ EOF
     return 0
   fi
 
-  local archive_name="helm-${HELM_VERSION}-linux-amd64.tar.gz"
+  local archive_name="helm-${HELM_VERSION}-linux-${TARGET_ARCH}.tar.gz"
   local archive_path="${DOWNLOADS_DIR}/${archive_name}"
   local checksum_path="${archive_path}.sha256sum"
   local extract_dir="${DOWNLOADS_DIR}/helm-extract-${HELM_VERSION}"
@@ -467,12 +470,12 @@ EOF
   mkdir -p "${extract_dir}"
   tar -xzf "${archive_path}" -C "${extract_dir}"
 
-  if [[ ! -f "${extract_dir}/linux-amd64/helm" ]]; then
-    echo "assemble-product-bundle: downloaded Helm archive missing linux-amd64/helm: ${archive_path}" >&2
+  if [[ ! -f "${extract_dir}/linux-${TARGET_ARCH}/helm" ]]; then
+    echo "assemble-product-bundle: downloaded Helm archive missing linux-${TARGET_ARCH}/helm: ${archive_path}" >&2
     exit 1
   fi
 
-  cp "${extract_dir}/linux-amd64/helm" "${resolved_path}"
+  cp "${extract_dir}/linux-${TARGET_ARCH}/helm" "${resolved_path}"
   chmod 755 "${resolved_path}"
   HELM_BINARY="${resolved_path}"
 }
@@ -636,9 +639,8 @@ assemble_all_packs() {
       foundation) bundle_dir="${BUNDLE_DIR}" ;;
       dev-platform) bundle_dir="${DEV_PLATFORM_BUNDLE_DIR}" ;;
       deviceuser) bundle_dir="${DEVICEUSER_BUNDLE_DIR}" ;;
-      std-llm-amd64) bundle_dir="${CPU_LLM_BUNDLE_DIR}" ;;
-      acc-llm-amd64) bundle_dir="${ACC_LLM_AMD64_BUNDLE_DIR}" ;;
-      acc-llm-arm64) bundle_dir="${ACC_LLM_ARM64_BUNDLE_DIR}" ;;
+      std-llm) bundle_dir="${CPU_LLM_BUNDLE_DIR}" ;;
+      acc-llm) bundle_dir="${ACC_LLM_BUNDLE_DIR}" ;;
       *)
         echo "assemble-product-bundle: unsupported pack id ${pack_id}" >&2
         exit 2
@@ -655,12 +657,12 @@ assemble_all_packs() {
 }
 
 if [[ -d "${CTL_REPO_SOURCE}" ]]; then
-  make -C "${CTL_REPO_SOURCE}" build
+  make -C "${CTL_REPO_SOURCE}" build GOOS=linux GOARCH="${TARGET_ARCH}"
   ZONCTL_BINARY="$(cd "${CTL_REPO_SOURCE}" && pwd)/bin/zonctl"
 else
   # Git URL: clone default branch (local path is preferred; set by build-full-bundle).
   clone_repo "${CTL_REPO_SOURCE}" "" "${CTL_CLONE_DIR}"
-  make -C "${CTL_CLONE_DIR}" build
+  make -C "${CTL_CLONE_DIR}" build GOOS=linux GOARCH="${TARGET_ARCH}"
   ZONCTL_BINARY="${CTL_CLONE_DIR}/bin/zonctl"
 fi
 require_file "${ZONCTL_BINARY}" "zonctl binary"
@@ -678,7 +680,7 @@ require_file "${CONTROL_PLANE_IMAGE}" "control-plane image"
 mkdir -p "${STAGING_DIR}"
 cp "${K3S_BINARY}" "${STAGING_DIR}/k3s"
 chmod +x "${STAGING_DIR}/k3s"
-cp "${K3S_AIRGAP_IMAGES}" "${STAGING_DIR}/k3s-airgap-images-amd64.tar.zst"
+cp "${K3S_AIRGAP_IMAGES}" "${STAGING_DIR}/k3s-airgap-images-${TARGET_ARCH}.tar.zst"
 control_plane_staging_name="$(basename "$(json_artifact_path "${RELEASE_INPUT_DIR}/release-input.json" controlPlaneImage)")"
 if [[ -z "${control_plane_staging_name}" ]]; then
   control_plane_staging_name="$(basename "${CONTROL_PLANE_IMAGE}")"
@@ -688,11 +690,11 @@ if [[ -n "${VALUES_FILE:-}" ]]; then
   cp "${VALUES_FILE}" "${STAGING_DIR}/values-minimal.yaml"
 fi
 
-rm -rf "${BUNDLE_DIR}" "${DEV_PLATFORM_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}" "${ACC_LLM_AMD64_BUNDLE_DIR}" "${ACC_LLM_ARM64_BUNDLE_DIR}"
+rm -rf "${BUNDLE_DIR}" "${DEV_PLATFORM_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}" "${ACC_LLM_BUNDLE_DIR}"
 
 assemble_all_packs
 
-echo "packs ready (${APPLIANCE_PACKS_RESOLVED}):"
+echo "packs ready (${APPLIANCE_PACKS_RESOLVED}) TARGET_ARCH=${TARGET_ARCH}:"
 if appliance_pack_wanted foundation; then
   echo "  foundation: ${BUNDLE_DIR}"
 fi
@@ -702,12 +704,9 @@ fi
 if appliance_pack_wanted deviceuser; then
   echo "  deviceuser: ${DEVICEUSER_BUNDLE_DIR}"
 fi
-if appliance_pack_wanted std-llm-amd64; then
-  echo "  std-llm-amd64: ${CPU_LLM_BUNDLE_DIR}"
+if appliance_pack_wanted std-llm; then
+  echo "  std-llm: ${CPU_LLM_BUNDLE_DIR}"
 fi
-if appliance_pack_wanted acc-llm-amd64; then
-  echo "  acc-llm-amd64: ${ACC_LLM_AMD64_BUNDLE_DIR}"
-fi
-if appliance_pack_wanted acc-llm-arm64; then
-  echo "  acc-llm-arm64: ${ACC_LLM_ARM64_BUNDLE_DIR}"
+if appliance_pack_wanted acc-llm; then
+  echo "  acc-llm: ${ACC_LLM_BUNDLE_DIR}"
 fi

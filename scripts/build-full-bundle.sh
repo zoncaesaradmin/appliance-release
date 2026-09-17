@@ -88,7 +88,8 @@ Optional overrides:
   # It is NOT packaged into the appliance bundle; operators supply builder images.
   ARTIFACT_SERVER_VERSION=2.1.8
   MESSAGE_BROKER_SOURCE_IMAGE=docker.io/library/nats:2.10.26-alpine
-  ARTIFACT_SERVER_SOURCE_IMAGE=ghcr.io/project-zot/zot-linux-amd64:v2.1.8
+  # Default ARTIFACT_SERVER_SOURCE_IMAGE is derived after TARGET_ARCH resolve:
+  # ghcr.io/project-zot/zot-linux-${TARGET_ARCH}:v${ARTIFACT_SERVER_VERSION}
   # Artifact server: always wrap upstream via appliance-code
   # package-artifact-server-image-archive (dev-run has buildah+skopeo);
   # annotate registry.local/artifact-server:bundled and derive
@@ -118,6 +119,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RELEASE_REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/appliance-packs.sh"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/target-arch.sh"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/fs-link.sh"
 DEFAULTS_FILE="${RELEASE_REPO_DIR}/configs/product-bundle.ci.env"
@@ -152,6 +155,9 @@ USER_DEV_IMAGE_REPO="${DEV_IMAGE_REPO-}"
 USER_DEV_IMAGE_NAME="${DEV_IMAGE_NAME-}"
 USER_DEV_IMAGE_TAG="${DEV_IMAGE_TAG-}"
 USER_APPLIANCE_PACKS="${APPLIANCE_PACKS-}"
+USER_TARGET_ARCH="${TARGET_ARCH-}"
+USER_BUNDLE_IMAGE_ARCH="${BUNDLE_IMAGE_ARCH-}"
+USER_BUNDLE_IMAGE_OS="${BUNDLE_IMAGE_OS-}"
 
 set -a
 # shellcheck disable=SC1090
@@ -280,7 +286,7 @@ WORKSPACE_PROVISIONER_IMAGE_REF="${USER_WORKSPACE_PROVISIONER_IMAGE_REF:-${WORKS
 # pull ref.
 ARTIFACT_SERVER_VERSION="${USER_ARTIFACT_SERVER_VERSION:-${ARTIFACT_SERVER_VERSION:-2.1.8}}"
 ARTIFACT_SERVER_VERSION="${ARTIFACT_SERVER_VERSION#v}"
-ARTIFACT_SERVER_SOURCE_IMAGE="${USER_ARTIFACT_SERVER_SOURCE_IMAGE:-${ARTIFACT_SERVER_SOURCE_IMAGE:-ghcr.io/project-zot/zot-linux-amd64:v${ARTIFACT_SERVER_VERSION}}}"
+ARTIFACT_SERVER_SOURCE_IMAGE="${USER_ARTIFACT_SERVER_SOURCE_IMAGE:-${ARTIFACT_SERVER_SOURCE_IMAGE:-}}"
 MESSAGE_BROKER_SOURCE_IMAGE="${USER_MESSAGE_BROKER_SOURCE_IMAGE:-${MESSAGE_BROKER_SOURCE_IMAGE:-docker.io/library/nats:2.10.26-alpine}}"
 # compatibility.dnsVersion and the official CoreDNS Docker Hub tag are both
 # unprefixed (1.14.4). Use the project's own public image instead of the
@@ -327,7 +333,19 @@ JELLYFIN_CACHE_NAME="${CACHE_NAME}"
 JELLYFIN_CACHE_TAG="${CACHE_TAG}"
 JELLYFIN_RUNTIME_REFERENCE="${RUNTIME_REFERENCE}"
 
-# Pack selection (default all = foundation + dev-platform + deviceuser + std-llm-amd64).
+# One build = one TARGET_ARCH (product-level; pack IDs stay arch-agnostic).
+TARGET_ARCH="${USER_TARGET_ARCH:-${TARGET_ARCH:-amd64}}"
+BUNDLE_IMAGE_OS="${USER_BUNDLE_IMAGE_OS:-${BUNDLE_IMAGE_OS:-}}"
+BUNDLE_IMAGE_ARCH="${USER_BUNDLE_IMAGE_ARCH:-${BUNDLE_IMAGE_ARCH:-}}"
+target_arch_resolve
+echo "build-full-bundle: TARGET_ARCH=${TARGET_ARCH} BUNDLE_IMAGE_ARCH=${BUNDLE_IMAGE_ARCH}"
+
+# Upstream zot publishes per-arch image names (zot-linux-amd64 / zot-linux-arm64).
+if [[ -z "${USER_ARTIFACT_SERVER_SOURCE_IMAGE}" ]]; then
+  ARTIFACT_SERVER_SOURCE_IMAGE="ghcr.io/project-zot/zot-linux-${TARGET_ARCH}:v${ARTIFACT_SERVER_VERSION}"
+fi
+
+# Pack selection (default all = foundation + dev-platform + deviceuser + std-llm).
 APPLIANCE_PACKS="${USER_APPLIANCE_PACKS:-${APPLIANCE_PACKS:-all}}"
 appliance_packs_resolve
 echo "build-full-bundle: APPLIANCE_PACKS=${APPLIANCE_PACKS} → ${APPLIANCE_PACKS_RESOLVED}"
@@ -481,15 +499,13 @@ CONFIG_OUT="${GENERATED_DIR}/product-bundle.env"
 BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-foundation"
 DEV_PLATFORM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-dev-platform"
 DEVICEUSER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-deviceuser"
-CPU_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-std-llm-amd64"
-ACC_LLM_AMD64_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-acc-llm-amd64"
-ACC_LLM_ARM64_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-acc-llm-arm64"
-BUNDLE_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-foundation.tar.gz"
-DEV_PLATFORM_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-dev-platform.tar.gz"
-DEVICEUSER_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-deviceuser.tar.gz"
-CPU_LLM_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-std-llm-amd64.tar.gz"
-ACC_LLM_AMD64_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-acc-llm-amd64.tar.gz"
-ACC_LLM_ARM64_ARCHIVE="${EXPORT_DIR}/appliance-${PRODUCT_VERSION}-acc-llm-arm64.tar.gz"
+CPU_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-std-llm"
+ACC_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-acc-llm"
+BUNDLE_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" foundation)"
+DEV_PLATFORM_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" dev-platform)"
+DEVICEUSER_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" deviceuser)"
+CPU_LLM_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" std-llm)"
+ACC_LLM_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" acc-llm)"
 RELEASE_INDEX="${EXPORT_DIR}/release-index.yaml"
 PUBLIC_KEY_EXPORT="${EXPORT_DIR}/release-signing.pub"
 
@@ -626,26 +642,27 @@ fetch_k3s_inputs_from_files_api() {
 
   require_var K3S_VERSION
   files_base="https://${registry}/api/v1/files"
-  remote_prefix="${files_base}/k3s/${K3S_VERSION}"
+  remote_bin="${files_base}/k3s/${K3S_VERSION}/${TARGET_ARCH}/k3s"
+  remote_airgap="${files_base}/k3s/${K3S_VERSION}/k3s-airgap-images-${TARGET_ARCH}.tar.zst"
   bin_dest="${dest_dir}/k3s"
-  airgap_dest="${dest_dir}/k3s-airgap-images-amd64.tar.zst"
+  airgap_dest="${dest_dir}/k3s-airgap-images-${TARGET_ARCH}.tar.zst"
   mkdir -p "${dest_dir}"
   rm -f "${bin_dest}" "${airgap_dest}"
 
-  echo "build-full-bundle: downloading K3s ${K3S_VERSION} from ${remote_prefix}/" >&2
+  echo "build-full-bundle: downloading K3s ${K3S_VERSION} (${TARGET_ARCH}) from files API" >&2
   if ! curl -fsSL "${curl_tls[@]}" \
     -H "Authorization: Bearer ${token}" \
     -o "${bin_dest}" \
-    "${remote_prefix}/k3s"; then
-    echo "build-full-bundle: failed to download k3s binary from ${remote_prefix}/k3s (seed with make -C deps/platform-inputs release)" >&2
+    "${remote_bin}"; then
+    echo "build-full-bundle: failed to download k3s binary from ${remote_bin} (seed with make -C deps/platform-inputs release TARGET_ARCH=${TARGET_ARCH})" >&2
     exit 1
   fi
   chmod +x "${bin_dest}"
   if ! curl -fsSL "${curl_tls[@]}" \
     -H "Authorization: Bearer ${token}" \
     -o "${airgap_dest}" \
-    "${remote_prefix}/k3s-airgap-images-amd64.tar.zst"; then
-    echo "build-full-bundle: failed to download airgap images from ${remote_prefix}/k3s-airgap-images-amd64.tar.zst (seed with make -C deps/platform-inputs release)" >&2
+    "${remote_airgap}"; then
+    echo "build-full-bundle: failed to download airgap images from ${remote_airgap} (seed with make -C deps/platform-inputs release TARGET_ARCH=${TARGET_ARCH})" >&2
     exit 1
   fi
   require_file "${bin_dest}" "k3s binary"
@@ -659,23 +676,25 @@ fetch_k3s_inputs_from_github() {
   local k3s_base=""
   local bin_dest=""
   local airgap_dest=""
+  local k3s_asset=""
 
   require_var K3S_VERSION
   ver_enc="${K3S_VERSION//+/%2B}"
   k3s_base="https://github.com/k3s-io/k3s/releases/download/${ver_enc}"
+  k3s_asset="$(k3s_binary_asset_name)"
   bin_dest="${dest_dir}/k3s"
-  airgap_dest="${dest_dir}/k3s-airgap-images-amd64.tar.zst"
+  airgap_dest="${dest_dir}/k3s-airgap-images-${TARGET_ARCH}.tar.zst"
   mkdir -p "${dest_dir}"
   rm -f "${bin_dest}" "${airgap_dest}"
 
-  echo "build-full-bundle: downloading K3s ${K3S_VERSION} from ${k3s_base}/" >&2
-  if ! curl -fsSL -o "${bin_dest}" "${k3s_base}/k3s"; then
-    echo "build-full-bundle: failed to download k3s binary from ${k3s_base}/k3s" >&2
+  echo "build-full-bundle: downloading K3s ${K3S_VERSION} (${TARGET_ARCH}) from ${k3s_base}/" >&2
+  if ! curl -fsSL -o "${bin_dest}" "${k3s_base}/${k3s_asset}"; then
+    echo "build-full-bundle: failed to download k3s binary from ${k3s_base}/${k3s_asset}" >&2
     exit 1
   fi
   chmod +x "${bin_dest}"
-  if ! curl -fsSL -o "${airgap_dest}" "${k3s_base}/k3s-airgap-images-amd64.tar.zst"; then
-    echo "build-full-bundle: failed to download airgap images from ${k3s_base}/k3s-airgap-images-amd64.tar.zst" >&2
+  if ! curl -fsSL -o "${airgap_dest}" "${k3s_base}/k3s-airgap-images-${TARGET_ARCH}.tar.zst"; then
+    echo "build-full-bundle: failed to download airgap images from ${k3s_base}/k3s-airgap-images-${TARGET_ARCH}.tar.zst" >&2
     exit 1
   fi
   require_file "${bin_dest}" "k3s binary"
@@ -738,13 +757,14 @@ export_container_image_archive() {
   skopeo_copy_oci_archive "docker://${image_ref#docker://}" "${output_path}" "${dest_name}"
 }
 
-# Target platform for bundled OCI images. The appliance ships amd64 only.
+# Target platform for bundled OCI images. One build = one TARGET_ARCH
+# (target_arch_resolve sets BUNDLE_IMAGE_OS / BUNDLE_IMAGE_ARCH).
 # skopeo inspect of a multi-arch tag often returns the *index* digest even with
 # overrides; skopeo copy materializes a *platform* manifest. Never trust inspect
 # Digests as bundle pins. Always copy for the target platform, then derive
 # registry.local/<name>@sha256:<archived-manifest-digest> from index.json.
-BUNDLE_IMAGE_OS="${BUNDLE_IMAGE_OS:-linux}"
-BUNDLE_IMAGE_ARCH="${BUNDLE_IMAGE_ARCH:-amd64}"
+: "${BUNDLE_IMAGE_OS:?BUNDLE_IMAGE_OS unset; call target_arch_resolve first}"
+: "${BUNDLE_IMAGE_ARCH:?BUNDLE_IMAGE_ARCH unset; call target_arch_resolve first}"
 
 # Strip optional @sha256:... from a bundle imageReference, leaving the local name
 # (e.g. registry.local/dev-build).
@@ -928,6 +948,7 @@ skopeo_tls_args_for() {
 # Map an upstream docker ref to the LAN build-cache repository on DEV_REGISTRY.
 # Example: ghcr.io/project-zot/zot-linux-amd64:v2.1.8
 #   →  ${DEV_REGISTRY}/build-cache/zot-linux-amd64:v2.1.8
+# (arm64 uses zot-linux-arm64 likewise)
 lan_build_cache_ref_for() {
   local source_ref="$1"
   local registry prefix bare name tag digest
@@ -1630,7 +1651,7 @@ if appliance_pack_wanted dev-platform; then
     exit 2
   fi
 fi
-if appliance_pack_wanted std-llm-amd64; then
+if appliance_pack_wanted std-llm; then
   if [[ -z "${INFERENCE_VERSION}" || "${INFERENCE_VERSION}" == *latest* ]]; then
     echo "build-full-bundle: INFERENCE_VERSION must be an exact non-latest version" >&2
     exit 2
@@ -1640,20 +1661,21 @@ if appliance_pack_wanted std-llm-amd64; then
     exit 2
   fi
 fi
-if appliance_pack_wanted acc-llm-amd64; then
-  if [[ -z "${VLLM_VERSION}" || "${VLLM_VERSION}" == *latest* ]]; then
-    echo "build-full-bundle: VLLM_VERSION must be an exact non-latest version" >&2
-    exit 2
-  fi
-  if [[ "${VLLM_IMAGE_PULL_REF}" == *:latest* || "${VLLM_IMAGE_PULL_REF}" == registry.local/* ]]; then
-    echo "build-full-bundle: VLLM_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
-    exit 2
-  fi
-fi
-if appliance_pack_wanted acc-llm-arm64; then
-  if [[ -z "${VLLM_ARM64_VERSION}" || "${VLLM_ARM64_VERSION}" == *latest* ]] || [[ "${VLLM_ARM64_IMAGE_PULL_REF}" == *:latest* || "${VLLM_ARM64_IMAGE_PULL_REF}" == registry.local/* ]]; then
-    echo "build-full-bundle: VLLM_ARM64 image must be an exact pinned upstream ref" >&2
-    exit 2
+if appliance_pack_wanted acc-llm; then
+  if [[ "${TARGET_ARCH}" == "arm64" ]]; then
+    if [[ -z "${VLLM_ARM64_VERSION}" || "${VLLM_ARM64_VERSION}" == *latest* ]] || [[ "${VLLM_ARM64_IMAGE_PULL_REF}" == *:latest* || "${VLLM_ARM64_IMAGE_PULL_REF}" == registry.local/* ]]; then
+      echo "build-full-bundle: VLLM_ARM64 image must be an exact pinned upstream ref for TARGET_ARCH=arm64" >&2
+      exit 2
+    fi
+  else
+    if [[ -z "${VLLM_VERSION}" || "${VLLM_VERSION}" == *latest* ]]; then
+      echo "build-full-bundle: VLLM_VERSION must be an exact non-latest version" >&2
+      exit 2
+    fi
+    if [[ "${VLLM_IMAGE_PULL_REF}" == *:latest* || "${VLLM_IMAGE_PULL_REF}" == registry.local/* ]]; then
+      echo "build-full-bundle: VLLM_IMAGE_PULL_REF must be a version-pinned upstream image ref" >&2
+      exit 2
+    fi
   fi
 fi
 if appliance_pack_wanted dev-platform; then
@@ -1703,7 +1725,7 @@ fi
 
 INFERENCE_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-inference/Chart.yaml")"
 # Chart.yaml may use Helm/upstream form v0.6.5 while INFERENCE_VERSION is 0.6.5.
-if appliance_pack_wanted std-llm-amd64; then
+if appliance_pack_wanted std-llm; then
   if [[ -z "${INFERENCE_CHART_APP_VERSION}" || "${INFERENCE_CHART_APP_VERSION#v}" != "${INFERENCE_VERSION}" ]]; then
     echo "build-full-bundle: INFERENCE_VERSION ${INFERENCE_VERSION} must match appliance-inference chart appVersion ${INFERENCE_CHART_APP_VERSION:-<missing>}" >&2
     exit 2
@@ -1730,7 +1752,7 @@ if offline_build_enabled; then
   require_var DEV_REGISTRY
   require_seed_package message-broker
   require_seed_package blob-storage
-  if appliance_pack_wanted std-llm-amd64 || appliance_pack_wanted acc-llm-amd64 || appliance_pack_wanted acc-llm-arm64; then
+  if appliance_pack_wanted std-llm || appliance_pack_wanted acc-llm; then
     require_seed_package inference
   fi
   if appliance_pack_wanted deviceuser; then
@@ -1740,7 +1762,7 @@ if offline_build_enabled; then
     WORKSPACE_PROVISIONER_IMAGE_REF="$(lan_cache_ref alpine-git "${ALPINE_GIT_CACHE_TAG}")"
   fi
   if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]]; then
-    ARTIFACT_SERVER_SOURCE_IMAGE="$(lan_cache_ref zot-linux-amd64 "v${ARTIFACT_SERVER_VERSION}")"
+    ARTIFACT_SERVER_SOURCE_IMAGE="$(lan_cache_ref "zot-linux-${TARGET_ARCH}" "v${ARTIFACT_SERVER_VERSION}")"
   fi
   MESSAGE_BROKER_SOURCE_IMAGE="$(lan_cache_ref nats "2.10.26-alpine")"
   if [[ "${NEED_DNS_IMAGE:-0}" == "1" ]]; then
@@ -1750,14 +1772,15 @@ if offline_build_enabled; then
   if appliance_pack_wanted deviceuser; then
     JELLYFIN_SOURCE_IMAGE="$(lan_cache_ref "${JELLYFIN_CACHE_NAME}" "${JELLYFIN_CACHE_TAG}")"
   fi
-  if appliance_pack_wanted std-llm-amd64; then
+  if appliance_pack_wanted std-llm; then
     INFERENCE_IMAGE_PULL_REF="$(lan_cache_ref ollama "${INFERENCE_VERSION}")"
   fi
-  if appliance_pack_wanted acc-llm-amd64; then
-    VLLM_IMAGE_PULL_REF="$(lan_cache_ref vllm-openai-cpu "${VLLM_VERSION}-x86_64")"
-  fi
-  if appliance_pack_wanted acc-llm-arm64; then
-    VLLM_ARM64_IMAGE_PULL_REF="$(lan_cache_ref vllm-openai "${VLLM_ARM64_VERSION}-arm64")"
+  if appliance_pack_wanted acc-llm; then
+    if [[ "${TARGET_ARCH}" == "arm64" ]]; then
+      VLLM_ARM64_IMAGE_PULL_REF="$(lan_cache_ref vllm-openai "${VLLM_ARM64_VERSION}-arm64")"
+    else
+      VLLM_IMAGE_PULL_REF="$(lan_cache_ref vllm-openai-cpu "${VLLM_VERSION}-x86_64")"
+    fi
   fi
   if bool_true "${WORKFLOWS_ENABLED}"; then
     WORKFLOW_EXECUTOR_IMAGE_REF="$(lan_cache_ref argoexec "${WORKFLOWS_VERSION}")"
@@ -1819,6 +1842,7 @@ if ! component_cache_try_restore "host-packages" "${CODE_REPO_DIR}/.run/host-pac
     bash "${CODE_REPO_DIR}/scripts/package/export-host-packages.sh" \
       --out-dir "${CODE_REPO_DIR}/.run/host-packages" \
       --os-version "${OS_VERSION}" \
+      --arch "${TARGET_ARCH}" \
       "${CAP_ARGS[@]}"
   fi
   component_cache_store "host-packages" "${CODE_REPO_DIR}/.run/host-packages" "${host_packages_fingerprint_inputs[@]}"
@@ -1886,14 +1910,15 @@ done
 
 INFERENCE_PACKAGE_LINES=""
 INFERENCE_ARCHIVE_ARG_LINES=""
-if appliance_pack_wanted std-llm-amd64; then
+if appliance_pack_wanted std-llm; then
   # Build as a plain double-quoted string (not $(cat <<...)). A nested
   # command-substitution heredoc breaks on the ")" in \$(tr ...).
   INFERENCE_PACKAGE_LINES="# Appliance inference: upstream runtime + thin manager (no wrap).
 make package-inference-runtime-image-archive \\
   OUT_FILE=\"/workspace/.run/inference-runtime-image.tar\" \\
   INFERENCE_VERSION=$(shell_quote "${INFERENCE_VERSION}") \\
-  INFERENCE_SOURCE_IMAGE=$(shell_quote "${INFERENCE_IMAGE_PULL_REF}")
+  INFERENCE_SOURCE_IMAGE=$(shell_quote "${INFERENCE_IMAGE_PULL_REF}") \\
+  INFERENCE_ARCHITECTURE=$(shell_quote "${TARGET_ARCH}")
 make package-inference-manager-image-archive \\
   OUT_FILE=\"/workspace/.run/inference-manager-image.tar\"
 INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
@@ -1907,14 +1932,21 @@ INFERENCE_MANAGER_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-manager
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image \"\${INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image-reference \"\${INFERENCE_MANAGER_IMAGE_REF}\" \\"$'\n'
 fi
-if appliance_pack_wanted acc-llm-amd64; then
-  INFERENCE_PACKAGE_LINES="# Appliance vLLM CPU runtime + thin manager (no wrap).
+if appliance_pack_wanted acc-llm; then
+  if [[ "${TARGET_ARCH}" == "arm64" ]]; then
+    _acc_version="${VLLM_ARM64_VERSION}"
+    _acc_image="${VLLM_ARM64_IMAGE_PULL_REF}"
+  else
+    _acc_version="${VLLM_VERSION}"
+    _acc_image="${VLLM_IMAGE_PULL_REF}"
+  fi
+  INFERENCE_PACKAGE_LINES="# Appliance vLLM runtime + thin manager (TARGET_ARCH=${TARGET_ARCH}).
 make package-inference-runtime-image-archive \\
   OUT_FILE=\"/workspace/.run/inference-runtime-image.tar\" \\
-  INFERENCE_VERSION=$(shell_quote "${VLLM_VERSION}") \\
-  INFERENCE_SOURCE_IMAGE=$(shell_quote "${VLLM_IMAGE_PULL_REF}") \\
+  INFERENCE_VERSION=$(shell_quote "${_acc_version}") \\
+  INFERENCE_SOURCE_IMAGE=$(shell_quote "${_acc_image}") \\
   INFERENCE_ENGINE=vllm \\
-  INFERENCE_ARCHITECTURE=amd64
+  INFERENCE_ARCHITECTURE=$(shell_quote "${TARGET_ARCH}")
 make package-inference-manager-image-archive \\
   OUT_FILE=\"/workspace/.run/inference-manager-image.tar\"
 INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
@@ -1922,28 +1954,7 @@ INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.r
 INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-manager-image.tar\"
 INFERENCE_MANAGER_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-manager-image.reference)\"
 "
-  INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${VLLM_VERSION}") \\"$'\n'
-  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
-  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
-  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image \"\${INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
-  INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image-reference \"\${INFERENCE_MANAGER_IMAGE_REF}\" \\"$'\n'
-fi
-if appliance_pack_wanted acc-llm-arm64; then
-  INFERENCE_PACKAGE_LINES="# Appliance vLLM ARM64 runtime + thin manager (no wrap).
-make package-inference-runtime-image-archive \\
-  OUT_FILE=\"/workspace/.run/inference-runtime-image.tar\" \\
-  INFERENCE_VERSION=$(shell_quote "${VLLM_ARM64_VERSION}") \\
-  INFERENCE_SOURCE_IMAGE=$(shell_quote "${VLLM_ARM64_IMAGE_PULL_REF}") \\
-  INFERENCE_ENGINE=vllm \\
-  INFERENCE_ARCHITECTURE=arm64
-make package-inference-manager-image-archive \\
-  OUT_FILE=\"/workspace/.run/inference-manager-image.tar\"
-INFERENCE_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-runtime-image.tar\"
-INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.reference)\"
-INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/inference-manager-image.tar\"
-INFERENCE_MANAGER_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-manager-image.reference)\"
-"
-  INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${VLLM_ARM64_VERSION}") \\"$'\n'
+  INFERENCE_ARCHIVE_ARG_LINES="  --inference-version $(shell_quote "${_acc_version}") \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image \"\${INFERENCE_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-runtime-image-reference \"\${INFERENCE_IMAGE_REF}\" \\"$'\n'
   INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image \"\${INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
@@ -2199,9 +2210,10 @@ set_env_var "${CONFIG_OUT}" SAMPLE_MODE "0"
 set_env_var "${CONFIG_OUT}" HELM_BINARY "${HELM_BINARY}"
 set_env_var "${CONFIG_OUT}" HELM_VERSION "${HELM_VERSION}"
 set_env_var "${CONFIG_OUT}" K3S_BINARY "${INPUTS_DIR}/k3s"
-set_env_var "${CONFIG_OUT}" K3S_AIRGAP_IMAGES "${INPUTS_DIR}/k3s-airgap-images-amd64.tar.zst"
+set_env_var "${CONFIG_OUT}" K3S_AIRGAP_IMAGES "${INPUTS_DIR}/k3s-airgap-images-${TARGET_ARCH}.tar.zst"
 set_env_var "${CONFIG_OUT}" OFFLINE_BUILD "${OFFLINE_BUILD}"
 set_env_var "${CONFIG_OUT}" APPLIANCE_PACKS "${APPLIANCE_PACKS}"
+set_env_var "${CONFIG_OUT}" TARGET_ARCH "${TARGET_ARCH}"
 # Assemble only needs DEV_* for offline files API. Online tooling registry must
 # not be written here — it is not the LAN Artifact Server.
 if offline_build_enabled; then
@@ -2237,21 +2249,17 @@ if appliance_pack_wanted deviceuser; then
   create_gzip_tarball "${DEVICEUSER_ARCHIVE}" "$(dirname "${DEVICEUSER_BUNDLE_DIR}")" "$(basename "${DEVICEUSER_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${DEVICEUSER_ARCHIVE}")
 fi
-if appliance_pack_wanted std-llm-amd64; then
+if appliance_pack_wanted std-llm; then
   create_gzip_tarball "${CPU_LLM_ARCHIVE}" "$(dirname "${CPU_LLM_BUNDLE_DIR}")" "$(basename "${CPU_LLM_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${CPU_LLM_ARCHIVE}")
 fi
-if appliance_pack_wanted acc-llm-amd64; then
-  create_gzip_tarball "${ACC_LLM_AMD64_ARCHIVE}" "$(dirname "${ACC_LLM_AMD64_BUNDLE_DIR}")" "$(basename "${ACC_LLM_AMD64_BUNDLE_DIR}")"
-  EXPORTED_ARCHIVES+=("${ACC_LLM_AMD64_ARCHIVE}")
-fi
-if appliance_pack_wanted acc-llm-arm64; then
-  create_gzip_tarball "${ACC_LLM_ARM64_ARCHIVE}" "$(dirname "${ACC_LLM_ARM64_BUNDLE_DIR}")" "$(basename "${ACC_LLM_ARM64_BUNDLE_DIR}")"
-  EXPORTED_ARCHIVES+=("${ACC_LLM_ARM64_ARCHIVE}")
+if appliance_pack_wanted acc-llm; then
+  create_gzip_tarball "${ACC_LLM_ARCHIVE}" "$(dirname "${ACC_LLM_BUNDLE_DIR}")" "$(basename "${ACC_LLM_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${ACC_LLM_ARCHIVE}")
 fi
 cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
 
-python3 "${SCRIPT_DIR}/write-release-index.py" "${RELEASE_INDEX}" "${PRODUCT_VERSION}" \
+python3 "${SCRIPT_DIR}/write-release-index.py" "${RELEASE_INDEX}" "${PRODUCT_VERSION}" "${TARGET_ARCH}" \
   "${CODE_REPO_DIR}/metadata-bundle/base/profiles/catalog.yaml" \
 	"${CODE_REPO_DIR}/metadata-bundle/base/capabilities/catalog.yaml" \
   "${CODE_REPO_DIR}/metadata-bundle/base/packages/catalog.yaml" \
@@ -2260,8 +2268,7 @@ python3 "${SCRIPT_DIR}/write-release-index.py" "${RELEASE_INDEX}" "${PRODUCT_VER
   "$(basename "${DEV_PLATFORM_ARCHIVE}")" \
   "$(basename "${DEVICEUSER_ARCHIVE}")" \
   "$(basename "${CPU_LLM_ARCHIVE}")" \
-  "$(basename "${ACC_LLM_AMD64_ARCHIVE}")" \
-  "$(basename "${ACC_LLM_ARM64_ARCHIVE}")"
+  "$(basename "${ACC_LLM_ARCHIVE}")"
 
 echo
 echo "release-input tarball:"
@@ -2276,7 +2283,7 @@ else
   echo "  ${CODE_RELEASE_INPUT_DIR}"
 fi
 echo
-echo "final packs (${APPLIANCE_PACKS_RESOLVED}):"
+echo "final packs (${APPLIANCE_PACKS_RESOLVED}) TARGET_ARCH=${TARGET_ARCH}:"
 if appliance_pack_wanted foundation; then
   echo "  ${BUNDLE_DIR}"
 fi
@@ -2286,14 +2293,11 @@ fi
 if appliance_pack_wanted deviceuser; then
   echo "  ${DEVICEUSER_BUNDLE_DIR}"
 fi
-if appliance_pack_wanted std-llm-amd64; then
+if appliance_pack_wanted std-llm; then
   echo "  ${CPU_LLM_BUNDLE_DIR}"
 fi
-if appliance_pack_wanted acc-llm-amd64; then
-  echo "  ${ACC_LLM_AMD64_BUNDLE_DIR}"
-fi
-if appliance_pack_wanted acc-llm-arm64; then
-  echo "  ${ACC_LLM_ARM64_BUNDLE_DIR}"
+if appliance_pack_wanted acc-llm; then
+  echo "  ${ACC_LLM_BUNDLE_DIR}"
 fi
 echo
 if [[ -n "${ARTIFACT_SERVER_IMAGE_REF}" ]]; then

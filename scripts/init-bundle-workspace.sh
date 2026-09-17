@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 usage: init-bundle-workspace.sh --workdir DIR --zonctl-binary PATH --helm-binary PATH [options]
 
-Creates a local workspace for the minimal amd64 appliance bundle flow.
+Creates a local workspace for the appliance bundle flow (TARGET_ARCH).
 
 Options:
   --workdir DIR                 Workspace root to create/update. Required.
@@ -32,6 +32,9 @@ PRODUCT_VERSION=""
 CONTROL_PLANE_IMAGE_REF=""
 OS_VERSION="24.04"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/target-arch.sh"
+target_arch_resolve
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -356,7 +359,7 @@ cat >"${STAGING_README}" <<EOF
 Place the remaining release-side artifacts in this directory before assembly:
 
 - \`k3s\`
-- \`k3s-airgap-images-amd64.tar.zst\`
+- \`k3s-airgap-images-${TARGET_ARCH}.tar.zst\`
 - \`${CONTROL_PLANE_ARCHIVE_NAME}\`
 - \`values-minimal.yaml\` (generated for you; edit as needed)
 
@@ -397,7 +400,7 @@ cat >"${CONFIG_PATH}" <<EOF
   "hostBaseline": {
     "os": "ubuntu",
     "osVersion": "${OS_VERSION}",
-    "arch": "amd64"
+    "arch": "${TARGET_ARCH}"
   },
   "entries": [
     {
@@ -437,8 +440,8 @@ cat >"${CONFIG_PATH}" <<EOF
       "executable": true
     },
     {
-      "sourcePath": "${STAGING_DIR}/k3s-airgap-images-amd64.tar.zst",
-      "targetPath": "k3s/images/k3s-airgap-images-amd64.tar.zst",
+      "sourcePath": "${STAGING_DIR}/k3s-airgap-images-${TARGET_ARCH}.tar.zst",
+      "targetPath": "k3s/images/k3s-airgap-images-${TARGET_ARCH}.tar.zst",
       "component": "k3s-images"
     },
     {
@@ -461,13 +464,14 @@ cat >"${CONFIG_PATH}" <<EOF
 }
 EOF
 
-python3 - "${CONFIG_PATH}" "${RELEASE_INPUT_MANIFEST}" <<'PY'
+python3 - "${CONFIG_PATH}" "${RELEASE_INPUT_MANIFEST}" "${TARGET_ARCH}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 config_path = Path(sys.argv[1])
 manifest_path = Path(sys.argv[2])
+_ = sys.argv[3]  # TARGET_ARCH (product-level; pack IDs stay arch-agnostic)
 
 if not manifest_path.is_file():
     raise SystemExit(0)
@@ -561,9 +565,8 @@ pack_specs = (
     ("foundation", f"appliance-{product_version}-foundation", "foundation"),
     ("dev-platform", f"appliance-{product_version}-dev-platform", "dev-platform"),
     ("deviceuser", f"appliance-{product_version}-deviceuser", "deviceuser"),
-    ("std-llm-amd64", f"appliance-{product_version}-std-llm-amd64", "std-llm-amd64"),
-    ("acc-llm-amd64", f"appliance-{product_version}-acc-llm-amd64", "acc-llm-amd64"),
-    ("acc-llm-arm64", f"appliance-{product_version}-acc-llm-arm64", "acc-llm-arm64"),
+    ("std-llm", f"appliance-{product_version}-std-llm", "std-llm"),
+    ("acc-llm", f"appliance-{product_version}-acc-llm", "acc-llm"),
 )
 for pack_id, bundle_name, pack_value in pack_specs:
     pack_config = json.loads(json.dumps(config))
@@ -586,10 +589,9 @@ This workspace is the handoff point between the two repos:
    \`${WORKDIR}/bundle-assembly.foundation.json\`
    \`${WORKDIR}/bundle-assembly.dev-platform.json\`
    \`${WORKDIR}/bundle-assembly.deviceuser.json\`
-   \`${WORKDIR}/bundle-assembly.std-llm-amd64.json\`
-   \`${WORKDIR}/bundle-assembly.acc-llm-amd64.json\`
-   \`${WORKDIR}/bundle-assembly.acc-llm-arm64.json\`
-   (legacy full-bundle config remains at \`${CONFIG_PATH}\`)
+   \`${WORKDIR}/bundle-assembly.std-llm.json\`
+   \`${WORKDIR}/bundle-assembly.acc-llm.json\`
+   (legacy full-bundle config remains at \`${CONFIG_PATH}\`; TARGET_ARCH=${TARGET_ARCH})
 
 If the release-input includes optional workflows engine Phase 1 artifacts, this
 workspace auto-detects them and adds them to the bundle config under:
@@ -628,9 +630,9 @@ echo "  pack configs:"
 echo "    ${WORKDIR}/bundle-assembly.foundation.json"
 echo "    ${WORKDIR}/bundle-assembly.dev-platform.json"
 echo "    ${WORKDIR}/bundle-assembly.deviceuser.json"
-echo "    ${WORKDIR}/bundle-assembly.std-llm-amd64.json"
-echo "    ${WORKDIR}/bundle-assembly.acc-llm-amd64.json"
-echo "    ${WORKDIR}/bundle-assembly.acc-llm-arm64.json"
+echo "    ${WORKDIR}/bundle-assembly.std-llm.json"
+echo "    ${WORKDIR}/bundle-assembly.acc-llm.json"
+echo "  target arch: ${TARGET_ARCH}"
 echo "  release-input dir: ${RELEASE_INPUT_DIR}"
 echo "  staging dir: ${STAGING_DIR}"
 echo "  bundle output dir: ${BUNDLE_DIR}"

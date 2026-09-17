@@ -21,11 +21,11 @@ assert_eq() {
 APPLIANCE_PACKS=""
 appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS}" "all" "empty defaults to all token"
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform deviceuser std-llm-amd64" "empty → all packs"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform deviceuser std-llm" "empty → all packs"
 
 APPLIANCE_PACKS="all"
 appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform deviceuser std-llm-amd64" "all"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform deviceuser std-llm" "all"
 
 APPLIANCE_PACKS="foundation"
 appliance_packs_resolve
@@ -35,11 +35,11 @@ APPLIANCE_PACKS="foundation,dev-platform"
 appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform" "foundation+dev-platform"
 appliance_pack_wanted dev-platform || fail "dev-platform should be wanted"
-appliance_pack_wanted std-llm-amd64 && fail "std-llm-amd64 should not be wanted"
+appliance_pack_wanted std-llm && fail "std-llm should not be wanted"
 
-APPLIANCE_PACKS="std-llm-amd64"
+APPLIANCE_PACKS="std-llm"
 appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation std-llm-amd64" "std-llm-amd64 auto-includes foundation"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation std-llm" "std-llm auto-includes foundation"
 
 APPLIANCE_PACKS="deviceuser"
 appliance_packs_resolve
@@ -53,15 +53,23 @@ if APPLIANCE_PACKS="nope" appliance_packs_resolve 2>/dev/null; then
   fail "unknown pack should fail"
 fi
 
-APPLIANCE_PACKS="acc-llm-amd64"
+APPLIANCE_PACKS="acc-llm"
 appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation acc-llm-amd64" "acc-llm-amd64 auto-includes foundation"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation acc-llm" "acc-llm auto-includes foundation"
 
-APPLIANCE_PACKS="acc-llm-arm64"
-appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation acc-llm-arm64" "acc-llm-arm64 auto-includes foundation"
+if APPLIANCE_PACKS="acc-llm-amd64" appliance_packs_resolve 2>/dev/null; then
+  fail "legacy pack id acc-llm-amd64 should fail (use acc-llm + TARGET_ARCH)"
+fi
 
-APPLIANCE_PACKS="std-llm-amd64,acc-llm-amd64"
+if APPLIANCE_PACKS="acc-llm-arm64" appliance_packs_resolve 2>/dev/null; then
+  fail "legacy pack id acc-llm-arm64 should fail (use acc-llm + TARGET_ARCH)"
+fi
+
+if APPLIANCE_PACKS="std-llm-amd64" appliance_packs_resolve 2>/dev/null; then
+  fail "legacy pack id std-llm-amd64 should fail (use std-llm + TARGET_ARCH)"
+fi
+
+APPLIANCE_PACKS="std-llm,acc-llm"
 if appliance_packs_resolve 2>/dev/null; then
   fail "multiple inference runtime packs should fail"
 fi

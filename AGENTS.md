@@ -10,7 +10,7 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 
 ## Supported Operating System
 
-- Officially supported: Ubuntu Server 22.04 LTS and Ubuntu Server 24.04 LTS, `amd64`.
+- Officially supported: Ubuntu Server 22.04 LTS and Ubuntu Server 24.04 LTS, `amd64` and `arm64` (one product build = one `TARGET_ARCH`).
 - Block installation outright on non-Ubuntu operating systems and on unsupported Ubuntu versions.
 - Ubuntu Desktop may be allowed later as an explicit advanced/unsupported mode; it is not part of the supported matrix today.
 
@@ -89,12 +89,12 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
     `make dev-shell`, control-plane image, control-plane UI image, host-agent
     image, and similar tooling-container builds
 - **`dev-build` is not a product runtime image.** It is not packaged into the
-  foundation, dev-platform, deviceuser, or std-llm-amd64 packs. Operator build catalogs must use
+  foundation, dev-platform, deviceuser, or std-llm packs. Operator build catalogs must use
   explicit digest-pinned builder images they supply on the appliance.
 - Each platform release publishes the signed delivery packs selected for its
   supported appliance profiles: foundation is mandatory; dev-platform (registry
   + LAN DNS, workflow engine, and workspace provisioner), deviceuser, and
-  std-llm-amd64 are optional. Installation selects the required packs from
+  std-llm are optional. Installation selects the required packs from
   metadata-derived profile capabilities. Packs do not enable capabilities.
 - `make seed-build-deps` publishes `dev-build` to the **LAN Artifact Server only**.
   That does **not** update GHCR.

@@ -11,7 +11,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 PUBLISH = ROOT / "scripts" / "publish-release.sh"
-PACK_NAME = "appliance-0.1.0-foundation.tar.gz"
+PACK_NAME = "appliance-0.1.0-foundation-amd64.tar.gz"
 
 
 def prepare_export(root: Path) -> Path:
@@ -22,6 +22,7 @@ def prepare_export(root: Path) -> Path:
     (export / "release-signing.pub").write_text("public-key-placeholder\n", encoding="utf-8")
     (export / "release-index.yaml").write_text(
         "version: 0.1.0\n"
+        "architecture: amd64\n"
         "packs:\n"
         "  - id: foundation\n"
         f"    filename: {PACK_NAME}\n",

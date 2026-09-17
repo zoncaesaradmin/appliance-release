@@ -123,7 +123,7 @@ Suggested layout:
 api/v1/files/appliance/<version>/
   appliance-<version>-foundation.tar.gz
   appliance-<version>-dev-platform.tar.gz
-  appliance-<version>-std-llm-amd64.tar.gz   # when built
+  appliance-<version>-std-llm.tar.gz   # when built
   release-index.yaml
   release-signing.pub
   sha256sum.txt
