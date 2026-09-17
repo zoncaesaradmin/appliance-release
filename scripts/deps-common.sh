@@ -248,22 +248,26 @@ deps_mirror_oci() {
 }
 
 # Push a local image reference to a remote docker registry ref.
-# Logs in when DEV_REGISTRY_USER/TOKEN are set so nested tooling pushes work
-# even when the host's podman login is not visible inside the container.
+# Always pass --creds from DEV_REGISTRY_USER/TOKEN. Nested tooling containers
+# (run-in-dev-build) do not share the host auth.json from seed-build-deps-login;
+# login-only is not reliable with a mounted /var/lib/containers graph root.
 deps_push_oci() {
   local local_ref="$1"
   local dest="$2"
   local tls
+  local push_args=()
 
   deps_require_podman
-  if [[ -n "${DEV_REGISTRY_USER:-}" && -n "${DEV_REGISTRY_TOKEN:-}" ]]; then
-    deps_oci_login
-  fi
+  deps_require_var DEV_REGISTRY_USER
+  deps_require_var DEV_REGISTRY_TOKEN
   echo "push: ${local_ref} -> ${dest}"
   tls="$(deps_podman_tls_flag)"
   podman tag "${local_ref}" "${dest}"
-  # shellcheck disable=SC2086
-  podman push ${tls} "${dest}"
+  if [[ -n "${tls}" ]]; then
+    push_args+=("${tls}")
+  fi
+  push_args+=(--creds "${DEV_REGISTRY_USER}:${DEV_REGISTRY_TOKEN}")
+  podman push "${push_args[@]}" "${dest}"
 }
 
 deps_build_cache_ref() {
