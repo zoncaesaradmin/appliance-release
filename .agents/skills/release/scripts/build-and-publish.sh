@@ -314,69 +314,7 @@ run_step "build" "${build_log}" "$(wrap_with_sudo "${build_cmd}")"
 run_step "publish" "${publish_log}" "${publish_cmd}"
 
 eval "$(
-  python3 - "${build_log}" <<'PY'
-from pathlib import Path
-import shlex
-import sys
-
-log_path = Path(sys.argv[1])
-lines = log_path.read_text(encoding="utf-8").splitlines()
-
-def collect_block(label: str):
-    collected = []
-    capture = False
-    for line in lines:
-        if capture:
-            if line.startswith("  "):
-                value = line.strip()
-                if value:
-                    collected.append(value)
-                continue
-            break
-        if line.strip() == label:
-            capture = True
-    return collected
-
-export_paths = collect_block("exported customer delivery files:")
-release_input_paths = collect_block("release-input tarball:")
-release_input_dirs = collect_block("release-input directory:")
-pack_dirs = []
-for index, line in enumerate(lines):
-    if line.startswith("final packs (") and line.endswith(":"):
-        for next_line in lines[index + 1 :]:
-            if next_line.startswith("  "):
-                value = next_line.strip()
-                if value:
-                    pack_dirs.append(value)
-                continue
-            break
-        break
-bundle_paths = collect_block("final bundle:")
-export_dir = ""
-bundle_archive = ""
-for path in export_paths:
-    candidate = Path(path)
-    if not export_dir:
-        export_dir = str(candidate.parent)
-    # Match appliance-<ver>-foundation.tar.gz (legacy) or
-    # appliance-<ver>-foundation-<arch>.tar.gz (product TARGET_ARCH).
-    name = candidate.name
-    if name.endswith(".tar.gz") and "-foundation" in name and not bundle_archive:
-        stem = name[: -len(".tar.gz")]
-        if stem.endswith("-foundation") or "-foundation-" in stem:
-            bundle_archive = str(candidate)
-
-def emit(name: str, value: str):
-    print(f"{name}={shlex.quote(value)}")
-
-emit("DETECTED_RELEASE_INPUT_TAR", release_input_paths[0] if release_input_paths else "")
-emit("DETECTED_RELEASE_INPUT_DIR", release_input_dirs[0] if release_input_dirs else "")
-emit("DETECTED_BUNDLE_DIR", bundle_paths[0] if bundle_paths else "")
-emit("DETECTED_EXPORT_DIR", export_dir)
-emit("DETECTED_BUNDLE_ARCHIVE", bundle_archive)
-# Space-separated pack directories for hardlink-based validation.
-emit("DETECTED_PACK_DIRS", " ".join(pack_dirs))
-PY
+  python3 "${SCRIPT_DIR}/detect_build_log_artifacts.py" "${build_log}"
 )"
 
 copy_local_path() {
@@ -453,11 +391,13 @@ if [[ -n "${DETECTED_EXPORT_DIR}" ]]; then
 fi
 copy_local_path "${REMOTE_EXPORT_DIR}" "${RUN_DIR}/artifacts/export"
 
-# Prefer the already-extracted release-input directory from assemble (hardlink
-# tree). Fall back to linking the tarball and extracting only when needed.
+# Prefer the durable host release-input directory (hardlink tree). Fall back to
+# linking/extracting a tarball only when ARCHIVE_RELEASE_INPUT_WRITE_TARBALL=1.
 if [[ -n "${DETECTED_RELEASE_INPUT_DIR}" && -d "${DETECTED_RELEASE_INPUT_DIR}" && -f "${DETECTED_RELEASE_INPUT_DIR}/release-input.json" ]]; then
+  log "collecting release-input directory ${DETECTED_RELEASE_INPUT_DIR}"
   link_or_copy_tree "${DETECTED_RELEASE_INPUT_DIR}" "${RUN_DIR}/artifacts/release-input"
-elif [[ -n "${DETECTED_RELEASE_INPUT_TAR}" ]]; then
+elif [[ -n "${DETECTED_RELEASE_INPUT_TAR}" && -f "${DETECTED_RELEASE_INPUT_TAR}" ]]; then
+  log "collecting release-input tarball ${DETECTED_RELEASE_INPUT_TAR}"
   copy_local_path "${DETECTED_RELEASE_INPUT_TAR}" "${RUN_DIR}/artifacts/release-input-src"
   local_release_input_archive="$(find_first_file "${RUN_DIR}/artifacts/release-input-src" "*.tar.gz")"
   if [[ -z "${local_release_input_archive}" ]]; then
@@ -469,6 +409,8 @@ elif [[ -n "${DETECTED_RELEASE_INPUT_TAR}" ]]; then
     rm -rf "${RUN_DIR}/artifacts/release-input"
     mv "${RUN_DIR}/artifacts/release-input-src" "${RUN_DIR}/artifacts/release-input"
   fi
+else
+  log "warning: no release-input directory or tarball detected from build log"
 fi
 
 local_bundle_archive=""
@@ -542,6 +484,15 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
       >"${RUN_DIR}/logs/release-artifact-validation-std-llm.json"
   fi
 
+  if materialize_pack_root "acc-llm" "${RUN_DIR}/artifacts/acc-llm-bundle"; then
+    log "validating release-input against acc-llm pack"
+    python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
+      --pack acc-llm \
+      --release-input-root "${RUN_DIR}/artifacts/release-input" \
+      --bundle-root "${RUN_DIR}/artifacts/acc-llm-bundle" \
+      >"${RUN_DIR}/logs/release-artifact-validation-acc-llm.json"
+  fi
+
   if materialize_pack_root "video" "${RUN_DIR}/artifacts/video-bundle"; then
     log "validating release-input against video pack"
     python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
@@ -551,7 +502,10 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
       >"${RUN_DIR}/logs/release-artifact-validation-video.json"
   fi
 else
-  fail "missing release-input or bundle artifacts for validation under ${RUN_DIR}/artifacts"
+  missing=()
+  [[ -d "${RUN_DIR}/artifacts/release-input" ]] || missing+=("release-input")
+  [[ -d "${RUN_DIR}/artifacts/bundle" ]] || missing+=("bundle")
+  fail "missing ${missing[*]} artifacts for validation under ${RUN_DIR}/artifacts (detected dir=${DETECTED_RELEASE_INPUT_DIR:-} tar=${DETECTED_RELEASE_INPUT_TAR:-})"
 fi
 
 remote_release_commit="$(git -C "${REMOTE_CWD}" rev-parse HEAD 2>/dev/null || true)"

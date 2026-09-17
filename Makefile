@@ -185,6 +185,7 @@ verify-release-artifacts:
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_verify_client_access.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_live_release_repo_preflight.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_build_and_publish_config.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_detect_build_log_artifacts.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_bundle_store_mode.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_appliance_files_bundle_store.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_shell_quote_env.py"
