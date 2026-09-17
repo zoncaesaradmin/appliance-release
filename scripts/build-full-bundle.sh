@@ -1825,15 +1825,16 @@ if offline_build_enabled; then
     WORKFLOW_EXECUTOR_IMAGE_REF="$(lan_cache_ref argoexec "${WORKFLOWS_VERSION}")"
     WORKFLOW_CONTROLLER_BASE_IMAGE="$(lan_cache_ref workflow-controller "${WORKFLOWS_VERSION}")"
   fi
-  CP_GO_IMAGE="$(lan_cache_ref golang 1.26)"
-  CP_RUNTIME_IMAGE="$(lan_cache_ref alpine-3.24.1-runtime 3.24.1)"
-  UI_NODE_IMAGE="$(lan_cache_ref node 22-alpine)"
-  UI_GO_IMAGE="$(lan_cache_ref golang 1.26)"
-  UI_RUNTIME_IMAGE="$(lan_cache_ref alpine-3.24.1-runtime 3.24.1)"
-  UI_WEB_DEPS_IMAGE="$(lan_cache_ref controlplane-ui-web-deps lockfile)"
+  CP_GO_IMAGE="$(lan_cache_ref golang "1.26-${HOST_ARCH}")"
+  CP_RUNTIME_IMAGE="$(lan_cache_ref alpine-3.24.1-runtime "3.24.1-${TARGET_ARCH}")"
+  UI_NODE_IMAGE="$(lan_cache_ref node "22-alpine-${HOST_ARCH}")"
+  UI_GO_IMAGE="$(lan_cache_ref golang "1.26-${HOST_ARCH}")"
+  UI_RUNTIME_IMAGE="$(lan_cache_ref alpine-3.24.1-runtime "3.24.1-${TARGET_ARCH}")"
+  UI_WEB_DEPS_IMAGE="$(lan_cache_ref controlplane-ui-web-deps "lockfile-${HOST_ARCH}")"
   ARTIFACT_RUNTIME_SOURCE_IMAGE="$(lan_cache_ref debian-bookworm-slim-runtime bookworm-slim)"
   RUNTIME_PACKAGES_INSTALLED=1
   echo "build-full-bundle: OFFLINE_BUILD=1 using LAN build-cache refs on ${DEV_REGISTRY}" >&2
+  echo "build-full-bundle: service build bases compile=${HOST_ARCH} runtime=${TARGET_ARCH} (BUILDPLATFORM native cross-compile)" >&2
 else
   WORKFLOW_CONTROLLER_BASE_IMAGE="${WORKFLOW_CONTROLLER_BASE_IMAGE:-quay.io/argoproj/workflow-controller:${WORKFLOWS_VERSION:-v3.5.10}}"
   CP_GO_IMAGE="${CP_GO_IMAGE:-}"

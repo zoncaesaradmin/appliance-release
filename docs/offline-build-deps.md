@@ -85,7 +85,7 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | `inference` | `build-cache/ollama:…` plus arch-specific vLLM (`vllm-openai-cpu` for amd64, `vllm-openai` for arm64) | Runtimes for `std-llm` / `acc-llm` for that `TARGET_ARCH` only |
 | `blob-storage` | `build-cache/minio:…` | foundation S3-compatible blob-storage wrap (`export-blob-storage-image-archive.sh`) |
 | `jellyfin` | `build-cache/jellyfin:10.10.7-amd64` | reviewed Jellyfin runtime (**amd64 only**; skipped when `TARGET_ARCH=arm64`) |
-| `service-build-bases` | golang/node/alpine/ui-npm cache images | CP/UI/hostagent build-args (`podman build --arch ${TARGET_ARCH}`) |
+| `service-build-bases` | `golang`/`node`/`alpine-3.24.1-runtime`/`controlplane-ui-web-deps` with `-${TARGET_ARCH}` tags | CP/UI/hostagent: host-arch compile bases + target-arch runtime (`BUILDPLATFORM` cross-compile) |
 | `host-packages` | files `host-packages/ubuntu-…/${TARGET_ARCH}/…` | host-packages unpack |
 | `platform-inputs` | files `k3s/${TARGET_ARCH}/…`, `helm/…-linux-${TARGET_ARCH}` | K3s + Helm (seed once per TARGET_ARCH) |
 
@@ -120,6 +120,16 @@ rule: the outer tooling container is always **host-native**. Product
 `TARGET_ARCH` is forwarded for `GOARCH` / `buildah --arch` / skopeo overrides.
 Running nested Buildah under qemu-foreign tooling fails with
 `unshare(CLONE_NEWUSER): Invalid argument`.
+
+Service image Containerfiles compile on `$BUILDPLATFORM` (host golang/node)
+and only the final runtime stage uses the product arch. Offline remap pulls
+`golang`/`node`/`ui-deps` for **host** arch and `alpine-*-runtime` for
+**TARGET_ARCH**. Cross-arch therefore needs both seeds:
+
+```bash
+TARGET_ARCH=amd64 make -C deps/service-build-bases release
+TARGET_ARCH=arm64 make -C deps/service-build-bases release
+```
 
 Bootstrap the tooling image first (host build of `deps/development-container`).
 
