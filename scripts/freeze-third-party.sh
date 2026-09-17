@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Produce or refresh the durable third-party packaging freeze for TARGET_ARCH.
 #
-# Populates THIRD_PARTY_FREEZE_ROOT/$TARGET_ARCH with upstream OCI archives and
-# host-packages so later product builds (mode=auto|require) skip re-exporting
-# multi-gigabyte third-party inputs. Product images are not built.
+# Populates THIRD_PARTY_FREEZE_ROOT/$TARGET_ARCH with the *final* packaging
+# outputs (registry.local/*:bundled OCI tars + .reference, host-packages tree)
+# so later product builds (mode=auto|require) restore them and skip skopeo /
+# buildah re-export. This is not a raw LAN cache copy — freeze runs the same
+# packaging helpers as a product build for third-party inputs only.
+# Product images (control-plane, UI, host-agent, artifact-server, …) are not built.
 #
 # Prerequisites (same as build-full-bundle):
 #   1) One-time: bash ./scripts/bootstrap-build-host.sh  (passwordless sudo podman)

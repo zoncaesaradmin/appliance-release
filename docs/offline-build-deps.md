@@ -212,15 +212,22 @@ make list-deps
 
 ## Third-party freeze (product vs upstream)
 
-Seed populates the LAN Artifact Server. Packaging still re-exports multi-gigabyte
-OCI archives (vLLM, CoreDNS, provisioner, host-packages, …) into `.run/` on every
-product build unless a durable freeze is configured.
+Seed populates the LAN Artifact Server. That alone is **not** enough for a fast
+product rebuild: packaging still turns LAN/upstream images into the **final**
+release-input OCI archives (`registry.local/<name>:bundled` tar + `.reference`)
+and host-packages trees. Those steps (skopeo/buildah, often multi-GB) are what
+freeze is for.
 
 | Layer | What | Command |
 |---|---|---|
 | Seed | Upstream → LAN build-cache / files API | `TARGET_ARCH=… make seed-build-deps` |
-| Freeze | LAN/online → durable packaging archives | `TARGET_ARCH=… make freeze-third-party` |
-| Product | Always rebuild CP/UI/host-agent/manager | `build-full-bundle` / release skill |
+| Freeze | LAN/online → **final** packaging archives under freeze root | `TARGET_ARCH=… make freeze-third-party` |
+| Product | Rebuild only product images (CP/UI/host-agent/manager/…); **restore** third-party finals | `build-full-bundle` / release skill with `mode: auto\|require` |
+
+**Design rule:** freeze does the expensive third-party work once (infrequent).
+A later product build with freeze `auto`/`require` must restore those finals and
+**skip** re-export. If a product build still runs skopeo/buildah for a frozen
+artifact, that is a bug (store without restore, or fingerprint mismatch).
 
 Freeze layout: `$THIRD_PARTY_FREEZE_ROOT/$TARGET_ARCH/artifacts/<id>/<fingerprint>/`
 plus `manifest.yaml`. Fingerprints include upstream pull refs + arch (+ version).
@@ -237,10 +244,13 @@ third_party_freeze:
 - `auto`: restore on hit; package + store on miss
 - `require`: restore on hit; fail closed on miss (run `make freeze-third-party`)
 
-Frozen today: inference-runtime, dns-server, workspace-provisioner / jellyfin /
-workflow-executor (via bundled/plain OCI export helpers), host-packages,
-blob-storage, message-broker. Product wrappers (artifact-server, inference-manager,
-control-plane, UI, host-agent) stay out of the freeze.
+Frozen today (final `.run/` archives / trees): inference-runtime, dns-server,
+workspace-provisioner / jellyfin / workflow-executor (bundled/plain OCI helpers),
+workflow-controller wrap, host-packages, blob-storage, message-broker.
+On a fingerprint hit, packaging restores into `.run/` and **skips** the
+skopeo/buildah export for that artifact.
+Product-owned images (artifact-server, inference-manager, control-plane, UI,
+host-agent) stay out of the freeze and always rebuild.
 
 After a freeze restore, packaging always rewrites `<archive>.reference` from the
 archive `index.json` digest so a stale sidecar cannot disagree with the tar

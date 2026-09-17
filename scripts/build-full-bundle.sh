@@ -2305,6 +2305,95 @@ ART_EOF
   ARTIFACT_SERVER_ARCHIVE_ARG_LINES+="  --artifact-server-image-reference \"\${ARTIFACT_SERVER_IMAGE_REF}\" \\"$'\n'
 fi
 
+# Argo workflow-controller wrap is third-party (upstream base + thin appliance
+# wrap). Freeze produces the final OCI archive; product builds restore+skip.
+WORKFLOW_CONTROLLER_FREEZE_HIT=0
+WORKFLOW_CONTROLLER_PACKAGE_LINES=""
+if bool_true "${WORKFLOWS_ENABLED}"; then
+  TPF_FP_INPUTS=(
+    "${WORKFLOW_CONTROLLER_BASE_IMAGE}"
+    "${WORKFLOWS_VERSION}"
+    "${TARGET_ARCH}"
+    "${CP_RUNTIME_IMAGE:-}"
+    "${RUNTIME_PACKAGES_INSTALLED:-0}"
+  )
+  set +e
+  tpf_try_restore_oci "workflow-controller" "${CODE_REPO_DIR}/.run/workflow-controller-image.tar"
+  _tpf_wfc_rc=$?
+  set -e
+  if [[ "${_tpf_wfc_rc}" -eq 0 ]]; then
+    WORKFLOW_CONTROLLER_FREEZE_HIT=1
+    WORKFLOW_CONTROLLER_PACKAGE_LINES="# third-party-freeze hit: workflow-controller
+echo \"third-party-freeze: reusing workflow-controller OCI archive\" >&2
+WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/workflow-controller-image.tar\"
+"
+  elif [[ "${_tpf_wfc_rc}" -eq 2 ]]; then
+    exit 2
+  else
+    WORKFLOW_CONTROLLER_PACKAGE_LINES="# Wrap upstream Argo workflow-controller (third-party; freeze stores final tar).
+make package-workflow-controller-image-archive \\
+  OUT_FILE=\"/workspace/.run/workflow-controller-image.tar\" \\
+  WORKFLOWS_VERSION=$(shell_quote "${WORKFLOWS_VERSION}") \\
+  WORKFLOW_CONTROLLER_BASE_IMAGE=$(shell_quote "${WORKFLOW_CONTROLLER_BASE_IMAGE}") \\
+  RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \\
+  RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
+WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/workflow-controller-image.tar\"
+"
+  fi
+fi
+
+# Foundation third-party OCI archives: restore from freeze before packaging so
+# product rebuilds skip skopeo pull/export when fingerprints match.
+BLOB_STORAGE_FREEZE_HIT=0
+MESSAGE_BROKER_FREEZE_HIT=0
+BLOB_STORAGE_PACKAGE_LINES=""
+MESSAGE_BROKER_PACKAGE_LINES=""
+TPF_FP_INPUTS=("${BLOB_STORAGE_SOURCE_IMAGE}" "${BLOB_STORAGE_VERSION}" "${TARGET_ARCH}")
+set +e
+tpf_try_restore_oci "blob-storage" "${CODE_REPO_DIR}/.run/blob-storage-image.tar"
+_tpf_blob_rc=$?
+set -e
+if [[ "${_tpf_blob_rc}" -eq 0 ]]; then
+  BLOB_STORAGE_FREEZE_HIT=1
+  sync_bundled_oci_reference_sidecar \
+    "${CODE_REPO_DIR}/.run/blob-storage-image.tar" \
+    "registry.local/blob-storage" >/dev/null
+  BLOB_STORAGE_PACKAGE_LINES="# third-party-freeze hit: blob-storage
+echo \"third-party-freeze: reusing blob-storage OCI archive\" >&2
+"
+elif [[ "${_tpf_blob_rc}" -eq 2 ]]; then
+  exit 2
+else
+  BLOB_STORAGE_PACKAGE_LINES="make package-blob-storage-image-archive \\
+  OUT_FILE=\"\${BLOB_STORAGE_IMAGE_OUT}\" \\
+  REFERENCE_OUT_FILE=\"\${BLOB_STORAGE_IMAGE_REF_FILE}\" \\
+  BLOB_STORAGE_VERSION=$(shell_quote "${BLOB_STORAGE_VERSION}") \\
+  BLOB_STORAGE_SOURCE_IMAGE=$(shell_quote "${BLOB_STORAGE_SOURCE_IMAGE}")
+"
+fi
+TPF_FP_INPUTS=("${MESSAGE_BROKER_SOURCE_IMAGE:-docker.io/library/nats:2.10.26-alpine}" "${TARGET_ARCH}")
+set +e
+tpf_try_restore_oci "message-broker" "${CODE_REPO_DIR}/.run/message-broker-image.tar"
+_tpf_mb_rc=$?
+set -e
+if [[ "${_tpf_mb_rc}" -eq 0 ]]; then
+  MESSAGE_BROKER_FREEZE_HIT=1
+  sync_bundled_oci_reference_sidecar \
+    "${CODE_REPO_DIR}/.run/message-broker-image.tar" \
+    "registry.local/nats" >/dev/null
+  MESSAGE_BROKER_PACKAGE_LINES="# third-party-freeze hit: message-broker
+echo \"third-party-freeze: reusing message-broker OCI archive\" >&2
+"
+elif [[ "${_tpf_mb_rc}" -eq 2 ]]; then
+  exit 2
+else
+  MESSAGE_BROKER_PACKAGE_LINES="make package-message-broker-image-archive \\
+  OUT_FILE=\"\${MESSAGE_BROKER_IMAGE_OUT}\" \\
+  REFERENCE_OUT_FILE=\"\${MESSAGE_BROKER_IMAGE_REF_FILE}\" \\
+  MESSAGE_BROKER_SOURCE_IMAGE=$(shell_quote "${MESSAGE_BROKER_SOURCE_IMAGE:-docker.io/library/nats:2.10.26-alpine}")
+"
+fi
+
 if bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
   HOST_AGENTD_PACKAGE_LINES=""
   HOST_AGENT_IMAGE_PACKAGE_LINES=""
@@ -2343,15 +2432,7 @@ if bool_true $(shell_quote "${WORKFLOWS_ENABLED}"); then
     WORKFLOWS_ARGS+=(--workflows-crds-dir $(shell_quote "${WORKFLOWS_CRDS_DIR_FOR_DEV}"))
   fi
 
-  # Always wrap the upstream controller inside the code-repo dev environment.
-  make package-workflow-controller-image-archive \\
-    OUT_FILE="/workspace/.run/workflow-controller-image.tar" \\
-    WORKFLOWS_VERSION=$(shell_quote "${WORKFLOWS_VERSION}") \\
-    WORKFLOW_CONTROLLER_BASE_IMAGE=$(shell_quote "${WORKFLOW_CONTROLLER_BASE_IMAGE}") \\
-    RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \\
-    RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
-  WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workflow-controller-image.tar"
-
+  # Controller archive is produced earlier (freeze restore or package).
   WORKFLOWS_ARGS+=(--workflow-controller-image "\${WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}")
   WORKFLOWS_ARGS+=(--workflow-controller-image-reference $(shell_quote "${WORKFLOW_CONTROLLER_IMAGE_REF}"))
 
@@ -2423,18 +2504,10 @@ echo "package-release-input: TARGET_ARCH=\${TARGET_ARCH} freeze_only=$(shell_quo
 
 ${DNS_PACKAGE_LINES}
 
+${WORKFLOW_CONTROLLER_PACKAGE_LINES}
 ${PRODUCT_PACKAGE_LINES}
-make package-blob-storage-image-archive \\
-  OUT_FILE="\${BLOB_STORAGE_IMAGE_OUT}" \\
-  REFERENCE_OUT_FILE="\${BLOB_STORAGE_IMAGE_REF_FILE}" \\
-  BLOB_STORAGE_VERSION=$(shell_quote "${BLOB_STORAGE_VERSION}") \\
-  BLOB_STORAGE_SOURCE_IMAGE=$(shell_quote "${BLOB_STORAGE_SOURCE_IMAGE}")
-BLOB_STORAGE_IMAGE_REF="\$(tr -d '\r\n' < "\${BLOB_STORAGE_IMAGE_REF_FILE}")"
-make package-message-broker-image-archive \\
-  OUT_FILE="\${MESSAGE_BROKER_IMAGE_OUT}" \\
-  REFERENCE_OUT_FILE="\${MESSAGE_BROKER_IMAGE_REF_FILE}" \\
-  MESSAGE_BROKER_SOURCE_IMAGE=$(shell_quote "${MESSAGE_BROKER_SOURCE_IMAGE:-docker.io/library/nats:2.10.26-alpine}")
-MESSAGE_BROKER_IMAGE_REF="\$(tr -d '\r\n' < "\${MESSAGE_BROKER_IMAGE_REF_FILE}")"
+${BLOB_STORAGE_PACKAGE_LINES}BLOB_STORAGE_IMAGE_REF="\$(tr -d '\r\n' < "\${BLOB_STORAGE_IMAGE_REF_FILE}")"
+${MESSAGE_BROKER_PACKAGE_LINES}MESSAGE_BROKER_IMAGE_REF="\$(tr -d '\r\n' < "\${MESSAGE_BROKER_IMAGE_REF_FILE}")"
 # Super-set: always pass host-packages (packages staged at install; services off).
 HOST_PACKAGES_ARGS=(
   --host-packages-dir "\${HOST_PACKAGES_DIR_FOR_DEV}"
@@ -2487,19 +2560,29 @@ if tpf_active; then
       "registry.local/coredns" >/dev/null || true
     tpf_store_oci "dns-server" "${CODE_REPO_DIR}/.run/dns-server-image.tar" || true
   fi
-  if [[ -f "${CODE_REPO_DIR}/.run/blob-storage-image.tar" ]]; then
+  if [[ "${BLOB_STORAGE_FREEZE_HIT:-0}" != "1" && -f "${CODE_REPO_DIR}/.run/blob-storage-image.tar" ]]; then
     TPF_FP_INPUTS=("${BLOB_STORAGE_SOURCE_IMAGE}" "${BLOB_STORAGE_VERSION}" "${TARGET_ARCH}")
     sync_bundled_oci_reference_sidecar \
       "${CODE_REPO_DIR}/.run/blob-storage-image.tar" \
       "registry.local/blob-storage" >/dev/null || true
     tpf_store_oci "blob-storage" "${CODE_REPO_DIR}/.run/blob-storage-image.tar" || true
   fi
-  if [[ -f "${CODE_REPO_DIR}/.run/message-broker-image.tar" ]]; then
+  if [[ "${MESSAGE_BROKER_FREEZE_HIT:-0}" != "1" && -f "${CODE_REPO_DIR}/.run/message-broker-image.tar" ]]; then
     TPF_FP_INPUTS=("${MESSAGE_BROKER_SOURCE_IMAGE:-docker.io/library/nats:2.10.26-alpine}" "${TARGET_ARCH}")
     sync_bundled_oci_reference_sidecar \
       "${CODE_REPO_DIR}/.run/message-broker-image.tar" \
       "registry.local/nats" >/dev/null || true
     tpf_store_oci "message-broker" "${CODE_REPO_DIR}/.run/message-broker-image.tar" || true
+  fi
+  if [[ "${WORKFLOW_CONTROLLER_FREEZE_HIT:-0}" != "1" && -f "${CODE_REPO_DIR}/.run/workflow-controller-image.tar" ]]; then
+    TPF_FP_INPUTS=(
+      "${WORKFLOW_CONTROLLER_BASE_IMAGE}"
+      "${WORKFLOWS_VERSION}"
+      "${TARGET_ARCH}"
+      "${CP_RUNTIME_IMAGE:-}"
+      "${RUNTIME_PACKAGES_INSTALLED:-0}"
+    )
+    tpf_store_oci "workflow-controller" "${CODE_REPO_DIR}/.run/workflow-controller-image.tar" || true
   fi
   tpf_refresh_manifest || true
 fi
