@@ -2106,6 +2106,7 @@ cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF
 set -euo pipefail
 # Product architecture for every package export in this container run.
 export TARGET_ARCH=$(shell_quote "${TARGET_ARCH}")
+export HOST_ARCH=$(shell_quote "${HOST_ARCH}")
 export BUNDLE_IMAGE_ARCH=$(shell_quote "${BUNDLE_IMAGE_ARCH:-${TARGET_ARCH}}")
 ${DOCKERHUB_AUTH_FILE:+export REGISTRY_AUTH_FILE=/workspace/.run/dockerhub-auth.json}
 cd /workspace
