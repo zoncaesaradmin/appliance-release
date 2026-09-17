@@ -22,6 +22,9 @@ build-and-publish:
 	bash ./scripts/publish-release.sh
 
 # Offline build-host dependency seeds (deps/*). Online machine → LAN Artifact Server.
+# TARGET_ARCH is required (amd64|arm64) — no default.
+#   TARGET_ARCH=amd64 make seed-build-deps
+#   TARGET_ARCH=arm64 make seed-build-deps
 DEPS := $(sort $(notdir $(wildcard deps/*)))
 
 .PHONY: list-deps seed-build-deps seed-build-deps-build seed-build-deps-push seed-build-deps-login
@@ -32,15 +35,17 @@ seed-build-deps-login:
 	@bash -c 'source ./scripts/deps-common.sh && deps_oci_login'
 
 seed-build-deps-build:
+	@if [ -z "$(TARGET_ARCH)" ]; then echo "seed-build-deps: TARGET_ARCH is required (amd64|arm64)" >&2; exit 2; fi
 	@for d in $(DEPS); do \
-		echo "==> build deps/$$d"; \
-		$(MAKE) -C deps/$$d build; \
+		echo "==> build deps/$$d (TARGET_ARCH=$(TARGET_ARCH))"; \
+		$(MAKE) -C deps/$$d build TARGET_ARCH=$(TARGET_ARCH); \
 	done
 
 seed-build-deps-push:
+	@if [ -z "$(TARGET_ARCH)" ]; then echo "seed-build-deps: TARGET_ARCH is required (amd64|arm64)" >&2; exit 2; fi
 	@for d in $(DEPS); do \
-		echo "==> push deps/$$d"; \
-		$(MAKE) -C deps/$$d push; \
+		echo "==> push deps/$$d (TARGET_ARCH=$(TARGET_ARCH))"; \
+		$(MAKE) -C deps/$$d push TARGET_ARCH=$(TARGET_ARCH); \
 	done
 
 # Build every deps package then publish to DEV_REGISTRY (OCI + files API).

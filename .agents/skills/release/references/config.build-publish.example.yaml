@@ -38,7 +38,9 @@
 # Offline seed coverage (make seed-build-deps → every deps/* package), including:
 #   development-container, git-runtime-container, workflows, artifact-server-bases,
 #   dns (coredns), inference (ollama), service-build-bases, host-packages,
-#   platform-inputs (k3s/helm).
+#   platform-inputs (k3s/helm). TARGET_ARCH is required when seeding (no default):
+#   TARGET_ARCH=amd64 make seed-build-deps
+#   TARGET_ARCH=arm64 make seed-build-deps
 # New packaging deps must add deps/<name> + offline lan_cache_ref/files remap;
 # see docs/offline-build-deps.md and AGENTS.md "Packaging Code Reuse".
 #
@@ -57,7 +59,7 @@
 #   Plus APPLIANCE_BUILD_SUDO_PASSWORD.
 #   Pack selection is a config literal (not an env):
 #     build_flow.appliance_packs: all|foundation|foundation,dev-platform|foundation,std-llm
-#     build_flow.target_arch: amd64|arm64 (default amd64; one build = one arch)
+#     build_flow.target_arch: amd64|arm64 (REQUIRED; one build = one arch; no default)
 #     (omit or all → every available pack; partial releases support only profiles
 #     whose capability packages are included)
 
@@ -106,7 +108,8 @@ build_flow:
   #   appliance_packs: foundation,acc-llm               # vLLM (TARGET_ARCH)
   appliance_packs: foundation,dev-platform
 
-  # Product architecture for this build (one build = one TARGET_ARCH).
+  # REQUIRED product architecture (amd64|arm64). Empty/omitted fails closed —
+  # there is no amd64 default. One build = one TARGET_ARCH.
   # Archive names: appliance-<version>-<pack>-<arch>.tar.gz
   # target_arch: amd64
   # target_arch: arm64

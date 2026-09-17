@@ -129,7 +129,7 @@ Important rules:
 - appliance state dir is product-fixed `/var/lib/zon/state` (not YAML)
 - Production packaging requires `build_flow.appliance_packs: all`: foundation,
   storage-network, build-workflows, deviceuser, and std-llm (architecture via
-  `build_flow.target_arch`, default amd64). Select the appliance
+  `build_flow.target_arch`, required; no default). Select the appliance
   profile at install time; do not omit delivery packs from a production release.
 
 Normal publish/install download uses the appliance file API:

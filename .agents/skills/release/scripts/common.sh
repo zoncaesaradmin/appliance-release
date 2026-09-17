@@ -651,15 +651,15 @@ resolve_appliance_packs_from_config() {
   printf '%s' "${value}"
 }
 
-# Resolve product TARGET_ARCH (one build = one arch).
-# Config: build_flow.target_arch. Empty/omitted → amd64.
+# Resolve product TARGET_ARCH (one build = one arch). Required in config.
+# Config: build_flow.target_arch must be amd64|arm64 — empty/omitted fails closed.
 resolve_target_arch_from_config() {
   local config_path="$1"
   local value=""
   value="$(config_get_optional "${config_path}" "build_flow.target_arch" || true)"
   value="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
   if [[ -z "${value}" ]]; then
-    value="amd64"
+    fail "build_flow.target_arch is required (amd64|arm64); no default"
   fi
   case "${value}" in
     amd64|x86_64|x86-64) printf '%s' "amd64" ;;

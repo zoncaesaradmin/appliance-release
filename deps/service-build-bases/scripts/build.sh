@@ -3,10 +3,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$(cd "$(dirname "$0")/../../.." && pwd)/scripts/deps-common.sh"
 source "${ROOT}/pins.env"
+source "$(cd "$(dirname "$0")/../../.." && pwd)/scripts/lib/target-arch.sh"
+target_arch_resolve
 mkdir -p "${ROOT}/.staging"
 BUILD_CMD="$(deps_default_build_cmd)"
-deps_mirror_oci "${GOLANG_UPSTREAM}" "${GOLANG_LOCAL}" ""
-deps_mirror_oci "${NODE_UPSTREAM}" "${NODE_LOCAL}" ""
+deps_mirror_oci "${GOLANG_UPSTREAM}" "${GOLANG_LOCAL}" "" "${TARGET_ARCH}"
+deps_mirror_oci "${NODE_UPSTREAM}" "${NODE_LOCAL}" "" "${TARGET_ARCH}"
 # shellcheck disable=SC2086
 ${BUILD_CMD} --build-arg "BASE_IMAGE=${ALPINE_UPSTREAM}" \
   -f "${ROOT}/Containerfile.alpine-runtime" -t "${ALPINE_LOCAL}" "${ROOT}"

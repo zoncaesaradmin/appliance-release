@@ -131,17 +131,29 @@ deps_oci_login() {
 }
 
 # Pull upstream SRC into local storage as LOCAL_REF; optionally push to DEST.
-# ARCH defaults to amd64 so existing product dependencies remain unchanged.
+# ARCHITECTURE is required (amd64|arm64) — no default.
 deps_mirror_oci() {
   local src="$1"
   local local_ref="$2"
   local dest="${3:-}"
-  local architecture="${4:-amd64}"
+  local architecture="${4-}"
   local tls pull_tls=()
   local bare host
 
+  if [[ -z "${architecture}" ]]; then
+    echo "deps-common: deps_mirror_oci requires architecture (amd64|arm64) as 4th argument" >&2
+    return 2
+  fi
+  case "${architecture}" in
+    amd64|arm64) ;;
+    *)
+      echo "deps-common: unsupported architecture ${architecture} (want amd64|arm64)" >&2
+      return 2
+      ;;
+  esac
+
   deps_require_podman
-  echo "mirror: ${src} -> ${local_ref}"
+  echo "mirror: ${src} -> ${local_ref} (arch=${architecture})"
   tls="$(deps_podman_tls_flag)"
   bare="${src}"
   host="$(deps_registry_host)"

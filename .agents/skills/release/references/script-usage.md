@@ -37,7 +37,7 @@ Notes:
 - `build_flow.mode` must be `online` or `offline` (exactly one source policy).
 - Production delivery: use `build_flow.appliance_packs: all`. The complete set is
   foundation, storage-network, build-workflows, deviceuser, and std-llm
-  (architecture is `build_flow.target_arch`, default amd64).
+  (architecture is `build_flow.target_arch`, required; no default).
   Installation selects required packs from the chosen profile's capabilities.
 - Bundled offline name for the tooling image is fixed as `registry.local/dev-build`.
 - Local build-host path inputs such as `*_image_archive_source` are rejected.

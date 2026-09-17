@@ -2,7 +2,7 @@
 
 Seeds K3s binary + airgap images and the Helm linux-${TARGET_ARCH} tarball onto
 the appliance files API (replaces standalone `fetch-k3s-inputs.sh` for new
-seeds). Set `TARGET_ARCH=amd64|arm64` (default amd64).
+seeds). Set `TARGET_ARCH=amd64|arm64` (required; no default).
 
 Arch-scoped layout (preferred):
 

@@ -3,6 +3,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$(cd "$(dirname "$0")/../../.." && pwd)/scripts/deps-common.sh"
 source "${ROOT}/pins.env"
+source "$(cd "$(dirname "$0")/../../.." && pwd)/scripts/lib/target-arch.sh"
+target_arch_resolve
 STAGE="${ROOT}/.staging"
 rm -rf "${STAGE}"
 mkdir -p "${STAGE}/payload"
@@ -38,7 +40,7 @@ done
 bash "${EXPORT_SCRIPT}" \
   --out-dir "${STAGE}/payload" \
   --os-version "${OS_VERSION}" \
-  --arch "${TARGET_ARCH:-${ARCH}}" \
+  --arch "${TARGET_ARCH}" \
   "${cap_args[@]}"
 
 archive="${STAGE}/host-packages.tar.zst"

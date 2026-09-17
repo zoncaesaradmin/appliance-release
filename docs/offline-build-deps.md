@@ -80,17 +80,31 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | `git-runtime-container` | `$DEV_REGISTRY/build-cache/alpine-git:2.49.0` | workspace-provisioner (dev-platform pack) |
 | `workflows` | `build-cache/argoexec` / `workflow-controller`; files `argo-workflows/…` | executor + CRDs |
 | `message-broker` | `build-cache/nats:2.10.26-alpine` | NATS JetStream broker image |
-| `artifact-server-bases` | `build-cache/zot-…`, `debian-bookworm-slim-runtime` | artifact-server wrap |
+| `artifact-server-bases` | `build-cache/zot-linux-${TARGET_ARCH}:…`, `debian-bookworm-slim-runtime` | artifact-server wrap (seed once per TARGET_ARCH) |
 | `dns` | `build-cache/coredns:…` | dns wrap |
 | `inference` | `build-cache/ollama:…`, `build-cache/vllm-openai-cpu:…`, `build-cache/vllm-openai:…` | Runtimes for `std-llm` / `acc-llm` selected by product `TARGET_ARCH` (`export-inference-runtime-image-archive.sh`) |
 | `blob-storage` | `build-cache/minio:…` | foundation S3-compatible blob-storage wrap (`export-blob-storage-image-archive.sh`) |
 | `jellyfin` | `build-cache/jellyfin:10.10.7-amd64` | reviewed Jellyfin application runtime |
 | `service-build-bases` | golang/node/alpine/ui-npm cache images | CP/UI/hostagent build-args |
 | `host-packages` | files `host-packages/ubuntu-…` | host-packages unpack |
-| `platform-inputs` | files `k3s/…`, `helm/…` | K3s + Helm |
+| `platform-inputs` | files `k3s/${TARGET_ARCH}/…`, `helm/…-linux-${TARGET_ARCH}` | K3s + Helm (seed once per TARGET_ARCH) |
 
 Pins live in each package’s `pins.env`. Bump the pin, then `make -C deps/<name> release`.
 
+### Product architecture (`TARGET_ARCH`)
+
+`TARGET_ARCH` is required everywhere (amd64|arm64). There is no default — empty
+or omitted values fail closed. Seed and build for the arch you need:
+
+```bash
+TARGET_ARCH=amd64 make seed-build-deps
+TARGET_ARCH=arm64 make seed-build-deps
+# or minimally for one package:
+TARGET_ARCH=arm64 make -C deps/artifact-server-bases release
+TARGET_ARCH=arm64 make -C deps/platform-inputs release
+```
+
+`build_flow.target_arch` is likewise required in the build-publish config.
 ### Special case: `development-container` / `dev-build` (LAN + GHCR)
 
 Unlike most `deps/*` packages (LAN seed is enough for offline packaging, while

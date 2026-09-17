@@ -19,6 +19,7 @@ release:
   publish_latest_alias: false
 build_flow:
   mode: online
+  target_arch: amd64
   online_image_pull:
     registry_env: ONLINE_REGISTRY
     image_repo_env: ONLINE_IMAGE_REPO
@@ -302,6 +303,22 @@ def test_rejects_missing_mode() -> None:
             raise AssertionError(result.stdout)
 
 
+def test_rejects_missing_target_arch() -> None:
+    with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        config = tmp / "config.yaml"
+        run_dir = tmp / "run"
+        write(
+            config,
+            MINIMAL_VALID_CONFIG.replace("  target_arch: amd64\n", ""),
+        )
+        result = run_build_publish_config(config, run_dir)
+        if result.returncode == 0:
+            raise AssertionError("missing build_flow.target_arch was accepted")
+        if "build_flow.target_arch is required" not in result.stdout:
+            raise AssertionError(result.stdout)
+
+
 def test_rejects_removed_remote_release_input_and_bundle_overrides() -> None:
     with tempfile.TemporaryDirectory(prefix="build-and-publish-config-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -510,6 +527,7 @@ def main() -> None:
     test_rejects_legacy_dev_image_pull()
     test_rejects_literal_image_tag()
     test_rejects_missing_mode()
+    test_rejects_missing_target_arch()
     test_rejects_removed_remote_release_input_and_bundle_overrides()
     test_rejects_offline_archive_path_inputs()
     test_rejects_skill_fixed_build_commands_and_sudo_flags()

@@ -334,7 +334,12 @@ JELLYFIN_CACHE_TAG="${CACHE_TAG}"
 JELLYFIN_RUNTIME_REFERENCE="${RUNTIME_REFERENCE}"
 
 # One build = one TARGET_ARCH (product-level; pack IDs stay arch-agnostic).
-TARGET_ARCH="${USER_TARGET_ARCH:-${TARGET_ARCH:-amd64}}"
+# Required — no amd64 default; fail closed when unset so arch misses surface early.
+TARGET_ARCH="${USER_TARGET_ARCH:-${TARGET_ARCH-}}"
+if [[ -z "${TARGET_ARCH}" ]]; then
+  echo "build-full-bundle: TARGET_ARCH is required (amd64|arm64); set env or build_flow.target_arch" >&2
+  exit 2
+fi
 BUNDLE_IMAGE_OS="${USER_BUNDLE_IMAGE_OS:-${BUNDLE_IMAGE_OS:-}}"
 BUNDLE_IMAGE_ARCH="${USER_BUNDLE_IMAGE_ARCH:-${BUNDLE_IMAGE_ARCH:-}}"
 target_arch_resolve
@@ -2055,6 +2060,7 @@ if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]]; then
 # Appliance-owned artifact-server wrapper (catalog: artifact capability).
 make package-artifact-server-image-archive \\
   OUT_FILE="/workspace/.run/artifact-server-image.tar" \\
+  TARGET_ARCH=$(shell_quote "${TARGET_ARCH}") \\
   ARTIFACT_SERVER_VERSION=$(shell_quote "${ARTIFACT_SERVER_VERSION}") \\
   ARTIFACT_SERVER_SOURCE_IMAGE=$(shell_quote "${ARTIFACT_SERVER_SOURCE_IMAGE}") \\
   RUNTIME_SOURCE_IMAGE=$(shell_quote "${ARTIFACT_RUNTIME_SOURCE_IMAGE}") \\
@@ -2071,6 +2077,9 @@ fi
 cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
+# Product architecture for every package export in this container run.
+export TARGET_ARCH=$(shell_quote "${TARGET_ARCH}")
+export BUNDLE_IMAGE_ARCH=$(shell_quote "${BUNDLE_IMAGE_ARCH:-${TARGET_ARCH}}")
 ${DOCKERHUB_AUTH_FILE:+export REGISTRY_AUTH_FILE=/workspace/.run/dockerhub-auth.json}
 cd /workspace
 CONTROL_PLANE_IMAGE_OUT="/workspace/.run/control-plane-image.tar"
@@ -2096,6 +2105,8 @@ bool_true() {
     *) return 1 ;;
   esac
 }
+
+echo "package-release-input: TARGET_ARCH=\${TARGET_ARCH}"
 
 ${DNS_PACKAGE_LINES}
 
