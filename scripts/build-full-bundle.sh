@@ -2051,11 +2051,33 @@ fi
 
 # Host-agentd is a foundation/lan-discovery artifact; the in-cluster
 # appliance-host-agent binary is built only inside package-host-agent-image-archive.
+# Cross-compile for product TARGET_ARCH: tooling runs host-native (amd64 on the
+# build host) while arm64 packs must ship an aarch64 ELF (Exec format otherwise).
 HOST_AGENTD_PACKAGE_LINES=""
 if [[ "${NEED_HOST_AGENT_BINARY:-0}" == "1" ]]; then
   HOST_AGENTD_PACKAGE_LINES=$(cat <<'HOST_AGENTD_EOF'
-# Foundation lan-discovery requires appliance-host-agentd.
-make -C ./services/hostagent build-agentd
+# Foundation lan-discovery requires appliance-host-agentd for TARGET_ARCH.
+make -C ./services/hostagent build-agentd GOOS=linux GOARCH="${TARGET_ARCH}"
+python3 - ./services/hostagent/bin/appliance-host-agentd "${TARGET_ARCH}" <<'HOST_AGENTD_ARCH_PY'
+import struct, sys
+
+path, want = sys.argv[1], sys.argv[2]
+with open(path, "rb") as f:
+    hdr = f.read(20)
+if len(hdr) < 20 or hdr[:4] != b"\x7fELF":
+    raise SystemExit(f"host-agentd: {path} is not an ELF binary")
+endian = "<" if hdr[5] == 1 else ">"
+machine = struct.unpack_from(endian + "H", hdr, 18)[0]
+want_machine = {"amd64": 62, "arm64": 183}.get(want)
+if want_machine is None:
+    raise SystemExit(f"host-agentd: unsupported TARGET_ARCH={want!r}")
+if machine != want_machine:
+    raise SystemExit(
+        f"host-agentd: ELF e_machine={machine} does not match TARGET_ARCH={want} "
+        f"(expected {want_machine}); packaging must pass GOARCH=${{TARGET_ARCH}}"
+    )
+print(f"host-agentd: ELF arch ok ({want})")
+HOST_AGENTD_ARCH_PY
 HOST_AGENTD_EOF
 )
 fi

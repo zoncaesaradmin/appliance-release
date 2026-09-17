@@ -54,8 +54,12 @@ def main() -> None:
     # binary is built inside the image Containerfile when NEED_HOST_AGENT_IMAGE=1.
     if 'NEED_HOST_AGENT_BINARY:-0' not in text:
         raise AssertionError("host-agentd packaging must gate on NEED_HOST_AGENT_BINARY")
-    if text.count("make -C ./services/hostagent build-agentd") != 1:
-        raise AssertionError("expected exactly one hostagent build-agentd packaging line")
+    if text.count("make -C ./services/hostagent build-agentd GOOS=linux GOARCH=") != 1:
+        raise AssertionError(
+            "expected exactly one hostagent build-agentd packaging line with GOOS=linux GOARCH="
+        )
+    if "e_machine=" not in text or "host-agentd: ELF arch ok" not in text:
+        raise AssertionError("host-agentd packaging must fail-closed on ELF TARGET_ARCH mismatch")
     if "make -C ./services/hostagent build\n" in text or 'make -C ./services/hostagent build"' in text:
         raise AssertionError("unconditional hostagent build returned; use build-agentd only")
     if "build-daemon" in text:
