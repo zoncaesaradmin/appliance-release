@@ -80,6 +80,8 @@ Optional overrides:
   # THIRD_PARTY_FREEZE_ROOT=/var/cache/zon-third-party  # durable third-party OCI/host-packages freeze
   # THIRD_PARTY_FREEZE_MODE=ignore|auto|require          # default ignore; see docs/offline-build-deps.md
   # FREEZE_THIRD_PARTY_ONLY=1                            # package+store third-party only (make freeze-third-party)
+  # ARCHIVE_RELEASE_INPUT_WRITE_TARBALL=1                # also write multi-GB release-input-*.tar.gz (default: dir only)
+  # PACK_GZIP_LEVEL=1                                    # pigz/gzip level for pack .tar.gz (default 1=fast)
   WORKFLOWS_ENABLED=true                 # complete product always packages the workflows engine (set BUILD_COMPLETE_PRODUCT=false to allow opt-out)
   WORKFLOWS_VERSION=v3.5.10              # pin a different workflows engine version than the chart's appVersion
   WORKFLOW_CONTROLLER_IMAGE_REF=localhost/appliance-workflow-controller:v3.5.10
@@ -2427,6 +2429,13 @@ fi
 
 ARCHIVE_RELEASE_INPUT_LINES=""
 if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
+  # Local assemble prefers the durable release-input directory (hardlinked OCI
+  # archives). Skip the intermediate multi-GB release-input-*.tar.gz unless the
+  # operator explicitly asks for a remote/fetchable tarball.
+  ARCHIVE_RELEASE_INPUT_SKIP_LINE=""
+  if ! bool_true "${ARCHIVE_RELEASE_INPUT_WRITE_TARBALL:-0}"; then
+    ARCHIVE_RELEASE_INPUT_SKIP_LINE='  --skip-tarball \'
+  fi
   ARCHIVE_RELEASE_INPUT_LINES=$(cat <<ARCHIVE_EOF
 METADATA_BUNDLE_ARCHIVE_FOR_DEV="\$(bash ./scripts/package/generate-metadata-bundle.sh --software-version "\${CODE_VERSION}" --out-dir "/workspace/.run/metadata-bundle")"
 
@@ -2449,6 +2458,7 @@ ${BUNDLED_IMAGE_ARG_LINES}
 
 bash ./scripts/package/archive-release-input.sh \\
   --out-file "/workspace/.run/release-input-${PRODUCT_VERSION}.tar.gz" \\
+${ARCHIVE_RELEASE_INPUT_SKIP_LINE}
   --code-version "\${CODE_VERSION}" \\
   --control-plane-image "\${CONTROL_PLANE_IMAGE_OUT}" \\
   --control-plane-image-reference "localhost/appliance-control-plane:\${CODE_VERSION}" \\
@@ -2606,7 +2616,13 @@ if bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
   exit 0
 fi
 
-link_or_copy_file "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"
+if [[ -f "${CODE_RELEASE_INPUT_TAR}" ]]; then
+  link_or_copy_file "${CODE_RELEASE_INPUT_TAR}" "${RELEASE_INPUT_TAR}"
+else
+  # Default path skips the intermediate release-input-*.tar.gz; assemble uses
+  # CODE_RELEASE_INPUT_DIR (hardlinked OCI tree) instead.
+  rm -f "${RELEASE_INPUT_TAR}"
+fi
 if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]]; then
   ARTIFACT_SERVER_IMAGE_REF="$(tr -d '\r\n' < "${CODE_REPO_DIR}/.run/artifact-server-image.reference")"
 fi
@@ -2621,13 +2637,16 @@ set_env_var "${CONFIG_OUT}" WORKDIR "${WORKSPACE}"
 set_env_var "${CONFIG_OUT}" PRODUCT_VERSION "${PRODUCT_VERSION}"
 set_env_var "${CONFIG_OUT}" OS_VERSION "${OS_VERSION}"
 set_env_var "${CONFIG_OUT}" K3S_VERSION "${K3S_VERSION}"
-# Prefer the durable release-input directory for local assemble so we do not
-# gunzip/extract the multi-gigabyte tarball we just wrote. Keep the tarball for
-# publish and any remote fetch path.
+# Prefer the durable release-input directory for local assemble so we never
+# gunzip/extract a multi-gigabyte intermediate tarball. Optional tarball only
+# when ARCHIVE_RELEASE_INPUT_WRITE_TARBALL=1.
 if [[ -d "${CODE_RELEASE_INPUT_DIR}" && -f "${CODE_RELEASE_INPUT_DIR}/release-input.json" ]]; then
   set_env_var "${CONFIG_OUT}" RELEASE_INPUT_SOURCE "${CODE_RELEASE_INPUT_DIR}"
-else
+elif [[ -f "${RELEASE_INPUT_TAR}" ]]; then
   set_env_var "${CONFIG_OUT}" RELEASE_INPUT_SOURCE "${RELEASE_INPUT_TAR}"
+else
+  echo "build-full-bundle: missing release-input directory ${CODE_RELEASE_INPUT_DIR} and tarball ${RELEASE_INPUT_TAR}" >&2
+  exit 1
 fi
 set_env_var "${CONFIG_OUT}" RELEASE_INPUT_VERSION ""
 set_env_var "${CONFIG_OUT}" RELEASE_INPUT_FETCH_TEMPLATE ""
@@ -2698,9 +2717,14 @@ python3 "${SCRIPT_DIR}/write-release-index.py" "${RELEASE_INDEX}" "${PRODUCT_VER
   "$(basename "${ACC_LLM_ARCHIVE}")"
 
 echo
-echo "release-input tarball:"
-echo "  ${RELEASE_INPUT_TAR}"
-echo
+if [[ -f "${RELEASE_INPUT_TAR}" ]]; then
+  echo "release-input tarball:"
+  echo "  ${RELEASE_INPUT_TAR}"
+  echo
+else
+  echo "release-input tarball: skipped (dir assemble; set ARCHIVE_RELEASE_INPUT_WRITE_TARBALL=1 to write)"
+  echo
+fi
 echo "release-input directory:"
 if [[ -d "${CODE_RELEASE_INPUT_DIR}" && -f "${CODE_RELEASE_INPUT_DIR}/release-input.json" ]]; then
   echo "  ${CODE_RELEASE_INPUT_DIR}"

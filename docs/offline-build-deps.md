@@ -229,6 +229,24 @@ A later product build with freeze `auto`/`require` must restore those finals and
 **skip** re-export. If a product build still runs skopeo/buildah for a frozen
 artifact, that is a bug (store without restore, or fingerprint mismatch).
 
+### Local assemble I/O (avoid double-packing)
+
+Freeze restore and product export write OCI archives under `appliance-code/.run/`.
+`archive-release-input` **hardlinks** those into a durable
+`.run/release-input-<version>/` directory. `build-full-bundle` then:
+
+1. Passes `--skip-tarball` by default so it does **not** gzip that tree into a
+   multi-GB `release-input-*.tar.gz` (set `ARCHIVE_RELEASE_INPUT_WRITE_TARBALL=1`
+   only when a remote/fetchable intermediate is required).
+2. Assembles packs from the directory; `zonctl`/`releasebundle.Assemble`
+   hardlinks OCI files into pack trees (same filesystem).
+3. Creates delivery pack `.tar.gz` once via `create_gzip_tarball` (`PACK_GZIP_LEVEL`
+   defaults to `1` for speed on LAN publish; raise to `6` for smaller archives).
+
+Hardlink chain on one filesystem: freeze → `.run/*.tar` → release-input dir →
+pack dir → one gzip for customer delivery. Do not re-tar the vLLM/inference
+OCI into an intermediate release-input tarball when assembling locally.
+
 Freeze layout: `$THIRD_PARTY_FREEZE_ROOT/$TARGET_ARCH/artifacts/<id>/<fingerprint>/`
 plus `manifest.yaml`. Fingerprints include upstream pull refs + arch (+ version).
 
