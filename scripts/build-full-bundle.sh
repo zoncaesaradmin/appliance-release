@@ -883,6 +883,27 @@ print(digest)
 PY
 }
 
+# Rewrite <archive>.reference from the archive index.json digest. Freeze restore
+# can leave a stale sidecar next to a newly restored tar; archive-release-input
+# fail-closes when they disagree.
+sync_bundled_oci_reference_sidecar() {
+  local archive_path="$1"
+  local local_name="$2"
+  local digest ref stem
+
+  if [[ ! -f "${archive_path}" ]]; then
+    echo "build-full-bundle: sync reference: missing archive ${archive_path}" >&2
+    return 1
+  fi
+  local_name="$(oci_bundle_local_name "${local_name}")"
+  digest="$(oci_archive_manifest_digest "${archive_path}")"
+  ref="${local_name}@${digest}"
+  stem="${archive_path%.tar}"
+  printf '%s\n' "${ref}" >"${stem}.reference"
+  echo "build-full-bundle: synced $(basename "${stem}.reference") -> ${ref}" >&2
+  printf '%s' "${ref}"
+}
+
 # Rewrite org.opencontainers.image.ref.name to a tag-form local name. Digest-
 # pinned names (name@sha256:...) are applied at install with `ctr image tag`
 # because ctr import often ignores digest-form annotations and creates
@@ -2045,6 +2066,9 @@ if appliance_pack_wanted std-llm || appliance_pack_wanted acc-llm; then
   set -e
   if [[ "${_tpf_inf_rc}" -eq 0 ]]; then
     INFERENCE_RUNTIME_FREEZE_HIT=1
+    sync_bundled_oci_reference_sidecar \
+      "${CODE_REPO_DIR}/.run/inference-runtime-image.tar" \
+      "registry.local/inference-runtime" >/dev/null
   elif [[ "${_tpf_inf_rc}" -eq 2 ]]; then
     exit 2
   fi
@@ -2157,6 +2181,9 @@ if [[ "${NEED_DNS_IMAGE:-0}" == "1" ]]; then
   set -e
   if [[ "${_tpf_dns_rc}" -eq 0 ]]; then
     DNS_FREEZE_HIT=1
+    sync_bundled_oci_reference_sidecar \
+      "${CODE_REPO_DIR}/.run/dns-server-image.tar" \
+      "registry.local/coredns" >/dev/null
     DNS_PACKAGE_LINES="# third-party-freeze hit: dns-server
 DNS_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/dns-server-image.tar\"
 DNS_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/dns-server-image.reference)\"
@@ -2447,19 +2474,31 @@ if tpf_active; then
       TPF_FP_INPUTS=()
     fi
     if [[ ${#TPF_FP_INPUTS[@]} -gt 0 ]]; then
+      sync_bundled_oci_reference_sidecar \
+        "${CODE_REPO_DIR}/.run/inference-runtime-image.tar" \
+        "registry.local/inference-runtime" >/dev/null || true
       tpf_store_oci "inference-runtime" "${CODE_REPO_DIR}/.run/inference-runtime-image.tar" || true
     fi
   fi
   if [[ "${DNS_FREEZE_HIT:-0}" != "1" && -f "${CODE_REPO_DIR}/.run/dns-server-image.tar" ]]; then
     TPF_FP_INPUTS=("${DNS_IMAGE_PULL_REF}" "${DNS_VERSION}" "${TARGET_ARCH}" "${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}")
+    sync_bundled_oci_reference_sidecar \
+      "${CODE_REPO_DIR}/.run/dns-server-image.tar" \
+      "registry.local/coredns" >/dev/null || true
     tpf_store_oci "dns-server" "${CODE_REPO_DIR}/.run/dns-server-image.tar" || true
   fi
   if [[ -f "${CODE_REPO_DIR}/.run/blob-storage-image.tar" ]]; then
     TPF_FP_INPUTS=("${BLOB_STORAGE_SOURCE_IMAGE}" "${BLOB_STORAGE_VERSION}" "${TARGET_ARCH}")
+    sync_bundled_oci_reference_sidecar \
+      "${CODE_REPO_DIR}/.run/blob-storage-image.tar" \
+      "registry.local/blob-storage" >/dev/null || true
     tpf_store_oci "blob-storage" "${CODE_REPO_DIR}/.run/blob-storage-image.tar" || true
   fi
   if [[ -f "${CODE_REPO_DIR}/.run/message-broker-image.tar" ]]; then
     TPF_FP_INPUTS=("${MESSAGE_BROKER_SOURCE_IMAGE:-docker.io/library/nats:2.10.26-alpine}" "${TARGET_ARCH}")
+    sync_bundled_oci_reference_sidecar \
+      "${CODE_REPO_DIR}/.run/message-broker-image.tar" \
+      "registry.local/nats" >/dev/null || true
     tpf_store_oci "message-broker" "${CODE_REPO_DIR}/.run/message-broker-image.tar" || true
   fi
   tpf_refresh_manifest || true

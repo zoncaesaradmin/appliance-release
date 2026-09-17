@@ -242,6 +242,10 @@ workflow-executor (via bundled/plain OCI export helpers), host-packages,
 blob-storage, message-broker. Product wrappers (artifact-server, inference-manager,
 control-plane, UI, host-agent) stay out of the freeze.
 
+After a freeze restore, packaging always rewrites `<archive>.reference` from the
+archive `index.json` digest so a stale sidecar cannot disagree with the tar
+(`archive-release-input` fail-closes on mismatch).
+
 ### Egress-denied smoke (operator)
 
 1. Seed with `TARGET_ARCH=amd64 make seed-build-deps` while online.
