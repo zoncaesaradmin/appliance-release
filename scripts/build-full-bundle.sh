@@ -104,8 +104,8 @@ Optional overrides:
   DNS_IMAGE_PULL_REF=docker.io/coredns/coredns:1.14.4
   # DNS server: always wrap upstream CoreDNS via appliance-code package-dns-server-image-archive
   # (dev-run has buildah+skopeo); digest from index.json.
-  INFERENCE_VERSION=0.9.0
-  INFERENCE_IMAGE_PULL_REF=docker.io/ollama/ollama:0.9.0
+  INFERENCE_VERSION=0.17.1
+  INFERENCE_IMAGE_PULL_REF=docker.io/ollama/ollama:0.17.1
   VLLM_VERSION=0.17.1
   VLLM_IMAGE_PULL_REF=docker.io/vllm/vllm-openai-cpu:v0.17.1-x86_64
   VLLM_ARM64_VERSION=0.29.0
@@ -302,10 +302,10 @@ MESSAGE_BROKER_SOURCE_IMAGE="${USER_MESSAGE_BROKER_SOURCE_IMAGE:-${MESSAGE_BROKE
 DNS_VERSION="${USER_DNS_VERSION:-${DNS_VERSION:-1.14.4}}"
 DNS_VERSION="${DNS_VERSION#v}"
 DNS_IMAGE_PULL_REF="${USER_DNS_IMAGE_PULL_REF:-${DNS_IMAGE_PULL_REF:-docker.io/coredns/coredns:${DNS_VERSION}}}"
-# compatibility.inferenceVersion is unprefixed (0.9.0). Chart appVersion and
+# compatibility.inferenceVersion is unprefixed (0.17.1). Chart appVersion and
 # the upstream docker.io/ollama/ollama tag are unprefixed as well.
 # Use a fully qualified registry host so podman short-name resolution is not required.
-INFERENCE_VERSION="${USER_INFERENCE_VERSION:-${INFERENCE_VERSION:-0.9.0}}"
+INFERENCE_VERSION="${USER_INFERENCE_VERSION:-${INFERENCE_VERSION:-0.17.1}}"
 INFERENCE_VERSION="${INFERENCE_VERSION#v}"
 INFERENCE_IMAGE_PULL_REF="${USER_INFERENCE_IMAGE_PULL_REF:-${INFERENCE_IMAGE_PULL_REF:-docker.io/ollama/ollama:${INFERENCE_VERSION}}}"
 VLLM_VERSION="${USER_VLLM_VERSION:-${VLLM_VERSION:-0.17.1}}"

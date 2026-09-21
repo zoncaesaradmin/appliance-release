@@ -8,8 +8,8 @@ One `TARGET_ARCH` seeds only that architecture:
 
 | `TARGET_ARCH` | Seeded images |
 |---|---|
-| `amd64` | `ollama:0.9.0-amd64`, `vllm-openai-cpu:0.17.1-x86_64` |
-| `arm64` | `ollama:0.9.0-arm64`, `vllm-openai:0.29.0-arm64` |
+| `amd64` | `ollama:0.17.1-amd64`, `vllm-openai-cpu:0.17.1-x86_64` |
+| `arm64` | `ollama:0.17.1-arm64`, `vllm-openai:0.29.0-arm64` |
 
 ```bash
 TARGET_ARCH=amd64 make -C deps/inference release
