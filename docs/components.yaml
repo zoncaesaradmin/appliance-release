@@ -104,6 +104,24 @@ components:
       - reference: registry.local/inference-manager@sha256:...
     depends_on: []
 
+  - id: open-webui-image
+    owner: appliance-code / appliance-release
+    recipe: scripts/package/export-open-webui-image-archive.sh
+    note: optional trusted-header Open WebUI runtime; only included by an inference pack
+    outputs:
+      - release_input: artifacts.openWebUIImage
+      - reference: registry.local/open-webui@sha256:...
+    depends_on: []
+
+  - id: open-webui-gateway-image
+    owner: appliance-code
+    recipe: scripts/package/export-open-webui-gateway-image-archive.sh
+    note: optional appliance session-bridge gateway; only included by an inference pack
+    outputs:
+      - release_input: artifacts.openWebUIGatewayImage
+      - reference: registry.local/open-webui-gateway@sha256:...
+    depends_on: []
+
   - id: appliance-inference-chart
     owner: appliance-code
     recipe: archive-release-input
@@ -173,6 +191,8 @@ components:
       - dns-chart
       - inference-runtime-image
       - inference-manager-image
+      - open-webui-image
+      - open-webui-gateway-image
       - appliance-inference-chart
       - workflows
       - workspace-provisioner
