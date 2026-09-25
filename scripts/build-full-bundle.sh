@@ -250,6 +250,34 @@ lan_cache_ref() {
   printf '%s/%s/%s:%s' "${host}" "${LAN_BUILD_CACHE_PREFIX}" "${short_name}" "${tag}"
 }
 
+# Fail closed when an offline packaging input is missing from the LAN
+# Artifact Server. Prefer a cheap skopeo inspect; if skopeo is absent on the
+# host, packaging inside the tooling container will still fail later.
+require_lan_docker_ref() {
+  local ref="$1"
+  local arch="$2"
+  local seed_hint="${3:-make seed-build-deps}"
+  local skopeo_bin tls_verify
+  local -a inspect_cmd=()
+  skopeo_bin="$(command -v skopeo || true)"
+  [[ -n "${skopeo_bin}" ]] || return 0
+  tls_verify="${DEV_REGISTRY_TLS_VERIFY:-true}"
+  inspect_cmd=(sudo -n "${skopeo_bin}" inspect --override-os linux --override-arch "${arch}")
+  case "$(printf '%s' "${tls_verify}" | tr '[:upper:]' '[:lower:]')" in
+    0|false|no|off) inspect_cmd+=(--tls-verify=false) ;;
+  esac
+  if [[ -n "${DEV_REGISTRY_USER:-}" && -n "${DEV_REGISTRY_TOKEN:-}" ]]; then
+    inspect_cmd+=(--creds "${DEV_REGISTRY_USER}:${DEV_REGISTRY_TOKEN}")
+  fi
+  if ! "${inspect_cmd[@]}" "docker://${ref}" >/dev/null 2>&1; then
+    cat >&2 <<EOF
+build-full-bundle: missing LAN build-cache image ${ref} (arch=${arch})
+build-full-bundle: seed it first (${seed_hint}), then retry freeze/packaging
+EOF
+    exit 1
+  fi
+}
+
 require_seed_package() {
   local package="$1"
   local pins="${RELEASE_REPO_DIR}/deps/${package}/pins.env"
@@ -1967,6 +1995,16 @@ if offline_build_enabled; then
   OPEN_WEBUI_NODE_IMAGE="$(lan_cache_ref open-webui-node "22-alpine3.20-${HOST_ARCH}")"
   OPEN_WEBUI_PYTHON_IMAGE="$(lan_cache_ref open-webui-python "3.11-slim-bookworm-${TARGET_ARCH}")"
   OPEN_WEBUI_UV_IMAGE="$(lan_cache_ref open-webui-uv "0.12.10-${TARGET_ARCH}")"
+  if [[ "${NEED_OPEN_WEBUI_IMAGE:-0}" == "1" ]]; then
+    # Frontend base is HOST_ARCH (BUILDPLATFORM); python/uv are TARGET_ARCH.
+    # Cross-arch freezes need both deps/open-webui seeds.
+    require_lan_docker_ref "${OPEN_WEBUI_NODE_IMAGE}" "${HOST_ARCH}" \
+      "TARGET_ARCH=${HOST_ARCH} make -C deps/open-webui release"
+    require_lan_docker_ref "${OPEN_WEBUI_PYTHON_IMAGE}" "${TARGET_ARCH}" \
+      "TARGET_ARCH=${TARGET_ARCH} make -C deps/open-webui release"
+    require_lan_docker_ref "${OPEN_WEBUI_UV_IMAGE}" "${TARGET_ARCH}" \
+      "TARGET_ARCH=${TARGET_ARCH} make -C deps/open-webui release"
+  fi
   RUNTIME_PACKAGES_INSTALLED=1
   echo "build-full-bundle: OFFLINE_BUILD=1 using LAN build-cache refs on ${DEV_REGISTRY}" >&2
   echo "build-full-bundle: service build bases compile=${HOST_ARCH} runtime=${TARGET_ARCH} (BUILDPLATFORM native cross-compile)" >&2

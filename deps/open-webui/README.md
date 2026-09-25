@@ -12,6 +12,10 @@ Offline packaging remaps those OCI tags into the exporter; the product image
 is still built from the patched source (never an unreviewed upstream WebUI
 image).
 
+Cross-arch freezes (amd64 build host, `TARGET_ARCH=arm64`) need **both**
+seeds: packaging pulls `open-webui-node:…-${HOST_ARCH}` for the frontend
+stage and `open-webui-python` / `open-webui-uv` for `…-${TARGET_ARCH}`.
+
 ```bash
 TARGET_ARCH=amd64 make -C deps/open-webui release
 TARGET_ARCH=arm64 make -C deps/open-webui release
