@@ -1824,6 +1824,49 @@ eval "$(python3 "${SCRIPT_DIR}/lib/resolve-pack-artifacts.py" \
   --format shell)"
 echo "build-full-bundle: catalog-required artifacts: ${PACK_REQUIRED_ARTIFACTS}" >&2
 
+# Open WebUI is source-built with appliance patches. Its source identity lives
+# with appliance-code, while deps/open-webui seeds that exact checkout through
+# the LAN files API for OFFLINE_BUILD. Do this before generating the dev-run
+# script so only the verified checkout is mounted into the product builder.
+OPEN_WEBUI_SOURCE_DIR="${CODE_REPO_DIR}/.run/open-webui-source"
+if [[ "${NEED_OPEN_WEBUI_IMAGE:-0}" == "1" || "${NEED_OPEN_WEBUI_GATEWAY_IMAGE:-0}" == "1" ]]; then
+  if [[ "${NEED_OPEN_WEBUI_IMAGE:-0}" != "${NEED_OPEN_WEBUI_GATEWAY_IMAGE:-0}" ]]; then
+    echo "build-full-bundle: Open WebUI and gateway artifacts must be selected together" >&2
+    exit 2
+  fi
+  # shellcheck disable=SC1090
+  source "${CODE_REPO_DIR}/services/open-webui/source.lock"
+  [[ -n "${UPSTREAM_URL:-}" && -n "${UPSTREAM_REF:-}" && -n "${UPSTREAM_COMMIT:-}" ]] || {
+    echo "build-full-bundle: invalid Open WebUI source.lock" >&2; exit 2;
+  }
+  rm -rf "${OPEN_WEBUI_SOURCE_DIR}"
+  if offline_build_enabled; then
+    require_seed_package open-webui
+    _owui_archive="${CODE_REPO_DIR}/.run/open-webui-source.tar.gz"
+    _owui_sum="${_owui_archive}.sha256"
+    _owui_remote="build-deps/open-webui/${UPSTREAM_COMMIT}/open-webui-source.tar.gz"
+    files_api_download "${_owui_remote}" "${_owui_archive}" || {
+      echo "build-full-bundle: missing offline Open WebUI source seed ${_owui_remote}" >&2; exit 1;
+    }
+    files_api_download "${_owui_remote}.sha256" "${_owui_sum}" || {
+      echo "build-full-bundle: missing offline Open WebUI source checksum" >&2; exit 1;
+    }
+    (cd "${CODE_REPO_DIR}/.run" && sha256sum -c "$(basename "${_owui_sum}")")
+    tar -xzf "${_owui_archive}" -C "${CODE_REPO_DIR}/.run"
+    mv "${CODE_REPO_DIR}/.run/source" "${OPEN_WEBUI_SOURCE_DIR}"
+  else
+    git clone --no-checkout --depth 1 --branch "${UPSTREAM_REF}" "${UPSTREAM_URL}" "${OPEN_WEBUI_SOURCE_DIR}"
+    git -C "${OPEN_WEBUI_SOURCE_DIR}" checkout --detach "${UPSTREAM_COMMIT}"
+  fi
+  _owui_actual="$(git -C "${OPEN_WEBUI_SOURCE_DIR}" rev-parse HEAD)"
+  [[ "${_owui_actual}" == "${UPSTREAM_COMMIT}" ]] || {
+    echo "build-full-bundle: Open WebUI source commit ${_owui_actual} does not match lock ${UPSTREAM_COMMIT}" >&2; exit 1;
+  }
+  git -C "${OPEN_WEBUI_SOURCE_DIR}" diff --quiet || {
+    echo "build-full-bundle: Open WebUI source checkout is not clean" >&2; exit 1;
+  }
+fi
+
 if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" || "${NEED_ARTIFACT_SERVER_CHART:-0}" == "1" ]]; then
   ARTIFACT_SERVER_CHART_APP_VERSION="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${CODE_REPO_DIR}/deploy/charts/appliance-registry/Chart.yaml")"
   # Chart.yaml may use Helm/upstream form v2.1.8 while ARTIFACT_SERVER_VERSION is 2.1.8.
@@ -2017,6 +2060,10 @@ INFERENCE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/inference-runtime-image.tar"
 INFERENCE_IMAGE_REF=""
 INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/inference-manager-image.tar"
 INFERENCE_MANAGER_IMAGE_REF=""
+OPEN_WEBUI_IMAGE_ARCHIVE="/workspace/.run/open-webui-image.tar"
+OPEN_WEBUI_GATEWAY_IMAGE_ARCHIVE="/workspace/.run/open-webui-gateway-image.tar"
+OPEN_WEBUI_IMAGE_REF=""
+OPEN_WEBUI_GATEWAY_IMAGE_REF=""
 
 BLOB_STORAGE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/blob-storage-image.tar"
 BLOB_STORAGE_IMAGE_REF=""
@@ -2050,6 +2097,8 @@ done
 
 INFERENCE_PACKAGE_LINES=""
 INFERENCE_ARCHIVE_ARG_LINES=""
+OPEN_WEBUI_PACKAGE_LINES=""
+OPEN_WEBUI_ARCHIVE_ARG_LINES=""
 INFERENCE_RUNTIME_FREEZE_HIT=0
 if appliance_pack_wanted std-llm || appliance_pack_wanted acc-llm; then
   if appliance_pack_wanted acc-llm; then
@@ -2167,6 +2216,21 @@ INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.r
     INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image \"\${INFERENCE_MANAGER_IMAGE_ARCHIVE_FOR_DEV}\" \\"$'\n'
     INFERENCE_ARCHIVE_ARG_LINES+="  --inference-manager-image-reference \"\${INFERENCE_MANAGER_IMAGE_REF}\" \\"$'\n'
   fi
+fi
+
+if [[ "${NEED_OPEN_WEBUI_IMAGE:-0}" == "1" ]]; then
+  OPEN_WEBUI_PACKAGE_LINES=$(cat <<'OWUI_EOF'
+make package-open-webui-image-archive OPEN_WEBUI_SOURCE_DIR="/workspace/.run/open-webui-source" OPEN_WEBUI_RUN_GATE=1 OUT_FILE="/workspace/.run/open-webui-image.tar"
+OPEN_WEBUI_IMAGE_REF="$(tr -d '\r\n' </workspace/.run/open-webui-image.reference)"
+make package-open-webui-gateway-image-archive OUT_FILE="/workspace/.run/open-webui-gateway-image.tar"
+OPEN_WEBUI_GATEWAY_IMAGE_REF="$(tr -d '\r\n' </workspace/.run/open-webui-gateway-image.reference)"
+OWUI_EOF
+)
+  OPEN_WEBUI_ARCHIVE_ARG_LINES='  --open-webui-image "${OPEN_WEBUI_IMAGE_ARCHIVE}" \
+  --open-webui-image-reference "${OPEN_WEBUI_IMAGE_REF}" \
+  --open-webui-gateway-image "${OPEN_WEBUI_GATEWAY_IMAGE_ARCHIVE}" \
+  --open-webui-gateway-image-reference "${OPEN_WEBUI_GATEWAY_IMAGE_REF}" \
+'
 fi
 
 DOCKERHUB_AUTH_FILE=""
@@ -2470,7 +2534,7 @@ ${HOST_AGENT_IMAGE_ARCHIVE_ARG_LINES}  --blob-storage-image "\${BLOB_STORAGE_IMA
   --message-broker-image-reference "\${MESSAGE_BROKER_IMAGE_REF}" \\
   "\${HOST_PACKAGES_ARGS[@]}" \\
   --k3s-version $(shell_quote "${K3S_VERSION}") \\
-${ARTIFACT_SERVER_ARCHIVE_ARG_LINES}${DNS_ARCHIVE_ARG_LINES}${INFERENCE_ARCHIVE_ARG_LINES}  --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \\
+${ARTIFACT_SERVER_ARCHIVE_ARG_LINES}${DNS_ARCHIVE_ARG_LINES}${INFERENCE_ARCHIVE_ARG_LINES}${OPEN_WEBUI_ARCHIVE_ARG_LINES}  --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \\
   "\${WORKFLOWS_ARGS[@]}" \\
   "\${BUNDLED_IMAGE_ARGS[@]}"
 ARCHIVE_EOF
@@ -2532,6 +2596,8 @@ HOST_PACKAGES_ARGS=(
 ${ARTIFACT_SERVER_PACKAGE_LINES}
 
 ${INFERENCE_PACKAGE_LINES}
+
+${OPEN_WEBUI_PACKAGE_LINES}
 
 ${ARCHIVE_RELEASE_INPUT_LINES}
 EOF
