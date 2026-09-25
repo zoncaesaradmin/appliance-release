@@ -95,6 +95,29 @@ def main() -> None:
     if "CACHE_TAG_BASE=v1.14.4" not in dns_pins:
         raise AssertionError("CoreDNS LAN cache tag base changed unexpectedly")
 
+    # Open WebUI archive-release-input args expand these in the generated
+    # package-release-input script under set -u; they must be defined there.
+    for marker in (
+        'OPEN_WEBUI_IMAGE_ARCHIVE="/workspace/.run/open-webui-image.tar"',
+        'OPEN_WEBUI_GATEWAY_IMAGE_ARCHIVE="/workspace/.run/open-webui-gateway-image.tar"',
+        '--open-webui-image "${OPEN_WEBUI_IMAGE_ARCHIVE}"',
+        '--open-webui-gateway-image "${OPEN_WEBUI_GATEWAY_IMAGE_ARCHIVE}"',
+    ):
+        if marker not in text:
+            raise AssertionError(f"Open WebUI package script wiring missing: {marker}")
+    script_start = 'cat >"${CODE_DEV_SCRIPT_PATH}" <<EOF'
+    if script_start not in text:
+        raise AssertionError("generated package script heredoc marker missing")
+    generated = text[text.index(script_start) :]
+    if 'OPEN_WEBUI_IMAGE_ARCHIVE="/workspace/.run/open-webui-image.tar"' not in generated:
+        raise AssertionError(
+            "OPEN_WEBUI_IMAGE_ARCHIVE must be defined in the generated package script header"
+        )
+    if 'OPEN_WEBUI_GATEWAY_IMAGE_ARCHIVE="/workspace/.run/open-webui-gateway-image.tar"' not in generated:
+        raise AssertionError(
+            "OPEN_WEBUI_GATEWAY_IMAGE_ARCHIVE must be defined in the generated package script header"
+        )
+
     print("online build retry-scope tests passed")
 
 

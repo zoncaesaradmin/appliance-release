@@ -2638,6 +2638,8 @@ BLOB_STORAGE_IMAGE_OUT="/workspace/.run/blob-storage-image.tar"
 BLOB_STORAGE_IMAGE_REF_FILE="/workspace/.run/blob-storage-image.reference"
 MESSAGE_BROKER_IMAGE_OUT="/workspace/.run/message-broker-image.tar"
 MESSAGE_BROKER_IMAGE_REF_FILE="/workspace/.run/message-broker-image.reference"
+OPEN_WEBUI_IMAGE_ARCHIVE="/workspace/.run/open-webui-image.tar"
+OPEN_WEBUI_GATEWAY_IMAGE_ARCHIVE="/workspace/.run/open-webui-gateway-image.tar"
 WORKFLOWS_ARGS=()
 BUNDLED_IMAGE_ARGS=()
 # Prefer the release/product version for image tags and the control-plane
