@@ -630,7 +630,58 @@ def validate_inference(
     manager_entry = require_bundle_entry(entries_by_path, manager_bundle_path, "inferenceManagerImage")
     require_matching_bundle_digest(manager_entry, manager, manager_bundle_path, "inferenceManagerImage")
     require_matching_bundle_image_reference(manager_entry, manager_ref, manager_bundle_path, "inferenceManagerImage")
-    return ["inferenceChart", "inferenceRuntimeImage", "inferenceManagerImage", f"inferenceVersion={inference_version}"]
+
+    open_webui = artifacts.get("openWebUIImage")
+    open_webui_gateway = artifacts.get("openWebUIGatewayImage")
+    if (open_webui is None) != (open_webui_gateway is None):
+        raise ValueError("release-input must supply openWebUIImage and openWebUIGatewayImage together")
+    checked = ["inferenceChart", "inferenceRuntimeImage", "inferenceManagerImage", f"inferenceVersion={inference_version}"]
+    if open_webui is not None:
+        for key, name, ref_prefix, annotation in (
+            (
+                "openWebUIImage",
+                "open-webui",
+                "registry.local/open-webui@sha256:",
+                "registry.local/open-webui:bundled",
+            ),
+            (
+                "openWebUIGatewayImage",
+                "open-webui-gateway",
+                "registry.local/open-webui-gateway@sha256:",
+                "registry.local/open-webui-gateway:bundled",
+            ),
+        ):
+            artifact = require_artifact(artifacts, key)
+            path = require_file_artifact(artifacts, key, release_input_dir)
+            image_ref = require_image_reference(artifact, key)
+            if not image_ref.startswith(ref_prefix) or not re.fullmatch(
+                re.escape(ref_prefix) + r"[0-9a-f]{64}", image_ref
+            ):
+                raise ValueError(
+                    f"release-input artifacts.{key}.imageReference must be "
+                    f"{ref_prefix}<64 lowercase hex>"
+                )
+            if name not in path.name.lower().replace("_", "-"):
+                raise ValueError(
+                    f"release-input artifacts.{key}.path must identify {name}, got {artifact['path']!r}"
+                )
+            require_oci_archive_reference_matches_content(path, image_ref, key)
+            index = load_oci_archive_index(path)
+            if index is None:
+                raise ValueError(f"{key} OCI archive {path} is missing index.json")
+            got_annotation = (
+                (index.get("manifests") or [{}])[0].get("annotations") or {}
+            ).get("org.opencontainers.image.ref.name")
+            if got_annotation != annotation:
+                raise ValueError(
+                    f"{key} OCI archive annotation must be {annotation!r}, got {got_annotation!r}"
+                )
+            bundle_path = f"oci-images/{path.name}"
+            entry = require_bundle_entry(entries_by_path, bundle_path, key)
+            require_matching_bundle_digest(entry, artifact, bundle_path, key)
+            require_matching_bundle_image_reference(entry, image_ref, bundle_path, key)
+            checked.append(key)
+    return checked
 
 
 def validate_video(
