@@ -2252,6 +2252,8 @@ if [[ "${NEED_OPEN_WEBUI_IMAGE:-0}" == "1" ]]; then
     "${OPEN_WEBUI_UV_IMAGE}"
     "${TARGET_ARCH}"
     "USE_SLIM=true"
+    "UID=10011"
+    "GID=10011"
   )
   set +e
   tpf_try_restore_oci "open-webui" "${CODE_REPO_DIR}/.run/open-webui-image.tar"
@@ -2740,6 +2742,8 @@ if tpf_active; then
       "${OPEN_WEBUI_UV_IMAGE}"
       "${TARGET_ARCH}"
       "USE_SLIM=true"
+      "UID=10011"
+      "GID=10011"
     )
     sync_bundled_oci_reference_sidecar \
       "${CODE_REPO_DIR}/.run/open-webui-image.tar" \
