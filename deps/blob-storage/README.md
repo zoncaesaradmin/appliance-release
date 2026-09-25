@@ -1,7 +1,9 @@
 # blob-storage
 
-Seeds the pinned MinIO image used by the foundation blob-storage wrap. LAN
-tags are **arch-suffixed**:
+Seeds the pinned MinIO server used by the foundation blob-storage wrap.
+`quay.io/minio/minio` and `docker.io/minio/minio` no longer allow anonymous
+pulls, so the seed downloads the official GitHub release binary, checks its
+sha256, and builds a single-arch image. LAN tags stay arch-suffixed:
 
 `build-cache/minio:RELEASE.2025-05-24T17-08-30Z-${TARGET_ARCH}`
 

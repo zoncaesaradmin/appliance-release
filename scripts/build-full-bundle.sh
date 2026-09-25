@@ -324,9 +324,12 @@ fi
 # shellcheck disable=SC1090
 source "${BLOB_STORAGE_PINS_FILE}"
 BLOB_STORAGE_VERSION="${CACHE_TAG_BASE}"
-BLOB_STORAGE_SOURCE_IMAGE="${UPSTREAM_IMAGE}"
 BLOB_STORAGE_CACHE_NAME="${CACHE_NAME}"
 BLOB_STORAGE_CACHE_TAG_BASE="${CACHE_TAG_BASE}"
+BLOB_STORAGE_BINARY_URL_BASE="${MINIO_BINARY_URL_BASE}"
+BLOB_STORAGE_SHA256_AMD64="${MINIO_SHA256_AMD64}"
+BLOB_STORAGE_SHA256_ARM64="${MINIO_SHA256_ARM64}"
+unset UPSTREAM_IMAGE CACHE_NAME CACHE_TAG_BASE MINIO_RELEASE MINIO_BINARY_URL_BASE MINIO_SHA256_AMD64 MINIO_SHA256_ARM64
 
 JELLYFIN_PINS_FILE="${RELEASE_REPO_DIR}/deps/jellyfin/pins.env"
 if [[ ! -f "${JELLYFIN_PINS_FILE}" ]]; then
@@ -1935,6 +1938,8 @@ if offline_build_enabled; then
     DNS_IMAGE_PULL_REF="$(lan_cache_ref coredns "v${DNS_VERSION}-${TARGET_ARCH}")"
   fi
   BLOB_STORAGE_SOURCE_IMAGE="$(lan_cache_ref "${BLOB_STORAGE_CACHE_NAME}" "${BLOB_STORAGE_CACHE_TAG_BASE}-${TARGET_ARCH}")"
+  BLOB_STORAGE_BINARY_URL=""
+  BLOB_STORAGE_BINARY_SHA256=""
   if appliance_pack_wanted deviceuser; then
     JELLYFIN_SOURCE_IMAGE="$(lan_cache_ref "${JELLYFIN_CACHE_NAME}" "${JELLYFIN_CACHE_TAG}")"
   fi
@@ -1964,6 +1969,18 @@ if offline_build_enabled; then
   echo "build-full-bundle: service build bases compile=${HOST_ARCH} runtime=${TARGET_ARCH} (BUILDPLATFORM native cross-compile)" >&2
 else
   # Online defaults (workflows base already set above when WORKFLOWS_ENABLED).
+  # MinIO has no public image for this pin; packaging builds it from the
+  # GitHub release binary checked in deps/blob-storage/pins.env.
+  case "${TARGET_ARCH}" in
+    amd64) BLOB_STORAGE_BINARY_SHA256="${BLOB_STORAGE_SHA256_AMD64}" ;;
+    arm64) BLOB_STORAGE_BINARY_SHA256="${BLOB_STORAGE_SHA256_ARM64}" ;;
+    *)
+      echo "build-full-bundle: unsupported TARGET_ARCH ${TARGET_ARCH} for blob-storage" >&2
+      exit 2
+      ;;
+  esac
+  BLOB_STORAGE_BINARY_URL="${BLOB_STORAGE_BINARY_URL_BASE}/minio.linux-${TARGET_ARCH}.${BLOB_STORAGE_VERSION}"
+  BLOB_STORAGE_SOURCE_IMAGE="${BLOB_STORAGE_BINARY_URL}"
   WORKFLOW_CONTROLLER_BASE_IMAGE="${WORKFLOW_CONTROLLER_BASE_IMAGE:-quay.io/argoproj/workflow-controller:${WORKFLOWS_VERSION:-v3.5.10}}"
   CP_GO_IMAGE="${CP_GO_IMAGE:-}"
   CP_RUNTIME_IMAGE="${CP_RUNTIME_IMAGE:-}"
@@ -2435,12 +2452,22 @@ echo \"third-party-freeze: reusing blob-storage OCI archive\" >&2
 elif [[ "${_tpf_blob_rc}" -eq 2 ]]; then
   exit 2
 else
-  BLOB_STORAGE_PACKAGE_LINES="make package-blob-storage-image-archive \\
+  if offline_build_enabled; then
+    BLOB_STORAGE_PACKAGE_LINES="make package-blob-storage-image-archive \\
   OUT_FILE=\"\${BLOB_STORAGE_IMAGE_OUT}\" \\
   REFERENCE_OUT_FILE=\"\${BLOB_STORAGE_IMAGE_REF_FILE}\" \\
   BLOB_STORAGE_VERSION=$(shell_quote "${BLOB_STORAGE_VERSION}") \\
   BLOB_STORAGE_SOURCE_IMAGE=$(shell_quote "${BLOB_STORAGE_SOURCE_IMAGE}")
 "
+  else
+    BLOB_STORAGE_PACKAGE_LINES="make package-blob-storage-image-archive \\
+  OUT_FILE=\"\${BLOB_STORAGE_IMAGE_OUT}\" \\
+  REFERENCE_OUT_FILE=\"\${BLOB_STORAGE_IMAGE_REF_FILE}\" \\
+  BLOB_STORAGE_VERSION=$(shell_quote "${BLOB_STORAGE_VERSION}") \\
+  BLOB_STORAGE_BINARY_URL=$(shell_quote "${BLOB_STORAGE_BINARY_URL}") \\
+  BLOB_STORAGE_BINARY_SHA256=$(shell_quote "${BLOB_STORAGE_BINARY_SHA256}")
+"
+  fi
 fi
 TPF_FP_INPUTS=("${MESSAGE_BROKER_SOURCE_IMAGE:-docker.io/library/nats:2.10.26-alpine}" "${TARGET_ARCH}")
 set +e

@@ -1,0 +1,6 @@
+FROM scratch
+COPY minio /usr/bin/minio
+USER 10009:10009
+EXPOSE 9000
+ENTRYPOINT ["/usr/bin/minio"]
+CMD ["server", "/data"]
