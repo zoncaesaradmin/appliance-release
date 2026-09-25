@@ -8,6 +8,7 @@ test:
 	@test -s .staging/open-webui-source.tar.gz.sha256
 	@test -s .staging/node-ref
 	@test -s .staging/python-ref
+	@test -s .staging/uv-ref
 
 push:
 	bash ./scripts/push.sh

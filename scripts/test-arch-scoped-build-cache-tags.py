@@ -56,6 +56,7 @@ REQUIRED_LAN_CACHE_SNIPPETS = [
     'lan_cache_ref node "22-alpine-${HOST_ARCH}"',
     'lan_cache_ref open-webui-node "22-alpine3.20-${HOST_ARCH}"',
     'lan_cache_ref open-webui-python "3.11-slim-bookworm-${TARGET_ARCH}"',
+    'lan_cache_ref open-webui-uv "0.12.10-${TARGET_ARCH}"',
     'lan_cache_ref controlplane-ui-web-deps "lockfile-${HOST_ARCH}"',
     'lan_cache_ref debian-bookworm-slim-runtime "bookworm-slim-${TARGET_ARCH}"',
     'lan_cache_ref "zot-linux-${TARGET_ARCH}"',

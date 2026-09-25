@@ -1966,6 +1966,7 @@ if offline_build_enabled; then
   ARTIFACT_RUNTIME_SOURCE_IMAGE="$(lan_cache_ref debian-bookworm-slim-runtime "bookworm-slim-${TARGET_ARCH}")"
   OPEN_WEBUI_NODE_IMAGE="$(lan_cache_ref open-webui-node "22-alpine3.20-${HOST_ARCH}")"
   OPEN_WEBUI_PYTHON_IMAGE="$(lan_cache_ref open-webui-python "3.11-slim-bookworm-${TARGET_ARCH}")"
+  OPEN_WEBUI_UV_IMAGE="$(lan_cache_ref open-webui-uv "0.12.10-${TARGET_ARCH}")"
   RUNTIME_PACKAGES_INSTALLED=1
   echo "build-full-bundle: OFFLINE_BUILD=1 using LAN build-cache refs on ${DEV_REGISTRY}" >&2
   echo "build-full-bundle: service build bases compile=${HOST_ARCH} runtime=${TARGET_ARCH} (BUILDPLATFORM native cross-compile)" >&2
@@ -1985,6 +1986,7 @@ else
   BLOB_STORAGE_SOURCE_IMAGE="${BLOB_STORAGE_BINARY_URL}"
   OPEN_WEBUI_NODE_IMAGE="${OPEN_WEBUI_NODE_IMAGE:-docker.io/library/node:22-alpine3.20}"
   OPEN_WEBUI_PYTHON_IMAGE="${OPEN_WEBUI_PYTHON_IMAGE:-docker.io/library/python:3.11-slim-bookworm}"
+  OPEN_WEBUI_UV_IMAGE="${OPEN_WEBUI_UV_IMAGE:-ghcr.io/astral-sh/uv:0.12.10}"
   WORKFLOW_CONTROLLER_BASE_IMAGE="${WORKFLOW_CONTROLLER_BASE_IMAGE:-quay.io/argoproj/workflow-controller:${WORKFLOWS_VERSION:-v3.5.10}}"
   CP_GO_IMAGE="${CP_GO_IMAGE:-}"
   CP_RUNTIME_IMAGE="${CP_RUNTIME_IMAGE:-}"
@@ -2247,6 +2249,7 @@ if [[ "${NEED_OPEN_WEBUI_IMAGE:-0}" == "1" ]]; then
     "${OPEN_WEBUI_PATCH_FP}"
     "${OPEN_WEBUI_NODE_IMAGE}"
     "${OPEN_WEBUI_PYTHON_IMAGE}"
+    "${OPEN_WEBUI_UV_IMAGE}"
     "${TARGET_ARCH}"
     "USE_SLIM=true"
   )
@@ -2275,6 +2278,7 @@ make package-open-webui-image-archive \\
   OPEN_WEBUI_SOURCE_DIR="/workspace/.run/open-webui-source" \\
   OPEN_WEBUI_NODE_IMAGE=$(shell_quote "${OPEN_WEBUI_NODE_IMAGE}") \\
   OPEN_WEBUI_PYTHON_IMAGE=$(shell_quote "${OPEN_WEBUI_PYTHON_IMAGE}") \\
+  OPEN_WEBUI_UV_IMAGE=$(shell_quote "${OPEN_WEBUI_UV_IMAGE}") \\
   OPEN_WEBUI_RUN_GATE=1 \\
   OUT_FILE="/workspace/.run/open-webui-image.tar"
 OPEN_WEBUI_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/open-webui-image.reference)"
@@ -2733,6 +2737,7 @@ if tpf_active; then
       "${OPEN_WEBUI_PATCH_FP}"
       "${OPEN_WEBUI_NODE_IMAGE}"
       "${OPEN_WEBUI_PYTHON_IMAGE}"
+      "${OPEN_WEBUI_UV_IMAGE}"
       "${TARGET_ARCH}"
       "USE_SLIM=true"
     )

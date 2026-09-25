@@ -83,7 +83,7 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | `artifact-server-bases` | `build-cache/zot-linux-${TARGET_ARCH}:…`, `debian-bookworm-slim-runtime:bookworm-slim-${TARGET_ARCH}` | artifact-server wrap |
 | `dns` | `build-cache/coredns:v1.14.4-${TARGET_ARCH}` | dns wrap |
 | `inference` | `build-cache/ollama:…-${TARGET_ARCH}` plus arch-specific vLLM (`vllm-openai-cpu:…-x86_64` / `vllm-openai:…-arm64`) | `std-llm` / `acc-llm` |
-| `open-webui` | files API `build-deps/open-webui/<locked-commit>/open-webui-source.tar.gz`; OCI `build-cache/open-webui-node:22-alpine3.20-${TARGET_ARCH}` and `build-cache/open-webui-python:3.11-slim-bookworm-${TARGET_ARCH}` | Verified upstream source + Dockerfile bases for the patched optional Web UI in `std-llm` / `acc-llm`; never foundation |
+| `open-webui` | files API `build-deps/open-webui/<locked-commit>/open-webui-source.tar.gz`; OCI `build-cache/open-webui-node:22-alpine3.20-${TARGET_ARCH}`, `build-cache/open-webui-python:3.11-slim-bookworm-${TARGET_ARCH}`, and `build-cache/open-webui-uv:0.12.10-${TARGET_ARCH}` | Verified upstream source + Dockerfile bases for the patched optional Web UI in `std-llm` / `acc-llm`; never foundation |
 | `blob-storage` | `build-cache/minio:…-${TARGET_ARCH}` built from the pinned GitHub MinIO binary | foundation blob-storage wrap |
 | `jellyfin` | `build-cache/jellyfin:10.10.7-amd64` | reviewed Jellyfin runtime (**amd64 only**; skipped when `TARGET_ARCH=arm64`) |
 | `service-build-bases` | `golang`/`node`/`alpine-3.24.1-runtime`/`controlplane-ui-web-deps` with `-${TARGET_ARCH}` (or host-arch for compile) | CP/UI/hostagent |
