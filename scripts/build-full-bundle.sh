@@ -1964,6 +1964,8 @@ if offline_build_enabled; then
   UI_RUNTIME_IMAGE="$(lan_cache_ref alpine-3.24.1-runtime "3.24.1-${TARGET_ARCH}")"
   UI_WEB_DEPS_IMAGE="$(lan_cache_ref controlplane-ui-web-deps "lockfile-${HOST_ARCH}")"
   ARTIFACT_RUNTIME_SOURCE_IMAGE="$(lan_cache_ref debian-bookworm-slim-runtime "bookworm-slim-${TARGET_ARCH}")"
+  OPEN_WEBUI_NODE_IMAGE="$(lan_cache_ref open-webui-node "22-alpine3.20-${HOST_ARCH}")"
+  OPEN_WEBUI_PYTHON_IMAGE="$(lan_cache_ref open-webui-python "3.11-slim-bookworm-${TARGET_ARCH}")"
   RUNTIME_PACKAGES_INSTALLED=1
   echo "build-full-bundle: OFFLINE_BUILD=1 using LAN build-cache refs on ${DEV_REGISTRY}" >&2
   echo "build-full-bundle: service build bases compile=${HOST_ARCH} runtime=${TARGET_ARCH} (BUILDPLATFORM native cross-compile)" >&2
@@ -1981,6 +1983,8 @@ else
   esac
   BLOB_STORAGE_BINARY_URL="${BLOB_STORAGE_BINARY_URL_BASE}/minio.linux-${TARGET_ARCH}.${BLOB_STORAGE_VERSION}"
   BLOB_STORAGE_SOURCE_IMAGE="${BLOB_STORAGE_BINARY_URL}"
+  OPEN_WEBUI_NODE_IMAGE="${OPEN_WEBUI_NODE_IMAGE:-docker.io/library/node:22-alpine3.20}"
+  OPEN_WEBUI_PYTHON_IMAGE="${OPEN_WEBUI_PYTHON_IMAGE:-docker.io/library/python:3.11-slim-bookworm}"
   WORKFLOW_CONTROLLER_BASE_IMAGE="${WORKFLOW_CONTROLLER_BASE_IMAGE:-quay.io/argoproj/workflow-controller:${WORKFLOWS_VERSION:-v3.5.10}}"
   CP_GO_IMAGE="${CP_GO_IMAGE:-}"
   CP_RUNTIME_IMAGE="${CP_RUNTIME_IMAGE:-}"
@@ -2236,13 +2240,51 @@ INFERENCE_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/inference-runtime-image.r
 fi
 
 if [[ "${NEED_OPEN_WEBUI_IMAGE:-0}" == "1" ]]; then
-  OPEN_WEBUI_PACKAGE_LINES=$(cat <<'OWUI_EOF'
-make package-open-webui-image-archive OPEN_WEBUI_SOURCE_DIR="/workspace/.run/open-webui-source" OPEN_WEBUI_RUN_GATE=1 OUT_FILE="/workspace/.run/open-webui-image.tar"
-OPEN_WEBUI_IMAGE_REF="$(tr -d '\r\n' </workspace/.run/open-webui-image.reference)"
-make package-open-webui-gateway-image-archive OUT_FILE="/workspace/.run/open-webui-gateway-image.tar"
-OPEN_WEBUI_GATEWAY_IMAGE_REF="$(tr -d '\r\n' </workspace/.run/open-webui-gateway-image.reference)"
+  OPEN_WEBUI_PATCH_FP="$(cat "${CODE_REPO_DIR}/services/open-webui/patches"/*.patch | sha256sum | awk '{print $1}')"
+  OPEN_WEBUI_FREEZE_HIT=0
+  TPF_FP_INPUTS=(
+    "${UPSTREAM_COMMIT}"
+    "${OPEN_WEBUI_PATCH_FP}"
+    "${OPEN_WEBUI_NODE_IMAGE}"
+    "${OPEN_WEBUI_PYTHON_IMAGE}"
+    "${TARGET_ARCH}"
+    "USE_SLIM=true"
+  )
+  set +e
+  tpf_try_restore_oci "open-webui" "${CODE_REPO_DIR}/.run/open-webui-image.tar"
+  _tpf_owui_rc=$?
+  set -e
+  if [[ "${_tpf_owui_rc}" -eq 0 ]]; then
+    OPEN_WEBUI_FREEZE_HIT=1
+    sync_bundled_oci_reference_sidecar \
+      "${CODE_REPO_DIR}/.run/open-webui-image.tar" \
+      "registry.local/open-webui" >/dev/null
+    OPEN_WEBUI_PACKAGE_LINES="# third-party-freeze hit: open-webui
+echo \"third-party-freeze: reusing open-webui OCI archive\" >&2
+OPEN_WEBUI_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/open-webui-image.reference)\"
+make package-open-webui-gateway-image-archive \\
+  OUT_FILE=\"/workspace/.run/open-webui-gateway-image.tar\" \\
+  RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}")
+OPEN_WEBUI_GATEWAY_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/open-webui-gateway-image.reference)\"
+"
+  elif [[ "${_tpf_owui_rc}" -eq 2 ]]; then
+    exit 2
+  else
+    OPEN_WEBUI_PACKAGE_LINES=$(cat <<OWUI_EOF
+make package-open-webui-image-archive \\
+  OPEN_WEBUI_SOURCE_DIR="/workspace/.run/open-webui-source" \\
+  OPEN_WEBUI_NODE_IMAGE=$(shell_quote "${OPEN_WEBUI_NODE_IMAGE}") \\
+  OPEN_WEBUI_PYTHON_IMAGE=$(shell_quote "${OPEN_WEBUI_PYTHON_IMAGE}") \\
+  OPEN_WEBUI_RUN_GATE=1 \\
+  OUT_FILE="/workspace/.run/open-webui-image.tar"
+OPEN_WEBUI_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/open-webui-image.reference)"
+make package-open-webui-gateway-image-archive \\
+  OUT_FILE="/workspace/.run/open-webui-gateway-image.tar" \\
+  RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE:-docker.io/library/alpine:3.24.1}")
+OPEN_WEBUI_GATEWAY_IMAGE_REF="\$(tr -d '\r\n' </workspace/.run/open-webui-gateway-image.reference)"
 OWUI_EOF
 )
+  fi
   OPEN_WEBUI_ARCHIVE_ARG_LINES='  --open-webui-image "${OPEN_WEBUI_IMAGE_ARCHIVE}" \
   --open-webui-image-reference "${OPEN_WEBUI_IMAGE_REF}" \
   --open-webui-gateway-image "${OPEN_WEBUI_GATEWAY_IMAGE_ARCHIVE}" \
@@ -2681,6 +2723,23 @@ if tpf_active; then
       "${CODE_REPO_DIR}/.run/message-broker-image.tar" \
       "registry.local/nats" >/dev/null || true
     tpf_store_oci "message-broker" "${CODE_REPO_DIR}/.run/message-broker-image.tar" || true
+  fi
+  if [[ "${NEED_OPEN_WEBUI_IMAGE:-0}" == "1" \
+    && "${OPEN_WEBUI_FREEZE_HIT:-0}" != "1" \
+    && -f "${CODE_REPO_DIR}/.run/open-webui-image.tar" ]]; then
+    OPEN_WEBUI_PATCH_FP="$(cat "${CODE_REPO_DIR}/services/open-webui/patches"/*.patch | sha256sum | awk '{print $1}')"
+    TPF_FP_INPUTS=(
+      "${UPSTREAM_COMMIT}"
+      "${OPEN_WEBUI_PATCH_FP}"
+      "${OPEN_WEBUI_NODE_IMAGE}"
+      "${OPEN_WEBUI_PYTHON_IMAGE}"
+      "${TARGET_ARCH}"
+      "USE_SLIM=true"
+    )
+    sync_bundled_oci_reference_sidecar \
+      "${CODE_REPO_DIR}/.run/open-webui-image.tar" \
+      "registry.local/open-webui" >/dev/null || true
+    tpf_store_oci "open-webui" "${CODE_REPO_DIR}/.run/open-webui-image.tar" || true
   fi
   if bool_true "${WORKFLOWS_ENABLED:-false}" \
     && [[ "${WORKFLOW_CONTROLLER_FREEZE_HIT:-0}" != "1" ]] \

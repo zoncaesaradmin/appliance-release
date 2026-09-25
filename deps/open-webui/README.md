@@ -1,17 +1,17 @@
-# Open WebUI source seed
+# open-webui
 
-This package seeds the exact reviewed Open WebUI git checkout used by the
-patched appliance build. It deliberately does not mirror an upstream runtime
-image: the appliance image is built from this source plus the numbered patches
-in `appliance-code/services/open-webui`.
+Seeds the locked Open WebUI source tree (files API) plus the exact Dockerfile
+base images used by `v0.11.4` / `USE_SLIM=true`:
 
-```sh
+- files: `build-deps/open-webui/<commit>/open-webui-source.tar.gz`
+- OCI: `build-cache/open-webui-node:22-alpine3.20-${TARGET_ARCH}`
+- OCI: `build-cache/open-webui-python:3.11-slim-bookworm-${TARGET_ARCH}`
+
+Offline packaging remaps those OCI tags into the exporter; the product image
+is still built from the patched source (never an unreviewed upstream WebUI
+image).
+
+```bash
 TARGET_ARCH=amd64 make -C deps/open-webui release
+TARGET_ARCH=arm64 make -C deps/open-webui release
 ```
-
-The source archive and checksum are uploaded through the appliance files API
-under `build-deps/open-webui/<commit>/`. Online bundle assembly clones the same
-tag and verifies its commit; offline assembly downloads only this seed and
-fails closed when its checksum or commit differs. `TARGET_ARCH` is accepted for
-the common seed interface even though this verified source checkout is arch
-neutral.
