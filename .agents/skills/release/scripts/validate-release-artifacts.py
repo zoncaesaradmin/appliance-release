@@ -631,56 +631,66 @@ def validate_inference(
     require_matching_bundle_digest(manager_entry, manager, manager_bundle_path, "inferenceManagerImage")
     require_matching_bundle_image_reference(manager_entry, manager_ref, manager_bundle_path, "inferenceManagerImage")
 
+    return ["inferenceChart", "inferenceRuntimeImage", "inferenceManagerImage", f"inferenceVersion={inference_version}"]
+
+
+def validate_open_webui(
+    artifacts: dict,
+    release_input_dir: Path,
+    entries_by_path: dict[str, dict],
+    *,
+    require_in_bundle: bool = True,
+) -> list:
     open_webui = artifacts.get("openWebUIImage")
     open_webui_gateway = artifacts.get("openWebUIGatewayImage")
-    if (open_webui is None) != (open_webui_gateway is None):
-        raise ValueError("release-input must supply openWebUIImage and openWebUIGatewayImage together")
-    checked = ["inferenceChart", "inferenceRuntimeImage", "inferenceManagerImage", f"inferenceVersion={inference_version}"]
-    if open_webui is not None:
-        for key, name, ref_prefix, annotation in (
-            (
-                "openWebUIImage",
-                "open-webui",
-                "registry.local/open-webui@sha256:",
-                "registry.local/open-webui:bundled",
-            ),
-            (
-                "openWebUIGatewayImage",
-                "open-webui-gateway",
-                "registry.local/open-webui-gateway@sha256:",
-                "registry.local/open-webui-gateway:bundled",
-            ),
+    if open_webui is None or open_webui_gateway is None:
+        raise ValueError("open-webui pack requires openWebUIImage and openWebUIGatewayImage in release-input")
+    checked = []
+    for key, name, ref_prefix, annotation in (
+        (
+            "openWebUIImage",
+            "open-webui",
+            "registry.local/open-webui@sha256:",
+            "registry.local/open-webui:bundled",
+        ),
+        (
+            "openWebUIGatewayImage",
+            "open-webui-gateway",
+            "registry.local/open-webui-gateway@sha256:",
+            "registry.local/open-webui-gateway:bundled",
+        ),
+    ):
+        artifact = require_artifact(artifacts, key)
+        path = require_file_artifact(artifacts, key, release_input_dir)
+        image_ref = require_image_reference(artifact, key)
+        if not image_ref.startswith(ref_prefix) or not re.fullmatch(
+            re.escape(ref_prefix) + r"[0-9a-f]{64}", image_ref
         ):
-            artifact = require_artifact(artifacts, key)
-            path = require_file_artifact(artifacts, key, release_input_dir)
-            image_ref = require_image_reference(artifact, key)
-            if not image_ref.startswith(ref_prefix) or not re.fullmatch(
-                re.escape(ref_prefix) + r"[0-9a-f]{64}", image_ref
-            ):
-                raise ValueError(
-                    f"release-input artifacts.{key}.imageReference must be "
-                    f"{ref_prefix}<64 lowercase hex>"
-                )
-            if name not in path.name.lower().replace("_", "-"):
-                raise ValueError(
-                    f"release-input artifacts.{key}.path must identify {name}, got {artifact['path']!r}"
-                )
-            require_oci_archive_reference_matches_content(path, image_ref, key)
-            index = load_oci_archive_index(path)
-            if index is None:
-                raise ValueError(f"{key} OCI archive {path} is missing index.json")
-            got_annotation = (
-                (index.get("manifests") or [{}])[0].get("annotations") or {}
-            ).get("org.opencontainers.image.ref.name")
-            if got_annotation != annotation:
-                raise ValueError(
-                    f"{key} OCI archive annotation must be {annotation!r}, got {got_annotation!r}"
-                )
+            raise ValueError(
+                f"release-input artifacts.{key}.imageReference must be "
+                f"{ref_prefix}<64 lowercase hex>"
+            )
+        if name not in path.name.lower().replace("_", "-"):
+            raise ValueError(
+                f"release-input artifacts.{key}.path must identify {name}, got {artifact['path']!r}"
+            )
+        require_oci_archive_reference_matches_content(path, image_ref, key)
+        index = load_oci_archive_index(path)
+        if index is None:
+            raise ValueError(f"{key} OCI archive {path} is missing index.json")
+        got_annotation = (
+            (index.get("manifests") or [{}])[0].get("annotations") or {}
+        ).get("org.opencontainers.image.ref.name")
+        if got_annotation != annotation:
+            raise ValueError(
+                f"{key} OCI archive annotation must be {annotation!r}, got {got_annotation!r}"
+            )
+        if require_in_bundle:
             bundle_path = f"oci-images/{path.name}"
             entry = require_bundle_entry(entries_by_path, bundle_path, key)
             require_matching_bundle_digest(entry, artifact, bundle_path, key)
             require_matching_bundle_image_reference(entry, image_ref, bundle_path, key)
-            checked.append(key)
+        checked.append(key)
     return checked
 
 
@@ -967,7 +977,7 @@ def main() -> int:
     parser.add_argument("--companion-bundle-root", action="append", default=[], help="Additional signed delivery pack roots used to locate supplemental OCI images; every image reference remains required and checked.")
     parser.add_argument(
         "--pack",
-        choices=("foundation", "storage-network", "build-workflows", "deviceuser", *INFERENCE_PACKAGES, "video"),
+        choices=("foundation", "storage-network", "build-workflows", "deviceuser", *INFERENCE_PACKAGES, "open-webui", "video"),
         default="foundation",
         help=(
             "Which signed pack archive is under --bundle-root. "
@@ -976,6 +986,7 @@ def main() -> int:
             "build-workflows: workflows and supplemental OCI images (including companion delivery packs). "
             "deviceuser: host-agent + host-packages must be present in this pack. "
             "inference package: inference chart/image/version must be present in this pack. "
+            "open-webui: Open WebUI + gateway images must be present in this pack. "
             "video: video chart/image/version must be present in this pack."
         ),
     )
@@ -1180,6 +1191,13 @@ def main() -> int:
             artifacts,
             release_input_path.parent,
             entries_by_path,
+        )
+    elif pack == "open-webui":
+        checked["openWebUI"] = validate_open_webui(
+            artifacts,
+            release_input_path.parent,
+            entries_by_path,
+            require_in_bundle=True,
         )
     else:  # video
         checked["video"] = validate_video(

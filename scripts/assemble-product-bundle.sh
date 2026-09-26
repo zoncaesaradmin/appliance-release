@@ -89,6 +89,7 @@ DEV_PLATFORM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-dev-platfor
 DEVICEUSER_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 CPU_LLM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-std-llm"
 ACC_LLM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-acc-llm"
+OPEN_WEBUI_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-open-webui"
 
 mkdir -p "${WORKDIR}" "${INPUTS_DIR}" "${DOWNLOADS_DIR}"
 
@@ -641,6 +642,7 @@ assemble_all_packs() {
       deviceuser) bundle_dir="${DEVICEUSER_BUNDLE_DIR}" ;;
       std-llm) bundle_dir="${CPU_LLM_BUNDLE_DIR}" ;;
       acc-llm) bundle_dir="${ACC_LLM_BUNDLE_DIR}" ;;
+      open-webui) bundle_dir="${OPEN_WEBUI_BUNDLE_DIR}" ;;
       *)
         echo "assemble-product-bundle: unsupported pack id ${pack_id}" >&2
         exit 2
@@ -690,7 +692,7 @@ if [[ -n "${VALUES_FILE:-}" ]]; then
   cp "${VALUES_FILE}" "${STAGING_DIR}/values-minimal.yaml"
 fi
 
-rm -rf "${BUNDLE_DIR}" "${DEV_PLATFORM_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}" "${ACC_LLM_BUNDLE_DIR}"
+rm -rf "${BUNDLE_DIR}" "${DEV_PLATFORM_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}" "${ACC_LLM_BUNDLE_DIR}" "${OPEN_WEBUI_BUNDLE_DIR}"
 
 assemble_all_packs
 
@@ -709,4 +711,7 @@ if appliance_pack_wanted std-llm; then
 fi
 if appliance_pack_wanted acc-llm; then
   echo "  acc-llm: ${ACC_LLM_BUNDLE_DIR}"
+fi
+if appliance_pack_wanted open-webui; then
+  echo "  open-webui: ${OPEN_WEBUI_BUNDLE_DIR}"
 fi

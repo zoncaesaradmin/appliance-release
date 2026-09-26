@@ -104,13 +104,16 @@ build_flow:
   # Skill exports this as APPLIANCE_PACKS into build-full-bundle.sh.
   # Pack id is foundation (not base) — capability base is separate.
   # Inference packs are std-llm / acc-llm (architecture is target_arch).
+  # Optional chat UI is a separate open-webui pack (requires std-llm or acc-llm).
   # Match packs to the install profile, for example:
   #   appliance_packs: all
   #   appliance_packs: foundation
   #   appliance_packs: foundation,dev-platform
-  #   appliance_packs: foundation,dev-platform,std-llm  # builder+lanllm
-  #   appliance_packs: foundation,std-llm               # inference-only
+  #   appliance_packs: foundation,dev-platform,std-llm  # builder+lanllm (API only)
+  #   appliance_packs: foundation,std-llm               # inference-only (API)
+  #   appliance_packs: foundation,std-llm,open-webui    # inference + chat showcase
   #   appliance_packs: foundation,acc-llm               # vLLM (TARGET_ARCH)
+  #   appliance_packs: foundation,acc-llm,open-webui    # vLLM + chat showcase
   appliance_packs: foundation,dev-platform
 
   # REQUIRED product architecture (amd64|arm64). Empty/omitted fails closed —
@@ -125,11 +128,12 @@ build_flow:
   # upstream pins. Product images (control-plane, UI, host-agent, inference-manager)
   # always rebuild.
   #
-  # Important for Open WebUI / LLM packs:
+  # Important for Open WebUI / open-webui pack:
   #   deps/open-webui "seed" only publishes source + node/python/uv *bases*.
   #   The expensive npm + uv pip install (~170 packages) runs only when packaging
-  #   the product image. Freeze stores that *final* OCI archive; without
-  #   mode=auto|require on product builds, every release rebuilds Open WebUI.
+  #   the product image (NEED_OPEN_WEBUI_* from the open-webui pack). Freeze stores
+  #   that *final* OCI archive; without mode=auto|require on product builds, every
+  #   open-webui release rebuilds Open WebUI.
   #
   # Populate on the build host:
   #   TARGET_ARCH=arm64 THIRD_PARTY_FREEZE_ROOT=/var/cache/zon-third-party \

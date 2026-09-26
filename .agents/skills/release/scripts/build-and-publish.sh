@@ -493,6 +493,15 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
       >"${RUN_DIR}/logs/release-artifact-validation-acc-llm.json"
   fi
 
+  if materialize_pack_root "open-webui" "${RUN_DIR}/artifacts/open-webui-bundle"; then
+    log "validating release-input against open-webui pack"
+    python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
+      --pack open-webui \
+      --release-input-root "${RUN_DIR}/artifacts/release-input" \
+      --bundle-root "${RUN_DIR}/artifacts/open-webui-bundle" \
+      >"${RUN_DIR}/logs/release-artifact-validation-open-webui.json"
+  fi
+
   if materialize_pack_root "video" "${RUN_DIR}/artifacts/video-bundle"; then
     log "validating release-input against video pack"
     python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \

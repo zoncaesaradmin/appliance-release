@@ -407,7 +407,8 @@ if [[ -z "${USER_ARTIFACT_SERVER_SOURCE_IMAGE}" ]]; then
   ARTIFACT_SERVER_SOURCE_IMAGE="ghcr.io/project-zot/zot-linux-${TARGET_ARCH}:v${ARTIFACT_SERVER_VERSION}"
 fi
 
-# Pack selection (default all = foundation + dev-platform + deviceuser + std-llm).
+# Pack selection (default all = foundation + dev-platform + deviceuser + std-llm;
+# open-webui stays opt-in even for all).
 APPLIANCE_PACKS="${USER_APPLIANCE_PACKS:-${APPLIANCE_PACKS:-all}}"
 appliance_packs_resolve
 echo "build-full-bundle: APPLIANCE_PACKS=${APPLIANCE_PACKS} → ${APPLIANCE_PACKS_RESOLVED}"
@@ -563,11 +564,13 @@ DEV_PLATFORM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-dev-platf
 DEVICEUSER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 CPU_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-std-llm"
 ACC_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-acc-llm"
+OPEN_WEBUI_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-open-webui"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" foundation)"
 DEV_PLATFORM_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" dev-platform)"
 DEVICEUSER_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" deviceuser)"
 CPU_LLM_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" std-llm)"
 ACC_LLM_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" acc-llm)"
+OPEN_WEBUI_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" open-webui)"
 RELEASE_INDEX="${EXPORT_DIR}/release-index.yaml"
 PUBLIC_KEY_EXPORT="${EXPORT_DIR}/release-signing.pub"
 
@@ -2914,6 +2917,10 @@ if appliance_pack_wanted acc-llm; then
   create_gzip_tarball "${ACC_LLM_ARCHIVE}" "$(dirname "${ACC_LLM_BUNDLE_DIR}")" "$(basename "${ACC_LLM_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${ACC_LLM_ARCHIVE}")
 fi
+if appliance_pack_wanted open-webui; then
+  create_gzip_tarball "${OPEN_WEBUI_ARCHIVE}" "$(dirname "${OPEN_WEBUI_BUNDLE_DIR}")" "$(basename "${OPEN_WEBUI_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${OPEN_WEBUI_ARCHIVE}")
+fi
 cp "${WORKSPACE}/keys/release-signing.pub" "${PUBLIC_KEY_EXPORT}"
 
 python3 "${SCRIPT_DIR}/write-release-index.py" "${RELEASE_INDEX}" "${PRODUCT_VERSION}" "${TARGET_ARCH}" \
@@ -2925,7 +2932,8 @@ python3 "${SCRIPT_DIR}/write-release-index.py" "${RELEASE_INDEX}" "${PRODUCT_VER
   "$(basename "${DEV_PLATFORM_ARCHIVE}")" \
   "$(basename "${DEVICEUSER_ARCHIVE}")" \
   "$(basename "${CPU_LLM_ARCHIVE}")" \
-  "$(basename "${ACC_LLM_ARCHIVE}")"
+  "$(basename "${ACC_LLM_ARCHIVE}")" \
+  "$(basename "${OPEN_WEBUI_ARCHIVE}")"
 
 echo
 if [[ -f "${RELEASE_INPUT_TAR}" ]]; then
@@ -2960,6 +2968,9 @@ if appliance_pack_wanted std-llm; then
 fi
 if appliance_pack_wanted acc-llm; then
   echo "  ${ACC_LLM_BUNDLE_DIR}"
+fi
+if appliance_pack_wanted open-webui; then
+  echo "  ${OPEN_WEBUI_BUNDLE_DIR}"
 fi
 echo
 if [[ -n "${ARTIFACT_SERVER_IMAGE_REF}" ]]; then

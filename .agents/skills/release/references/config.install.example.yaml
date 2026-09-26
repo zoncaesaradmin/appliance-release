@@ -6,7 +6,8 @@
 # Must agree with build-publish on values (roles are never merged):
 #   product version (release.version optional; else configs/default-product-version)
 #   bundle_store download base (from the build-publish file)
-#   published packs must cover the profile (e.g. lanllm needs foundation+std-llm)
+#   published packs must cover the profile (e.g. lanllm needs foundation+std-llm;
+#   private-ai / chat showcase also needs open-webui)
 #
 # Example:
 #   bash .agents/skills/release/scripts/run-release-from-devhost.sh \

@@ -74,6 +74,16 @@ if appliance_packs_resolve 2>/dev/null; then
   fail "multiple inference runtime packs should fail"
 fi
 
+APPLIANCE_PACKS="foundation,open-webui"
+if appliance_packs_resolve 2>/dev/null; then
+  fail "open-webui without std-llm/acc-llm should fail"
+fi
+
+APPLIANCE_PACKS="foundation,std-llm,open-webui"
+appliance_packs_resolve
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation std-llm open-webui" "open-webui with std-llm"
+appliance_pack_wanted open-webui || fail "open-webui should be wanted"
+
 for unsupported in inference; do
   if APPLIANCE_PACKS="${unsupported}" appliance_packs_resolve 2>/dev/null; then
     fail "legacy capability or unimplemented package '${unsupported}' should fail"

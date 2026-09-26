@@ -51,11 +51,17 @@ class ResolvePackArtifactsTest(unittest.TestCase):
         out = self._shell("foundation acc-llm")
         self.assertIn("NEED_INFERENCE_RUNTIME_IMAGE=1", out)
         self.assertIn("NEED_INFERENCE_MANAGER_IMAGE=1", out)
-        self.assertIn("NEED_OPEN_WEBUI_IMAGE=1", out)
-        self.assertIn("NEED_OPEN_WEBUI_GATEWAY_IMAGE=1", out)
+        self.assertIn("NEED_OPEN_WEBUI_IMAGE=0", out)
+        self.assertIn("NEED_OPEN_WEBUI_GATEWAY_IMAGE=0", out)
         self.assertIn("NEED_ARTIFACT_SERVER_IMAGE=0", out)
         self.assertIn("NEED_HOST_AGENT_BINARY=1", out)
         self.assertIn("NEED_HOST_AGENT_IMAGE=0", out)
+
+    def test_foundation_plus_inference_plus_open_webui(self):
+        out = self._shell("foundation acc-llm open-webui")
+        self.assertIn("NEED_INFERENCE_RUNTIME_IMAGE=1", out)
+        self.assertIn("NEED_OPEN_WEBUI_IMAGE=1", out)
+        self.assertIn("NEED_OPEN_WEBUI_GATEWAY_IMAGE=1", out)
 
     def test_foundation_plus_deviceuser_needs_host_agent_image(self):
         out = self._shell("foundation deviceuser")

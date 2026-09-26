@@ -567,6 +567,7 @@ pack_specs = (
     ("deviceuser", f"appliance-{product_version}-deviceuser", "deviceuser"),
     ("std-llm", f"appliance-{product_version}-std-llm", "std-llm"),
     ("acc-llm", f"appliance-{product_version}-acc-llm", "acc-llm"),
+    ("open-webui", f"appliance-{product_version}-open-webui", "open-webui"),
 )
 for pack_id, bundle_name, pack_value in pack_specs:
     pack_config = json.loads(json.dumps(config))
@@ -591,6 +592,7 @@ This workspace is the handoff point between the two repos:
    \`${WORKDIR}/bundle-assembly.deviceuser.json\`
    \`${WORKDIR}/bundle-assembly.std-llm.json\`
    \`${WORKDIR}/bundle-assembly.acc-llm.json\`
+   \`${WORKDIR}/bundle-assembly.open-webui.json\`
    (legacy full-bundle config remains at \`${CONFIG_PATH}\`; TARGET_ARCH=${TARGET_ARCH})
 
 If the release-input includes optional workflows engine Phase 1 artifacts, this
@@ -632,6 +634,7 @@ echo "    ${WORKDIR}/bundle-assembly.dev-platform.json"
 echo "    ${WORKDIR}/bundle-assembly.deviceuser.json"
 echo "    ${WORKDIR}/bundle-assembly.std-llm.json"
 echo "    ${WORKDIR}/bundle-assembly.acc-llm.json"
+echo "    ${WORKDIR}/bundle-assembly.open-webui.json"
 echo "  target arch: ${TARGET_ARCH}"
 echo "  release-input dir: ${RELEASE_INPUT_DIR}"
 echo "  staging dir: ${STAGING_DIR}"
