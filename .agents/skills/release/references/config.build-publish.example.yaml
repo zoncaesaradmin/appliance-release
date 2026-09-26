@@ -125,16 +125,22 @@ build_flow:
   # upstream pins. Product images (control-plane, UI, host-agent, inference-manager)
   # always rebuild.
   #
+  # Important for Open WebUI / LLM packs:
+  #   deps/open-webui "seed" only publishes source + node/python/uv *bases*.
+  #   The expensive npm + uv pip install (~170 packages) runs only when packaging
+  #   the product image. Freeze stores that *final* OCI archive; without
+  #   mode=auto|require on product builds, every release rebuilds Open WebUI.
+  #
   # Populate on the build host:
   #   TARGET_ARCH=arm64 THIRD_PARTY_FREEZE_ROOT=/var/cache/zon-third-party \
   #     make freeze-third-party
   # Modes:
-  #   ignore  — default; freeze unused
+  #   ignore  — default; freeze unused (Open WebUI always fully rebuilt)
   #   auto    — restore on hit; package+store on miss
   #   require — restore on hit; fail closed on miss
-  # third_party_freeze:
-  #   mode: auto
-  #   root: /var/cache/zon-third-party
+  third_party_freeze:
+    mode: auto
+    root: /var/cache/zon-third-party
 
   # Used when mode: online (ONLINE_* env vars) — all seven required
   online_image_pull:

@@ -2294,6 +2294,10 @@ if [[ "${NEED_OPEN_WEBUI_IMAGE:-0}" == "1" ]]; then
     "UID=10011"
     "GID=10011"
   )
+  if ! tpf_active; then
+    echo "build-full-bundle: WARNING: third-party freeze is inactive (mode=$(tpf_mode)); Open WebUI will run a full image build (Node frontend + uv pip of ~170 packages)." >&2
+    echo "build-full-bundle: WARNING: seed only supplies source + node/python/uv bases. To skip that work on product builds, set build_flow.third_party_freeze.mode=auto and root=/var/cache/zon-third-party (then run make freeze-third-party once per TARGET_ARCH)." >&2
+  fi
   set +e
   tpf_try_restore_oci "open-webui" "${CODE_REPO_DIR}/.run/open-webui-image.tar"
   _tpf_owui_rc=$?
@@ -2303,6 +2307,7 @@ if [[ "${NEED_OPEN_WEBUI_IMAGE:-0}" == "1" ]]; then
     sync_bundled_oci_reference_sidecar \
       "${CODE_REPO_DIR}/.run/open-webui-image.tar" \
       "registry.local/open-webui" >/dev/null
+    echo "build-full-bundle: third-party-freeze hit open-webui — skipping npm/uv image rebuild" >&2
     OPEN_WEBUI_PACKAGE_LINES="# third-party-freeze hit: open-webui
 echo \"third-party-freeze: reusing open-webui OCI archive\" >&2
 OPEN_WEBUI_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/open-webui-image.reference)\"
@@ -2314,6 +2319,9 @@ OPEN_WEBUI_GATEWAY_IMAGE_REF=\"\$(tr -d '\r\n' </workspace/.run/open-webui-gatew
   elif [[ "${_tpf_owui_rc}" -eq 2 ]]; then
     exit 2
   else
+    if tpf_active; then
+      echo "build-full-bundle: third-party-freeze miss open-webui — full image rebuild (fingerprint changed or never stored after a successful package)" >&2
+    fi
     OPEN_WEBUI_PACKAGE_LINES=$(cat <<OWUI_EOF
 make package-open-webui-image-archive \\
   OPEN_WEBUI_SOURCE_DIR="/workspace/.run/open-webui-source" \\

@@ -230,6 +230,15 @@ A later product build with freeze `auto`/`require` must restore those finals and
 **skip** re-export. If a product build still runs skopeo/buildah for a frozen
 artifact, that is a bug (store without restore, or fingerprint mismatch).
 
+**Open WebUI specifically:** `deps/open-webui` seed is only the locked source
+tarball plus node/python/uv *base* images. It does **not** include the Node
+frontend build or `uv pip install` of requirements-slim (~170 packages). That
+work happens when packaging `registry.local/open-webui`. Product builds with
+`third_party_freeze.mode` left at the default `ignore` always redo it, even if
+`make freeze-third-party` already stored an archive under
+`/var/cache/zon-third-party`. Enable `mode: auto` (or `require`) + `root` in
+the build-publish config so normal releases restore the frozen OCI instead.
+
 ### Local assemble I/O (avoid double-packing)
 
 Freeze restore and product export write OCI archives under `appliance-code/.run/`.
