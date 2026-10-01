@@ -21,10 +21,10 @@ Runtime components. Application Management does not modify Automation Runtime.
 | --- | --- | --- |
 | Operating system | Ubuntu Server 22.04 LTS or 24.04 LTS | `os-arch-supported` preflight check |
 | Architecture | `amd64` | `os-arch-supported` preflight check |
-| CPU | 4 cores minimum | `cpu-count-min` preflight check |
-| Memory | 4 GiB minimum | `memory-min` preflight check |
+| CPU | 1 core minimum | `cpu-count-min` preflight check |
+| Memory | 2 GiB minimum | `memory-min` preflight check |
 | Appliance data filesystem | Local `ext4` | `data-dir-filesystem-ext4` preflight check |
-| Appliance data free space | 50 GiB minimum | `data-dir-free-space` preflight check |
+| Appliance data free space | 20 GiB minimum | `data-dir-free-space` preflight check |
 | Appliance data free inodes | 200,000 minimum | `data-dir-free-inodes` preflight check |
 | cgroups | v2 (unified hierarchy) | `cgroup-v2-enabled` preflight check |
 | Kernel user namespaces | Enabled | `kernel-user-namespaces-enabled` preflight check |
