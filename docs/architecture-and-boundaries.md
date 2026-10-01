@@ -16,7 +16,12 @@ private application source.
 
 ## Accepted Direction
 
-- V1 supports a dedicated single-node Linux appliance with product-managed K3s
+- A single control-plane node is the default appliance shape. The same signed
+  bundle can explicitly enroll one or more offline-validated K3s workers; this
+  is never automatic discovery or a connected installer.
+- The appliance name and selected profile identify the cluster, not an
+  individual host. The control-plane remains the fixed ingress and mDNS owner
+  for the initial multi-node topology.
 - the only production install path is the signed air-gap bundle
 - installation and runtime must work with public egress denied
 - the installer is manifest-driven rather than hardcoded
@@ -65,6 +70,12 @@ The public lifecycle surface is centered on:
 
 - `zonctl preflight`
 - `zonctl install`
+- `zonctl cluster-enrollment-create`
+- `zonctl cluster-join`
+- `zonctl cluster-node-register`
+- `zonctl cluster-inference-deploy`
+- `zonctl cluster-worker-upgrade`
+- `zonctl cluster-node-remove`
 - `zonctl status`
 - `zonctl verify`
 - `zonctl backup`

@@ -194,6 +194,98 @@ unverified substitution. First-admin creation and base license acceptance are
 not part of `zonctl install`; use the control-plane UI or the release-flow
 config keys `install.bootstrap_admin` and `install.enable_default_license`.
 
+## Explicit Worker Enrollment
+
+The first node is the control plane and the only mDNS/ingress owner. Add a
+worker only with the same verified release bundle; never discover peers through
+mDNS or install a worker from the internet.
+
+On the control plane, create an owner-readable enrollment artifact for the
+specific worker name and its reachable K3s API endpoint. Transfer this file by
+an operator-approved protected offline channel. It contains an automatically
+expiring K3s **agent bootstrap token** (15 minutes by default, configurable
+from one minute through 24 hours), never the reusable K3s server token. Do not
+paste it into terminals, tickets, or logs; create a fresh enrollment if it
+expires before the worker joins.
+
+```bash
+sudo zonctl cluster-enrollment-create \
+  --worker-name gpu-worker-1 --worker-role inference \
+  --control-endpoint https://10.0.0.10:6443 \
+  --enrollment-out /root/gpu-worker-1.enrollment
+```
+
+Record the reported signer fingerprint through a separate trusted channel. On
+the worker, use its local copy of the signed bundle and that pinned fingerprint:
+
+```bash
+sudo zonctl cluster-join \
+  --bundle-dir /media/zon/foundation \
+  --enrollment-file /root/gpu-worker-1.enrollment \
+  --cluster-signer-fingerprint sha256:<fingerprint> \
+  --node-name gpu-worker-1
+```
+
+After K3s reports the node ready, return to the control plane to verify, label,
+and add it to authoritative inventory:
+
+```bash
+sudo zonctl cluster-node-register --worker-name gpu-worker-1 --worker-role inference
+```
+
+For an accelerated (`acc-llm` / vLLM) worker, `cluster-join` configures the
+NVIDIA container runtime on that worker after its K3s agent starts. The later
+control-plane deployment step creates the shared Kubernetes `RuntimeClass`.
+Do not try to copy containerd configuration from the control-plane host; GPU
+runtime configuration is per node.
+
+After registration, reconcile that node's isolated inference release from the
+same signed bundle selection. This creates a node-bound manager, engine
+service, and model claim; it never accepts image, selector, or endpoint input
+from the command line. The control plane records the Kubernetes node UID at
+registration and uses that UID—not the reusable node name—as durable model
+instance identity.
+
+```bash
+sudo zonctl cluster-inference-deploy \
+  --bundle-dir /media/zon/foundation \
+  --pack-dir /media/zon/std-llm \
+  --worker-name gpu-worker-1
+```
+
+To remove a worker, run this on the control plane. It cordons the node,
+atomically removes that node's ready-model aliases from the shared inference
+routing registry, drains Kubernetes work, removes that node's isolated Helm
+release, then deletes the node and inventory record. If a concurrent model
+publication changes the registry, the operation fails closed; rerun it rather
+than risking loss of another node's route:
+
+```bash
+sudo zonctl cluster-node-remove --worker-name gpu-worker-1 --confirm gpu-worker-1
+```
+
+### Ordered cluster upgrade
+
+An appliance upgrade is ordered: copy the same signed target bundle to each
+worker, upgrade each worker locally, confirm its Kubernetes node is Ready, and
+only then upgrade the control plane. No host is remotely modified and the
+control plane refuses its own upgrade while any enrolled worker reports a K3s
+version other than the signed target.
+
+```bash
+# Run on each worker first, using that worker's local bundle copy.
+sudo zonctl cluster-worker-upgrade \
+  --bundle-dir /media/zon/foundation \
+  --pack-dir /media/zon/std-llm \
+  --node-name gpu-worker-1
+
+# Then run on the control plane. It checks every enrolled worker live.
+sudo zonctl upgrade --bundle-dir /media/zon/foundation --pack-dir /media/zon/std-llm
+```
+
+If a worker update fails after replacing its K3s files, `zonctl` restores the
+prior binary, agent configuration, and unit before restarting the agent.
+
 ## What `zonctl upgrade` Actually Does
 
 1. Loads current installed state.
@@ -214,6 +306,12 @@ Backup:
 ```bash
 sudo zonctl backup --state-dir "${STATE_DIR}" --output text
 ```
+
+Run the same command on every worker. On an inference worker it snapshots the
+local K3s agent data and `/data/zon/inference/models` in one checksummed local
+backup. That model snapshot is node-local: retain or transfer the complete
+backup directory through an operator-approved offline channel; it is never
+assumed to be present on the control plane or another worker.
 
 Restore:
 
