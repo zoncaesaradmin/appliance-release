@@ -91,14 +91,11 @@ if [[ -z "${CONNECT_IP}" ]]; then
 fi
 if [[ -z "${CONNECT_IP}" && -n "${DEVHOST_CONFIG}" ]]; then
   DEVHOST_CONFIG="$(require_config_path "${DEVHOST_CONFIG}")"
-  if TARGET_ALIAS="$(config_get_optional "${DEVHOST_CONFIG}" "target_host.alias" || true)" \
-    && TARGET_ALIAS="$(printf '%s' "${TARGET_ALIAS}" | tr -d '[:space:]')" \
-    && [[ -n "${TARGET_ALIAS}" ]]; then
-    if CONNECT_IP="$(ssh_target_ipv4 "${TARGET_ALIAS}" 2>/dev/null)"; then
-      :
-    else
-      CONNECT_IP=""
-    fi
+  parse_target_host_cluster "${DEVHOST_CONFIG}"
+  if CONNECT_IP="$(ssh_target_ipv4 "${TARGET_PRIME_HOST}" 2>/dev/null)"; then
+    :
+  else
+    CONNECT_IP=""
   fi
 fi
 

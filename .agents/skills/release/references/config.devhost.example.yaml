@@ -32,6 +32,13 @@ build_host:
 # ============================================================================
 
 target_host:
+  # One SSH target, or a comma-separated list. Single alias with no roles:
+  # that host is the whole appliance (implicit prime).
+  # Multi-node requires matching target_host.roles (prime|member):
+  #   alias: zonsys@192.168.1.151,zonsys@192.168.1.152
+  #   roles: prime,member
+  # First alias must be prime. Two primes are rejected (HA needs three).
+  # Three primes: advertised LAN name stays on the first prime.
   alias: zonsys@192.168.1.151
   # Appliance state dir is not config: fixed product path /var/lib/zon/state
   # (install-release.sh STATE_DIR / zonctl default). Override only by

@@ -98,6 +98,11 @@ IMAGE_PULL_REGISTRY=""
 IMAGE_PULL_USERNAME_ENV=""
 IMAGE_PULL_TOKEN_ENV=""
 IMAGE_PULL_TLS_VERIFY_ENV=""
+# Skill-patched member/peer join (empty = fresh prime install).
+JOIN_ENROLLMENT_FILE=""
+CLUSTER_SIGNER_FINGERPRINT=""
+# 1 on the advertised prime when the cluster has three primes (embedded etcd).
+CLUSTER_INIT="0"
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
 # =============================================================================
@@ -707,6 +712,9 @@ if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
     lifecycle_args+=(--image-pull-registry-tls-verify-env "${IMAGE_PULL_TLS_VERIFY_ENV}")
   fi
 fi
+if [[ "${CLUSTER_INIT}" == "1" || "${CLUSTER_INIT}" == "true" ]]; then
+  lifecycle_args+=(--cluster-init)
+fi
 if [[ "${DRY_RUN}" == "1" ]]; then
   lifecycle_args+=(--dry-run)
 fi
@@ -722,6 +730,41 @@ fi
 
 install_stdout="$(mktemp "${OUT_DIR}/.zonctl-install-stdout.XXXXXX")"
 install_stderr="$(mktemp "${OUT_DIR}/.zonctl-install-stderr.XXXXXX")"
+
+if [[ -n "${JOIN_ENROLLMENT_FILE}" ]]; then
+  require_nonempty "CLUSTER_SIGNER_FINGERPRINT" "${CLUSTER_SIGNER_FINGERPRINT}"
+  require_nonempty "NODE_NAME" "${NODE_NAME}"
+  join_args=(
+    --bundle-dir "${BUNDLE_DIR}"
+    --public-key "${PUBLIC_KEY}"
+    --state-dir "${STATE_DIR}"
+    --output "${OUTPUT_FORMAT}"
+    --enrollment-file "${JOIN_ENROLLMENT_FILE}"
+    --cluster-signer-fingerprint "${CLUSTER_SIGNER_FINGERPRINT}"
+    --node-name "${NODE_NAME}"
+  )
+  for pack_dir in "${PACK_DIRS[@]}"; do
+    join_args+=(--pack-dir "${pack_dir}")
+  done
+  if ((${#TLS_SANS[@]} > 0)); then
+    for tls_san in "${TLS_SANS[@]}"; do
+      join_args+=(--tls-san "${tls_san}")
+    done
+  fi
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    join_args+=(--dry-run)
+  fi
+  echo "[5/5] Joining this host to the appliance cluster as ${NODE_NAME}."
+  if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${ZONCTL}" cluster-join "${join_args[@]}"; then
+    echo "[5/5] Cluster join completed."
+    rm -f "${install_stdout}" "${install_stderr}"
+    announce_zonctl_ready
+    exit 0
+  fi
+  print_captured_failure "[5/5] Cluster join failed." "${install_stdout}" "${install_stderr}"
+  rm -f "${install_stdout}" "${install_stderr}"
+  exit 1
+fi
 
 echo "[5/5] Installing appliance platform. This can take several minutes."
 if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${ZONCTL}" install "${lifecycle_args[@]}"; then

@@ -16,12 +16,13 @@ private application source.
 
 ## Accepted Direction
 
-- A single control-plane node is the default appliance shape. The same signed
-  bundle can explicitly enroll one or more offline-validated K3s workers; this
-  is never automatic discovery or a connected installer.
+- A single **prime** is the default appliance shape. Extra **members** join
+  from the same signed bundle through explicit enrollment; this is never
+  automatic discovery or a connected installer.
 - The appliance name and selected profile identify the cluster, not an
-  individual host. The control-plane remains the fixed ingress and mDNS owner
-  for the initial multi-node topology.
+  individual host. The first listed prime remains the fixed advertised LAN
+  name, ingress, and mDNS owner. Internals use K3s server/agent; operators
+  do not write those terms in install YAML.
 - the only production install path is the signed air-gap bundle
 - installation and runtime must work with public egress denied
 - the installer is manifest-driven rather than hardcoded

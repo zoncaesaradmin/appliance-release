@@ -429,6 +429,198 @@ csv_items_trimmed() {
   done
 }
 
+# Operator-facing cluster roles (not Kubernetes terms).
+#   prime  — advertised LAN owner; runs the K3s API; <name>.local points here.
+#   member — joins the same appliance; does not advertise .local.
+TARGET_HOST_ROLE_PRIME="prime"
+TARGET_HOST_ROLE_MEMBER="member"
+
+# DNS-1123 node name from an SSH alias (user@host or host). IPv4 becomes
+# dash-separated so enrollment --node-name stays a valid Kubernetes name.
+target_node_name_from_alias() {
+  local alias="${1:-}"
+  local host=""
+  alias="$(printf '%s' "${alias}" | tr -d '[:space:]')"
+  [[ -n "${alias}" ]] || fail "target node name: empty SSH alias"
+  host="${alias##*@}"
+  host="$(printf '%s' "${host}" | tr '[:upper:]' '[:lower:]')"
+  if [[ "${host}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    printf '%s\n' "${host//./-}"
+    return 0
+  fi
+  host="${host%%.*}"
+  host="$(printf '%s' "${host}" | tr -c 'a-z0-9-' '-')"
+  host="$(printf '%s' "${host}" | sed -e 's/^-*//' -e 's/-*$//')"
+  [[ -n "${host}" ]] || fail "target node name: could not derive a DNS label from ${alias}"
+  printf '%s\n' "${host}"
+}
+
+# Parse target_host.alias (+ optional target_host.roles) into cluster fields.
+# Sets TARGET_HOST (advertised prime alias, backward compatible), TARGET_PRIME_HOST,
+# TARGET_PRIME_COUNT, TARGET_HOST_COUNT, TARGET_CLUSTER_KIND, TARGET_HOST_ALIASES,
+# TARGET_HOST_ROLES, TARGET_MEMBER_ALIASES, TARGET_PEER_PRIME_ALIASES (newline lists).
+parse_target_host_cluster() {
+  local config_path="$1"
+  local alias_csv roles_csv
+  local -a aliases=()
+  local -a roles=()
+  local item role first_role prime_count=0
+  TARGET_HOST_ALIASES=""
+  TARGET_HOST_ROLES=""
+  TARGET_MEMBER_ALIASES=""
+  TARGET_PEER_PRIME_ALIASES=""
+  TARGET_PRIME_HOST=""
+  TARGET_HOST=""
+  TARGET_PRIME_COUNT=0
+  TARGET_HOST_COUNT=0
+  TARGET_CLUSTER_KIND=""
+
+  alias_csv="$(config_get "${config_path}" "target_host.alias")"
+  roles_csv="$(config_get_optional "${config_path}" "target_host.roles" || true)"
+  while IFS= read -r item; do
+    [[ -n "${item}" ]] || continue
+    aliases+=("${item}")
+  done < <(csv_items_trimmed "${alias_csv}")
+  TARGET_HOST_COUNT="${#aliases[@]}"
+  if ((TARGET_HOST_COUNT < 1)); then
+    fail "target_host.alias must name at least one SSH target"
+  fi
+  if ((TARGET_HOST_COUNT == 1)) && [[ -z "$(printf '%s' "${roles_csv}" | tr -d '[:space:]')" ]]; then
+    roles=("${TARGET_HOST_ROLE_PRIME}")
+  else
+    if [[ -z "$(printf '%s' "${roles_csv}" | tr -d '[:space:]')" ]]; then
+      fail "multi-node requires target_host.roles (prime or member, same length as target_host.alias)"
+    fi
+    while IFS= read -r item; do
+      [[ -n "${item}" ]] || continue
+      roles+=("${item}")
+    done < <(csv_items_trimmed "${roles_csv}")
+    if ((${#roles[@]} != TARGET_HOST_COUNT)); then
+      fail "target_host.roles must have one entry per target_host.alias (got ${#roles[@]} roles for ${TARGET_HOST_COUNT} aliases)"
+    fi
+  fi
+  first_role="$(printf '%s' "${roles[0]}" | tr '[:upper:]' '[:lower:]')"
+  if [[ "${first_role}" != "${TARGET_HOST_ROLE_PRIME}" ]]; then
+    fail "first host must be prime (got ${roles[0]})"
+  fi
+  local i
+  for i in "${!aliases[@]}"; do
+    role="$(printf '%s' "${roles[$i]}" | tr '[:upper:]' '[:lower:]')"
+    case "${role}" in
+      "${TARGET_HOST_ROLE_PRIME}")
+        prime_count=$((prime_count + 1))
+        if [[ -z "${TARGET_PRIME_HOST}" ]]; then
+          TARGET_PRIME_HOST="${aliases[$i]}"
+        else
+          TARGET_PEER_PRIME_ALIASES+="${aliases[$i]}"$'\n'
+        fi
+        ;;
+      "${TARGET_HOST_ROLE_MEMBER}")
+        TARGET_MEMBER_ALIASES+="${aliases[$i]}"$'\n'
+        ;;
+      *)
+        fail "target_host.roles entries must be prime or member (got ${roles[$i]})"
+        ;;
+    esac
+    TARGET_HOST_ALIASES+="${aliases[$i]}"$'\n'
+    TARGET_HOST_ROLES+="${role}"$'\n'
+  done
+  TARGET_PRIME_COUNT="${prime_count}"
+  TARGET_HOST="${TARGET_PRIME_HOST}"
+  case "${TARGET_PRIME_COUNT}" in
+    1)
+      if ((TARGET_HOST_COUNT == 1)); then
+        TARGET_CLUSTER_KIND="single"
+      else
+        TARGET_CLUSTER_KIND="prime-members"
+      fi
+      ;;
+    2)
+      fail "cluster HA needs three primes (etcd quorum); two primes are not supported"
+      ;;
+    3)
+      TARGET_CLUSTER_KIND="three-prime-ha"
+      ;;
+    *)
+      fail "this release supports one prime or three primes (got ${TARGET_PRIME_COUNT})"
+      ;;
+  esac
+}
+
+# Print the advertised prime's K3s API URL (https://<lan-ipv4>:6443).
+target_prime_control_endpoint() {
+  local ip=""
+  ip="$(ssh_target_ipv4 "${TARGET_PRIME_HOST}")" || fail "advertised prime ${TARGET_PRIME_HOST} must be user@IPv4 so enrollment can pin the API endpoint"
+  printf 'https://%s:6443\n' "${ip}"
+}
+
+# Operator-facing join plan (no SSH). Used by tests and the join script.
+emit_cluster_join_plan() {
+  local alias node_name
+  if [[ "${TARGET_CLUSTER_KIND}" == "single" ]]; then
+    printf 'kind=single host=%s\n' "${TARGET_HOST}"
+    return 0
+  fi
+  printf 'kind=%s prime=%s advertised_node=%s endpoint=%s\n' \
+    "${TARGET_CLUSTER_KIND}" \
+    "${TARGET_PRIME_HOST}" \
+    "$(target_node_name_from_alias "${TARGET_PRIME_HOST}")" \
+    "$(target_prime_control_endpoint)"
+  while IFS= read -r alias; do
+    [[ -n "${alias}" ]] || continue
+    node_name="$(target_node_name_from_alias "${alias}")"
+    printf 'peer-prime enroll=%s join=%s register-role=prime\n' "${node_name}" "${alias}"
+  done <<<"${TARGET_PEER_PRIME_ALIASES:-}"
+  while IFS= read -r alias; do
+    [[ -n "${alias}" ]] || continue
+    node_name="$(target_node_name_from_alias "${alias}")"
+    printf 'member enroll=%s join=%s register-role=worker\n' "${node_name}" "${alias}"
+  done <<<"${TARGET_MEMBER_ALIASES:-}"
+}
+
+# Uninstall an owned appliance on a remote host when zonctl is present.
+remote_uninstall_appliance_if_present() {
+  local alias="$1"
+  local sudo_password="$2"
+  local quoted
+  quoted="$(shell_quote "${sudo_password}")"
+  run_ssh_logged "${alias}" "${3:-/dev/null}" "set -euo pipefail
+if command -v zonctl >/dev/null 2>&1; then
+  echo \"uninstalling existing appliance on ${alias} before cluster reinstall\"
+  printf '%s\\n' ${quoted} | sudo -S -p '' zonctl uninstall --confirm yes
+elif [[ -x /usr/local/bin/zonctl ]]; then
+  echo \"uninstalling existing appliance on ${alias} before cluster reinstall\"
+  printf '%s\\n' ${quoted} | sudo -S -p '' /usr/local/bin/zonctl uninstall --confirm yes
+else
+  echo \"no zonctl on ${alias}; skipping uninstall\"
+fi"
+}
+
+# Members and extra primes first, then the advertised prime (caller).
+uninstall_non_advertised_cluster_hosts() {
+  local sudo_password="$1"
+  local log_file="$2"
+  local alias
+  while IFS= read -r alias; do
+    [[ -n "${alias}" ]] || continue
+    remote_uninstall_appliance_if_present "${alias}" "${sudo_password}" "${log_file}"
+  done <<<"${TARGET_MEMBER_ALIASES:-}${TARGET_PEER_PRIME_ALIASES:-}"
+}
+
+# Append every alias IPv4 onto EXTRA_TLS_SANS (space-separated).
+append_cluster_alias_tls_sans() {
+  local alias host
+  while IFS= read -r alias; do
+    [[ -n "${alias}" ]] || continue
+    host=""
+    if host="$(ssh_target_ipv4 "${alias}" 2>/dev/null)"; then
+      if [[ " ${EXTRA_TLS_SANS:-} " != *" ${host} "* ]]; then
+        EXTRA_TLS_SANS="${EXTRA_TLS_SANS:+${EXTRA_TLS_SANS} }${host}"
+      fi
+    fi
+  done <<<"${TARGET_HOST_ALIASES:-}"
+}
+
 require_profile_supports_workflows() {
   local enabled_value="${1:-}"
   local profile="${2:-}"

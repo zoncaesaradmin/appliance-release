@@ -194,19 +194,35 @@ unverified substitution. First-admin creation and base license acceptance are
 not part of `zonctl install`; use the control-plane UI or the release-flow
 config keys `install.bootstrap_admin` and `install.enable_default_license`.
 
-## Explicit Worker Enrollment
+## Appliance roles: prime and member
 
-The first node is the control plane and the only mDNS/ingress owner. Add a
-worker only with the same verified release bundle; never discover peers through
-mDNS or install a worker from the internet.
+The operator config names hosts as **prime** or **member**. Do not put
+Kubernetes terms in that YAML.
 
-On the control plane, create an owner-readable enrollment artifact for the
-specific worker name and its reachable K3s API endpoint. Transfer this file by
-an operator-approved protected offline channel. It contains an automatically
-expiring K3s **agent bootstrap token** (15 minutes by default, configurable
-from one minute through 24 hours), never the reusable K3s server token. Do not
-paste it into terminals, tickets, or logs; create a fresh enrollment if it
-expires before the worker joins.
+- **prime** owns the appliance identity. Product HTTPS and
+  `<appliance-name>.local` always resolve to this host’s LAN IPv4. Charts,
+  host-agent, Traefik, LAN DNS, and `/data/zon` hostPath stay here.
+- **member** joins the same appliance name and signed bundle. It does not
+  advertise `.local` and does not install product charts.
+
+One alias with no `roles:` key is a single-host appliance (implicit prime).
+Two hosts are always `prime,member`. Cluster HA needs three primes; two
+primes are rejected.
+
+## Explicit extra-host enrollment
+
+The first listed prime is the advertised LAN owner and the only mDNS/ingress
+host. Add a member only with the same verified release bundle; never discover
+peers through mDNS or install a member from the internet.
+
+On the advertised prime, create an owner-readable enrollment artifact for the
+specific member node name and its reachable API endpoint. Transfer this file by
+an operator-approved protected offline channel. Members receive an automatically
+expiring **join token** (15 minutes by default, configurable from one minute
+through 24 hours). Extra primes (three-prime HA only) receive the server join
+credential in the same enrollment envelope; it is never printed. Do not paste
+enrollments into terminals, tickets, or logs; create a fresh enrollment if it
+expires before the host joins.
 
 ```bash
 sudo zonctl cluster-enrollment-create \
@@ -215,8 +231,12 @@ sudo zonctl cluster-enrollment-create \
   --enrollment-out /root/gpu-worker-1.enrollment
 ```
 
+For a compute member, use `--worker-role worker`. For an extra prime in a
+three-prime cluster, use `--worker-role prime` (fresh install only; do not
+migrate a one-prime SQLite appliance in place).
+
 Record the reported signer fingerprint through a separate trusted channel. On
-the worker, use its local copy of the signed bundle and that pinned fingerprint:
+the joining host, use its local copy of the signed bundle and that pinned fingerprint:
 
 ```bash
 sudo zonctl cluster-join \

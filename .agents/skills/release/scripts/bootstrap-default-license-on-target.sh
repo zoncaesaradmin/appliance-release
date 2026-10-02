@@ -85,7 +85,7 @@ if bool_true "${LOCAL_MODE}"; then
     TARGET_HOST="local@$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo target-host)"
   fi
 else
-  TARGET_HOST="$(config_get "${DEVHOST_CONFIG}" "target_host.alias")"
+  parse_target_host_cluster "${DEVHOST_CONFIG}"
 fi
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 

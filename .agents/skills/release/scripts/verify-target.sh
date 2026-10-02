@@ -152,7 +152,7 @@ if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"
 fi
 
-TARGET_HOST="$(config_get "${DEVHOST_CONFIG}" "target_host.alias")"
+parse_target_host_cluster "${DEVHOST_CONFIG}"
 TARGET_STATE_DIR="$(default_appliance_state_dir)"
 STATUS_CMD="${STATUS_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.status_command" || true)}"
 VERIFY_CMD="${VERIFY_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.verify_command" || true)}"
@@ -545,6 +545,20 @@ if bool_true "${WORKFLOWS_ENABLED}"; then
   fi
 fi
 
+cluster_nodes_code=""
+if ((TARGET_HOST_COUNT > 1)); then
+  if run_check "cluster-nodes" "sudo kubectl get nodes --no-headers"; then
+    cluster_nodes_code="0"
+    ready_count="$(grep -c ' Ready' "${RUN_DIR}/logs/cluster-nodes.log" || true)"
+    if ((ready_count < TARGET_HOST_COUNT)); then
+      log "cluster-nodes: expected ${TARGET_HOST_COUNT} Ready nodes, counted ${ready_count}"
+      cluster_nodes_code="1"
+    fi
+  else
+    cluster_nodes_code="$?"
+  fi
+fi
+
 overall_failed="false"
 for code in "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}"; do
   if [[ "${code}" != "0" ]]; then
@@ -552,6 +566,9 @@ for code in "${status_code}" "${verify_code}" "${service_health_code}" "${app_ve
   fi
 done
 if [[ -n "${smoke_test_code}" && "${smoke_test_code}" != "0" ]]; then
+  overall_failed="true"
+fi
+if [[ -n "${cluster_nodes_code}" && "${cluster_nodes_code}" != "0" ]]; then
   overall_failed="true"
 fi
 if [[ -n "${ui_home_code}" && "${ui_home_code}" != "0" ]]; then

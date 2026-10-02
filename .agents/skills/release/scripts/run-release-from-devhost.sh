@@ -169,6 +169,13 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
     log "── bootstrapDefaultLicense: skipped (install.enable_default_license not true)"
   fi
 
+  log "── clusterJoin (prime/member extra hosts)"
+  bash "${SCRIPT_DIR}/join-cluster-nodes-from-devhost.sh" \
+    --config "${DEVHOST_CONFIG}" \
+    --build-publish-config "${BUILD_PUBLISH_CONFIG}" \
+    --install-config "${INSTALL_CONFIG}" \
+    --run-dir "${RUN_DIR}"
+
   log "── targetVerify"
   bash "${SCRIPT_DIR}/verify-target.sh" \
     --config "${DEVHOST_CONFIG}" \
