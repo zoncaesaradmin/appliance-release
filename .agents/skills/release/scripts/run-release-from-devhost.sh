@@ -30,11 +30,11 @@ Export on this Mac as needed:
   APPLIANCE_FIRST_ADMIN_PASSWORD when install.bootstrap_admin is true
 
   --build-publish-config  → run build/publish
-  --install-config        → public install → bootstrap_admin / default license
-                            (when true) → targetVerify → clientVerify (if
-                            bootstrap_admin) → report → clean build-host
-                            .run / workspace intermediates → "OK run" if
-                            report.final_ok (also requires --build-publish-config)
+  --install-config        → public install, optional bootstrap, then
+                            targetVerify, clientVerify, report, then clean
+                            build-host .run / workspace intermediates.
+                            Prints OK run when report.final_ok is true.
+                            Requires --build-publish-config.
 
 Examples:
   full e2e:   … --config … --build-publish-config … --install-config …
@@ -42,6 +42,11 @@ Examples:
 EOF
 }
 
+# Bash re-reads this file after each top-level command. A long build plus an
+# in-place edit of this script can then parse from a stale offset and fail
+# with "syntax error near unexpected token `('". Keep the flow in one
+# function so it is parsed once before any remote work.
+run_release_from_devhost() {
 DEVHOST_CONFIG=""
 BUILD_PUBLISH_CONFIG=""
 INSTALL_CONFIG=""
@@ -204,3 +209,6 @@ log "done"
 if bool_true "${FINAL_OK}"; then
   printf 'OK run\n'
 fi
+}
+
+run_release_from_devhost "$@"
