@@ -355,6 +355,72 @@ def test_release_run_dir_helpers() -> None:
         assert result.returncode == 0, result.stderr
 
 
+def test_cleanup_build_host_work_paths() -> None:
+    with tempfile.TemporaryDirectory(prefix="build-host-cleanup-") as tmp:
+        root = Path(tmp) / "home" / "zonsys" / "appliance-build"
+        skill_run = Path(tmp) / "home" / "zonsys" / ".run" / "appliance-release"
+        checkout_run = root / "release" / ".run" / "appliance-release" / "20260101T000000Z"
+        code_run = root / "repos" / "appliance-code" / ".run"
+        workspace = root / "workspace" / "out"
+        artifacts = root / "artifacts"
+        export_dir = root / "export"
+        release_git = root / "release" / ".git"
+        code_git = root / "repos" / "appliance-code" / ".git"
+        for path in (checkout_run, code_run, workspace, artifacts, export_dir, release_git, code_git, skill_run / "old"):
+            path.mkdir(parents=True)
+            (path / "keep-or-drop.bin").write_bytes(b"x" * 8)
+
+        result = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                (
+                    f'source "{COMMON_SH}"; '
+                    f'cleanup_build_host_work_paths "{skill_run}" "{root}"; '
+                    f'[[ ! -e "{skill_run}" ]]; '
+                    f'[[ ! -e "{root}/release/.run/appliance-release" ]]; '
+                    f'[[ ! -e "{code_run}" ]]; '
+                    f'[[ ! -e "{workspace}" ]]; '
+                    f'[[ ! -e "{artifacts}" ]]; '
+                    f'[[ -d "{export_dir}" ]]; '
+                    f'[[ -d "{release_git}" ]]; '
+                    f'[[ -d "{code_git}" ]]; '
+                    f'if (cleanup_build_host_work_paths "{tmp}/not-appliance-release" ""); then exit 1; fi; '
+                    f'if (cleanup_build_host_work_paths "" "/tmp"); then exit 1; fi; '
+                    f'if (cleanup_build_host_work_paths "" "/"); then exit 1; fi'
+                ),
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert not skill_run.exists()
+        assert not (root / "release" / ".run" / "appliance-release").exists()
+        assert not code_run.exists()
+        assert export_dir.is_dir()
+        assert release_git.is_dir()
+        assert code_git.is_dir()
+
+        rendered = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                (
+                    f'source "{COMMON_SH}"; '
+                    f'render_cleanup_build_host_work_cmd "{skill_run}" "{root}"'
+                ),
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert rendered.returncode == 0, rendered.stderr + rendered.stdout
+        assert f"rm -rf {skill_run}" in rendered.stdout
+        assert f"rm -rf {root}/repos/appliance-code/.run" in rendered.stdout
+        assert "export" not in rendered.stdout
+
+
 def test_prune_appliance_release_run_root() -> None:
     with tempfile.TemporaryDirectory(prefix="run-dir-prune-") as tmp:
         root = Path(tmp) / ".run" / "appliance-release"
@@ -497,6 +563,8 @@ def main() -> None:
     test_inject_env_path_after_sudo_helper()
     test_require_config_path_helper()
     test_release_run_dir_helpers()
+    test_prune_appliance_release_run_root()
+    test_cleanup_build_host_work_paths()
     test_require_appliance_profile_helper()
     test_product_control_plane_identity_helpers()
     print("live release repo preflight tests passed")

@@ -190,6 +190,20 @@ At the start of every fresh build/publish, the skill prunes prior directories un
 the build host so multi-GB validation copies from earlier runs cannot fill the
 disk. The current run directory is created after that prune.
 
+After a successful full e2e (`--build-publish-config` and `--install-config`,
+install + verify + report all succeeded), `run-release-from-devhost.sh` also
+deletes leftover build-host work so disk is freed immediately, not only at the
+next build:
+
+- `$HOME/.run/appliance-release` (skill validation copies)
+- `$remote_build_root/release/.run/appliance-release` (if the worker used that cwd)
+- `$remote_build_root/repos/appliance-code/.run` (packaging OCI intermediates)
+- `$remote_build_root/workspace` and `$remote_build_root/artifacts`
+
+The release checkout, git repos, `export/`, and third-party freeze cache stay.
+The Mac/devhost `.run` report directory is kept. Failed runs and build-only
+invocations do not clean the build host.
+
 The wrapper writes the release-flow metadata and report on success and also
 best-effort on phase failure, so failed runs should still leave a useful
 handoff report in the run directory.

@@ -32,8 +32,9 @@ Export on this Mac as needed:
   --build-publish-config  → run build/publish
   --install-config        → public install → bootstrap_admin / default license
                             (when true) → targetVerify → clientVerify (if
-                            bootstrap_admin) → "OK run" if report.final_ok
-                            (also requires --build-publish-config)
+                            bootstrap_admin) → report → clean build-host
+                            .run / workspace intermediates → "OK run" if
+                            report.final_ok (also requires --build-publish-config)
 
 Examples:
   full e2e:   … --config … --build-publish-config … --install-config …
@@ -189,6 +190,14 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
     >"${RUN_DIR}/logs/release-report.log" 2>&1 \
     || fail "report failed; see ${RUN_DIR}/logs/release-report.log"
   log "report → ${RUN_DIR}/release-report.md"
+
+  # Build host keeps $HOME/.run and packaging intermediates on failure.
+  # After a successful install+verify, drop those trees so disk does not
+  # accumulate across e2e runs. Devhost .run (this report) is left in place.
+  log "── cleanup build host"
+  BUILD_HOST="$(config_get "${DEVHOST_CONFIG}" "build_host.alias")"
+  [[ -n "${BUILD_HOST}" ]] || fail "build_host.alias is empty"
+  cleanup_build_host_after_successful_release "${BUILD_HOST}" "${BUILD_PUBLISH_CONFIG}"
 fi
 
 log "done"

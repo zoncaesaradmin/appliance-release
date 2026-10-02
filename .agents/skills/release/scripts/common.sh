@@ -212,6 +212,117 @@ prune_appliance_release_run_root() {
   shopt -u nullglob
 }
 
+# Refuse unexpected trees before any post-success rm -rf on the build host.
+# skill_run_root must be .../.run/appliance-release (or empty to skip).
+# remote_build_root must be an absolute path with at least two components
+# (e.g. /home/zonsys/appliance-build), never / or /tmp.
+validate_cleanup_build_host_work_paths() {
+  local skill_run_root="${1:-}"
+  local remote_build_root="${2:-}"
+  if [[ -n "${skill_run_root}" ]]; then
+    case "${skill_run_root}" in
+      */.run/appliance-release) ;;
+      *)
+        fail "refusing to clean unexpected release run root: ${skill_run_root}"
+        ;;
+    esac
+  fi
+  if [[ -z "${remote_build_root}" ]]; then
+    return 0
+  fi
+  case "${remote_build_root}" in
+    /*) ;;
+    *)
+      fail "remote_build_root must be an absolute path: ${remote_build_root}"
+      ;;
+  esac
+  if [[ "${remote_build_root}" == "/" ]]; then
+    fail "refusing to clean remote_build_root=/"
+  fi
+  local root="${remote_build_root%/}"
+  local depth
+  depth="$(awk -F/ '{print NF-1}' <<<"${root}")"
+  if ((depth < 2)); then
+    fail "refusing to clean a shallow remote_build_root: ${root}"
+  fi
+}
+
+# Delete build-host skill run copies and packaging intermediates after a
+# successful e2e. Never deletes the release checkout, repos trees, export/,
+# or third-party freeze cache. Safe to call when paths are absent.
+cleanup_build_host_work_paths() {
+  local skill_run_root="${1:-}"
+  local remote_build_root="${2:-}"
+  validate_cleanup_build_host_work_paths "${skill_run_root}" "${remote_build_root}"
+  if [[ -n "${skill_run_root}" ]]; then
+    log "removing skill run artifacts ${skill_run_root}"
+    rm -rf "${skill_run_root}"
+  fi
+  if [[ -z "${remote_build_root}" ]]; then
+    return 0
+  fi
+  local root="${remote_build_root%/}"
+  local checkout_run="${root}/release/.run/appliance-release"
+  local code_run="${root}/repos/appliance-code/.run"
+  local workspace="${root}/workspace"
+  local artifacts="${root}/artifacts"
+  local p
+  for p in "${checkout_run}" "${code_run}" "${workspace}" "${artifacts}"; do
+    case "${p}" in
+      "${root}"/*) ;;
+      *)
+        fail "internal cleanup path escaped build root: ${p}"
+        ;;
+    esac
+  done
+  log "removing build-host intermediates under ${root}"
+  rm -rf "${checkout_run}" "${code_run}" "${workspace}" "${artifacts}"
+}
+
+# Self-contained remote snippet: same deletes as cleanup_build_host_work_paths.
+render_cleanup_build_host_work_cmd() {
+  local skill_run_root="${1:-}"
+  local remote_build_root="${2:-}"
+  validate_cleanup_build_host_work_paths "${skill_run_root}" "${remote_build_root}"
+  local root="${remote_build_root%/}"
+  printf 'set -euo pipefail\n'
+  if [[ -n "${skill_run_root}" ]]; then
+    printf 'rm -rf %s\n' "$(shell_quote "${skill_run_root}")"
+  fi
+  if [[ -n "${remote_build_root}" ]]; then
+    printf 'rm -rf %s\n' "$(shell_quote "${root}/release/.run/appliance-release")"
+    printf 'rm -rf %s\n' "$(shell_quote "${root}/repos/appliance-code/.run")"
+    printf 'rm -rf %s\n' "$(shell_quote "${root}/workspace")"
+    printf 'rm -rf %s\n' "$(shell_quote "${root}/artifacts")"
+  fi
+}
+
+# SSH to the build host and remove leftover .run / workspace trees after a
+# successful build+install. Failed runs keep those trees for inspection.
+cleanup_build_host_after_successful_release() {
+  local build_host="$1"
+  local build_publish_config="$2"
+  local remote_run_dir_override="${3:-}"
+  [[ -n "${build_host}" ]] || fail "cleanup_build_host_after_successful_release requires a build host"
+  [[ -n "${build_publish_config}" ]] || fail "cleanup_build_host_after_successful_release requires a build-publish config"
+  require_cmd ssh
+  local remote_home remote_run_root remote_build_root remote_cmd
+  remote_home="$(ssh -q -T "${build_host}" 'printf %s "$HOME"')"
+  [[ -n "${remote_home}" ]] || fail "could not resolve remote HOME on ${build_host}"
+  remote_run_root="${remote_home}/.run/appliance-release"
+  if [[ -n "${remote_run_dir_override}" ]]; then
+    local from_override
+    from_override="$(appliance_release_run_root_from_run_dir "${remote_run_dir_override}" || true)"
+    if [[ -n "${from_override}" ]]; then
+      remote_run_root="${from_override}"
+    fi
+  fi
+  remote_build_root="$(resolve_build_publish_remote_build_root "${build_publish_config}")"
+  remote_cmd="$(render_cleanup_build_host_work_cmd "${remote_run_root}" "${remote_build_root}")"
+  log "cleaning build-host work after successful e2e on ${build_host} (${remote_run_root} + intermediates under ${remote_build_root})"
+  ssh -q -T "${build_host}" "${remote_cmd}"
+}
+
 ensure_release_run_dirs() {
   local run_dir="$1"
   shift

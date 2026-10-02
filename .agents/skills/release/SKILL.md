@@ -164,7 +164,7 @@ Product-owned install helper: `scripts/install-release.sh`
 
 **Skill entry / remote wrappers**
 
-- `scripts/run-release-from-devhost.sh` — only day-to-day e2e entry
+- `scripts/run-release-from-devhost.sh` — only day-to-day e2e entry; after a successful install+verify it removes leftover `.run` / workspace trees on the build host
 - `scripts/run-build-and-publish-on-build-host.sh` — Mac: preflight, sync repo, scp config, inject env, SSH
 - `scripts/build-and-publish.sh --local` — thin build-host worker: YAML → three product scripts → collect/validate
 
