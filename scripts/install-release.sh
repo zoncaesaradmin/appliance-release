@@ -312,6 +312,7 @@ echo "  tls-insecure:      ${TLS_INSECURE}"
 echo "  tls-cacert:        ${TLS_CACERT:-empty}"
 echo "  image-pull-registry: ${IMAGE_PULL_REGISTRY:-disabled}"
 echo "  extra-tls-sans:    ${EXTRA_TLS_SANS:-none}"
+echo "  node-name:         ${NODE_NAME:-host-hostname}"
 
 mkdir -p "${OUT_DIR}"
 
