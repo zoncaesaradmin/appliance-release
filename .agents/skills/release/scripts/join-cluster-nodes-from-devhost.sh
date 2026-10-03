@@ -171,17 +171,21 @@ enroll_and_join_host() {
   local enroll_role="$2"
   local register_role="$3"
   local node_name enrollment_remote enrollment_local enroll_json fingerprint
+  local enroll_log host_join_log register_log
   node_name="$(target_node_name_from_alias "${alias}")"
   enrollment_remote="/tmp/appliance-enroll-${node_name}.enrollment"
   enrollment_local="${RUN_DIR}/enrollments/${node_name}.enrollment"
   enroll_json="${RUN_DIR}/metadata/enrollment-${node_name}.json"
+  enroll_log="${RUN_DIR}/logs/target-cluster-enroll-${node_name}.log"
+  host_join_log="${RUN_DIR}/logs/target-cluster-join-${node_name}.log"
+  register_log="${RUN_DIR}/logs/target-cluster-register-${node_name}.log"
 
   log "enrolling ${enroll_role} ${alias} as ${node_name}"
   # run_ssh_captured is ssh -T: sudo's timestamp is TTY-bound, so sudo -n
   # after sudo -S -v fails with "a password is required". Pipe -S into zonctl.
   # --node-name must match install (dash-IP from the SSH alias). zonctl
   # defaults to hostname, which is not the recorded ControlPlaneNode.
-  if ! run_ssh_captured "${TARGET_PRIME_HOST}" "${join_log}" "set -euo pipefail
+  if ! run_ssh_captured "${TARGET_PRIME_HOST}" "${enroll_log}" "set -euo pipefail
 printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' zonctl cluster-enrollment-create --output json \
   --node-name $(shell_quote "${PRIME_NODE_NAME}") \
   --worker-name $(shell_quote "${node_name}") \
@@ -190,10 +194,10 @@ printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' zonctl cluster-enrollment
   --enrollment-out $(shell_quote "${enrollment_remote}")
 printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' sh -c 'chown \"\$SUDO_USER:\$SUDO_USER\" $(shell_quote "${enrollment_remote}") && chmod 0600 $(shell_quote "${enrollment_remote}")'
 "; then
-    fail "cluster-enrollment-create failed for ${node_name}; see ${join_log}"
+    fail "cluster-enrollment-create failed for ${node_name}; see ${enroll_log}"
   fi
   set -e
-  python3 - "${join_log}" "${enroll_json}" <<'PY'
+  python3 - "${enroll_log}" "${enroll_json}" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -225,13 +229,13 @@ PY
   [[ -n "${fingerprint}" ]] || fail "missing enrollment signer fingerprint for ${node_name}"
 
   mkdir -p "$(dirname "${enrollment_local}")"
-  if ! scp -q "${TARGET_PRIME_HOST}:${enrollment_remote}" "${enrollment_local}"; then
-    fail "could not copy enrollment from ${TARGET_PRIME_HOST}; see ${join_log}"
+  if ! scp -q "${TARGET_PRIME_HOST}:${enrollment_remote}" "${enrollment_local}" </dev/null; then
+    fail "could not copy enrollment from ${TARGET_PRIME_HOST}; see ${enroll_log}"
   fi
-  if ! scp -q "${enrollment_local}" "${alias}:${REMOTE_ENROLLMENT}"; then
+  if ! scp -q "${enrollment_local}" "${alias}:${REMOTE_ENROLLMENT}" </dev/null; then
     fail "could not copy enrollment to ${alias}"
   fi
-  if ! scp -q "${LOCAL_HELPER}" "${alias}:${SCRIPT_PATH}"; then
+  if ! scp -q "${LOCAL_HELPER}" "${alias}:${SCRIPT_PATH}" </dev/null; then
     fail "could not copy install helper to ${alias}"
   fi
   rm -f "${enrollment_local}"
@@ -332,34 +336,42 @@ printf '%s\\n' ${quoted_sudo_password} | sudo -S -p ''${sudo_preserve} bash \"\$
 rm -f \"\${enrollment_path}\"
 "
 
-  if ! run_ssh_logged "${alias}" "${join_log}" "${remote_cmd}"; then
-    fail "cluster join failed on ${alias}; see ${join_log}"
+  if ! run_ssh_logged "${alias}" "${host_join_log}" "${remote_cmd}"; then
+    fail "cluster join failed on ${alias}; see ${host_join_log}"
   fi
 
   log "registering ${node_name} as ${register_role} on advertised prime"
   local attempt
   for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    if run_ssh_captured "${TARGET_PRIME_HOST}" "${join_log}" "set -euo pipefail
+    if run_ssh_captured "${TARGET_PRIME_HOST}" "${register_log}" "set -euo pipefail
 printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' zonctl cluster-node-register --output json \
   --node-name $(shell_quote "${PRIME_NODE_NAME}") \
   --worker-name $(shell_quote "${node_name}") \
   --worker-role $(shell_quote "${register_role}")
 "; then
+      log "registered ${node_name}; enroll=${enroll_log} join=${host_join_log} register=${register_log}"
       return 0
     fi
     sleep 6
   done
-  fail "cluster-node-register failed for ${node_name}; see ${join_log}"
+  fail "cluster-node-register failed for ${node_name}; see ${register_log}"
 }
 
-while IFS= read -r alias; do
-  [[ -n "${alias}" ]] || continue
-  enroll_and_join_host "${alias}" "prime" "prime"
-done <<<"${TARGET_PEER_PRIME_ALIASES:-}"
-
-while IFS= read -r alias; do
-  [[ -n "${alias}" ]] || continue
-  enroll_and_join_host "${alias}" "worker" "worker"
-done <<<"${TARGET_MEMBER_ALIASES:-}"
+peer_prime_aliases=()
+member_aliases=()
+snapshot_newline_list "${TARGET_PEER_PRIME_ALIASES:-}" peer_prime_aliases
+snapshot_newline_list "${TARGET_MEMBER_ALIASES:-}" member_aliases
+if ((${#peer_prime_aliases[@]} > 0)); then
+  for alias in "${peer_prime_aliases[@]}"; do
+    enroll_and_join_host "${alias}" "prime" "prime"
+    set -e
+  done
+fi
+if ((${#member_aliases[@]} > 0)); then
+  for alias in "${member_aliases[@]}"; do
+    enroll_and_join_host "${alias}" "worker" "worker"
+    set -e
+  done
+fi
 
 log "cluster join finished; log: ${join_log}"

@@ -184,6 +184,23 @@ def test_three_prime_join_plan() -> None:
         assert "member enroll=" not in out
 
 
+def test_snapshot_newline_list_survives_stdin_drain() -> None:
+    result = _bash(
+        f'source "{COMMON_SH}"; '
+        'snapshot_newline_list $\'a@10.0.0.2\\na@10.0.0.3\\n\' items; '
+        '{ cat >/dev/null; printf "%s," "${items[@]}"; } <<< $\'stolen\\n\''
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert result.stdout.strip() == "a@10.0.0.2,a@10.0.0.3,"
+
+
+def test_run_ssh_captured_does_not_consume_stdin() -> None:
+    text = COMMON_SH.read_text(encoding="utf-8")
+    assert 'stdin=subprocess.DEVNULL' in text
+    assert "ssh -q -T -n \\" in text or 'ssh -q -T -n' in text
+    assert '</dev/null >"${log_file}"' in text
+
+
 def test_join_script_exists() -> None:
     script = Path(__file__).resolve().parent / "join-cluster-nodes-from-devhost.sh"
     text = script.read_text(encoding="utf-8")
@@ -199,9 +216,15 @@ def test_join_script_exists() -> None:
         "PRIME_NODE_NAME",
         'chown \\"\\$SUDO_USER:\\$SUDO_USER\\"',
         "could not copy enrollment from",
+        "snapshot_newline_list",
+        "target-cluster-enroll-",
+        "target-cluster-register-",
+        "</dev/null",
     ):
         assert want in text, want
     assert "sudo -n zonctl" not in text
+    assert 'done <<<"${TARGET_PEER_PRIME_ALIASES:-}"' not in text
+    assert 'done <<<"${TARGET_MEMBER_ALIASES:-}"' not in text
 
 
 def main() -> None:
@@ -216,6 +239,8 @@ def main() -> None:
     test_append_cluster_alias_tls_sans()
     test_two_node_join_plan()
     test_three_prime_join_plan()
+    test_snapshot_newline_list_survives_stdin_drain()
+    test_run_ssh_captured_does_not_consume_stdin()
     test_join_script_exists()
     print("target host cluster tests passed")
 

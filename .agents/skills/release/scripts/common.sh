@@ -557,6 +557,8 @@ target_prime_control_endpoint() {
 # Operator-facing join plan (no SSH). Used by tests and the join script.
 emit_cluster_join_plan() {
   local alias node_name
+  local -a peer_prime_aliases=()
+  local -a member_aliases=()
   if [[ "${TARGET_CLUSTER_KIND}" == "single" ]]; then
     printf 'kind=single host=%s\n' "${TARGET_HOST}"
     return 0
@@ -566,16 +568,20 @@ emit_cluster_join_plan() {
     "${TARGET_PRIME_HOST}" \
     "$(target_node_name_from_alias "${TARGET_PRIME_HOST}")" \
     "$(target_prime_control_endpoint)"
-  while IFS= read -r alias; do
-    [[ -n "${alias}" ]] || continue
-    node_name="$(target_node_name_from_alias "${alias}")"
-    printf 'peer-prime enroll=%s join=%s register-role=prime\n' "${node_name}" "${alias}"
-  done <<<"${TARGET_PEER_PRIME_ALIASES:-}"
-  while IFS= read -r alias; do
-    [[ -n "${alias}" ]] || continue
-    node_name="$(target_node_name_from_alias "${alias}")"
-    printf 'member enroll=%s join=%s register-role=worker\n' "${node_name}" "${alias}"
-  done <<<"${TARGET_MEMBER_ALIASES:-}"
+  snapshot_newline_list "${TARGET_PEER_PRIME_ALIASES:-}" peer_prime_aliases
+  snapshot_newline_list "${TARGET_MEMBER_ALIASES:-}" member_aliases
+  if ((${#peer_prime_aliases[@]} > 0)); then
+    for alias in "${peer_prime_aliases[@]}"; do
+      node_name="$(target_node_name_from_alias "${alias}")"
+      printf 'peer-prime enroll=%s join=%s register-role=prime\n' "${node_name}" "${alias}"
+    done
+  fi
+  if ((${#member_aliases[@]} > 0)); then
+    for alias in "${member_aliases[@]}"; do
+      node_name="$(target_node_name_from_alias "${alias}")"
+      printf 'member enroll=%s join=%s register-role=worker\n' "${node_name}" "${alias}"
+    done
+  fi
 }
 
 # Uninstall an owned appliance on a remote host when zonctl is present.
@@ -596,15 +602,34 @@ else
 fi"
 }
 
+# Copy a newline list into a named array so later ssh/scp cannot steal remaining
+# items from the caller's stdin (OpenSSH reads stdin unless -n / </dev/null).
+snapshot_newline_list() {
+  local list="$1"
+  local dest="$2"
+  local item
+  case "${dest}" in
+    ''|*[!A-Za-z0-9_]*|[0-9]*) fail "invalid snapshot dest: ${dest}" ;;
+  esac
+  eval "${dest}=()"
+  while IFS= read -r item; do
+    [[ -n "${item}" ]] || continue
+    eval "${dest}+=($(printf '%q' "${item}"))"
+  done <<<"${list}"
+}
+
 # Members and extra primes first, then the advertised prime (caller).
 uninstall_non_advertised_cluster_hosts() {
   local sudo_password="$1"
   local log_file="$2"
   local alias
-  while IFS= read -r alias; do
-    [[ -n "${alias}" ]] || continue
-    remote_uninstall_appliance_if_present "${alias}" "${sudo_password}" "${log_file}"
-  done <<<"${TARGET_MEMBER_ALIASES:-}${TARGET_PEER_PRIME_ALIASES:-}"
+  local -a extra_hosts=()
+  snapshot_newline_list "${TARGET_MEMBER_ALIASES:-}${TARGET_PEER_PRIME_ALIASES:-}" extra_hosts
+  if ((${#extra_hosts[@]} > 0)); then
+    for alias in "${extra_hosts[@]}"; do
+      remote_uninstall_appliance_if_present "${alias}" "${sudo_password}" "${log_file}"
+    done
+  fi
 }
 
 # Append every alias IPv4 onto EXTRA_TLS_SANS (space-separated).
@@ -729,6 +754,7 @@ with open(log_file, "wb") as handle:
                 "ssh",
                 "-q",
                 "-T",
+                "-n",
                 "-o",
                 "BatchMode=yes",
                 "-o",
@@ -738,6 +764,7 @@ with open(log_file, "wb") as handle:
                 host,
                 remote,
             ],
+            stdin=subprocess.DEVNULL,
             stdout=handle,
             stderr=subprocess.STDOUT,
             timeout=timeout_sec,
@@ -751,11 +778,13 @@ with open(log_file, "wb") as handle:
 PY
     cmd_status=$?
   else
-    ssh -q -T \
+    # -n / </dev/null: do not consume the caller's stdin. A while-read over
+    # extra cluster aliases used to lose every host after the first enroll.
+    ssh -q -T -n \
       -o BatchMode=yes \
       -o ServerAliveInterval=15 \
       -o ServerAliveCountMax=4 \
-      "${host}" "env -u BASH_ENV bash -lc ${quoted_remote_command}" >"${log_file}" 2>&1
+      "${host}" "env -u BASH_ENV bash -lc ${quoted_remote_command}" </dev/null >"${log_file}" 2>&1
     cmd_status=$?
   fi
   # Leave set -e off (see run_ssh_logged). Caller decides whether non-zero is fatal.

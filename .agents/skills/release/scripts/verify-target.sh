@@ -553,6 +553,16 @@ if ((TARGET_HOST_COUNT > 1)); then
     if ((ready_count < TARGET_HOST_COUNT)); then
       log "cluster-nodes: expected ${TARGET_HOST_COUNT} Ready nodes, counted ${ready_count}"
       cluster_nodes_code="1"
+      expected_node_aliases=()
+      snapshot_newline_list "${TARGET_HOST_ALIASES:-}" expected_node_aliases
+      if ((${#expected_node_aliases[@]} > 0)); then
+        for alias in "${expected_node_aliases[@]}"; do
+          node_name="$(target_node_name_from_alias "${alias}")"
+          if ! grep -Eq "^${node_name}[[:space:]]" "${RUN_DIR}/logs/cluster-nodes.log"; then
+            log "cluster-nodes: missing ${node_name} (${alias})"
+          fi
+        done
+      fi
     fi
   else
     cluster_nodes_code="$?"
