@@ -188,9 +188,11 @@ printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' zonctl cluster-enrollment
   --worker-role $(shell_quote "${enroll_role}") \
   --control-endpoint $(shell_quote "${CONTROL_ENDPOINT}") \
   --enrollment-out $(shell_quote "${enrollment_remote}")
+printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' sh -c 'chown \"\$SUDO_USER:\$SUDO_USER\" $(shell_quote "${enrollment_remote}") && chmod 0600 $(shell_quote "${enrollment_remote}")'
 "; then
     fail "cluster-enrollment-create failed for ${node_name}; see ${join_log}"
   fi
+  set -e
   python3 - "${join_log}" "${enroll_json}" <<'PY'
 import json
 import sys
@@ -222,10 +224,20 @@ PY
 )"
   [[ -n "${fingerprint}" ]] || fail "missing enrollment signer fingerprint for ${node_name}"
 
-  scp -q "${TARGET_PRIME_HOST}:${enrollment_remote}" "${enrollment_local}"
-  scp -q "${enrollment_local}" "${alias}:${REMOTE_ENROLLMENT}"
-  scp -q "${LOCAL_HELPER}" "${alias}:${SCRIPT_PATH}"
+  mkdir -p "$(dirname "${enrollment_local}")"
+  if ! scp -q "${TARGET_PRIME_HOST}:${enrollment_remote}" "${enrollment_local}"; then
+    fail "could not copy enrollment from ${TARGET_PRIME_HOST}; see ${join_log}"
+  fi
+  if ! scp -q "${enrollment_local}" "${alias}:${REMOTE_ENROLLMENT}"; then
+    fail "could not copy enrollment to ${alias}"
+  fi
+  if ! scp -q "${LOCAL_HELPER}" "${alias}:${SCRIPT_PATH}"; then
+    fail "could not copy install helper to ${alias}"
+  fi
   rm -f "${enrollment_local}"
+  run_ssh_captured "${TARGET_PRIME_HOST}" "${RUN_DIR}/logs/target-enroll-cleanup-${node_name}.log" \
+    "rm -f $(shell_quote "${enrollment_remote}")" || true
+  set -e
 
   log "joining ${alias} as ${node_name}"
   local remote_cmd="set -euo pipefail

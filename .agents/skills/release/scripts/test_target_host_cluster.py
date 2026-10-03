@@ -197,6 +197,8 @@ def test_join_script_exists() -> None:
         "sudo -S -p '' zonctl cluster-node-register",
         "--node-name",
         "PRIME_NODE_NAME",
+        'chown \\"\\$SUDO_USER:\\$SUDO_USER\\"',
+        "could not copy enrollment from",
     ):
         assert want in text, want
     assert "sudo -n zonctl" not in text
