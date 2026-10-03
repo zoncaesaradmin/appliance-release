@@ -151,7 +151,8 @@ join_log="${RUN_DIR}/logs/target-cluster-join.log"
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 quoted_sudo_password="$(shell_quote "${target_sudo_password}")"
 CONTROL_ENDPOINT="$(target_prime_control_endpoint)"
-log "cluster-join kind=${TARGET_CLUSTER_KIND} prime=${TARGET_PRIME_HOST} endpoint=${CONTROL_ENDPOINT}"
+PRIME_NODE_NAME="$(target_node_name_from_alias "${TARGET_PRIME_HOST}")"
+log "cluster-join kind=${TARGET_CLUSTER_KIND} prime=${TARGET_PRIME_HOST} advertised-node=${PRIME_NODE_NAME} endpoint=${CONTROL_ENDPOINT}"
 emit_cluster_join_plan | tee -a "${join_log}"
 
 image_pull_exports=""
@@ -178,8 +179,11 @@ enroll_and_join_host() {
   log "enrolling ${enroll_role} ${alias} as ${node_name}"
   # run_ssh_captured is ssh -T: sudo's timestamp is TTY-bound, so sudo -n
   # after sudo -S -v fails with "a password is required". Pipe -S into zonctl.
+  # --node-name must match install (dash-IP from the SSH alias). zonctl
+  # defaults to hostname, which is not the recorded ControlPlaneNode.
   if ! run_ssh_captured "${TARGET_PRIME_HOST}" "${join_log}" "set -euo pipefail
 printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' zonctl cluster-enrollment-create --output json \
+  --node-name $(shell_quote "${PRIME_NODE_NAME}") \
   --worker-name $(shell_quote "${node_name}") \
   --worker-role $(shell_quote "${enroll_role}") \
   --control-endpoint $(shell_quote "${CONTROL_ENDPOINT}") \
@@ -325,6 +329,7 @@ rm -f \"\${enrollment_path}\"
   for attempt in 1 2 3 4 5 6 7 8 9 10; do
     if run_ssh_captured "${TARGET_PRIME_HOST}" "${join_log}" "set -euo pipefail
 printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' zonctl cluster-node-register --output json \
+  --node-name $(shell_quote "${PRIME_NODE_NAME}") \
   --worker-name $(shell_quote "${node_name}") \
   --worker-role $(shell_quote "${register_role}")
 "; then

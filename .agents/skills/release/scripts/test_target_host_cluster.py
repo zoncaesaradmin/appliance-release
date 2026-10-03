@@ -195,6 +195,8 @@ def test_join_script_exists() -> None:
         "emit_cluster_join_plan",
         "sudo -S -p '' zonctl cluster-enrollment-create",
         "sudo -S -p '' zonctl cluster-node-register",
+        "--node-name",
+        "PRIME_NODE_NAME",
     ):
         assert want in text, want
     assert "sudo -n zonctl" not in text
