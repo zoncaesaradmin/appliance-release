@@ -755,6 +755,19 @@ if [[ -n "${JOIN_ENROLLMENT_FILE}" ]]; then
   if [[ "${DRY_RUN}" == "1" ]]; then
     join_args+=(--dry-run)
   fi
+  # Join does not install /usr/local/bin/zonctl. A previous member/peer receipt
+  # (or leftover k3s.service) would fail closed in zonctl cluster-join. Use the
+  # just-extracted binary to uninstall first so lab rejoin and e2e reruns work.
+  leftover_receipt="${STATE_DIR}/installed-state.json"
+  leftover_k3s_unit="/etc/systemd/system/k3s.service"
+  if [[ "${DRY_RUN}" != "1" && ( -e "${leftover_receipt}" || -e "${leftover_k3s_unit}" ) ]]; then
+    echo "[5/5] Removing leftover appliance state on this host before join."
+    if ! capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${ZONCTL}" uninstall --confirm yes --state-dir "${STATE_DIR}" --output "${OUTPUT_FORMAT}"; then
+      print_captured_failure "[5/5] Leftover uninstall failed." "${install_stdout}" "${install_stderr}"
+      rm -f "${install_stdout}" "${install_stderr}"
+      exit 1
+    fi
+  fi
   echo "[5/5] Joining this host to the appliance cluster as ${NODE_NAME}."
   if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${ZONCTL}" cluster-join "${join_args[@]}"; then
     echo "[5/5] Cluster join completed."

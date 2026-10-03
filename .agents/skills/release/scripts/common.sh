@@ -591,14 +591,19 @@ remote_uninstall_appliance_if_present() {
   local quoted
   quoted="$(shell_quote "${sudo_password}")"
   run_ssh_logged "${alias}" "${3:-/dev/null}" "set -euo pipefail
+zonctl_bin=\"\"
 if command -v zonctl >/dev/null 2>&1; then
-  echo \"uninstalling existing appliance on ${alias} before cluster reinstall\"
-  printf '%s\\n' ${quoted} | sudo -S -p '' zonctl uninstall --confirm yes
+  zonctl_bin=\"\$(command -v zonctl)\"
 elif [[ -x /usr/local/bin/zonctl ]]; then
-  echo \"uninstalling existing appliance on ${alias} before cluster reinstall\"
-  printf '%s\\n' ${quoted} | sudo -S -p '' /usr/local/bin/zonctl uninstall --confirm yes
+  zonctl_bin=/usr/local/bin/zonctl
 else
-  echo \"no zonctl on ${alias}; skipping uninstall\"
+  zonctl_bin=\"\$(ls -1dt /tmp/appliance-*/appliance-*-foundation/zonctl 2>/dev/null | head -n 1 || true)\"
+fi
+if [[ -n \"\${zonctl_bin}\" && -x \"\${zonctl_bin}\" ]]; then
+  echo \"uninstalling existing appliance on ${alias} before cluster reinstall using \${zonctl_bin}\"
+  printf '%s\\n' ${quoted} | sudo -S -p '' \"\${zonctl_bin}\" uninstall --confirm yes
+else
+  echo \"no zonctl on ${alias}; skipping uninstall (join helper will clear leftover receipt)\"
 fi"
 }
 

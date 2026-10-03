@@ -194,6 +194,12 @@ def test_snapshot_newline_list_survives_stdin_drain() -> None:
     assert result.stdout.strip() == "a@10.0.0.2,a@10.0.0.3,"
 
 
+def test_remote_uninstall_uses_extracted_zonctl_fallback() -> None:
+    text = COMMON_SH.read_text(encoding="utf-8")
+    assert "/tmp/appliance-*/appliance-*-foundation/zonctl" in text
+    assert "join helper will clear leftover receipt" in text
+
+
 def test_run_ssh_captured_does_not_consume_stdin() -> None:
     text = COMMON_SH.read_text(encoding="utf-8")
     assert 'stdin=subprocess.DEVNULL' in text
@@ -240,6 +246,7 @@ def main() -> None:
     test_two_node_join_plan()
     test_three_prime_join_plan()
     test_snapshot_newline_list_survives_stdin_drain()
+    test_remote_uninstall_uses_extracted_zonctl_fallback()
     test_run_ssh_captured_does_not_consume_stdin()
     test_join_script_exists()
     print("target host cluster tests passed")

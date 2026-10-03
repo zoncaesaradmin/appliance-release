@@ -130,6 +130,17 @@ def test_install_release_wires_image_pull_flags() -> None:
     assert "image-pull-registry:" in text
 
 
+def test_install_release_join_uninstalls_leftover_receipt() -> None:
+    text = INSTALL_HELPER.read_text(encoding="utf-8")
+    join_idx = text.find('echo "[5/5] Joining this host to the appliance cluster')
+    assert join_idx != -1
+    prefix = text[:join_idx]
+    assert "installed-state.json" in prefix
+    assert "k3s.service" in prefix
+    assert "uninstall --confirm yes" in prefix
+    assert prefix.rfind("JOIN_ENROLLMENT_FILE") < join_idx
+
+
 def test_run_install_patches_image_pull_and_dns() -> None:
     text = RUN_INSTALL.read_text(encoding="utf-8")
     assert "resolve_install_image_pull_registry" in text
@@ -250,6 +261,7 @@ def main() -> None:
     test_partial_image_pull_registry_fails()
     test_resolve_install_extra_tls_sans()
     test_install_release_wires_image_pull_flags()
+    test_install_release_join_uninstalls_leftover_receipt()
     test_run_install_patches_image_pull_and_dns()
     test_helper_patch_assign_roundtrip()
     print("install public helper config tests passed")
