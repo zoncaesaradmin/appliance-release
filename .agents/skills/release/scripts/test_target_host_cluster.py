@@ -193,8 +193,11 @@ def test_join_script_exists() -> None:
         "JOIN_ENROLLMENT_FILE",
         "--worker-role",
         "emit_cluster_join_plan",
+        "sudo -S -p '' zonctl cluster-enrollment-create",
+        "sudo -S -p '' zonctl cluster-node-register",
     ):
         assert want in text, want
+    assert "sudo -n zonctl" not in text
 
 
 def main() -> None:
