@@ -209,6 +209,25 @@ One alias with no `roles:` key is a single-host appliance (implicit prime).
 Two hosts are always `prime,member`. Cluster HA needs three primes; two
 primes are rejected.
 
+### K3s API on every prime IP
+
+Three primes share one embedded etcd (quorum 2 of 3). Each prime runs
+`k3s server` and serves the same Kubernetes API on **its own LAN IPv4:6443**.
+There is no extra reserved VIP. From a laptop, any live prime works:
+
+```bash
+curl -k https://192.168.1.155:6443/readyz
+curl -k https://192.168.1.153:6443/readyz
+curl -k https://192.168.1.152:6443/readyz
+```
+
+`--control-endpoint` for enrollment may be any of those URLs. Join still
+needs one server that is up *now*; after join, clients can use any remaining
+prime IP if one host is down. `appliance.local` and chart pods stay on the
+advertised prime. Traefik HTTPS is also published on each prime’s existing
+LAN IP (kube-proxy forwards to the Traefik pod). If the advertised prime is
+down, those pods are down too — that is application HA, not k3s API HA.
+
 ## Explicit extra-host enrollment
 
 The first listed prime is the advertised LAN owner and the only mDNS/ingress
@@ -216,8 +235,9 @@ host. Add a member only with the same verified release bundle; never discover
 peers through mDNS or install a member from the internet.
 
 On the advertised prime, create an owner-readable enrollment artifact for the
-specific member node name and its reachable API endpoint. Transfer this file by
-an operator-approved protected offline channel. Members receive an automatically
+specific member node name. `--control-endpoint` is any live prime’s
+`https://<prime-ip>:6443` (the advertised prime is the usual join target).
+Transfer this file by an operator-approved protected offline channel. Members receive an automatically
 expiring **join token** (15 minutes by default, configurable from one minute
 through 24 hours). Extra primes (three-prime HA only) receive the server join
 credential in the same enrollment envelope; it is never printed. Do not paste

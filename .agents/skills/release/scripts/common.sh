@@ -430,7 +430,7 @@ csv_items_trimmed() {
 }
 
 # Operator-facing cluster roles (not Kubernetes terms).
-#   prime  — advertised LAN owner; runs the K3s API; <name>.local points here.
+#   prime  — advertised LAN owner; every prime serves the K3s API on its LAN IP; <name>.local points here.
 #   member — joins the same appliance; does not advertise .local.
 TARGET_HOST_ROLE_PRIME="prime"
 TARGET_HOST_ROLE_MEMBER="member"
@@ -548,10 +548,23 @@ parse_target_host_cluster() {
 }
 
 # Print the advertised prime's K3s API URL (https://<lan-ipv4>:6443).
+# Join still needs one live server; every prime also serves this API on its own IP.
 target_prime_control_endpoint() {
   local ip=""
   ip="$(ssh_target_ipv4 "${TARGET_PRIME_HOST}")" || fail "advertised prime ${TARGET_PRIME_HOST} must be user@IPv4 so enrollment can pin the API endpoint"
   printf 'https://%s:6443\n' "${ip}"
+}
+
+probe_k3s_api_ip() {
+  local ip="$1"
+  curl -kfsS --connect-timeout 8 --max-time 15 "https://${ip}:6443/readyz"
+}
+
+probe_prime_https_ip() {
+  local ip="$1"
+  local code=""
+  code="$(curl -ksS -o /dev/null -w '%{http_code}' --connect-timeout 8 --max-time 15 "https://${ip}/")"
+  [[ "${code}" =~ ^(200|301|302|401|403)$ ]]
 }
 
 # Operator-facing join plan (no SSH). Used by tests and the join script.

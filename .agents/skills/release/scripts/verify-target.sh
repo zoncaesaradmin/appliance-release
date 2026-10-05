@@ -569,6 +569,75 @@ if ((TARGET_HOST_COUNT > 1)); then
   fi
 fi
 
+cluster_etcd_code=""
+cluster_api_code=""
+cluster_https_code=""
+if ((TARGET_PRIME_COUNT >= 1)); then
+  cluster_api_log="${RUN_DIR}/logs/cluster-api.log"
+  cluster_https_log="${RUN_DIR}/logs/cluster-https.log"
+  cluster_etcd_log="${RUN_DIR}/logs/cluster-etcd.log"
+  : >"${cluster_api_log}"
+  : >"${cluster_https_log}"
+  : >"${cluster_etcd_log}"
+  cluster_api_code="0"
+  cluster_https_code="0"
+  prime_aliases=()
+  snapshot_newline_list "$(printf '%s\n%s' "${TARGET_PRIME_HOST}" "${TARGET_PEER_PRIME_ALIASES:-}")" prime_aliases
+  if ((TARGET_PRIME_COUNT > 1)); then
+    cluster_etcd_code="0"
+    nodes_log="${RUN_DIR}/logs/cluster-nodes.log"
+    etcd_ready=0
+    if [[ -f "${nodes_log}" ]]; then
+      etcd_ready="$(grep -E '[[:space:]]Ready[[:space:]]' "${nodes_log}" | grep -c 'etcd' || true)"
+    fi
+    {
+      echo "expected_primes=${TARGET_PRIME_COUNT}"
+      echo "ready_etcd=${etcd_ready}"
+    } >>"${cluster_etcd_log}"
+    if ((etcd_ready < TARGET_PRIME_COUNT)); then
+      log "cluster-etcd: expected ${TARGET_PRIME_COUNT} Ready etcd primes, counted ${etcd_ready}"
+      cluster_etcd_code="1"
+    else
+      log "cluster-etcd: ${etcd_ready} Ready etcd primes"
+    fi
+  fi
+  if ((${#prime_aliases[@]} > 0)); then
+    for alias in "${prime_aliases[@]}"; do
+      ip="$(ssh_target_ipv4 "${alias}")" || {
+        echo "unresolvable ${alias}" >>"${cluster_api_log}"
+        cluster_api_code="1"
+        cluster_https_code="1"
+        continue
+      }
+      node_name="$(target_node_name_from_alias "${alias}")"
+      if [[ -f "${RUN_DIR}/logs/cluster-nodes.log" ]] && ! grep -Eq "^${node_name}[[:space:]]+Ready[[:space:]]" "${RUN_DIR}/logs/cluster-nodes.log"; then
+        echo "skip ${ip} (${node_name} not Ready)" | tee -a "${cluster_api_log}" "${cluster_https_log}" >/dev/null
+        continue
+      fi
+      if probe_k3s_api_ip "${ip}"; then
+        echo "api ok https://${ip}:6443/readyz" >>"${cluster_api_log}"
+      else
+        echo "api fail https://${ip}:6443/readyz" >>"${cluster_api_log}"
+        cluster_api_code="1"
+      fi
+      if probe_prime_https_ip "${ip}"; then
+        echo "https ok https://${ip}/" >>"${cluster_https_log}"
+      else
+        echo "https fail https://${ip}/" >>"${cluster_https_log}"
+        cluster_https_code="1"
+      fi
+    done
+    log "cluster-api: see ${cluster_api_log}"
+    log "cluster-https: see ${cluster_https_log}"
+    if [[ "${cluster_api_code}" != "0" ]]; then
+      log "cluster-api: K3s API not reachable on every Ready prime IP"
+    fi
+    if [[ "${cluster_https_code}" != "0" ]]; then
+      log "cluster-https: Traefik HTTPS not reachable on every Ready prime IP"
+    fi
+  fi
+fi
+
 overall_failed="false"
 for code in "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}"; do
   if [[ "${code}" != "0" ]]; then
@@ -579,6 +648,15 @@ if [[ -n "${smoke_test_code}" && "${smoke_test_code}" != "0" ]]; then
   overall_failed="true"
 fi
 if [[ -n "${cluster_nodes_code}" && "${cluster_nodes_code}" != "0" ]]; then
+  overall_failed="true"
+fi
+if [[ -n "${cluster_etcd_code}" && "${cluster_etcd_code}" != "0" ]]; then
+  overall_failed="true"
+fi
+if [[ -n "${cluster_api_code}" && "${cluster_api_code}" != "0" ]]; then
+  overall_failed="true"
+fi
+if [[ -n "${cluster_https_code}" && "${cluster_https_code}" != "0" ]]; then
   overall_failed="true"
 fi
 if [[ -n "${ui_home_code}" && "${ui_home_code}" != "0" ]]; then
@@ -843,6 +921,31 @@ if enabled == "true":
         "log": str(Path(run_dir) / "logs" / "dns-readiness.log"),
     }
 payload.setdefault("checks", {})["dns"] = dns
+Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+
+python3 - "${RUN_DIR}/metadata/verify.json" "${RUN_DIR}" "${cluster_etcd_code:-}" "${cluster_api_code:-}" "${cluster_https_code:-}" "${TARGET_PRIME_COUNT}" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+out_path, run_dir, etcd_code, api_code, https_code, prime_count = sys.argv[1:7]
+payload = json.loads(Path(out_path).read_text(encoding="utf-8"))
+payload.setdefault("checks", {})["cluster"] = {
+    "primeCount": int(prime_count or 0),
+    "etcd": {
+        "exitCode": int(etcd_code) if etcd_code != "" else None,
+        "log": str(Path(run_dir) / "logs" / "cluster-etcd.log"),
+    },
+    "api": {
+        "exitCode": int(api_code) if api_code != "" else None,
+        "log": str(Path(run_dir) / "logs" / "cluster-api.log"),
+    },
+    "https": {
+        "exitCode": int(https_code) if https_code != "" else None,
+        "log": str(Path(run_dir) / "logs" / "cluster-https.log"),
+    },
+}
 Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
 

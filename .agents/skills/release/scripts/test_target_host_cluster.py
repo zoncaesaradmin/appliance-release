@@ -207,6 +207,20 @@ def test_run_ssh_captured_does_not_consume_stdin() -> None:
     assert '</dev/null >"${log_file}"' in text
 
 
+def test_verify_target_probes_every_prime_ip() -> None:
+    script = Path(__file__).resolve().parent / "verify-target.sh"
+    text = script.read_text(encoding="utf-8")
+    for want in (
+        "cluster-etcd",
+        "cluster-api",
+        "cluster-https",
+        "probe_k3s_api_ip",
+        "probe_prime_https_ip",
+        "/readyz",
+    ):
+        assert want in text, want
+
+
 def test_join_script_exists() -> None:
     script = Path(__file__).resolve().parent / "join-cluster-nodes-from-devhost.sh"
     text = script.read_text(encoding="utf-8")
@@ -248,6 +262,7 @@ def main() -> None:
     test_snapshot_newline_list_survives_stdin_drain()
     test_remote_uninstall_uses_extracted_zonctl_fallback()
     test_run_ssh_captured_does_not_consume_stdin()
+    test_verify_target_probes_every_prime_ip()
     test_join_script_exists()
     print("target host cluster tests passed")
 
