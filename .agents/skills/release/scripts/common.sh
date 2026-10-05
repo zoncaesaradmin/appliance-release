@@ -557,7 +557,11 @@ target_prime_control_endpoint() {
 
 probe_k3s_api_ip() {
   local ip="$1"
-  curl -kfsS --connect-timeout 8 --max-time 15 "https://${ip}:6443/readyz"
+  local code=""
+  # K3s often returns 401 on /readyz without a kubeconfig. That still proves
+  # the apiserver is reachable on this prime's existing LAN IP.
+  code="$(curl -ksS -o /dev/null -w '%{http_code}' --connect-timeout 8 --max-time 15 "https://${ip}:6443/readyz" || true)"
+  [[ "${code}" =~ ^(200|401|403)$ ]]
 }
 
 probe_prime_https_ip() {

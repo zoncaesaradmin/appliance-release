@@ -219,6 +219,9 @@ def test_verify_target_probes_every_prime_ip() -> None:
         "/readyz",
     ):
         assert want in text, want
+    common = COMMON_SH.read_text(encoding="utf-8")
+    assert "https://${ip}:6443/readyz" in common
+    assert "401|403" in common
 
 
 def test_join_script_exists() -> None:
