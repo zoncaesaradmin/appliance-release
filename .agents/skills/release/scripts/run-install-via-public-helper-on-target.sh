@@ -27,7 +27,7 @@ usage() {
 usage: run-install-via-public-helper-on-target.sh \
   --config PATH \
   --build-publish-config PATH \
-  --install-config PATH
+  --install-config PATH [--force-adopt]
 
 Devhost builds curl + name/profile + optional install.image_pull_registry /
 dns_zone / additional_tls_sans_csv / bundle_download_dir; target uninstalls
@@ -44,6 +44,7 @@ DEVHOST_CONFIG=""
 BUILD_PUBLISH_CONFIG=""
 INSTALL_CONFIG=""
 RUN_DIR=""
+FORCE_ADOPT_OVERRIDE="0"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -62,6 +63,10 @@ while [[ $# -gt 0 ]]; do
     --run-dir)
       RUN_DIR="${2:-}"
       shift 2
+      ;;
+    --force-adopt)
+      FORCE_ADOPT_OVERRIDE="1"
+      shift
       ;;
     --help|-h)
       usage
@@ -125,6 +130,16 @@ if [[ -z "${OUT_DIR}" ]]; then
   OUT_DIR="/tmp/appliance-${RELEASE_VERSION}"
 fi
 
+FORCE_ADOPT="$(config_get_optional "${INSTALL_CONFIG}" "install.force_adopt" || true)"
+case "$(printf '%s' "${FORCE_ADOPT}" | tr '[:upper:]' '[:lower:]')" in
+  ""|0|false|no|off) FORCE_ADOPT="0" ;;
+  1|true|yes|on) FORCE_ADOPT="1" ;;
+  *) fail "install.force_adopt must be a boolean" ;;
+esac
+if [[ "${FORCE_ADOPT_OVERRIDE}" == "1" ]]; then
+  FORCE_ADOPT="1"
+fi
+
 BASE_URL=""
 BEARER_TOKEN=""
 TLS_INSECURE="0"
@@ -169,6 +184,9 @@ install_log="${RUN_DIR}/logs/target-public-install.log"
 log "target-host=${TARGET_HOST} cluster-kind=${TARGET_CLUSTER_KIND} advertised-node=${PRIME_NODE_NAME}"
 log "helper-url=${HELPER_URL} (bundle artifacts); lab uses local helper ${LOCAL_HELPER}"
 log "appliance-name=${APPLIANCE_NAME} profile=${APPLIANCE_PROFILE} dns-zone=${DNS_ZONE}"
+if [[ "${FORCE_ADOPT}" == "1" ]]; then
+  log "force-adopt=enabled (authorized existing K3s takeover)"
+fi
 if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
   log "image-pull-registry=${IMAGE_PULL_REGISTRY}"
 fi
@@ -218,6 +236,7 @@ dns_zone=$(shell_quote "${DNS_ZONE}")
 extra_tls_sans=$(shell_quote "${EXTRA_TLS_SANS}")
 node_name=$(shell_quote "${PRIME_NODE_NAME}")
 cluster_init=$(shell_quote "${CLUSTER_INIT}")
+force_adopt=$(shell_quote "${FORCE_ADOPT}")
 out_dir=$(shell_quote "${OUT_DIR}")
 image_pull_registry=$(shell_quote "${IMAGE_PULL_REGISTRY}")
 image_pull_username_env=$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")
@@ -237,7 +256,7 @@ fi
 
 chmod +x \"\${script_path}\"
 
-python3 - \"\${script_path}\" \"\${base_url}\" \"\${bearer}\" \"\${tls_insecure}\" \"\${version}\" \"\${prefix}\" \"\${dns_zone}\" \"\${extra_tls_sans}\" \"\${out_dir}\" \"\${image_pull_registry}\" \"\${image_pull_username_env}\" \"\${image_pull_token_env}\" \"\${image_pull_tls_verify_env}\" \"\${node_name}\" \"\${cluster_init}\" <<'PY'
+python3 - \"\${script_path}\" \"\${base_url}\" \"\${bearer}\" \"\${tls_insecure}\" \"\${version}\" \"\${prefix}\" \"\${dns_zone}\" \"\${extra_tls_sans}\" \"\${out_dir}\" \"\${image_pull_registry}\" \"\${image_pull_username_env}\" \"\${image_pull_token_env}\" \"\${image_pull_tls_verify_env}\" \"\${node_name}\" \"\${cluster_init}\" \"\${force_adopt}\" <<'PY'
 from pathlib import Path
 import json
 import re
@@ -259,7 +278,8 @@ import sys
     image_pull_tls_verify_env,
     node_name,
     cluster_init,
-) = sys.argv[1:16]
+    force_adopt,
+) = sys.argv[1:17]
 text = Path(path).read_text(encoding=\"utf-8\")
 
 def set_assign(text, name, value):
@@ -286,11 +306,16 @@ text = set_assign(text, \"IMAGE_PULL_TOKEN_ENV\", image_pull_token_env)
 text = set_assign(text, \"IMAGE_PULL_TLS_VERIFY_ENV\", image_pull_tls_verify_env)
 text = set_assign(text, \"NODE_NAME\", node_name)
 text = set_assign(text, \"CLUSTER_INIT\", cluster_init)
+text = set_assign(text, \"FORCE_ADOPT\", force_adopt)
 Path(path).write_text(text, encoding=\"utf-8\")
 PY
 
-echo \"running install-release.sh --appliance-name \${name} --appliance-profile \${profile} (via non-interactive sudo)\"
-printf '%s\\n' ${quoted_sudo_password} | sudo -S -p ''${sudo_preserve} bash \"\${script_path}\" --appliance-name \"\${name}\" --appliance-profile \"\${profile}\"
+echo \"running install-release.sh --appliance-name \${name} --appliance-profile \${profile} --force-adopt (via non-interactive sudo)\"
+force_adopt_arg=()
+if [[ \"\${force_adopt}\" == \"1\" ]]; then
+  force_adopt_arg+=(--force-adopt)
+fi
+printf '%s\\n' ${quoted_sudo_password} | sudo -S -p ''${sudo_preserve} bash \"\${script_path}\" --appliance-name \"\${name}\" --appliance-profile \"\${profile}\" \"\${force_adopt_arg[@]}\"
 "
 
 log "running public install helper on ${TARGET_HOST}"

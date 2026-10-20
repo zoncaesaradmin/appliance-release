@@ -50,6 +50,8 @@ Optional:
                                include core, builder, storage, landns,
                                storage-landns, builder-landns,
                                builder-storage-landns.
+  --force-adopt                Explicitly take ownership of an existing K3s
+                               cluster even when it carries foreign workloads.
   --help, -h                   Show this help
 
 Rare site overrides (authenticated private store TLS, state dir) are product
@@ -105,6 +107,7 @@ CLUSTER_SIGNER_FINGERPRINT=""
 CLUSTER_INIT="0"
 DRY_RUN="0"
 OUTPUT_FORMAT="text"
+FORCE_ADOPT="0"
 # =============================================================================
 
 APPLIANCE_NAME=""
@@ -119,6 +122,10 @@ while [[ $# -gt 0 ]]; do
     --appliance-profile)
       APPLIANCE_PROFILE="${2:-}"
       shift 2
+      ;;
+    --force-adopt)
+      FORCE_ADOPT="1"
+      shift
       ;;
     --help|-h)
       usage
@@ -313,6 +320,7 @@ echo "  tls-cacert:        ${TLS_CACERT:-empty}"
 echo "  image-pull-registry: ${IMAGE_PULL_REGISTRY:-disabled}"
 echo "  extra-tls-sans:    ${EXTRA_TLS_SANS:-none}"
 echo "  node-name:         ${NODE_NAME:-host-hostname}"
+echo "  force-adopt:       ${FORCE_ADOPT}"
 
 mkdir -p "${OUT_DIR}"
 
@@ -718,6 +726,9 @@ if [[ "${CLUSTER_INIT}" == "1" || "${CLUSTER_INIT}" == "true" ]]; then
 fi
 if [[ "${DRY_RUN}" == "1" ]]; then
   lifecycle_args+=(--dry-run)
+fi
+if [[ "${FORCE_ADOPT}" == "1" || "${FORCE_ADOPT}" == "true" ]]; then
+  lifecycle_args+=(--force-adopt)
 fi
 
 zonctl_sudo=(sudo)
