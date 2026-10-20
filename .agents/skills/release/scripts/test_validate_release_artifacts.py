@@ -229,8 +229,8 @@ def test_rejects_missing_host_packages_when_flags_false() -> None:
             raise AssertionError(result.stderr)
 
 
-def test_foundation_pack_allows_host_packages_absent_from_bundle() -> None:
-    """Host packages ship in the deviceuser pack, not foundation."""
+def test_foundation_pack_rejects_missing_host_support_from_bundle() -> None:
+    """Foundation owns the host-agent daemon and mDNS host packages."""
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp)
@@ -248,7 +248,9 @@ def test_foundation_pack_allows_host_packages_absent_from_bundle() -> None:
         ]
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         result = run_validator(tmp, "--pack", "foundation")
-        if result.returncode != 0:
+        if result.returncode == 0:
+            raise AssertionError("foundation accepted missing host-agent support")
+        if "hostAgentBinary" not in result.stderr and "hostPackages" not in result.stderr:
             raise AssertionError(result.stderr)
 
 
@@ -302,7 +304,6 @@ def test_foundation_pack_allows_catalog_optional_artifacts_absent_from_release_i
             if not any(
                 token in str(entry.get("targetPath") or "")
                 for token in (
-                    "host-agent",
                     "artifact-server",
                     "appliance-registry",
                     "coredns",
@@ -311,7 +312,6 @@ def test_foundation_pack_allows_catalog_optional_artifacts_absent_from_release_i
                     "argo-workflows",
                     "workflow-",
                     "buildah",
-                    "host-packages/",
                 )
             )
         ]
@@ -420,7 +420,7 @@ def test_rejects_missing_ui_bundle_entry() -> None:
             raise AssertionError(result.stderr)
 
 
-def test_rejects_missing_host_packages_bundle_entry() -> None:
+def test_deviceuser_allows_foundation_host_support_absent_from_bundle() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp)
@@ -430,12 +430,11 @@ def test_rejects_missing_host_packages_bundle_entry() -> None:
             entry
             for entry in manifest["entries"]
             if not entry["targetPath"].startswith("host-packages/")
+            and entry["targetPath"] != "bin/appliance-host-agentd"
         ]
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         result = run_validator(tmp, "--pack", "deviceuser")
-        if result.returncode == 0:
-            raise AssertionError("missing host-packages bundle entries were accepted")
-        if "hostPackages" not in result.stderr:
+        if result.returncode != 0:
             raise AssertionError(result.stderr)
 
 
@@ -922,7 +921,7 @@ def main() -> None:
     test_companion_extra_image_reference_is_still_checked()
     test_positive_case()
     test_rejects_missing_host_packages_when_flags_false()
-    test_foundation_pack_allows_host_packages_absent_from_bundle()
+    test_foundation_pack_rejects_missing_host_support_from_bundle()
     test_foundation_pack_allows_catalog_optional_artifacts_absent_from_release_input()
     test_positive_case_with_nested_bundle_root()
     test_allows_empty_directory_artifacts()
@@ -944,7 +943,7 @@ def main() -> None:
     test_rejects_legacy_zot_image_path_name()
     test_rejects_unidentified_artifact_server_image_path()
     test_rejects_missing_ui_bundle_entry()
-    test_rejects_missing_host_packages_bundle_entry()
+    test_deviceuser_allows_foundation_host_support_absent_from_bundle()
     test_accepts_host_packages_when_install_host_flags_false()
     test_rejects_mismatched_ui_bundle_image_reference()
     test_rejects_mismatched_ui_values_image_reference()

@@ -771,9 +771,10 @@ def validate_host_agent(
     *,
     require_in_bundle: bool,
     require_image: bool = True,
+    validate_image: bool = True,
 ) -> list:
     checked = []
-    if require_image or artifacts.get("hostAgentImage"):
+    if validate_image and (require_image or artifacts.get("hostAgentImage")):
         image = require_artifact(artifacts, "hostAgentImage")
         image_path = require_file_artifact(artifacts, "hostAgentImage", release_input_dir)
         image_ref = require_image_reference(image, "hostAgentImage")
@@ -834,7 +835,7 @@ def validate_host_packages(
     require_in_bundle: bool,
 ) -> list:
     # Complete product release-input always includes host-packages. They ship in
-    # the deviceuser pack only (not foundation).
+    # the foundation pack together with the host-agent daemon.
     require_dir_artifact(artifacts, "hostPackages", release_input_dir)
     if require_in_bundle:
         require_bundle_entry_prefix(entries_by_path, "host-packages/", "hostPackages")
@@ -981,10 +982,11 @@ def main() -> int:
         default="foundation",
         help=(
             "Which signed pack archive is under --bundle-root. "
-            "foundation: base product checks; build-workflows/deviceuser extras are release-input-only. "
+            "foundation: base product checks plus host-agent daemon and host packages; "
+            "build-workflows/deviceuser extras are release-input-only. "
             "storage-network: artifact-server and dns images/charts. "
             "build-workflows: workflows and supplemental OCI images (including companion delivery packs). "
-            "deviceuser: host-agent + host-packages must be present in this pack. "
+            "deviceuser: host-agent OCI image must be present in this pack. "
             "inference package: inference chart/image/version must be present in this pack. "
             "open-webui: Open WebUI + gateway images must be present in this pack. "
             "video: video chart/image/version must be present in this pack."
@@ -1086,14 +1088,15 @@ def main() -> int:
                     artifacts,
                     release_input_path.parent,
                     entries_by_path,
-                    require_in_bundle=False,
-                    require_image=bool(artifacts.get("hostAgentImage")),
+                    require_in_bundle=True,
+                    require_image=False,
+                    validate_image=False,
                 ),
                 "hostPackages": validate_host_packages(
                     artifacts,
                     release_input_path.parent,
                     entries_by_path,
-                    require_in_bundle=False,
+                    require_in_bundle=True,
                 ),
                 # Supplemental images may appear in release-input for a multi-pack
                 # build; they are not in the foundation archive.
@@ -1171,13 +1174,13 @@ def main() -> int:
                     artifacts,
                     release_input_path.parent,
                     entries_by_path,
-                    require_in_bundle=True,
+                    require_in_bundle=False,
                 ),
                 "hostPackages": validate_host_packages(
                     artifacts,
                     release_input_path.parent,
                     entries_by_path,
-                    require_in_bundle=True,
+                    require_in_bundle=False,
                 ),
             }
         )
