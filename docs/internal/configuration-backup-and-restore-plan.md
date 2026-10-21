@@ -396,6 +396,13 @@ written into a manifest, or placed in a command line. Recovery-set creation
 requires an empty operator-selected destination; the appliance state directory
 is not an acceptable sole recovery location because factory reset removes it.
 
+The control-plane archive target is selected by the deployment configuration,
+not by its HTTP API: the appliance profile uses protected local file staging;
+cloud profiles set `configurationArchiveTarget: s3` and a dedicated prefix.
+Both use the same `ArchiveTarget` contract and authenticated archive format.
+The S3 credentials remain a protected runtime secret and must be separate from
+ordinary application-object credentials in production cloud profiles.
+
 For local PostgreSQL, `install --bootstrap-mode restore-recovery-set` verifies
 every member and the archive key before target mutation, requires the recovery
 set's platform and pinned PostgreSQL image to match the signed bundle, starts
