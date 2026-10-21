@@ -236,13 +236,15 @@ for a complete recovery promise.
    `appliance-code` and `appliance-ctl`; control-plane-local archives use the
    target-local archive key, while portable `zonctl` archives use an
    operator-supplied key. Verify ciphertext before any target mutation.
-2. **Complete installation-time configuration restore.** Add an explicit
+2. **Complete installation-time configuration restore (implemented; pending
+   release qualification).** The explicit
    `--bootstrap-mode restore-config` input set to `zonctl install`: archive
-   path, protected key descriptor/file, and an explicit confirmation. Stage
-   and verify it before Helm mutation; bootstrap a clean platform with a
-   narrowly scoped installer-to-control-plane import credential; import once;
-   reconcile; revoke the credential. `fresh` remains the default and no mode
-   may overwrite non-empty database storage.
+   path, protected key file, and `--confirm restore-config` are now required.
+   `zonctl` authenticates/decrypts the archive before host mutation, creates a
+   temporary namespace-local payload Secret, and the control plane imports it
+   before its listeners open. The Secret is removed after readiness. `fresh`
+   remains the default and no mode may overwrite non-empty database storage.
+   The next required work is an end-to-end signed-bundle qualification.
 3. **Add reconciliation and import observability.** A successful database
    import must produce an auditable `pending`, `applying`, `applied`, or
    `failed` result and health/evidence records. Restart must resume or safely
