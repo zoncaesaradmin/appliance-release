@@ -379,6 +379,30 @@ run succeeds with public egress denied.
 | `appliance-ctl` | Fail-closed current backup behavior; archive/recovery orchestration; bootstrap modes; staging; evidence; target and ownership checks; factory-reset/upgrade integration. |
 | `appliance-release` | Signed artifacts required by recovery tooling; release-input/bundle validation; offline dependency seed/remap; cross-repository contract and air-gap tests. |
 
+## Accepted v1 recovery-set policy
+
+A recovery set is deliberately not a synonym for a Kubernetes or host-path
+snapshot. Its declared, portable contents are:
+
+- a PostgreSQL custom-format logical dump, produced inside the database pod
+  and accepted only after a disposable, pinned-image PostgreSQL instance has
+  restored it successfully;
+- an authenticated/encrypted desired-configuration archive;
+- the local installed-state receipt and a scope declaration, both checksummed.
+
+The archive encryption key is operator-held and must be preserved through an
+independent protected mechanism. It is never copied beside the ciphertext,
+written into a manifest, or placed in a command line. Recovery-set creation
+requires an empty operator-selected destination; the appliance state directory
+is not an acceptable sole recovery location because factory reset removes it.
+
+Workspaces, build caches, inference models, and generic blob/data-pipeline
+objects are excluded from v1. They are neither universally control-plane data
+nor safely portable without an explicit object-selection contract. A future
+recovery-set version may add selected blob objects and a separately encrypted
+key/certificate envelope only when each component has a declared ownership,
+rotation, and target-identity policy. It must not silently expand this set.
+
 ## Required scenario matrix
 
 - ordinary pod/control-plane restart retains PostgreSQL desired configuration;
