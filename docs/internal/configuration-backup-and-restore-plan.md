@@ -245,11 +245,12 @@ for a complete recovery promise.
    before its listeners open. The Secret is removed after readiness. `fresh`
    remains the default and no mode may overwrite non-empty database storage.
    The next required work is an end-to-end signed-bundle qualification.
-3. **Add reconciliation and import observability.** A successful database
-   import must produce an auditable `pending`, `applying`, `applied`, or
-   `failed` result and health/evidence records. Restart must resume or safely
-   retry deterministic work rather than present partially applied desired
-   state as ready.
+3. **Add reconciliation and import observability (partially implemented).**
+   Startup now transitions the latest revision through `applying` to `applied`
+   only after canonical payload and staged-metadata validation; it records
+   `failed` and prevents readiness on validation failure. Remaining work is
+   downstream controller reconciliation and installer evidence exposing the
+   final revision/status rather than merely reporting pod readiness.
 4. **Introduce target storage as an optional delivery concern.** Promote the
    existing file and S3-compatible archive target adapters to an operator
    interface for retention/list/read/verify. Appliance blob storage may be a
