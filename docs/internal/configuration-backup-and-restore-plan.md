@@ -2,9 +2,10 @@
 
 ## Status and decision
 
-**Status: reviewed execution plan. The safety foundations listed below have
-landed, but no supported configuration-archive restore or recovery-set flow
-exists yet.**
+**Status: active execution plan. Portable configuration capture, encrypted
+file export/import, clean-target validation, and PostgreSQL-backed revisions
+are implemented. Installer bootstrap restore and a complete disaster-recovery
+set are deliberately not yet supported.**
 
 The appliance must treat configuration replay and disaster recovery as two
 different operations:
@@ -30,9 +31,10 @@ us from describing an internal building block as a finished backup feature.
 | Area | What exists now | What it does **not** provide yet |
 | --- | --- | --- |
 | Local database runtime | One PostgreSQL primary is deployed as `controlplane-database` in `ace-infra`, with its own appliance-owned durable directory. The control-plane connects using a DSN, so the connection endpoint can be local or managed/cloud PostgreSQL. | HA, provider-specific managed-PostgreSQL lifecycle, a portable logical database backup, or a restore procedure. |
-| Control-plane persistence | Production PostgreSQL is reached through the existing SQLite-named compatibility repository layer; a separate native PostgreSQL package opens connections but deliberately refuses migrations and backup. | A native PostgreSQL provider, schema lifecycle, migration locking, and provider-owned recovery hooks. |
-| Desired-configuration foundation | Immutable configuration revisions, capture, canonical payload digesting, authenticated encrypted archive primitives, and clean-target import primitives have been added in `appliance-code`. | A public archive export/import protocol, key management, import preview, reconcile/apply workflow, or end-to-end installer integration. A captured revision is not an appliance backup. |
-| Current command safety | `zonctl backup`, restore, upgrade rollback, and factory-reset backup validation fail closed for a PostgreSQL appliance rather than silently using the legacy K3s-directory snapshot. Bootstrap mode names are accepted syntactically, while only `fresh` is executable. | A working PostgreSQL-aware `zonctl backup`, `restore-config`, `restore-recovery-set`, or `adopt` path. |
+| Control-plane persistence | Production uses the generic `sqlstore` PostgreSQL provider, with advisory migration locking; local SQLite is retained only for local/test use. | PostgreSQL-native migration definitions (rather than the compatibility SQL translation) and recovery-set database hooks. |
+| Desired-configuration foundation | Immutable configuration revisions, canonical payload digesting, metadata-identity validation, clean-target import, an authenticated same-appliance archive, and control-plane revision/archive APIs are implemented in `appliance-code`. | Import preview/reconcile status and installer bootstrap integration. A revision archive is still not a full appliance backup. |
+| Operator archive commands | `zonctl configuration-export` and `configuration-import` provide a portable AES-256-GCM archive, protected by an operator-supplied 32-byte key file, over the same HTTPS configuration API for local or cloud PostgreSQL targets. | Bootstrap-time restore before normal operator authentication exists, archive listing/retention, and a recovery-set command. |
+| Current command safety | `zonctl backup`, restore, upgrade rollback, and factory-reset backup validation fail closed for a PostgreSQL appliance rather than silently using the legacy K3s-directory snapshot. Bootstrap mode names are accepted syntactically, while only `fresh` is executable. | A PostgreSQL-aware recovery set, `restore-config`, `restore-recovery-set`, or `adopt` path. |
 | Blob storage | Blob storage is a distinct local storage domain. | Proof that it is off-appliance or covered by a backup. It must not be assumed durable merely because it uses an object-storage API. |
 
 The first implementation rule is therefore: **do not remove the current
@@ -46,7 +48,7 @@ fail-closed guards until their replacement passes the associated exit gate.**
 | PostgreSQL data | Local PostgreSQL uses `/data/zon/controlplane-database`, outside the K3s data directory copied by the current backup. | Capture a consistent logical PostgreSQL backup; never copy its live data directory as the database backup protocol. |
 | Blob data | Local blob storage uses a separate host path and is not captured by the current backup. | Include selected blob objects only when the chosen backup class requires them, with a manifest proving the selected scope. |
 | Configuration model | Configuration is spread over PostgreSQL tables, signed metadata files, Helm values, Kubernetes Secrets, and host identity. | Define one versioned desired-configuration export model and explicit inclusion/exclusion rules. |
-| PostgreSQL implementation | Production wiring uses PostgreSQL through repositories still named `storage/sqlite`; the separate native PostgreSQL package rejects migration and backup. | Finish a native PostgreSQL provider, migrations, and recovery hooks before making recovery a supported feature. |
+| PostgreSQL implementation | Production wiring now uses `storage/sqlstore`, including advisory migration locking; the old unselected PostgreSQL stub has been removed. | Replace compatibility migration translation with PostgreSQL-native migration definitions before a recovery-set feature is supported. |
 | Existing database on install | Installation has no explicit, user-visible fresh/adopt/config-restore/recovery-restore choice for a non-empty database. | Add fail-closed bootstrap modes and record the selected source in installed-state/evidence. |
 
 Until the first correction lands, `zonctl backup` must either reject the
@@ -222,6 +224,62 @@ configuration, and rerun either resumes safely or rolls back to the
 pre-import clean state. No import can merge unknown pre-existing state.
 
 ## Ordered execution plan
+
+### Implementation snapshot and remaining execution order
+
+The following order is the working checklist. It separates changes already
+made from the changes still required, so a completed primitive is not mistaken
+for a complete recovery promise.
+
+1. **Preserve the archive contract (implemented; verify on every change).**
+   Keep the versioned manifest/payload digest contract shared by
+   `appliance-code` and `appliance-ctl`; control-plane-local archives use the
+   target-local archive key, while portable `zonctl` archives use an
+   operator-supplied key. Verify ciphertext before any target mutation.
+2. **Complete installation-time configuration restore.** Add an explicit
+   `--bootstrap-mode restore-config` input set to `zonctl install`: archive
+   path, protected key descriptor/file, and an explicit confirmation. Stage
+   and verify it before Helm mutation; bootstrap a clean platform with a
+   narrowly scoped installer-to-control-plane import credential; import once;
+   reconcile; revoke the credential. `fresh` remains the default and no mode
+   may overwrite non-empty database storage.
+3. **Add reconciliation and import observability.** A successful database
+   import must produce an auditable `pending`, `applying`, `applied`, or
+   `failed` result and health/evidence records. Restart must resume or safely
+   retry deterministic work rather than present partially applied desired
+   state as ready.
+4. **Introduce target storage as an optional delivery concern.** Promote the
+   existing file and S3-compatible archive target adapters to an operator
+   interface for retention/list/read/verify. Appliance blob storage may be a
+   convenience target but must be labelled same-appliance; an external S3
+   target is the resilient option. Cloud object storage is another adapter,
+   not a different archive/API model.
+5. **Build the distinct recovery-set feature.** Use a pinned `pg_dump`/
+   restore workflow and isolated verification; add explicitly selected blob,
+   metadata, values, certificates, and node-local inputs to a signed manifest.
+   Do not copy live `PGDATA`, and do not change the existing fail-closed legacy
+   backup behavior until this gate passes.
+6. **Finish PostgreSQL-native schema lifecycle and qualify.** Move remaining
+   translated migration definitions to PostgreSQL-native form, retain advisory
+   locking and schema-version refusal, then run the full cross-repository
+   scenario matrix from signed bundle through fresh-target restore with no
+   public egress.
+
+### Corrections discovered during implementation
+
+- The archive encryption key is control-plane-local. It must be generated in
+  the `ace-system` source Secret but **must not** be replicated to `ace-apps`,
+  where no workload uses it. Replicate only shared session/signing/pepper
+  material; this avoids needless secret distribution.
+- A portable archive cannot reuse the target-local archive key: another
+  appliance cannot decrypt it. The cross-appliance CLI therefore uses a
+  distinct, operator-controlled key and the canonical revision API. This is
+  the same interface for an on-premise or cloud PostgreSQL endpoint.
+- Local blob storage is not an off-appliance backup. Any UI or documentation
+  that calls it a backup target must show its failure-domain limitation.
+- Existing `backup`/`restore` success semantics remain invalid for PostgreSQL
+  until the recovery set exists. Their current rejection is intentional
+  protection, not a missing compatibility path.
 
 ### P0 — Correct the current safety claim
 
