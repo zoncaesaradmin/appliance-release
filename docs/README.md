@@ -32,6 +32,8 @@ Use this index to find the one canonical document for your task.
   [internal/generic-workflow-engine-plan.md](internal/generic-workflow-engine-plan.md)
 - PostgreSQL control-plane migration and deployment-profile implementation:
   [internal/postgresql-deployment-profile-plan.md](internal/postgresql-deployment-profile-plan.md)
+- Configuration archive, PostgreSQL recovery, and install bootstrap plan:
+  [internal/configuration-backup-and-restore-plan.md](internal/configuration-backup-and-restore-plan.md)
 - Historical full execution plan:
   [archive/release-plan.md](archive/release-plan.md)
 
