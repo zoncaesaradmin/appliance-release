@@ -26,6 +26,7 @@ BUNDLE = ROOT / "scripts" / "build-full-bundle.sh"
 REQUIRED_CACHE_TAG_BASE = {
     "dns": "CACHE_TAG_BASE",
     "message-broker": "CACHE_TAG_BASE",
+	"postgresql": "CACHE_TAG_BASE",
     "git-runtime-container": "CACHE_TAG_BASE",
     "blob-storage": "CACHE_TAG_BASE",
     "workflows": "CACHE_TAG_BASE",

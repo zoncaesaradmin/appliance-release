@@ -872,6 +872,36 @@ def validate_required_artifacts(
     return checked
 
 
+def validate_postgres_image(
+    artifacts: dict, release_input_dir: Path, entries_by_path: dict, *, required: bool
+) -> list:
+    # Older fixture-only release inputs predate the PostgreSQL runtime image.
+    # Production assembly requires it in archive-release-input.sh; retaining
+    # this conditional keeps this validator usable for those static fixtures.
+    if not artifacts.get("postgresImage"):
+        if required:
+            raise ValueError("release-input artifacts.postgresImage is missing")
+        return []
+    artifact = require_artifact(artifacts, "postgresImage")
+    image_ref = require_image_reference(artifact, "postgresImage")
+    if not re.fullmatch(r"registry\.local/postgres@sha256:[0-9a-f]{64}", image_ref):
+        raise ValueError(
+            "release-input artifacts.postgresImage.imageReference must be "
+            "registry.local/postgres@sha256:<64 lowercase hex>"
+        )
+    image_path = require_file_artifact(artifacts, "postgresImage", release_input_dir)
+    require_oci_archive_reference_matches_content(image_path, image_ref, "postgresImage")
+    index = load_oci_archive_index(image_path)
+    annotation = ((index or {}).get("manifests") or [{}])[0].get("annotations") or {}
+    if annotation.get("org.opencontainers.image.ref.name") != "registry.local/postgres:bundled":
+        raise ValueError("postgresImage OCI archive annotation must be 'registry.local/postgres:bundled'")
+    bundle_path = f"oci-images/{image_path.name}"
+    entry = require_bundle_entry(entries_by_path, bundle_path, "postgresImage")
+    require_matching_bundle_digest(entry, artifact, bundle_path, "postgresImage")
+    require_matching_bundle_image_reference(entry, image_ref, bundle_path, "postgresImage")
+    return ["postgresImage"]
+
+
 def validate_metadata_bundle(
     release_input: dict,
     artifacts: dict,
@@ -993,6 +1023,7 @@ def main() -> int:
         ),
     )
     parser.add_argument("--require-workflows", action="store_true")
+    parser.add_argument("--require-postgres", action="store_true")
     parser.add_argument(
         "--require-inference",
         action="store_true",
@@ -1052,6 +1083,9 @@ def main() -> int:
                     entries_by_path,
                 ),
                 "runtimeValues": validate_runtime_values(artifacts, bundle_values),
+                "postgresImage": validate_postgres_image(
+                    artifacts, release_input_path.parent, entries_by_path, required=args.require_postgres
+                ),
                 # Catalog SSOT: artifact-server/DNS/host-agent-image belong to
                 # other packs. Validate them in release-input only when present.
                 "artifactServer": (

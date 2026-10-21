@@ -359,6 +359,18 @@ BLOB_STORAGE_SHA256_AMD64="${MINIO_SHA256_AMD64}"
 BLOB_STORAGE_SHA256_ARM64="${MINIO_SHA256_ARM64}"
 unset UPSTREAM_IMAGE CACHE_NAME CACHE_TAG_BASE MINIO_RELEASE MINIO_BINARY_URL_BASE MINIO_SHA256_AMD64 MINIO_SHA256_ARM64
 
+POSTGRES_PINS_FILE="${RELEASE_REPO_DIR}/deps/postgresql/pins.env"
+if [[ ! -f "${POSTGRES_PINS_FILE}" ]]; then
+  echo "build-full-bundle: missing PostgreSQL seed pin: ${POSTGRES_PINS_FILE}" >&2
+  exit 1
+fi
+# shellcheck disable=SC1090
+source "${POSTGRES_PINS_FILE}"
+POSTGRES_SOURCE_IMAGE="${USER_POSTGRES_SOURCE_IMAGE:-${POSTGRES_SOURCE_IMAGE:-${UPSTREAM_IMAGE}}}"
+POSTGRES_CACHE_NAME="${CACHE_NAME}"
+POSTGRES_CACHE_TAG_BASE="${CACHE_TAG_BASE}"
+unset UPSTREAM_IMAGE CACHE_NAME CACHE_TAG_BASE POSTGRES_VERSION
+
 JELLYFIN_PINS_FILE="${RELEASE_REPO_DIR}/deps/jellyfin/pins.env"
 if [[ ! -f "${JELLYFIN_PINS_FILE}" ]]; then
   echo "build-full-bundle: missing jellyfin seed pin: ${JELLYFIN_PINS_FILE}" >&2
@@ -1952,6 +1964,7 @@ if offline_build_enabled; then
   require_var DEV_REGISTRY
   require_seed_package message-broker
   require_seed_package blob-storage
+  require_seed_package postgresql
   if appliance_pack_wanted std-llm || appliance_pack_wanted acc-llm; then
     require_seed_package inference
   fi
@@ -1969,6 +1982,7 @@ if offline_build_enabled; then
     DNS_IMAGE_PULL_REF="$(lan_cache_ref coredns "v${DNS_VERSION}-${TARGET_ARCH}")"
   fi
   BLOB_STORAGE_SOURCE_IMAGE="$(lan_cache_ref "${BLOB_STORAGE_CACHE_NAME}" "${BLOB_STORAGE_CACHE_TAG_BASE}-${TARGET_ARCH}")"
+  POSTGRES_SOURCE_IMAGE="$(lan_cache_ref "${POSTGRES_CACHE_NAME}" "${POSTGRES_CACHE_TAG_BASE}-${TARGET_ARCH}")"
   BLOB_STORAGE_BINARY_URL=""
   BLOB_STORAGE_BINARY_SHA256=""
   if appliance_pack_wanted deviceuser; then
@@ -2590,6 +2604,29 @@ else
 "
 fi
 
+TPF_FP_INPUTS=("${POSTGRES_SOURCE_IMAGE}" "${TARGET_ARCH}")
+set +e
+tpf_try_restore_oci "postgres" "${CODE_REPO_DIR}/.run/postgres-image.tar"
+_tpf_pg_rc=$?
+set -e
+if [[ "${_tpf_pg_rc}" -eq 0 ]]; then
+  POSTGRES_FREEZE_HIT=1
+  sync_bundled_oci_reference_sidecar \
+    "${CODE_REPO_DIR}/.run/postgres-image.tar" \
+    "registry.local/postgres" >/dev/null
+  POSTGRES_PACKAGE_LINES="# third-party-freeze hit: postgres
+echo \"third-party-freeze: reusing PostgreSQL OCI archive\" >&2
+"
+elif [[ "${_tpf_pg_rc}" -eq 2 ]]; then
+  exit 2
+else
+  POSTGRES_PACKAGE_LINES="make package-postgresql-image-archive \\
+  OUT_FILE=\"\${POSTGRES_IMAGE_OUT}\" \\
+  REFERENCE_OUT_FILE=\"\${POSTGRES_IMAGE_REF_FILE}\" \\
+  POSTGRES_SOURCE_IMAGE=$(shell_quote "${POSTGRES_SOURCE_IMAGE}")
+"
+fi
+
 if bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
   HOST_AGENTD_PACKAGE_LINES=""
   HOST_AGENT_IMAGE_PACKAGE_LINES=""
@@ -2657,6 +2694,8 @@ ${HOST_AGENT_IMAGE_ARCHIVE_ARG_LINES}  --blob-storage-image "\${BLOB_STORAGE_IMA
   --blob-storage-image-reference "\${BLOB_STORAGE_IMAGE_REF}" \\
   --message-broker-image "\${MESSAGE_BROKER_IMAGE_OUT}" \\
   --message-broker-image-reference "\${MESSAGE_BROKER_IMAGE_REF}" \\
+  --postgres-image "\${POSTGRES_IMAGE_OUT}" \\
+  --postgres-image-reference "\${POSTGRES_IMAGE_REF}" \\
   "\${HOST_PACKAGES_ARGS[@]}" \\
   --k3s-version $(shell_quote "${K3S_VERSION}") \\
 ${ARTIFACT_SERVER_ARCHIVE_ARG_LINES}${DNS_ARCHIVE_ARG_LINES}${INFERENCE_ARCHIVE_ARG_LINES}${OPEN_WEBUI_ARCHIVE_ARG_LINES}  --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \\
@@ -2688,6 +2727,8 @@ BLOB_STORAGE_IMAGE_OUT="/workspace/.run/blob-storage-image.tar"
 BLOB_STORAGE_IMAGE_REF_FILE="/workspace/.run/blob-storage-image.reference"
 MESSAGE_BROKER_IMAGE_OUT="/workspace/.run/message-broker-image.tar"
 MESSAGE_BROKER_IMAGE_REF_FILE="/workspace/.run/message-broker-image.reference"
+POSTGRES_IMAGE_OUT="/workspace/.run/postgres-image.tar"
+POSTGRES_IMAGE_REF_FILE="/workspace/.run/postgres-image.reference"
 OPEN_WEBUI_IMAGE_ARCHIVE="/workspace/.run/open-webui-image.tar"
 OPEN_WEBUI_GATEWAY_IMAGE_ARCHIVE="/workspace/.run/open-webui-gateway-image.tar"
 WORKFLOWS_ARGS=()
@@ -2714,6 +2755,7 @@ ${WORKFLOW_CONTROLLER_PACKAGE_LINES}
 ${PRODUCT_PACKAGE_LINES}
 ${BLOB_STORAGE_PACKAGE_LINES}BLOB_STORAGE_IMAGE_REF="\$(tr -d '\r\n' < "\${BLOB_STORAGE_IMAGE_REF_FILE}")"
 ${MESSAGE_BROKER_PACKAGE_LINES}MESSAGE_BROKER_IMAGE_REF="\$(tr -d '\r\n' < "\${MESSAGE_BROKER_IMAGE_REF_FILE}")"
+${POSTGRES_PACKAGE_LINES}POSTGRES_IMAGE_REF="\$(tr -d '\r\n' < "\${POSTGRES_IMAGE_REF_FILE}")"
 # Super-set: always pass host-packages (packages staged at install; services off).
 HOST_PACKAGES_ARGS=(
   --host-packages-dir "\${HOST_PACKAGES_DIR_FOR_DEV}"
@@ -2781,6 +2823,13 @@ if tpf_active; then
       "${CODE_REPO_DIR}/.run/message-broker-image.tar" \
       "registry.local/nats" >/dev/null || true
     tpf_store_oci "message-broker" "${CODE_REPO_DIR}/.run/message-broker-image.tar" || true
+  fi
+  if [[ "${POSTGRES_FREEZE_HIT:-0}" != "1" && -f "${CODE_REPO_DIR}/.run/postgres-image.tar" ]]; then
+    TPF_FP_INPUTS=("${POSTGRES_SOURCE_IMAGE}" "${TARGET_ARCH}")
+    sync_bundled_oci_reference_sidecar \
+      "${CODE_REPO_DIR}/.run/postgres-image.tar" \
+      "registry.local/postgres" >/dev/null || true
+    tpf_store_oci "postgres" "${CODE_REPO_DIR}/.run/postgres-image.tar" || true
   fi
   if [[ "${NEED_OPEN_WEBUI_IMAGE:-0}" == "1" \
     && "${OPEN_WEBUI_FREEZE_HIT:-0}" != "1" \

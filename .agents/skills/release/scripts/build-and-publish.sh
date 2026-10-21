@@ -435,6 +435,7 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
   log "validating release-input against foundation pack"
   python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
     --pack foundation \
+    --require-postgres \
     --release-input-root "${RUN_DIR}/artifacts/release-input" \
     --bundle-root "${RUN_DIR}/artifacts/bundle" \
     >"${RUN_DIR}/logs/release-artifact-validation.json"

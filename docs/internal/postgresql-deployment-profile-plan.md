@@ -13,8 +13,9 @@ The first deliverable is deliberately narrow:
 - The only supported deployment profile is `single-node-postgres-v1`.
 - That profile runs one control-plane replica and one PostgreSQL primary on
   appliance-owned durable local storage.
-- SQLite remains usable only for local development and transition testing;
-  it is not an installable production option after this work lands.
+- SQLite is not a supported runtime, deployment profile, backup format, or
+  upgrade input after this work lands. This product has not been released, so
+  PostgreSQL is the only fresh-install data-store contract.
 
 This plan does not implement PostgreSQL high availability, arbitrary sizing
 knobs, or a broad menu of install-time profiles. It creates the stable
@@ -25,6 +26,8 @@ contracts that let those be added later without a packaging redesign.
 - Three-node or replicated PostgreSQL.
 - Automatic PostgreSQL failover.
 - Multiple supported capacity tiers or operator-entered CPU/memory values.
+- A permanent SQLite compatibility mode, dual-write path, or SQLite backup
+  format in the shipped appliance.
 - Cross-cluster cloning as a blind database or K3s-data copy.
 - Changing product capability/profile semantics.
 - Any connected install, runtime image pull, extension download, or public
@@ -116,7 +119,7 @@ Each install and recovery set must retain:
 | Control-plane/PostgreSQL chart, resource/profile value schema, security contexts | `appliance-code` | `appliance-ctl`, `appliance-release` |
 | Deployment-profile selection, install state, image preload, backup/restore orchestration | `appliance-ctl` | `appliance-code`, `appliance-release` |
 | Signed release-input/bundle contract, PostgreSQL dependency seed/remap and validators | `appliance-release` | `appliance-code`, `appliance-ctl` |
-| Performance, upgrade, restore, air-gap and end-to-end evidence | all three | all three |
+| Performance, restore, air-gap and end-to-end evidence | all three | all three |
 
 No repository may land a one-sided producer/consumer change. In particular,
 the PostgreSQL image/chart, profile schema, profile values, install selection,
@@ -134,8 +137,8 @@ Deliverables:
   PostgreSQL/deployment-profile decision.
 - A versioned deployment-profile schema and one fixture for
   `single-node-postgres-v1`.
-- A persistence inventory naming every SQLite store, table, direct SQL
-  dialect dependency, SQLite-only backup path, and startup assumption.
+- A persistence inventory naming every current store, table, direct SQL
+  dialect dependency, and startup assumption to be replaced by PostgreSQL.
 - A recovery-set contract that distinguishes configuration revision replay
   from disaster recovery.
 - A cross-repo release-input compatibility change proposal for the pinned
@@ -145,28 +148,29 @@ Exit gate:
 
 - profile selection is explicitly separate from product capabilities;
 - exactly one initial profile is supported;
-- all current SQLite data and every database-adjacent secret are accounted for;
-- rollback semantics are accepted: after data migration, rollback restores a
-  verified pre-upgrade recovery set rather than merely retagging an image.
+- every current store and database-adjacent secret are accounted for;
+- fresh-install rollback semantics are accepted: an unstarted installation
+  may be removed, while a started appliance uses PostgreSQL recovery-set
+  restore rather than a database-engine downgrade.
 
 ### M1 — Storage Construction Seam
 
-**Goal:** remove the remaining production dependency on concrete SQLite
-construction without changing behavior.
+**Goal:** replace concrete SQLite construction with provider construction
+without changing domain behavior.
 
 Implementation in `appliance-code`:
 
 - Introduce a storage backend/provider that constructs `storage.DB` and every
   repository interface as one coherent set.
 - Change `internal/app/services.go` to receive that provider rather than
-  importing `internal/storage/sqlite` and constructing each store directly.
+  importing a driver-specific adapter and constructing each store directly.
 - Preserve existing domain interfaces, error semantics, transaction behavior,
   HTTP handlers, MCP routes, authentication, workflow services, and tests.
-- Keep SQLite as the provider used by current local/development tests.
+- Make PostgreSQL the provider used by local/development and appliance tests.
 
 Exit gate:
 
-- existing SQLite tests remain unchanged in observable behavior;
+- existing repository tests remain unchanged in observable behavior;
 - no package outside a storage adapter imports driver-specific types;
 - a test can wire the complete service set through a fake/provider seam;
 - `make verify` passes in `appliance-code`.
@@ -199,34 +203,7 @@ Exit gate:
   tests pass;
 - no production path opens a SQLite database.
 
-### M3 — Safe SQLite-To-PostgreSQL Upgrade Tool
-
-**Goal:** support already-installed SQLite appliances without data loss.
-
-Implementation in `appliance-code` and `appliance-ctl`:
-
-1. Create and verify a complete pre-upgrade recovery set.
-2. Enter installer-controlled maintenance mode; reject new writes and wait for
-   in-flight mutations to settle or become explicitly interrupted.
-3. Produce a consistent SQLite snapshot using the existing safe path.
-4. Create and migrate the target PostgreSQL schema.
-5. Import data in foreign-key-safe order in bounded transactions.
-6. Verify table counts, key identifiers, role grants, active state,
-   credential/token lookup behavior, audit sequences/hashes, and metadata
-   activation state.
-7. Atomically switch the release configuration to PostgreSQL and start the
-   new control plane only after verification succeeds.
-8. Retain SQLite source/snapshot until post-upgrade health and smoke checks
-   complete; never truncate/recreate it automatically.
-
-Exit gate:
-
-- happy-path migration has automated fixture coverage;
-- injected interruption at every checkpoint is recoverable or rerunnable;
-- no failed conversion mutates the source SQLite file;
-- rollback procedure is documented and tested through recovery-set restore.
-
-### M4 — PostgreSQL Runtime And Helm Delivery
+### M3 — PostgreSQL Runtime And Helm Delivery
 
 **Goal:** deploy a pinned, secure, air-gapped PostgreSQL primary.
 
@@ -260,7 +237,7 @@ Exit gate:
 - image references are pinned and preloaded before Helm;
 - storage ownership and writeability evidence passes.
 
-### M5 — Signed Bundle And Offline Dependency Closure
+### M4 — Signed Bundle And Offline Dependency Closure
 
 **Goal:** make PostgreSQL an ordinary signed appliance component, not an
 installer-time dependency.
@@ -285,7 +262,7 @@ Exit gate:
   has an invalid digest;
 - `make verify` passes in `appliance-release` and `appliance-ctl`.
 
-### M6 — Coordinated Backup, Restore, And Configuration Revisions
+### M5 — Coordinated Backup, Restore, And Configuration Revisions
 
 **Goal:** replace local K3s-directory copying as the authoritative recovery
 model and add safe configuration replay.
@@ -315,7 +292,7 @@ Exit gate:
 - incompatible recovery sets fail before target mutation;
 - secrets are absent from manifests, logs, evidence, and support bundles.
 
-### M7 — Measurement, Upgrade, And Release Qualification
+### M6 — Measurement And Release Qualification
 
 **Goal:** establish supportable single-node resources and prove continuity.
 
@@ -324,11 +301,10 @@ Required evidence:
 - idle and representative-load CPU, RSS, storage, WAL growth, IOPS, and
   startup time on both supported architectures;
 - authentication, audit writes, API concurrency, workflow reconciliation,
-  backup, restore, and upgrade measurements;
+  backup, and restore measurements;
 - database-full, disk-full, unavailable database, failed migration, and
   interrupted backup/restore tests;
-- fresh install, SQLite-to-PostgreSQL upgrade, N-1 upgrade, rollback by
-  recovery-set restore, and clean-node restore;
+- fresh install, PostgreSQL recovery-set restore, and clean-node restore;
 - public-egress-denied installation/runtime tests;
 - cross-repository packaging → preload → chart values → control plane →
   observable success walk.
@@ -378,7 +354,7 @@ until it explicitly defines and proves:
   anti-affinity, and storage assumptions;
 - network encryption/authentication and credential rotation;
 - backup/WAL retention, RPO/RTO, and clean-cluster restore;
-- upgrade, rollback, operator/controller lifecycle, and air-gap closure;
+- fresh-install rollback, operator/controller lifecycle, and air-gap closure;
 - measured resource envelopes and failure evidence.
 
 Adding one of these profiles must be an additive signed-contract change, not
@@ -388,9 +364,9 @@ a reinterpretation of `single-node-postgres-v1`.
 
 Before implementation begins:
 
-- [ ] Assign owners for M0–M7 across the three repositories.
-- [ ] Confirm whether any released SQLite appliance must be migrated, or
-      whether this lands before the first production release.
+- [ ] Assign owners for M0–M6 across the three repositories.
+- [x] Confirm this lands before the first production release; no SQLite
+      upgrade or import path is required.
 - [ ] Choose the PostgreSQL distribution/chart/operator candidate and perform
       its air-gap, licensing, supply-chain, UID/GID, backup, and upgrade
       review.

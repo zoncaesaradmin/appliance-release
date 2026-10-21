@@ -80,6 +80,7 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | `git-runtime-container` | `build-cache/alpine-git:2.49.0-${TARGET_ARCH}` | workspace-provisioner (dev-platform pack) |
 | `workflows` | `build-cache/argoexec:v…-${TARGET_ARCH}` / `workflow-controller:v…-${TARGET_ARCH}`; files `argo-workflows/…` | executor + CRDs |
 | `message-broker` | `build-cache/nats:2.10.26-alpine-${TARGET_ARCH}` | NATS JetStream broker image |
+| `postgresql` | `build-cache/postgres:16.15-alpine3.24-${TARGET_ARCH}` | PostgreSQL control-plane database image |
 | `artifact-server-bases` | `build-cache/zot-linux-${TARGET_ARCH}:…`, `debian-bookworm-slim-runtime:bookworm-slim-${TARGET_ARCH}` | artifact-server wrap |
 | `dns` | `build-cache/coredns:v1.14.4-${TARGET_ARCH}` | dns wrap |
 | `inference` | `build-cache/ollama:…-${TARGET_ARCH}` plus arch-specific vLLM (`vllm-openai-cpu:…-x86_64` / `vllm-openai:…-arm64`) | `std-llm` / `acc-llm` |
