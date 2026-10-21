@@ -105,6 +105,13 @@ def main() -> None:
     if not tag_match.group(1).endswith("-" + source_match.group(1)[:12]):
         fail("jellyfin/pins.env CACHE_TAG must end with the pinned upstream digest prefix")
 
+    catalog_path = ROOT.parent / "appliance-code" / "metadata-bundle" / "base" / "applications" / "catalog.yaml"
+    if catalog_path.is_file():
+        runtime_match = re.search(r"(?m)^RUNTIME_REFERENCE=(registry\.local/jellyfin@sha256:[0-9a-f]{64})$", jellyfin_pins)
+        catalog_match = re.search(r"(?m)^\s*reference:\s*(registry\.local/jellyfin@sha256:[0-9a-f]{64})$", catalog_path.read_text(encoding="utf-8"))
+        if runtime_match is None or catalog_match is None or runtime_match.group(1) != catalog_match.group(1):
+            fail("Jellyfin release pin and appliance-code application catalog reference must match")
+
     bundle = BUNDLE.read_text(encoding="utf-8")
     for snippet in REQUIRED_LAN_CACHE_SNIPPETS:
         if snippet not in bundle:
