@@ -128,6 +128,27 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 - Do not treat “make verify passed in one repo” as sufficient when the release flow spans `appliance-release`, `appliance-ctl`, and `appliance-code`; verify each edited repo and explicitly re-check the shared contract.
 - Do not hand off another long release-flow run while a known cross-repo contract mismatch remains.
 
+## Change Scope And Frozen-Artifact Discipline
+
+- Keep a change confined to the user-requested component and its proven
+  producer/consumer dependencies. A failure observed while exercising a wider
+  release path is not authorization to modify an unrelated image, catalog,
+  dependency pin, freeze entry, or deployment capability.
+- Before changing any existing third-party image pin, OCI manifest digest,
+  metadata-catalog reference, or freeze input, establish the complete chain:
+  pinned upstream source → online export → seeded LAN-cache export → frozen
+  archive → signed bundle entry → consuming catalog/workload reference.
+  Record which link is inconsistent and change only that link.
+- Never replace a pinned digest solely because one build printed a different
+  derived digest. First reproduce and compare both online and offline exports
+  using the same target architecture and manifest format. If they differ,
+  fix or reject the non-deterministic export contract; do not chase the latest
+  observed digest through unrelated catalogs.
+- Before presenting a change or requesting another release run, review the
+  working diff by repository and state the intended scope, affected artifacts,
+  and validation evidence. Explicitly call out any unrelated pre-existing
+  failure; leave it unchanged unless the user authorizes that separate fix.
+
 ## Real Setup Guardrail
 
 - Do not run real-environment verification flows unless the user explicitly asks for that exact run in the current turn.
