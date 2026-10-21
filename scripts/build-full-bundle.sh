@@ -1547,7 +1547,10 @@ export_bundled_oci_archive() {
 
   artifact_id="bundled-${local_name#registry.local/}"
   artifact_id="${artifact_id//\//-}"
-  TPF_FP_INPUTS=("${pull_ref}" "${local_name}" "${TARGET_ARCH}" "${BUNDLE_IMAGE_OS:-linux}")
+  # The expected runtime reference is part of the frozen artifact contract.
+  # Without it, changing a catalog pin can restore an older archive whose
+  # platform-manifest digest no longer matches the signed metadata bundle.
+  TPF_FP_INPUTS=("${pull_ref}" "${local_name}" "${local_or_expected_ref}" "${TARGET_ARCH}" "${BUNDLE_IMAGE_OS:-linux}")
   set +e
   tpf_try_restore_oci "${artifact_id}" "${output_path}"
   rc=$?
@@ -1562,7 +1565,7 @@ export_bundled_oci_archive() {
 
   skopeo_copy_oci_archive "${pull_ref}" "${output_path}" "${local_name}:bundled"
   finalize_bundled_oci_archive "${output_path}" "${local_name}" "${local_or_expected_ref}"
-  TPF_FP_INPUTS=("${pull_ref}" "${local_name}" "${TARGET_ARCH}" "${BUNDLE_IMAGE_OS:-linux}")
+  TPF_FP_INPUTS=("${pull_ref}" "${local_name}" "${local_or_expected_ref}" "${TARGET_ARCH}" "${BUNDLE_IMAGE_OS:-linux}")
   tpf_store_oci "${artifact_id}" "${output_path}" || true
 }
 
@@ -2156,7 +2159,7 @@ fi
 
 if [[ "${NEED_JELLYFIN_IMAGE:-0}" == "1" ]]; then
   JELLYFIN_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/jellyfin-image.tar"
-  JELLYFIN_IMAGE_REF="$(export_bundled_oci_archive "${JELLYFIN_SOURCE_IMAGE}" "registry.local/jellyfin" "${CODE_REPO_DIR}/.run/jellyfin-image.tar")"
+  JELLYFIN_IMAGE_REF="$(export_bundled_oci_archive "${JELLYFIN_SOURCE_IMAGE}" "${JELLYFIN_RUNTIME_REFERENCE}" "${CODE_REPO_DIR}/.run/jellyfin-image.tar")"
   if [[ "${JELLYFIN_IMAGE_REF}" != "${JELLYFIN_RUNTIME_REFERENCE}" ]]; then
     echo "build-full-bundle: Jellyfin re-export ${JELLYFIN_IMAGE_REF} does not match catalog pin ${JELLYFIN_RUNTIME_REFERENCE}" >&2
     exit 1
