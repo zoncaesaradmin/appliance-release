@@ -10,10 +10,21 @@ rm -rf "${STAGE}"
 mkdir -p "${STAGE}/payload"
 
 EXPORT_SCRIPT=""
-# Prefer sibling appliance-code checkout when present.
+# Resolve the same appliance-code checkout used by the release workflow.  A
+# standalone seed run should not require an operator to rediscover that path:
+# the standard build-host layout is <workspace>/appliance-build/repos while a
+# developer checkout normally keeps appliance-code beside appliance-release.
+RELEASE_REPO_DIR="$(cd "${ROOT}/../.." && pwd)"
+WORKSPACE_PARENT="$(dirname "${RELEASE_REPO_DIR}")"
+WORKSPACE_GRANDPARENT="$(dirname "${WORKSPACE_PARENT}")"
+# Prefer an explicit path, then the build-flow root, then the two documented
+# local workspace layouts. Every candidate is checked before use.
 for candidate in \
   "${APPLIANCE_CODE_DIR:-}/scripts/package/export-host-packages.sh" \
-  "$(cd "${ROOT}/../../.." && pwd)/appliance-code/scripts/package/export-host-packages.sh"
+  "${RELEASE_WORK_ROOT:-}/repos/appliance-code/scripts/package/export-host-packages.sh" \
+  "${WORKSPACE_PARENT}/appliance-code/scripts/package/export-host-packages.sh" \
+  "${WORKSPACE_PARENT}/appliance-build/repos/appliance-code/scripts/package/export-host-packages.sh" \
+  "${WORKSPACE_GRANDPARENT}/appliance-build/repos/appliance-code/scripts/package/export-host-packages.sh"
 do
   if [[ -n "${candidate}" && -x "${candidate}" ]]; then
     EXPORT_SCRIPT="${candidate}"
@@ -25,7 +36,7 @@ do
 done
 
 if [[ -z "${EXPORT_SCRIPT}" ]]; then
-  echo "host-packages: set APPLIANCE_CODE_DIR to appliance-code checkout containing export-host-packages.sh" >&2
+  echo "host-packages: could not find appliance-code; set APPLIANCE_CODE_DIR to a checkout containing export-host-packages.sh" >&2
   exit 2
 fi
 echo "host-packages: using ${EXPORT_SCRIPT}"

@@ -8,5 +8,8 @@ Builds the Ubuntu host .deb payload (mdns + wifi-client + wifi-ap) via appliance
 Supports `TARGET_ARCH=amd64|arm64`. Cross-arch seed (arm64 on amd64 host) needs
 a current `appliance-code` whose `export-host-packages.sh` fetches arm64 from
 `ports.ubuntu.com/ubuntu-ports` (not archive.ubuntu.com). Requires an Ubuntu
-packaging environment matching `OS_VERSION`, and `APPLIANCE_CODE_DIR` (or a
-sibling `../appliance-code` checkout).
+packaging environment matching `OS_VERSION`. The seed resolves appliance-code
+from `APPLIANCE_CODE_DIR`, `RELEASE_WORK_ROOT/repos/appliance-code`, a sibling
+`../appliance-code` checkout, or the standard build-host sibling
+`../appliance-build/repos/appliance-code`. Set `APPLIANCE_CODE_DIR` when using
+another layout.
