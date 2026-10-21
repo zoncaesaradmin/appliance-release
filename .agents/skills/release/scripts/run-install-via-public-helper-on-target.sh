@@ -2,8 +2,9 @@
 # run-install-via-public-helper-on-target.sh — Mac/devhost side (install only).
 #
 # Builds the full curl URL and auth flags on *this* machine (using config +
-# devhost DEV_* env), SSHs to the target, runs a clean uninstall when zonctl
-# is already present, scp's the local scripts/install-release.sh, patches
+# devhost DEV_* env), SSHs to the target, performs an explicit destructive
+# factory reset when zonctl is already present, scp's the local
+# scripts/install-release.sh, patches
 # stamped settings + optional lab install knobs (dns_zone, TLS SANs, image-pull
 # registry, out dir), and runs:
 #   install-release.sh --appliance-name … --appliance-profile …
@@ -12,7 +13,9 @@
 # script itself comes from the local release checkout so lab wiring cannot
 # silently lag a stale published copy.
 #
-# Lab policy: always uninstall then fresh install (no in-place upgrade).
+# Lab policy: always factory-reset then fresh install (no in-place upgrade).
+# A data-preserving uninstall cannot be followed by a fresh PostgreSQL
+# bootstrap: the hostPath database directory would deliberately survive.
 # Target needs no permanent env. Sudo for zonctl is non-interactive: Mac
 # APPLIANCE_TARGET_SUDO_PASSWORD is injected for this SSH job only.
 set -euo pipefail
@@ -30,8 +33,9 @@ usage: run-install-via-public-helper-on-target.sh \
   --install-config PATH [--force-adopt]
 
 Devhost builds curl + name/profile + optional install.image_pull_registry /
-dns_zone / additional_tls_sans_csv / bundle_download_dir; target uninstalls
-any owned appliance (when zonctl is present), then fetches and runs the
+dns_zone / additional_tls_sans_csv / bundle_download_dir; target factory-resets
+any owned appliance (when zonctl is present; platform data is intentionally
+wiped while workspaces are preserved), then fetches and runs the
 public install helper.
 
 Export APPLIANCE_TARGET_SUDO_PASSWORD on the Mac (same as other install paths).
@@ -218,7 +222,11 @@ fi
 log "uploading local install helper to ${TARGET_HOST}:${SCRIPT_PATH}"
 scp -q "${LOCAL_HELPER}" "${TARGET_HOST}:${SCRIPT_PATH}"
 
-# Lab policy: clean uninstall then fresh public install (no in-place upgrade).
+# Lab policy: factory-reset then fresh public install (no in-place upgrade).
+# `uninstall` preserves /data/zon, including PostgreSQL, so it is not a clean
+# fresh-install operation.  Factory reset has its own explicit data-loss
+# acknowledgement and preserves builder workspaces unless --wipe-workspaces is
+# supplied; do not add that flag here.
 # Nested sudo under one non-interactive sudo so zonctl does not wait on a TTY.
 # Lab installs use the local repo helper (scp above) so skill-side wiring
 # (image-pull, dns_zone, TLS SANs) cannot silently lag a stale published copy.
@@ -245,13 +253,13 @@ image_pull_tls_verify_env=$(shell_quote "${IMAGE_PULL_TLS_VERIFY_ENV}")
 ${image_pull_exports}
 
 if command -v zonctl >/dev/null 2>&1; then
-  echo \"uninstalling existing appliance before reinstall (lab clean install)\"
-  printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' zonctl uninstall --confirm yes
+  echo \"factory-resetting existing appliance before reinstall (lab clean install; platform data will be wiped)\"
+  printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' zonctl factory-reset --confirm yes --acknowledge-data-loss --force-data-loss
 elif [[ -x /usr/local/bin/zonctl ]]; then
-  echo \"uninstalling existing appliance before reinstall (lab clean install)\"
-  printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' /usr/local/bin/zonctl uninstall --confirm yes
+  echo \"factory-resetting existing appliance before reinstall (lab clean install; platform data will be wiped)\"
+  printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' /usr/local/bin/zonctl factory-reset --confirm yes --acknowledge-data-loss --force-data-loss
 else
-  echo \"no zonctl on target; skipping uninstall (fresh host)\"
+  echo \"no zonctl on target; skipping factory reset (fresh host)\"
 fi
 
 chmod +x \"\${script_path}\"

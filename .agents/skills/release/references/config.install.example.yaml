@@ -33,8 +33,12 @@
 # ============================================================================
 
 install:
-  # Lab reinstall always uninstalls then fresh-installs (orchestrator does that;
-  # no in-place public upgrade). Profile/name below apply only after a clean host.
+  # Lab reinstall factory-resets then fresh-installs (the orchestrator performs
+  # this explicit data-loss operation; builder workspaces are preserved).
+  # Normal `zonctl uninstall` remains data-preserving; do not use the lab
+  # release runner when configuration must be retained. Restore a verified
+  # recovery set with the dedicated zonctl workflow instead. There is no
+  # in-place public upgrade.
   bootstrap_admin: true
   enable_default_license: true
 

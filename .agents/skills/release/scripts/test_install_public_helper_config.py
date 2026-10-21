@@ -160,6 +160,13 @@ def test_run_install_patches_image_pull_and_dns() -> None:
     assert 'set_assign(text, \\"OUT_DIR\\"' in text
 
 
+def test_lab_clean_reinstall_uses_explicit_factory_reset() -> None:
+    text = RUN_INSTALL.read_text(encoding="utf-8")
+    assert "factory-reset --confirm yes --acknowledge-data-loss --force-data-loss" in text
+    assert "uninstalling existing appliance before reinstall" not in text
+    assert "factory-reset --confirm yes --acknowledge-data-loss --force-data-loss --wipe-workspaces" not in text
+
+
 def test_helper_patch_assign_roundtrip() -> None:
     """Mirror the Python patcher used on the target for install knobs."""
     with tempfile.TemporaryDirectory(prefix="helper-patch-") as tmp:
@@ -263,6 +270,7 @@ def main() -> None:
     test_install_release_wires_image_pull_flags()
     test_install_release_join_uninstalls_leftover_receipt()
     test_run_install_patches_image_pull_and_dns()
+    test_lab_clean_reinstall_uses_explicit_factory_reset()
     test_helper_patch_assign_roundtrip()
     print("install public helper config tests passed")
 
