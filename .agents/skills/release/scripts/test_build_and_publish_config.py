@@ -45,6 +45,11 @@ def write(path: Path, text: str) -> None:
 
 
 def run_build_publish_config(config: Path, run_dir: Path) -> subprocess.CompletedProcess[str]:
+    # These tests exercise config validation.  They must never inherit an
+    # operator's build-host sudo credential and accidentally progress into the
+    # real bootstrap/build sequence when a fixture becomes valid.
+    env = os.environ.copy()
+    env.pop("APPLIANCE_BUILD_SUDO_PASSWORD", None)
     return subprocess.run(
         [
             "bash",
@@ -59,6 +64,7 @@ def run_build_publish_config(config: Path, run_dir: Path) -> subprocess.Complete
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         check=False,
+        env=env,
     )
 
 
