@@ -396,6 +396,14 @@ written into a manifest, or placed in a command line. Recovery-set creation
 requires an empty operator-selected destination; the appliance state directory
 is not an acceptable sole recovery location because factory reset removes it.
 
+For local PostgreSQL, `install --bootstrap-mode restore-recovery-set` verifies
+every member and the archive key before target mutation, requires the recovery
+set's platform and pinned PostgreSQL image to match the signed bundle, starts
+only infrastructure first, restores the dump before the control-plane release,
+then starts the control plane. The recovery archive is re-authenticated as a
+separate integrity and key-possession gate; its desired configuration is
+already represented by the restored database and is not re-imported over it.
+
 Workspaces, build caches, inference models, and generic blob/data-pipeline
 objects are excluded from v1. They are neither universally control-plane data
 nor safely portable without an explicit object-selection contract. A future
