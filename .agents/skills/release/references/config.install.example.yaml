@@ -34,7 +34,9 @@
 
 install:
   # Lab reinstall factory-resets then fresh-installs (the orchestrator performs
-  # this explicit data-loss operation; builder workspaces are preserved).
+  # this explicit data-loss operation; it also removes an orphaned local
+  # PostgreSQL directory if an older reset removed zonctl first; builder
+  # workspaces are preserved).
   # Normal `zonctl uninstall` remains data-preserving; do not use the lab
   # release runner when configuration must be retained. Restore a verified
   # recovery set with the dedicated zonctl workflow instead. There is no

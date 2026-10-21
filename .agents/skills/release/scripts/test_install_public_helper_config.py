@@ -165,6 +165,8 @@ def test_lab_clean_reinstall_uses_explicit_factory_reset() -> None:
     assert "factory-reset --confirm yes --acknowledge-data-loss --force-data-loss" in text
     assert "uninstalling existing appliance before reinstall" not in text
     assert "factory-reset --confirm yes --acknowledge-data-loss --force-data-loss --wipe-workspaces" not in text
+    assert 'controlplane_database_dir=/data/zon/controlplane-database' in text
+    assert 'rm -rf -- \\"\\${controlplane_database_dir}\\"' in text
 
 
 def test_helper_patch_assign_roundtrip() -> None:

@@ -250,6 +250,7 @@ image_pull_registry=$(shell_quote "${IMAGE_PULL_REGISTRY}")
 image_pull_username_env=$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")
 image_pull_token_env=$(shell_quote "${IMAGE_PULL_TOKEN_ENV}")
 image_pull_tls_verify_env=$(shell_quote "${IMAGE_PULL_TLS_VERIFY_ENV}")
+controlplane_database_dir=/data/zon/controlplane-database
 ${image_pull_exports}
 
 if command -v zonctl >/dev/null 2>&1; then
@@ -259,7 +260,13 @@ elif [[ -x /usr/local/bin/zonctl ]]; then
   echo \"factory-resetting existing appliance before reinstall (lab clean install; platform data will be wiped)\"
   printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' /usr/local/bin/zonctl factory-reset --confirm yes --acknowledge-data-loss --force-data-loss
 else
-  echo \"no zonctl on target; skipping factory reset (fresh host)\"
+  # An earlier factory-reset implementation could remove zonctl while leaving
+  # this PostgreSQL hostPath behind.  There is no CLI left to perform the
+  # reset, but this lab runner has already declared a data-loss clean install;
+  # remove only this known orphaned database directory.  Never do this from
+  # the normal product installer or from data-preserving uninstall.
+  echo \"no zonctl on target; removing any orphaned control-plane database before lab fresh install (platform data will be wiped)\"
+  printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' rm -rf -- \"\${controlplane_database_dir}\"
 fi
 
 chmod +x \"\${script_path}\"
