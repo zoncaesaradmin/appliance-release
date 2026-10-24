@@ -114,12 +114,14 @@ bash .agents/skills/release/scripts/run-release-from-devhost.sh \
 CLI path presence selects stages (no `build_flow.skip` / `install.skip`):
 
 - `--build-publish-config` → build/publish on the build host
-- `--install-config` → clean uninstall (if zonctl present) → public fresh
-  install → optional bootstrap → target/client verify → report
+- `--install-config` → explicit lab cleanup only when configured → signed
+  three-server stage/finalize → optional bootstrap → target/client verify →
+  report
 
-**Reinstall policy (current):** no in-place upgrade on the public/lab path.
-Always `zonctl uninstall --confirm yes` then fresh install. Config-preserving
-upgrade is parked.
+**Reinstall policy (current):** no local-host in-place upgrade or uninstall
+path exists for the three-server product. The runner stages matching clean
+hosts and finalizes only after quorum gates pass. Config-preserving cluster
+upgrade is parked until the coordinated lifecycle is qualified.
 
 Secrets stay in the Mac shell as env vars **named** by config `*_env` keys
 (`DEV_*`, online `DOCKERHUB_USER` / `DOCKERHUB_TOKEN`,

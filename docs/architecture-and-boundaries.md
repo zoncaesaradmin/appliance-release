@@ -16,18 +16,26 @@ private application source.
 
 ## Accepted Direction
 
-- A single **prime** is the default appliance shape. Extra **members** join
-  from the same signed bundle through explicit enrollment; this is never
-  automatic discovery or a connected installer.
+- A newly signed appliance release requires exactly three active, schedulable
+  K3s servers with embedded etcd. There are no agents, dedicated workers, or
+  one-server-plus-two-agent production layouts.
+- The operator provides three direct server IPv4 addresses at install time.
+  Each serves the Kubernetes API; clients retry another address after a node
+  failure. The Kubernetes milestone has no floating address or mandatory load
+  balancer.
 - The appliance name and selected profile identify the cluster, not an
-  individual host. The first listed prime remains the fixed advertised LAN
-  name, ingress, and mDNS owner. Internals use K3s server/agent; operators
-  do not write those terms in install YAML.
+  individual host. Product application placement and durable storage remain a
+  separate application-HA qualification: Kubernetes HA must not be presented
+  as a product-HTTPS availability claim.
+- Legacy prime/member records and commands remain only for reading, export,
+  and migration of older releases. They are not a new-install option.
 - the only production install path is the signed air-gap bundle
 - installation and runtime must work with public egress denied
 - the installer is manifest-driven rather than hardcoded
-- K3s ownership allows safe adoption of an existing K3s cluster, but never
-  silently takes over a cluster with unrelated workloads
+- K3s ownership never silently takes over a cluster with unrelated workloads.
+  The exact three-server release stages only empty, inventory-matched hosts;
+  qualifying adoption or migration of an existing cluster is a separate,
+  explicit recovery workflow.
 - versioning is two-tier:
   platform version plus independent per-service versions
 
@@ -67,25 +75,19 @@ bootstrap trust.
 
 ## Lifecycle Contract
 
-The public lifecycle surface is centered on:
+For a current signed three-server release, the public install sequence is:
 
-- `zonctl preflight`
-- `zonctl install`
-- `zonctl cluster-enrollment-create`
-- `zonctl cluster-join`
-- `zonctl cluster-node-register`
-- `zonctl cluster-inference-deploy`
-- `zonctl cluster-worker-upgrade`
-- `zonctl cluster-node-remove`
-- `zonctl status`
-- `zonctl verify`
-- `zonctl backup`
-- `zonctl restore`
-- `zonctl upgrade`
-- `zonctl repair`
-- `zonctl support-bundle`
-- `zonctl uninstall`
-- `zonctl factory-reset`
+- `zonctl cluster-server-stage` on the bootstrap and both peers
+- `zonctl cluster-server-enrollment-create` for each peer
+- `zonctl cluster-finalize` once all three servers have joined
+- `zonctl cluster-ha-check`, `zonctl status`, `zonctl verify`, and
+  `zonctl support-bundle` for read-only health and diagnostics
+
+Until the coordinated etcd lifecycle is qualified, mutating local-host
+commands (`backup`, `restore`, `upgrade`, `repair`, `uninstall`, and
+`factory-reset`) fail closed for this topology. Older `install`,
+prime/member enrollment, and worker commands are legacy migration surfaces,
+not alternate deployment modes.
 
 ## Current Documentation Split
 

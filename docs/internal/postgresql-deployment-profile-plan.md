@@ -1,5 +1,11 @@
 # PostgreSQL Control Plane And Deployment Profile Plan
 
+> Topology clarification: `single-node-postgres-v1` describes the current
+> **application database** placement, not the appliance/Kubernetes topology.
+> New appliance releases run exactly three active embedded-etcd K3s servers.
+> PostgreSQL application HA is intentionally deferred; this identifier remains
+> until its persistence and failover replacement is qualified.
+
 ## Purpose
 
 This is the execution plan for moving the production control plane from
@@ -10,7 +16,8 @@ and resource settings independently from product capabilities.
 The first deliverable is deliberately narrow:
 
 - PostgreSQL is the only production control-plane database.
-- The only supported deployment profile is `single-node-postgres-v1`.
+- The only supported PostgreSQL persistence profile is
+  `single-node-postgres-v1`.
 - That profile runs one control-plane replica and one PostgreSQL primary on
   appliance-owned durable local storage.
 - SQLite is not a supported runtime, deployment profile, backup format, or

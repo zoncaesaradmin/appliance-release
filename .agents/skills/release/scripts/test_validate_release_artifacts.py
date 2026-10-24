@@ -217,6 +217,32 @@ def test_positive_case() -> None:
             raise AssertionError(result.stderr)
 
 
+def test_rejects_deployment_topology_mismatch() -> None:
+    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        populate_positive_case(tmp)
+        release_path = tmp / "release-input" / "release-input.json"
+        release_input = json.loads(release_path.read_text(encoding="utf-8"))
+        release_input["compatibility"]["deploymentTopology"] = "three-server-etcd-v1"
+        release_path.write_text(json.dumps(release_input), encoding="utf-8")
+        result = run_validator(tmp)
+        if result.returncode == 0 or "deploymentTopology" not in result.stderr:
+            raise AssertionError(result.stderr or "topology mismatch was accepted")
+
+        write(tmp / "release-input" / "compatibility.json", '{"deploymentTopology":"three-server-etcd-v1"}')
+        result = run_validator(tmp)
+        if result.returncode == 0 or "deploymentTopology" not in result.stderr:
+            raise AssertionError(result.stderr or "unsigned bundle topology mismatch was accepted")
+
+        manifest_path = tmp / "bundle" / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["compatibility"]["deploymentTopology"] = "three-server-etcd-v1"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = run_validator(tmp)
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+
+
 def test_rejects_missing_host_packages_when_flags_false() -> None:
     """Complete product release-input always requires host-packages."""
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
@@ -920,6 +946,7 @@ def main() -> None:
     test_storage_network_pack_is_independent_of_workflows()
     test_companion_extra_image_reference_is_still_checked()
     test_positive_case()
+    test_rejects_deployment_topology_mismatch()
     test_rejects_missing_host_packages_when_flags_false()
     test_foundation_pack_rejects_missing_host_support_from_bundle()
     test_foundation_pack_allows_catalog_optional_artifacts_absent_from_release_input()

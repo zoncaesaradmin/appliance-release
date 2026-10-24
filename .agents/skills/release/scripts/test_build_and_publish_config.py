@@ -45,9 +45,9 @@ def write(path: Path, text: str) -> None:
 
 
 def run_build_publish_config(config: Path, run_dir: Path) -> subprocess.CompletedProcess[str]:
-    # These tests exercise config validation.  They must never inherit an
-    # operator's build-host sudo credential and accidentally progress into the
-    # real bootstrap/build sequence when a fixture becomes valid.
+    # These tests exercise config validation. They must never inherit an
+    # operator's build-host sudo credential or terminal: an absent secret must
+    # fail closed rather than prompt and hang an interactive verification run.
     env = os.environ.copy()
     env.pop("APPLIANCE_BUILD_SUDO_PASSWORD", None)
     return subprocess.run(
@@ -65,6 +65,7 @@ def run_build_publish_config(config: Path, run_dir: Path) -> subprocess.Complete
         stderr=subprocess.STDOUT,
         check=False,
         env=env,
+        stdin=subprocess.DEVNULL,
     )
 
 
@@ -80,6 +81,7 @@ def test_requires_local() -> None:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             check=False,
+            stdin=subprocess.DEVNULL,
         )
         if result.returncode == 0:
             raise AssertionError("--local should be required")
@@ -120,6 +122,7 @@ def test_dockerhub_source_names_are_not_overwritten_before_lookup() -> None:
             stderr=subprocess.STDOUT,
             check=False,
             env=env,
+            stdin=subprocess.DEVNULL,
         )
         if result.returncode == 0:
             raise AssertionError("worker unexpectedly ran bootstrap")
@@ -228,6 +231,7 @@ def test_static_http_worker_does_not_require_bundle_store_credentials() -> None:
             stderr=subprocess.STDOUT,
             check=False,
             env=env,
+            stdin=subprocess.DEVNULL,
         )
         if result.returncode == 0:
             raise AssertionError("worker unexpectedly ran bootstrap")

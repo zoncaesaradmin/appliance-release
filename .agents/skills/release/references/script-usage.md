@@ -147,7 +147,9 @@ Minimal lab day-to-day switches (spread across the three files):
 ```yaml
 # lab-devhost.yaml
 build_host: { alias: zonsys@… }
-target_host: { alias: zonsys@… }
+target_host:
+  alias: zonsys@192.168.1.151,zonsys@192.168.1.152,zonsys@192.168.1.153
+  roles: prime,prime,prime
 report:
   final_ok: true
 
@@ -167,11 +169,16 @@ install:
 
 See the three `references/config.*.example.yaml` files for the full schemas.
 
-E2e install is always **uninstall (if zonctl present) then fresh install**.
-In-place public upgrade is not used.
+The release runner stages the bootstrap K3s server, stages two signed server
+peers, then finalizes product charts only after the three-server Kubernetes
+and embedded-etcd gate passes. Interrupted stage/finalize runs are rerunnable
+with the same inventory. It does not choose a single-host or worker layout.
+Cluster-wide upgrade and recovery are not yet qualified for this topology.
 
 - **Step 1** `buildPublish` — build and publish on the build host
-- **Step 2** `install` — install on the target host
+- **Step 2** `install` — stage the bootstrap target
+- **Step 2a** `clusterStageFinalize` — stage both peer servers and finalize
+  only after the direct-API/embedded-etcd gate passes
 - **Step 2b–2d** bootstrap admin (if `install.bootstrap_admin`), default license
   (if `install.enable_default_license`), target verify, client/API verify from the Mac
 - **Step 3** `report` — summarize the run

@@ -124,21 +124,45 @@ def test_resolve_install_extra_tls_sans() -> None:
 
 def test_install_release_wires_image_pull_flags() -> None:
     text = INSTALL_HELPER.read_text(encoding="utf-8")
-    assert 'IMAGE_PULL_REGISTRY=""' in text
+    assert 'IMAGE_PULL_REGISTRY="${IMAGE_PULL_REGISTRY:-}"' in text
     assert "--image-pull-registry" in text
     assert "--preserve-env=" in text
     assert "image-pull-registry:" in text
 
 
-def test_install_release_join_uninstalls_leftover_receipt() -> None:
+def test_install_release_has_explicit_three_server_stage_and_finalize_modes() -> None:
     text = INSTALL_HELPER.read_text(encoding="utf-8")
-    join_idx = text.find('echo "[5/5] Joining this host to the appliance cluster')
-    assert join_idx != -1
-    prefix = text[:join_idx]
-    assert "installed-state.json" in prefix
-    assert "k3s.service" in prefix
-    assert "uninstall --confirm yes" in prefix
-    assert prefix.rfind("JOIN_ENROLLMENT_FILE") < join_idx
+    for want in (
+        'THREE_SERVER_OPERATION="${THREE_SERVER_OPERATION:-}"',
+        'CLUSTER_INVENTORY_FILE="${CLUSTER_INVENTORY_FILE:-}"',
+        "cluster-server-stage",
+        "cluster-finalize",
+        "SERVER_ENROLLMENT_FILE",
+        "Three-server appliance finalization completed",
+    ):
+        assert want in text, want
+
+
+def test_install_release_has_no_legacy_single_host_or_join_path() -> None:
+    text = INSTALL_HELPER.read_text(encoding="utf-8")
+    assert "requires THREE_SERVER_OPERATION=stage or finalize" in text
+    for forbidden in (
+        "JOIN_ENROLLMENT_FILE",
+        "cluster-join",
+        '"${ZONCTL}" install',
+        "public fresh-install helper behavior",
+    ):
+        assert forbidden not in text, forbidden
+
+    standalone = subprocess.run(
+        ["bash", str(INSTALL_HELPER), "--appliance-name", "test-appliance"],
+        check=False,
+        text=True,
+        capture_output=True,
+        env=os.environ.copy(),
+    )
+    assert standalone.returncode == 2
+    assert "requires THREE_SERVER_OPERATION=stage or finalize" in standalone.stderr
 
 
 def test_run_install_patches_image_pull_and_dns() -> None:
@@ -153,6 +177,8 @@ def test_run_install_patches_image_pull_and_dns() -> None:
     assert "--preserve-env=" in text
     assert "LOCAL_HELPER" in text
     assert "scp -q" in text
+    assert "require_three_server_product_targets" in text
+    assert 'THREE_SERVER_OPERATION="stage"' in text
     # Patched into the downloaded helper on the target (escaped inside remote_cmd).
     assert 'set_assign(text, \\"IMAGE_PULL_REGISTRY\\"' in text
     assert 'set_assign(text, \\"DNS_ZONE\\"' in text
@@ -160,13 +186,12 @@ def test_run_install_patches_image_pull_and_dns() -> None:
     assert 'set_assign(text, \\"OUT_DIR\\"' in text
 
 
-def test_lab_clean_reinstall_uses_explicit_factory_reset() -> None:
+def test_existing_install_requires_qualified_migration() -> None:
     text = RUN_INSTALL.read_text(encoding="utf-8")
-    assert "factory-reset --confirm yes --acknowledge-data-loss --force-data-loss" in text
-    assert "uninstalling existing appliance before reinstall" not in text
-    assert "factory-reset --confirm yes --acknowledge-data-loss --force-data-loss --wipe-workspaces" not in text
-    assert 'controlplane_database_dir=/data/zon/controlplane-database' in text
-    assert 'rm -rf -- \\"\\${controlplane_database_dir}\\"' in text
+    assert "factory-reset --confirm yes --acknowledge-data-loss --force-data-loss" not in text
+    assert "rm -rf --" not in text
+    assert "will not factory-reset it" in text
+    assert "qualified migration/recovery workflow" in text
 
 
 def test_helper_patch_assign_roundtrip() -> None:
@@ -270,9 +295,10 @@ def main() -> None:
     test_partial_image_pull_registry_fails()
     test_resolve_install_extra_tls_sans()
     test_install_release_wires_image_pull_flags()
-    test_install_release_join_uninstalls_leftover_receipt()
+    test_install_release_has_explicit_three_server_stage_and_finalize_modes()
+    test_install_release_has_no_legacy_single_host_or_join_path()
     test_run_install_patches_image_pull_and_dns()
-    test_lab_clean_reinstall_uses_explicit_factory_reset()
+    test_existing_install_requires_qualified_migration()
     test_helper_patch_assign_roundtrip()
     print("install public helper config tests passed")
 

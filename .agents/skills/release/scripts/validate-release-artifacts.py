@@ -1060,9 +1060,23 @@ def main() -> int:
 
     release_input = load_json(release_input_path)
     bundle_manifest = load_json(bundle_manifest_path)
+    release_compatibility = release_input.get("compatibility")
+    bundle_compatibility = bundle_manifest.get("compatibility")
+    if not isinstance(release_compatibility, dict) or not isinstance(bundle_compatibility, dict):
+        raise ValueError("release-input and bundle manifest compatibility must be objects")
+    topology = release_compatibility.get("deploymentTopology")
+    if topology not in (None, "three-server-etcd-v1"):
+        raise ValueError(f"unsupported release-input deploymentTopology: {topology!r}")
+    if bundle_compatibility.get("deploymentTopology") != topology:
+        raise ValueError("bundle manifest deploymentTopology does not match release-input")
     artifacts = release_input.get("artifacts")
     if not isinstance(artifacts, dict):
         raise ValueError("release-input artifacts must be an object")
+    artifact_compatibility = load_json(
+        require_file_artifact(artifacts, "compatibility", release_input_path.parent)
+    )
+    if artifact_compatibility.get("deploymentTopology") != topology:
+        raise ValueError("compatibility artifact deploymentTopology does not match release-input")
     entries = bundle_manifest.get("entries")
     if not isinstance(entries, list):
         raise ValueError("release-manifest entries must be an array")

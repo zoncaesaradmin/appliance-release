@@ -19,8 +19,9 @@ chain.
 
 ## K3s Ownership
 
-`internal/k3s.DecideOwnership` is the single place that decides whether an
-install may proceed:
+`internal/k3s.DecideOwnership` governs retained legacy local-host receipts.
+For a current `three-server-etcd-v1` release, the staged coordinator accepts
+only empty, inventory-matched hosts; it does not adopt an existing K3s service.
 
 - no installed-state and no existing K3s service:
   fresh install
@@ -33,15 +34,16 @@ install may proceed:
 - no installed-state, K3s exists, and no prior install attempt is recorded:
   consider adoption
 
-Adoption behavior:
+Legacy adoption behavior:
 
 - healthy cluster with no foreign workloads:
   adopt automatically
 - unhealthy cluster or cluster with foreign workloads:
-  refuse unless `--force-adopt` is passed
+  refuse unless the legacy caller explicitly uses `--force-adopt`
 
 Zon never silently modifies a cluster it did not create when unrelated
-workloads are present.
+workloads are present. `--force-adopt` is not a three-server release-runner
+option; migration/adoption requires its own qualified workflow.
 
 ## Redaction
 

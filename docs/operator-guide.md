@@ -51,169 +51,43 @@ Prefer host names over raw appliance IPs for day-to-day access.
   use the derived appliance name `<appliance_name>.<dns_zone>`, for example
   `https://appliance.appliance.internal`.
 
-## Defaults Used Below
+## Production installation
 
-Distributor base URL, version stamp, state dir, and other paths are product
-defaults inside the published helper (or stamped at publish). Operators pass
-only appliance identity on the CLI.
+New releases have one supported installation path: the signed release runner
+coordinates exactly three hosts. Do **not** download a helper and run
+`zonctl install` or `zonctl upgrade` on one host; those local-host commands
+cannot complete a `three-server-etcd-v1` release and must not be used as a
+fallback.
 
-```bash
-# Open static HTTP example (adjust host/version for curl step only):
-RELEASE_BASE_URL=http://192.168.1.103:28081
-RELEASE_VERSION=0.1.0
-```
+The release runner consumes three operator-owned inputs: a dev-host target
+configuration with exactly three `prime` aliases, build/publish configuration,
+and installation identity/profile configuration. It verifies the signed
+foundation bundle on each host, then performs the staged server flow described
+below. The runner and its exact configuration examples are maintained with the
+release tooling in
+[`references/script-usage.md`](../.agents/skills/release/references/script-usage.md).
 
-## Normal Public Flow: Install Or Upgrade
+The process remains air-gapped at the target: the bundle, K3s payload, charts,
+and images are all verified before use; there is no public fallback or
+unverified substitution. First-admin creation and offline-license acceptance
+remain post-install control-plane actions and are not part of K3s bootstrap.
 
-Two steps. Version is chosen by the **download URL**. The run takes only a
-required appliance name and an optional profile (default `core`). It does not
-read operator env vars for the public path.
+The supported profiles remain `core`, `builder`, `storage`, `landns`,
+`storage-landns`, `builder-landns`, and `builder-storage-landns`. Profile
+selection changes enabled product capability, not the three-server topology.
 
-### 1) Get the install script
+## Supported topology: three active K3s servers
 
-Open static publish:
+A new signed release supports exactly three servers. Every server runs
+`k3s server`, participates in embedded etcd, exposes a Kubernetes API, and is
+schedulable for workloads. There are no agent, dedicated worker, or
+one-server-plus-two-agent deployment modes.
 
-```bash
-curl -fsSL -o install-release.sh \
-  "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/install-release.sh"
-```
-
-Authenticated appliance_files store (token only for this download curl):
-
-```bash
-curl -fsSL -o install-release.sh \
-  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-  "https://artifact.example.internal/api/v1/files/appliance/${RELEASE_VERSION}/install-release.sh"
-```
-
-### 2) Run with a stable appliance name
-
-`--appliance-name` is required and should stay stable for that device (FQDN,
-TLS, registry realm). Omit profile to install the base `core` profile.
-
-```bash
-bash install-release.sh --appliance-name my-appliance-1
-
-bash install-release.sh \
-  --appliance-name my-appliance-1 \
-  --appliance-profile storage-landns
-```
-
-Installation does **not** require a license file and does not perform online
-entitlement checks. By default, after first UI login, complete licensing setup
-(import an offline license or accept the base/free entitlement) from Admin /
-Licensing.
-
-Rare site overrides (authenticated private store TLS, builder catalog path,
-alternate state dir) live as editable product-default variables near the top
-of the downloaded script — not as public CLI flags.
-
-Valid v1 profiles:
-
-- `core`
-- `builder`
-- `storage`
-- `landns`
-- `storage-landns`
-- `builder-landns`
-- `builder-storage-landns`
-
-Profile selection does not change the published bundle files or create a
-different SKU.
-
-## What The Wrapped Flow Does
-
-- downloads `appliance-<version>-foundation.tar.gz`
-- downloads `release-signing.pub`
-- verifies `sha256sum.txt`
-- extracts the bundle under `/tmp/appliance-<version>`
-- runs `zonctl preflight`
-- runs `zonctl install` on a fresh host
-- automatically switches to `zonctl upgrade` when the target already has an
-  owned appliance install
-- does not create the first administrator or accept a license (do those in the
-  UI, or via release-flow config `install.bootstrap_admin` /
-  `install.enable_default_license`)
-- installs `zonctl` to `/usr/local/bin/zonctl`
-
-## Explicit Manual Install / Upgrade
-
-Use this only when you want the steps spelled out manually instead of
-using the wrapped helper above.
-
-```bash
-rm -rf "${WORK_DIR}"
-mkdir -p "${WORK_DIR}"
-
-curl -fLo "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation.tar.gz" \
-  "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/appliance-${RELEASE_VERSION}-foundation.tar.gz"
-curl -fLo "${WORK_DIR}/release-signing.pub" \
-  "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/release-signing.pub"
-curl -fLo "${WORK_DIR}/sha256sum.txt" \
-  "${RELEASE_BASE_URL}/appliance/${RELEASE_VERSION}/sha256sum.txt"
-
-( cd "${WORK_DIR}" && sha256sum -c sha256sum.txt )
-tar -C "${WORK_DIR}" -xzf "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation.tar.gz"
-chmod +x "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl"
-```
-
-Fresh install:
-
-```bash
-sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl" preflight --output text
-sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl" install \
-  --bundle-dir "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation" \
-  --public-key "${WORK_DIR}/release-signing.pub" \
-  --state-dir "${STATE_DIR}" \
-  --output text
-```
-
-Upgrade:
-
-```bash
-sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl" preflight --output text
-sudo "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl" upgrade \
-  --bundle-dir "${WORK_DIR}/appliance-${RELEASE_VERSION}-foundation" \
-  --public-key "${WORK_DIR}/release-signing.pub" \
-  --state-dir "${STATE_DIR}" \
-  --output text
-```
-
-## What `zonctl install` Actually Does
-
-1. Verifies the release manifest and every bundle artifact.
-2. Runs preflight on the real host.
-3. Makes the K3s ownership decision.
-4. Installs or adopts K3s as allowed by policy.
-5. Preloads verified K3s and application images.
-6. Applies the exact bundled Helm chart.
-7. Persists `installed-state.json` on success.
-
-The install path is bundle-only in v1. There is no remote fallback and no
-unverified substitution. First-admin creation and base license acceptance are
-not part of `zonctl install`; use the control-plane UI or the release-flow
-config keys `install.bootstrap_admin` and `install.enable_default_license`.
-
-## Appliance roles: prime and member
-
-The operator config names hosts as **prime** or **member**. Do not put
-Kubernetes terms in that YAML.
-
-- **prime** owns the appliance identity. Product HTTPS and
-  `<appliance-name>.local` always resolve to this host’s LAN IPv4. Charts,
-  host-agent, Traefik, LAN DNS, and `/data/zon` hostPath stay here.
-- **member** joins the same appliance name and signed bundle. It does not
-  advertise `.local` and does not install product charts.
-
-One alias with no `roles:` key is a single-host appliance (implicit prime).
-Two hosts are always `prime,member`. Cluster HA needs three primes; two
-primes are rejected.
-
-### K3s API on every prime IP
-
-Three primes share one embedded etcd (quorum 2 of 3). Each prime runs
-`k3s server` and serves the same Kubernetes API on **its own LAN IPv4:6443**.
-There is no extra reserved VIP. From a laptop, any live prime works:
+The operator supplies an install-time inventory containing the three host
+names and their directly reachable IPv4 addresses. It is copied to each target
+with the signed bundle but is not embedded in that portable bundle. There is no
+extra reserved VIP or required load balancer. From a laptop, any live server
+works:
 
 ```bash
 curl -k https://192.168.1.155:6443/readyz
@@ -221,112 +95,46 @@ curl -k https://192.168.1.153:6443/readyz
 curl -k https://192.168.1.152:6443/readyz
 ```
 
-`--control-endpoint` for enrollment may be any of those URLs. Join still
-needs one server that is up *now*; after join, clients can use any remaining
-prime IP if one host is down. `appliance.local` and chart pods stay on the
-advertised prime. Traefik HTTPS is also published on each prime’s existing
-LAN IP (kube-proxy forwards to the Traefik pod). If the advertised prime is
-down, those pods are down too — that is application HA, not k3s API HA.
+The certificate contains all three direct addresses. A client needing N-1
+availability must retry another address when a connection fails; a normal
+single URL in a kubeconfig does not supply automatic failover. Peers initially
+join the bootstrap server, then all three direct API addresses are checked.
 
-## Explicit extra-host enrollment
+The release runner performs the signed, resumable sequence:
 
-The first listed prime is the advertised LAN owner and the only mDNS/ingress
-host. Add a member only with the same verified release bundle; never discover
-peers through mDNS or install a member from the internet.
+1. Stage the bootstrap server using `zonctl cluster-server-stage`.
+2. Create a protected, short-lived server enrollment for each of the other
+   two inventory names. Transfer each only through the release runner or a
+   protected offline channel; never paste one into a terminal, ticket, or log.
+3. Stage both peers with `cluster-server-stage`. They are K3s servers, never
+   agents.
+4. Run `zonctl cluster-finalize` on the bootstrap server. It deploys charts
+   only after all three planned servers are Ready, schedulable, accepting their
+   direct API URLs, and are voting embedded-etcd members.
 
-On the advertised prime, create an owner-readable enrollment artifact for the
-specific member node name. `--control-endpoint` is any live prime’s
-`https://<prime-ip>:6443` (the advertised prime is the usual join target).
-Transfer this file by an operator-approved protected offline channel. Members receive an automatically
-expiring **join token** (15 minutes by default, configurable from one minute
-through 24 hours). Extra primes (three-prime HA only) receive the server join
-credential in the same enrollment envelope; it is never printed. Do not paste
-enrollments into terminals, tickets, or logs; create a fresh enrollment if it
-expires before the host joins.
+Use `zonctl cluster-ha-check` from any running server to repeat the
+Kubernetes/etcd checks. A passing result means Kubernetes control-plane HA,
+not application HTTPS HA: the current application placement and durable
+storage are intentionally qualified in a later milestone.
 
-```bash
-sudo zonctl cluster-enrollment-create \
-  --worker-name gpu-worker-1 --worker-role inference \
-  --control-endpoint https://10.0.0.10:6443 \
-  --enrollment-out /root/gpu-worker-1.enrollment
-```
+Legacy prime/member and worker commands remain readable only for supported
+migration and recovery of older releases. They are not a deployment option
+for a release signed with `three-server-etcd-v1`.
 
-For a compute member, use `--worker-role worker`. For an extra prime in a
-three-prime cluster, use `--worker-role prime` (fresh install only; do not
-migrate a one-prime SQLite appliance in place).
+## Upgrade, backup, and recovery
 
-Record the reported signer fingerprint through a separate trusted channel. On
-the joining host, use its local copy of the signed bundle and that pinned fingerprint:
+Cluster-wide rolling upgrade, embedded-etcd snapshot/restore, member
+replacement, uninstall, and factory reset are not yet qualified for the
+three-server topology. Those mutating legacy commands fail closed on a staged
+or finalized three-server appliance so they cannot operate on one etcd member
+as if it were an independent appliance. Preserve all three hosts and use the
+documented recovery process until the cluster-wide workflow has passed its
+failure drills.
 
-```bash
-sudo zonctl cluster-join \
-  --bundle-dir /media/zon/foundation \
-  --enrollment-file /root/gpu-worker-1.enrollment \
-  --cluster-signer-fingerprint sha256:<fingerprint> \
-  --node-name gpu-worker-1
-```
+The following describes legacy single-node behavior only; do not use it as a
+three-server operating procedure.
 
-After K3s reports the node ready, return to the control plane to verify, label,
-and add it to authoritative inventory:
-
-```bash
-sudo zonctl cluster-node-register --worker-name gpu-worker-1 --worker-role inference
-```
-
-For an accelerated (`acc-llm` / vLLM) worker, `cluster-join` configures the
-NVIDIA container runtime on that worker after its K3s agent starts. The later
-control-plane deployment step creates the shared Kubernetes `RuntimeClass`.
-Do not try to copy containerd configuration from the control-plane host; GPU
-runtime configuration is per node.
-
-After registration, reconcile that node's isolated inference release from the
-same signed bundle selection. This creates a node-bound manager, engine
-service, and model claim; it never accepts image, selector, or endpoint input
-from the command line. The control plane records the Kubernetes node UID at
-registration and uses that UID—not the reusable node name—as durable model
-instance identity.
-
-```bash
-sudo zonctl cluster-inference-deploy \
-  --bundle-dir /media/zon/foundation \
-  --pack-dir /media/zon/std-llm \
-  --worker-name gpu-worker-1
-```
-
-To remove a worker, run this on the control plane. It cordons the node,
-atomically removes that node's ready-model aliases from the shared inference
-routing registry, drains Kubernetes work, removes that node's isolated Helm
-release, then deletes the node and inventory record. If a concurrent model
-publication changes the registry, the operation fails closed; rerun it rather
-than risking loss of another node's route:
-
-```bash
-sudo zonctl cluster-node-remove --worker-name gpu-worker-1 --confirm gpu-worker-1
-```
-
-### Ordered cluster upgrade
-
-An appliance upgrade is ordered: copy the same signed target bundle to each
-worker, upgrade each worker locally, confirm its Kubernetes node is Ready, and
-only then upgrade the control plane. No host is remotely modified and the
-control plane refuses its own upgrade while any enrolled worker reports a K3s
-version other than the signed target.
-
-```bash
-# Run on each worker first, using that worker's local bundle copy.
-sudo zonctl cluster-worker-upgrade \
-  --bundle-dir /media/zon/foundation \
-  --pack-dir /media/zon/std-llm \
-  --node-name gpu-worker-1
-
-# Then run on the control plane. It checks every enrolled worker live.
-sudo zonctl upgrade --bundle-dir /media/zon/foundation --pack-dir /media/zon/std-llm
-```
-
-If a worker update fails after replacing its K3s files, `zonctl` restores the
-prior binary, agent configuration, and unit before restarting the agent.
-
-## What `zonctl upgrade` Actually Does
+### Legacy `zonctl upgrade` behavior
 
 1. Loads current installed state.
 2. Resolves and verifies the target bundle.
@@ -339,19 +147,13 @@ prior binary, agent configuration, and unit before restarting the agent.
 
 Any failure after mutation starts triggers restore-based rollback.
 
-## Backup And Restore
+### Legacy backup and restore
 
 Backup:
 
 ```bash
 sudo zonctl backup --state-dir "${STATE_DIR}" --output text
 ```
-
-Run the same command on every worker. On an inference worker it snapshots the
-local K3s agent data and `/data/zon/inference/models` in one checksummed local
-backup. That model snapshot is node-local: retain or transfer the complete
-backup directory through an operator-approved offline channel; it is never
-assumed to be present on the control plane or another worker.
 
 Restore:
 
@@ -457,10 +259,12 @@ sudo journalctl -u k3s -f
 
 Common cases:
 
-- prior operation interrupted:
-  run `zonctl repair`
+- interrupted three-server stage or finalization:
+  rerun the same signed release-runner flow after inspecting `zonctl status
+  --output json` on the affected server; do not run local `repair`
 - `requires-force-adopt`:
-  see [security-model.md](security-model.md#k3s-ownership)
+  this is not a supported path for a new three-server release; preserve the
+  existing cluster for the explicit migration/recovery workflow
 - unhealthy status:
   inspect `zonctl status --output json` and component logs
 
@@ -483,22 +287,22 @@ Notes for DNS-bearing profiles:
 
 ## When To Use Which Path
 
-- Fresh host, no Zon installed:
-  use the wrapped install-or-upgrade flow
-- Zon already installed, newer release:
-  use the wrapped install-or-upgrade flow
-- Same version, reconcile in place:
-  use the wrapped install-or-upgrade flow
-- You specifically want the lower-level explicit commands:
-  use the manual flow
-- Previous operation was interrupted:
-  use `repair`
-- Remove platform but preserve data:
-  use `uninstall`
-- Wipe everything and start over:
-  use `factory-reset`, then reinstall
+- Three fresh, inventory-matched hosts:
+  use the signed three-server release runner.
+- A staged three-server flow was interrupted:
+  preserve all three hosts and rerun that same release-runner flow; it resumes
+  only against matching signed inventory and stage receipts.
+- A finalized three-server appliance needs diagnosis:
+  use `cluster-ha-check`, `status`, `verify`, and `support-bundle`. Its
+  cluster-wide upgrade, restore, replacement, uninstall, and reset workflow
+  is deliberately not yet qualified; local lifecycle commands fail closed.
+- An older one-server/prime-member receipt:
+  use the separately documented legacy export/migration or recovery procedure;
+  it is not an alternate new-install path.
 
 ## Reboot Guidance
 
-Normal Zon install, upgrade, repair, uninstall, and factory-reset flows do not
-require a full host reboot.
+Three-server staging and verification do not require a full host reboot.
+Do not reboot multiple embedded-etcd servers at once: two available servers
+are required to retain quorum. Cluster-wide maintenance guidance will replace
+this interim restriction once its recovery and rolling-upgrade drills pass.

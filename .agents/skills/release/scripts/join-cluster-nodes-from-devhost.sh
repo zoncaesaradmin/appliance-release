@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# join-cluster-nodes-from-devhost.sh — Mac/devhost side (members and extra primes).
+# join-cluster-nodes-from-devhost.sh — Mac/devhost side three-server coordinator.
 #
-# After the advertised prime is installed, enrolls each additional host from
-# that prime, copies the enrollment offline through this machine, runs
-# install-release.sh cluster-join on the joining host, then registers the
-# node on the prime. Client HTTPS and mDNS stay on the first prime.
+# Stages the two remaining embedded-etcd servers from the bootstrap server,
+# then finalizes the product only after the Kubernetes/etcd quorum gate.
 set -euo pipefail
 set +H
 
@@ -19,9 +17,8 @@ usage: join-cluster-nodes-from-devhost.sh \
   --build-publish-config PATH \
   --install-config PATH
 
-No-op for a single implicit prime. For prime,member (and three-prime HA)
-enrolls, joins, and registers each extra host using the same signed bundle
-as the advertised prime.
+Stages the two peers of the required three-active-server product topology,
+then runs its signed Kubernetes/etcd finalization gate.
 EOF
 }
 
@@ -71,10 +68,7 @@ require_cmd scp
 require_cmd python3
 
 parse_target_host_cluster "${DEVHOST_CONFIG}"
-if [[ "${TARGET_CLUSTER_KIND}" == "single" ]]; then
-  log "cluster-join: single prime; nothing to enroll"
-  exit 0
-fi
+require_three_server_product_targets
 
 RELEASE_VERSION=""
 if [[ -n "${PRODUCT_VERSION:-}" ]]; then
@@ -139,239 +133,95 @@ esac
 LOCAL_HELPER="$(skill_release_repo_root "${SCRIPT_DIR}")/scripts/install-release.sh"
 [[ -f "${LOCAL_HELPER}" ]] || fail "local install helper missing: ${LOCAL_HELPER}"
 SCRIPT_PATH="/tmp/install-release-${RELEASE_VERSION}.sh"
-REMOTE_ENROLLMENT="/tmp/appliance-join.enrollment"
 
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="$(default_release_run_dir)"
 fi
 ensure_release_run_dirs "${RUN_DIR}"
 mkdir -p "${RUN_DIR}/enrollments"
-join_log="${RUN_DIR}/logs/target-cluster-join.log"
+three_server_log="${RUN_DIR}/logs/target-three-server-coordinator.log"
 
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 quoted_sudo_password="$(shell_quote "${target_sudo_password}")"
-CONTROL_ENDPOINT="$(target_prime_control_endpoint)"
-PRIME_NODE_NAME="$(target_node_name_from_alias "${TARGET_PRIME_HOST}")"
-log "cluster-join kind=${TARGET_CLUSTER_KIND} prime=${TARGET_PRIME_HOST} advertised-node=${PRIME_NODE_NAME} endpoint=${CONTROL_ENDPOINT}"
-emit_cluster_join_plan | tee -a "${join_log}"
+log "three-server stage/finalize kind=${TARGET_CLUSTER_KIND} bootstrap=${TARGET_PRIME_HOST}"
+emit_three_server_stage_plan | tee -a "${three_server_log}"
 
-image_pull_exports=""
-sudo_preserve=""
-if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
-  image_pull_exports+="${IMAGE_PULL_USERNAME_ENV}=$(shell_quote "${IMAGE_PULL_USERNAME}") export ${IMAGE_PULL_USERNAME_ENV}; "
-  image_pull_exports+="${IMAGE_PULL_TOKEN_ENV}=$(shell_quote "${IMAGE_PULL_TOKEN}") export ${IMAGE_PULL_TOKEN_ENV}; "
-  if [[ -n "${IMAGE_PULL_TLS_VERIFY_ENV}" ]]; then
-    image_pull_exports+="${IMAGE_PULL_TLS_VERIFY_ENV}=$(shell_quote "${IMAGE_PULL_TLS_VERIFY}") export ${IMAGE_PULL_TLS_VERIFY_ENV}; "
-  fi
-  sudo_preserve=" --preserve-env=$(shell_quote "${IMAGE_PULL_PRESERVE_ENV}")"
-fi
+# New signed releases use exactly three active embedded-etcd servers. Reuse
+# the public helper's download path but select its explicit stage/finalize
+# operations; do not invoke the legacy prime/member registration protocol.
+run_three_server_flow() {
+  local inventory_local="${RUN_DIR}/metadata/three-server-inventory.json"
+  local inventory_remote="/tmp/appliance-three-server-inventory-${RELEASE_VERSION}.json"
+  local bootstrap_node bootstrap_zonctl enrollment_remote enrollment_local fingerprint alias node_name
+  local enroll_log stage_log finalize_log chmod_log remote_cmd helper_env node_helper_env enrollment_file_q
+  local -a peers=()
 
-enroll_and_join_host() {
-  local alias="$1"
-  local enroll_role="$2"
-  local register_role="$3"
-  local node_name enrollment_remote enrollment_local enroll_json fingerprint
-  local enroll_log host_join_log register_log
-  node_name="$(target_node_name_from_alias "${alias}")"
-  enrollment_remote="/tmp/appliance-enroll-${node_name}.enrollment"
-  enrollment_local="${RUN_DIR}/enrollments/${node_name}.enrollment"
-  enroll_json="${RUN_DIR}/metadata/enrollment-${node_name}.json"
-  enroll_log="${RUN_DIR}/logs/target-cluster-enroll-${node_name}.log"
-  host_join_log="${RUN_DIR}/logs/target-cluster-join-${node_name}.log"
-  register_log="${RUN_DIR}/logs/target-cluster-register-${node_name}.log"
+  write_three_server_inventory "${inventory_local}"
+  bootstrap_node="$(target_node_name_from_alias "${TARGET_PRIME_HOST}")"
+  bootstrap_zonctl="${OUT_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl"
+  snapshot_newline_list "${TARGET_PEER_PRIME_ALIASES:-}" peers
+  ((${#peers[@]} == 2)) || fail "three-server topology requires two peer servers"
+  scp -q "${inventory_local}" "${TARGET_PRIME_HOST}:${inventory_remote}"
 
-  log "enrolling ${enroll_role} ${alias} as ${node_name}"
-  # run_ssh_captured is ssh -T: sudo's timestamp is TTY-bound, so sudo -n
-  # after sudo -S -v fails with "a password is required". Pipe -S into zonctl.
-  # --node-name must match install (dash-IP from the SSH alias). zonctl
-  # defaults to hostname, which is not the recorded ControlPlaneNode.
-  if ! run_ssh_captured "${TARGET_PRIME_HOST}" "${enroll_log}" "set -euo pipefail
-printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' zonctl cluster-enrollment-create --output json \
-  --node-name $(shell_quote "${PRIME_NODE_NAME}") \
-  --worker-name $(shell_quote "${node_name}") \
-  --worker-role $(shell_quote "${enroll_role}") \
-  --control-endpoint $(shell_quote "${CONTROL_ENDPOINT}") \
-  --enrollment-out $(shell_quote "${enrollment_remote}")
-printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' sh -c 'chown \"\$SUDO_USER:\$SUDO_USER\" $(shell_quote "${enrollment_remote}") && chmod 0600 $(shell_quote "${enrollment_remote}")'
-"; then
-    fail "cluster-enrollment-create failed for ${node_name}; see ${enroll_log}"
-  fi
-  set -e
-  python3 - "${enroll_log}" "${enroll_json}" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-log_path = Path(sys.argv[1])
-out_path = Path(sys.argv[2])
-text = log_path.read_text(encoding="utf-8")
-payload = None
-for line in reversed(text.splitlines()):
-    line = line.strip()
-    if line.startswith("{") and '"signerFingerprint"' in line:
-        payload = json.loads(line)
-        break
-if not payload:
-    raise SystemExit("enrollment JSON with signerFingerprint not found in join log")
-data = payload.get("data") or {}
-if not data.get("signerFingerprint"):
-    raise SystemExit("enrollment JSON missing signerFingerprint")
-out_path.parent.mkdir(parents=True, exist_ok=True)
-out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-print(data["signerFingerprint"])
-PY
-  fingerprint="$(python3 - "${enroll_json}" <<'PY'
-import json, sys
-from pathlib import Path
-print(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["data"]["signerFingerprint"])
-PY
-)"
-  [[ -n "${fingerprint}" ]] || fail "missing enrollment signer fingerprint for ${node_name}"
-
-  mkdir -p "$(dirname "${enrollment_local}")"
-  if ! scp -q "${TARGET_PRIME_HOST}:${enrollment_remote}" "${enrollment_local}" </dev/null; then
-    fail "could not copy enrollment from ${TARGET_PRIME_HOST}; see ${enroll_log}"
-  fi
-  if ! scp -q "${enrollment_local}" "${alias}:${REMOTE_ENROLLMENT}" </dev/null; then
-    fail "could not copy enrollment to ${alias}"
-  fi
-  if ! scp -q "${LOCAL_HELPER}" "${alias}:${SCRIPT_PATH}" </dev/null; then
-    fail "could not copy install helper to ${alias}"
-  fi
-  rm -f "${enrollment_local}"
-  run_ssh_captured "${TARGET_PRIME_HOST}" "${RUN_DIR}/logs/target-enroll-cleanup-${node_name}.log" \
-    "rm -f $(shell_quote "${enrollment_remote}")" || true
-  set -e
-
-  log "joining ${alias} as ${node_name}"
-  local remote_cmd="set -euo pipefail
-script_path=$(shell_quote "${SCRIPT_PATH}")
-enrollment_path=$(shell_quote "${REMOTE_ENROLLMENT}")
-base_url=$(shell_quote "${BASE_URL}")
-bearer=$(shell_quote "${BEARER_TOKEN}")
-tls_insecure=$(shell_quote "${TLS_INSECURE}")
-version=$(shell_quote "${RELEASE_VERSION}")
-prefix=$(shell_quote "${PATH_PREFIX}")
-name=$(shell_quote "${APPLIANCE_NAME}")
-profile=$(shell_quote "${APPLIANCE_PROFILE}")
-dns_zone=$(shell_quote "${DNS_ZONE}")
-extra_tls_sans=$(shell_quote "${EXTRA_TLS_SANS}")
-node_name=$(shell_quote "${node_name}")
-signer=$(shell_quote "${fingerprint}")
-out_dir=$(shell_quote "${OUT_DIR}")
-image_pull_registry=$(shell_quote "${IMAGE_PULL_REGISTRY}")
-image_pull_username_env=$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")
-image_pull_token_env=$(shell_quote "${IMAGE_PULL_TOKEN_ENV}")
-image_pull_tls_verify_env=$(shell_quote "${IMAGE_PULL_TLS_VERIFY_ENV}")
-${image_pull_exports}
-
-if command -v zonctl >/dev/null 2>&1; then
-  echo \"uninstalling existing appliance before cluster join\"
-  printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' zonctl uninstall --confirm yes
-elif [[ -x /usr/local/bin/zonctl ]]; then
-  echo \"uninstalling existing appliance before cluster join\"
-  printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' /usr/local/bin/zonctl uninstall --confirm yes
-fi
-
-chmod +x \"\${script_path}\"
-chmod 600 \"\${enrollment_path}\"
-
-python3 - \"\${script_path}\" \"\${base_url}\" \"\${bearer}\" \"\${tls_insecure}\" \"\${version}\" \"\${prefix}\" \"\${dns_zone}\" \"\${extra_tls_sans}\" \"\${out_dir}\" \"\${image_pull_registry}\" \"\${image_pull_username_env}\" \"\${image_pull_token_env}\" \"\${image_pull_tls_verify_env}\" \"\${node_name}\" \"\${enrollment_path}\" \"\${signer}\" <<'PY'
-from pathlib import Path
-import json
-import re
-import sys
-
-(
-    path,
-    base_url,
-    bearer,
-    tls_insecure,
-    version,
-    prefix,
-    dns_zone,
-    extra_tls_sans,
-    out_dir,
-    image_pull_registry,
-    image_pull_username_env,
-    image_pull_token_env,
-    image_pull_tls_verify_env,
-    node_name,
-    enrollment_path,
-    signer,
-) = sys.argv[1:17]
-text = Path(path).read_text(encoding=\"utf-8\")
-
-def set_assign(text, name, value):
-    pat = re.compile(r\"^\" + re.escape(name) + r\"=.*$\", re.M)
-    repl = f\"{name}={json.dumps(value)}\"
-    if pat.search(text):
-        return pat.sub(repl, text, count=1)
-    return text + (\"\" if text.endswith(\"\\n\") else \"\\n\") + repl + \"\\n\"
-
-text = set_assign(text, \"BASE_URL_EMBEDDED\", base_url)
-text = set_assign(text, \"BASE_URL\", base_url)
-text = set_assign(text, \"PRODUCT_VERSION_EMBEDDED\", version)
-text = set_assign(text, \"PRODUCT_VERSION\", version)
-text = set_assign(text, \"PATH_PREFIX_EMBEDDED\", prefix)
-text = set_assign(text, \"PATH_PREFIX\", prefix)
-text = set_assign(text, \"BEARER_TOKEN\", bearer)
-text = set_assign(text, \"TLS_INSECURE\", tls_insecure)
-text = set_assign(text, \"DNS_ZONE\", dns_zone)
-text = set_assign(text, \"EXTRA_TLS_SANS\", extra_tls_sans)
-text = set_assign(text, \"OUT_DIR\", out_dir)
-text = set_assign(text, \"IMAGE_PULL_REGISTRY\", image_pull_registry)
-text = set_assign(text, \"IMAGE_PULL_USERNAME_ENV\", image_pull_username_env)
-text = set_assign(text, \"IMAGE_PULL_TOKEN_ENV\", image_pull_token_env)
-text = set_assign(text, \"IMAGE_PULL_TLS_VERIFY_ENV\", image_pull_tls_verify_env)
-text = set_assign(text, \"NODE_NAME\", node_name)
-text = set_assign(text, \"CLUSTER_INIT\", \"0\")
-text = set_assign(text, \"JOIN_ENROLLMENT_FILE\", enrollment_path)
-text = set_assign(text, \"CLUSTER_SIGNER_FINGERPRINT\", signer)
-Path(path).write_text(text, encoding=\"utf-8\")
-PY
-
-echo \"running install-release.sh cluster-join as \${node_name}\"
-printf '%s\\n' ${quoted_sudo_password} | sudo -S -p ''${sudo_preserve} bash \"\${script_path}\" --appliance-name \"\${name}\" --appliance-profile \"\${profile}\"
-rm -f \"\${enrollment_path}\"
-"
-
-  if ! run_ssh_logged "${alias}" "${host_join_log}" "${remote_cmd}"; then
-    fail "cluster join failed on ${alias}; see ${host_join_log}"
+  helper_env=""
+  helper_env="$(append_env_assignments "${helper_env}" BASE_URL "${BASE_URL}" BEARER_TOKEN "${BEARER_TOKEN}" TLS_INSECURE "${TLS_INSECURE}" PRODUCT_VERSION "${RELEASE_VERSION}" PATH_PREFIX "${PATH_PREFIX}" DNS_ZONE "${DNS_ZONE}" EXTRA_TLS_SANS "${EXTRA_TLS_SANS}" OUT_DIR "${OUT_DIR}" IMAGE_PULL_REGISTRY "${IMAGE_PULL_REGISTRY}" IMAGE_PULL_USERNAME_ENV "${IMAGE_PULL_USERNAME_ENV}" IMAGE_PULL_TOKEN_ENV "${IMAGE_PULL_TOKEN_ENV}" IMAGE_PULL_TLS_VERIFY_ENV "${IMAGE_PULL_TLS_VERIFY_ENV}")"
+  if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
+    helper_env="$(append_env_assignments "${helper_env}" "${IMAGE_PULL_USERNAME_ENV}" "${IMAGE_PULL_USERNAME}" "${IMAGE_PULL_TOKEN_ENV}" "${IMAGE_PULL_TOKEN}" "${IMAGE_PULL_TLS_VERIFY_ENV}" "${IMAGE_PULL_TLS_VERIFY}")"
   fi
 
-  log "registering ${node_name} as ${register_role} on advertised prime"
-  local attempt
-  for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    if run_ssh_captured "${TARGET_PRIME_HOST}" "${register_log}" "set -euo pipefail
-printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' zonctl cluster-node-register --output json \
-  --node-name $(shell_quote "${PRIME_NODE_NAME}") \
-  --worker-name $(shell_quote "${node_name}") \
-  --worker-role $(shell_quote "${register_role}")
-"; then
-      log "registered ${node_name}; enroll=${enroll_log} join=${host_join_log} register=${register_log}"
-      return 0
+  for alias in "${peers[@]}"; do
+    node_name="$(target_node_name_from_alias "${alias}")"
+    enrollment_remote="/tmp/appliance-three-server-${node_name}.enrollment"
+    enrollment_local="${RUN_DIR}/enrollments/${node_name}.enrollment"
+    enroll_log="${RUN_DIR}/logs/target-three-server-enroll-${node_name}.log"
+    stage_log="${RUN_DIR}/logs/target-three-server-stage-${node_name}.log"
+    log "creating signed server enrollment for ${alias} as ${node_name}"
+    if ! run_ssh_captured "${TARGET_PRIME_HOST}" "${enroll_log}" "set -euo pipefail; test -x $(shell_quote "${bootstrap_zonctl}"); rm -f -- $(shell_quote "${enrollment_remote}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' $(shell_quote "${bootstrap_zonctl}") cluster-server-enrollment-create --output json --cluster-inventory $(shell_quote "${inventory_remote}") --node-name $(shell_quote "${bootstrap_node}") --server-name $(shell_quote "${node_name}") --enrollment-out $(shell_quote "${enrollment_remote}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' chown \"\$(id -un):\$(id -gn)\" $(shell_quote "${enrollment_remote}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' chmod 0600 $(shell_quote "${enrollment_remote}")"; then
+      fail "three-server enrollment failed for ${node_name}; see ${enroll_log}"
     fi
-    sleep 6
+    fingerprint="$(python3 -c 'import json,sys; lines=open(sys.argv[1], encoding="utf-8").read().splitlines(); hits=[json.loads(x).get("data",{}).get("signerFingerprint","") for x in lines if x.strip().startswith("{") and "signerFingerprint" in x]; print(next((x for x in reversed(hits) if x), ""))' "${enroll_log}")"
+    [[ -n "${fingerprint}" ]] || fail "three-server enrollment missing signer fingerprint for ${node_name}"
+    mkdir -p "${RUN_DIR}/enrollments"
+    scp -q "${TARGET_PRIME_HOST}:${enrollment_remote}" "${enrollment_local}" </dev/null
+    # scp does not preserve the remote 0600 mode unless explicitly asked.
+    # The artifact holds a K3s server token, so make the devhost staging copy
+    # private before moving it onward.
+    chmod 0600 "${enrollment_local}"
+    scp -q "${enrollment_local}" "${alias}:${enrollment_remote}" </dev/null
+    chmod_log="${RUN_DIR}/logs/target-three-server-enrollment-mode-${node_name}.log"
+    if ! run_ssh_captured "${alias}" "${chmod_log}" "chmod 0600 $(shell_quote "${enrollment_remote}")"; then
+      rm -f "${enrollment_local}"
+      fail "could not protect three-server enrollment on ${alias}; see ${chmod_log}"
+    fi
+    if ! run_ssh_captured "${TARGET_PRIME_HOST}" "${RUN_DIR}/logs/target-three-server-enroll-cleanup-${node_name}.log" "rm -f -- $(shell_quote "${enrollment_remote}")"; then
+      rm -f "${enrollment_local}"
+      fail "could not remove transferred three-server enrollment from ${TARGET_PRIME_HOST}"
+    fi
+    rm -f "${enrollment_local}"
+    scp -q "${inventory_local}" "${alias}:${inventory_remote}" </dev/null
+    scp -q "${LOCAL_HELPER}" "${alias}:${SCRIPT_PATH}" </dev/null
+    node_helper_env="$(append_env_assignments "${helper_env}" NODE_NAME "${node_name}" THREE_SERVER_OPERATION stage CLUSTER_INVENTORY_FILE "${inventory_remote}" SERVER_ENROLLMENT_FILE "${enrollment_remote}" CLUSTER_SIGNER_FINGERPRINT "${fingerprint}")"
+    enrollment_file_q="$(shell_quote "${enrollment_remote}")"
+    # Always remove the remote token envelope, including a failed stage. The
+    # stage receipt/K3s token-file are the only durable, protected state; a
+    # rerun obtains a fresh signed envelope.
+    remote_cmd="set -euo pipefail; trap \"rm -f -- ${enrollment_file_q}\" EXIT; chmod +x $(shell_quote "${SCRIPT_PATH}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' env ${node_helper_env} bash $(shell_quote "${SCRIPT_PATH}") --appliance-name $(shell_quote "${APPLIANCE_NAME}") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}")"
+    log "staging embedded-etcd server ${alias}"
+    if ! run_ssh_logged "${alias}" "${stage_log}" "${remote_cmd}"; then
+      fail "three-server staging failed for ${alias}; see ${stage_log}"
+    fi
   done
-  fail "cluster-node-register failed for ${node_name}; see ${register_log}"
+
+  finalize_log="${RUN_DIR}/logs/target-three-server-finalize.log"
+  scp -q "${LOCAL_HELPER}" "${TARGET_PRIME_HOST}:${SCRIPT_PATH}"
+  helper_env="$(append_env_assignments "${helper_env}" NODE_NAME "${bootstrap_node}" THREE_SERVER_OPERATION finalize CLUSTER_INVENTORY_FILE "${inventory_remote}")"
+  remote_cmd="set -euo pipefail; chmod +x $(shell_quote "${SCRIPT_PATH}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' env ${helper_env} bash $(shell_quote "${SCRIPT_PATH}") --appliance-name $(shell_quote "${APPLIANCE_NAME}") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}")"
+  log "finalizing three-server Kubernetes/etcd substrate on ${TARGET_PRIME_HOST}"
+  if ! run_ssh_logged "${TARGET_PRIME_HOST}" "${finalize_log}" "${remote_cmd}"; then
+    fail "three-server finalization failed; see ${finalize_log}"
+  fi
+  log "three-server staging and finalization completed; application HA remains pending"
 }
 
-peer_prime_aliases=()
-member_aliases=()
-snapshot_newline_list "${TARGET_PEER_PRIME_ALIASES:-}" peer_prime_aliases
-snapshot_newline_list "${TARGET_MEMBER_ALIASES:-}" member_aliases
-if ((${#peer_prime_aliases[@]} > 0)); then
-  for alias in "${peer_prime_aliases[@]}"; do
-    enroll_and_join_host "${alias}" "prime" "prime"
-    set -e
-  done
-fi
-if ((${#member_aliases[@]} > 0)); then
-  for alias in "${member_aliases[@]}"; do
-    enroll_and_join_host "${alias}" "worker" "worker"
-    set -e
-  done
-fi
-
-log "cluster join finished; log: ${join_log}"
+run_three_server_flow
+log "three-server stage/finalize finished; log: ${three_server_log}"

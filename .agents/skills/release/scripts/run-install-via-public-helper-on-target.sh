@@ -30,13 +30,12 @@ usage() {
 usage: run-install-via-public-helper-on-target.sh \
   --config PATH \
   --build-publish-config PATH \
-  --install-config PATH [--force-adopt]
+  --install-config PATH
 
-Devhost builds curl + name/profile + optional install.image_pull_registry /
-dns_zone / additional_tls_sans_csv / bundle_download_dir; target factory-resets
-any owned appliance (when zonctl is present; platform data is intentionally
-wiped while workspaces are preserved), then fetches and runs the
-public install helper.
+The devhost prepares bundle access, identity/profile, and optional
+install.image_pull_registry / dns_zone / additional_tls_sans_csv /
+bundle_download_dir. The target uses the coordinator-patched helper only to
+stage the bootstrap server; it never performs a standalone public install.
 
 Export APPLIANCE_TARGET_SUDO_PASSWORD on the Mac (same as other install paths).
 When install.image_pull_registry is set, also export the named DEV_REGISTRY*
@@ -48,7 +47,6 @@ DEVHOST_CONFIG=""
 BUILD_PUBLISH_CONFIG=""
 INSTALL_CONFIG=""
 RUN_DIR=""
-FORCE_ADOPT_OVERRIDE="0"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -69,8 +67,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --force-adopt)
-      FORCE_ADOPT_OVERRIDE="1"
-      shift
+      fail "--force-adopt is not supported for the fixed three-server product; use the explicit migration workflow"
       ;;
     --help|-h)
       usage
@@ -95,12 +92,9 @@ require_cmd scp
 require_cmd python3
 
 parse_target_host_cluster "${DEVHOST_CONFIG}"
+require_three_server_product_targets
 # TARGET_HOST is the advertised prime after parse_target_host_cluster.
 PRIME_NODE_NAME="$(target_node_name_from_alias "${TARGET_PRIME_HOST}")"
-CLUSTER_INIT="0"
-if [[ "${TARGET_CLUSTER_KIND}" == "three-prime-ha" ]]; then
-  CLUSTER_INIT="1"
-fi
 RELEASE_VERSION=""
 if [[ -n "${PRODUCT_VERSION:-}" ]]; then
   RELEASE_VERSION="${PRODUCT_VERSION}"
@@ -140,9 +134,7 @@ case "$(printf '%s' "${FORCE_ADOPT}" | tr '[:upper:]' '[:lower:]')" in
   1|true|yes|on) FORCE_ADOPT="1" ;;
   *) fail "install.force_adopt must be a boolean" ;;
 esac
-if [[ "${FORCE_ADOPT_OVERRIDE}" == "1" ]]; then
-  FORCE_ADOPT="1"
-fi
+[[ "${FORCE_ADOPT}" != "1" ]] || fail "install.force_adopt is not supported for the fixed three-server product; use the explicit migration workflow"
 
 BASE_URL=""
 BEARER_TOKEN=""
@@ -185,12 +177,17 @@ fi
 ensure_release_run_dirs "${RUN_DIR}"
 install_log="${RUN_DIR}/logs/target-public-install.log"
 
+THREE_SERVER_OPERATION=""
+CLUSTER_INVENTORY_LOCAL=""
+CLUSTER_INVENTORY_REMOTE=""
+THREE_SERVER_OPERATION="stage"
+CLUSTER_INVENTORY_LOCAL="${RUN_DIR}/metadata/three-server-inventory.json"
+CLUSTER_INVENTORY_REMOTE="/tmp/appliance-three-server-inventory-${RELEASE_VERSION}.json"
+write_three_server_inventory "${CLUSTER_INVENTORY_LOCAL}"
+
 log "target-host=${TARGET_HOST} cluster-kind=${TARGET_CLUSTER_KIND} advertised-node=${PRIME_NODE_NAME}"
 log "helper-url=${HELPER_URL} (bundle artifacts); lab uses local helper ${LOCAL_HELPER}"
 log "appliance-name=${APPLIANCE_NAME} profile=${APPLIANCE_PROFILE} dns-zone=${DNS_ZONE}"
-if [[ "${FORCE_ADOPT}" == "1" ]]; then
-  log "force-adopt=enabled (authorized existing K3s takeover)"
-fi
 if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
   log "image-pull-registry=${IMAGE_PULL_REGISTRY}"
 fi
@@ -200,11 +197,6 @@ fi
 
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 quoted_sudo_password="$(shell_quote "${target_sudo_password}")"
-
-if [[ "${TARGET_CLUSTER_KIND}" != "single" ]]; then
-  log "uninstalling members and extra primes before advertised prime reinstall"
-  uninstall_non_advertised_cluster_hosts "${target_sudo_password}" "${install_log}"
-fi
 
 # Fully concrete remote command: no permanent target env; sudo auth from this job only.
 image_pull_exports=""
@@ -221,16 +213,18 @@ fi
 
 log "uploading local install helper to ${TARGET_HOST}:${SCRIPT_PATH}"
 scp -q "${LOCAL_HELPER}" "${TARGET_HOST}:${SCRIPT_PATH}"
+if [[ -n "${CLUSTER_INVENTORY_LOCAL}" ]]; then
+  log "uploading three-server inventory to ${TARGET_HOST}:${CLUSTER_INVENTORY_REMOTE}"
+  scp -q "${CLUSTER_INVENTORY_LOCAL}" "${TARGET_HOST}:${CLUSTER_INVENTORY_REMOTE}"
+fi
 
-# Lab policy: factory-reset then fresh public install (no in-place upgrade).
-# `uninstall` preserves /data/zon, including PostgreSQL, so it is not a clean
-# fresh-install operation.  Factory reset has its own explicit data-loss
-# acknowledgement and preserves builder workspaces unless --wipe-workspaces is
-# supplied; do not add that flag here.
+# This coordinator starts only a fresh bootstrap or resumes its own recorded
+# stage. It deliberately refuses an existing installation; migration and
+# recovery must be separately qualified rather than hiding a reset here.
 # Nested sudo under one non-interactive sudo so zonctl does not wait on a TTY.
-# Lab installs use the local repo helper (scp above) so skill-side wiring
-# (image-pull, dns_zone, TLS SANs) cannot silently lag a stale published copy.
-# Bundle/charts/images still download from HELPER_URL's distributor base.
+# The local helper (scp above) keeps coordinator wiring aligned with the
+# current release skill while bundles/charts/images download from the signed
+# distributor base.
 remote_cmd="set -euo pipefail
 script_path=$(shell_quote "${SCRIPT_PATH}")
 base_url=$(shell_quote "${BASE_URL}")
@@ -243,35 +237,36 @@ profile=$(shell_quote "${APPLIANCE_PROFILE}")
 dns_zone=$(shell_quote "${DNS_ZONE}")
 extra_tls_sans=$(shell_quote "${EXTRA_TLS_SANS}")
 node_name=$(shell_quote "${PRIME_NODE_NAME}")
-cluster_init=$(shell_quote "${CLUSTER_INIT}")
-force_adopt=$(shell_quote "${FORCE_ADOPT}")
+# Kept in the patch payload solely for compatibility with older helper copies;
+# current three-server helpers ignore both retired topology controls.
+cluster_init=$(shell_quote "0")
+force_adopt=$(shell_quote "0")
 out_dir=$(shell_quote "${OUT_DIR}")
 image_pull_registry=$(shell_quote "${IMAGE_PULL_REGISTRY}")
 image_pull_username_env=$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")
 image_pull_token_env=$(shell_quote "${IMAGE_PULL_TOKEN_ENV}")
 image_pull_tls_verify_env=$(shell_quote "${IMAGE_PULL_TLS_VERIFY_ENV}")
-controlplane_database_dir=/data/zon/controlplane-database
+three_server_operation=$(shell_quote "${THREE_SERVER_OPERATION}")
+cluster_inventory_file=$(shell_quote "${CLUSTER_INVENTORY_REMOTE}")
 ${image_pull_exports}
 
-if command -v zonctl >/dev/null 2>&1; then
-  echo \"factory-resetting existing appliance before reinstall (lab clean install; platform data will be wiped)\"
-  printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' zonctl factory-reset --confirm yes --acknowledge-data-loss --force-data-loss
+# Never turn a new three-server installation into an implicit destructive
+# migration. A staged bootstrap is the sole resumable state; every other
+# existing appliance or K3s state must go through its separately qualified
+# migration/recovery workflow.
+if [[ "\${three_server_operation}" == "stage" && -f "$(default_appliance_state_dir)/cluster-bootstrap-state.json" ]]; then
+  echo "resuming an existing three-server stage"
+elif command -v zonctl >/dev/null 2>&1; then
+  echo \"target has an existing zonctl installation; a fixed three-server release will not factory-reset it. Use the qualified migration/recovery workflow.\" >&2
+  exit 2
 elif [[ -x /usr/local/bin/zonctl ]]; then
-  echo \"factory-resetting existing appliance before reinstall (lab clean install; platform data will be wiped)\"
-  printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' /usr/local/bin/zonctl factory-reset --confirm yes --acknowledge-data-loss --force-data-loss
-else
-  # An earlier factory-reset implementation could remove zonctl while leaving
-  # this PostgreSQL hostPath behind.  There is no CLI left to perform the
-  # reset, but this lab runner has already declared a data-loss clean install;
-  # remove only this known orphaned database directory.  Never do this from
-  # the normal product installer or from data-preserving uninstall.
-  echo \"no zonctl on target; removing any orphaned control-plane database before lab fresh install (platform data will be wiped)\"
-  printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' rm -rf -- \"\${controlplane_database_dir}\"
+  echo \"target has an existing /usr/local/bin/zonctl installation; a fixed three-server release will not factory-reset it. Use the qualified migration/recovery workflow.\" >&2
+  exit 2
 fi
 
 chmod +x \"\${script_path}\"
 
-python3 - \"\${script_path}\" \"\${base_url}\" \"\${bearer}\" \"\${tls_insecure}\" \"\${version}\" \"\${prefix}\" \"\${dns_zone}\" \"\${extra_tls_sans}\" \"\${out_dir}\" \"\${image_pull_registry}\" \"\${image_pull_username_env}\" \"\${image_pull_token_env}\" \"\${image_pull_tls_verify_env}\" \"\${node_name}\" \"\${cluster_init}\" \"\${force_adopt}\" <<'PY'
+python3 - \"\${script_path}\" \"\${base_url}\" \"\${bearer}\" \"\${tls_insecure}\" \"\${version}\" \"\${prefix}\" \"\${dns_zone}\" \"\${extra_tls_sans}\" \"\${out_dir}\" \"\${image_pull_registry}\" \"\${image_pull_username_env}\" \"\${image_pull_token_env}\" \"\${image_pull_tls_verify_env}\" \"\${node_name}\" \"\${cluster_init}\" \"\${force_adopt}\" \"\${three_server_operation}\" \"\${cluster_inventory_file}\" <<'PY'
 from pathlib import Path
 import json
 import re
@@ -294,7 +289,9 @@ import sys
     node_name,
     cluster_init,
     force_adopt,
-) = sys.argv[1:17]
+    three_server_operation,
+    cluster_inventory_file,
+) = sys.argv[1:19]
 text = Path(path).read_text(encoding=\"utf-8\")
 
 def set_assign(text, name, value):
@@ -322,15 +319,13 @@ text = set_assign(text, \"IMAGE_PULL_TLS_VERIFY_ENV\", image_pull_tls_verify_env
 text = set_assign(text, \"NODE_NAME\", node_name)
 text = set_assign(text, \"CLUSTER_INIT\", cluster_init)
 text = set_assign(text, \"FORCE_ADOPT\", force_adopt)
+text = set_assign(text, \"THREE_SERVER_OPERATION\", three_server_operation)
+text = set_assign(text, \"CLUSTER_INVENTORY_FILE\", cluster_inventory_file)
 Path(path).write_text(text, encoding=\"utf-8\")
 PY
 
-echo \"running install-release.sh --appliance-name \${name} --appliance-profile \${profile} --force-adopt (via non-interactive sudo)\"
-force_adopt_arg=()
-if [[ \"\${force_adopt}\" == \"1\" ]]; then
-  force_adopt_arg+=(--force-adopt)
-fi
-printf '%s\\n' ${quoted_sudo_password} | sudo -S -p ''${sudo_preserve} bash \"\${script_path}\" --appliance-name \"\${name}\" --appliance-profile \"\${profile}\" \"\${force_adopt_arg[@]}\"
+echo \"running three-server install helper via non-interactive sudo\"
+printf '%s\\n' ${quoted_sudo_password} | sudo -S -p ''${sudo_preserve} bash \"\${script_path}\" --appliance-name \"\${name}\" --appliance-profile \"\${profile}\"
 "
 
 log "running public install helper on ${TARGET_HOST}"

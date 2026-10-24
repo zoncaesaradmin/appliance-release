@@ -547,12 +547,49 @@ parse_target_host_cluster() {
   esac
 }
 
-# Print the advertised prime's K3s API URL (https://<lan-ipv4>:6443).
-# Join still needs one live server; every prime also serves this API on its own IP.
-target_prime_control_endpoint() {
-  local ip=""
-  ip="$(ssh_target_ipv4 "${TARGET_PRIME_HOST}")" || fail "advertised prime ${TARGET_PRIME_HOST} must be user@IPv4 so enrollment can pin the API endpoint"
-  printf 'https://%s:6443\n' "${ip}"
+# require_three_server_product_targets is the release-runner boundary for the
+# current signed appliance product. The parser retains legacy shapes so old
+# receipts can still be diagnosed/migrated, but a new product release must
+# never begin a one-server, worker, or mixed-role deployment and rely on a
+# later installer failure to stop it.
+require_three_server_product_targets() {
+  [[ "${TARGET_CLUSTER_KIND:-}" == "three-prime-ha" ]] || \
+    fail "this product release requires exactly three active server targets (target_host.roles: prime,prime,prime); legacy one-prime/member layouts require their documented migration path"
+  [[ "${TARGET_HOST_COUNT:-0}" == "3" && "${TARGET_PRIME_COUNT:-0}" == "3" ]] || \
+    fail "this product release requires exactly three active server targets"
+  [[ -z "${TARGET_MEMBER_ALIASES:-}" ]] || \
+    fail "this product release does not support member/agent targets"
+}
+
+# write_three_server_inventory writes the operator-owned, install-time
+# inventory consumed by the signed three-server bundle. It deliberately derives
+# only names and directly reachable IPv4 addresses from the devhost target
+# configuration; no target identity is written into the portable bundle.
+write_three_server_inventory() {
+  local destination="$1"
+  local alias node_name address
+  local -a pairs=()
+  [[ "${TARGET_CLUSTER_KIND}" == "three-prime-ha" ]] || fail "three-server inventory requires exactly three prime targets"
+  [[ "${TARGET_HOST_COUNT}" == "3" && "${TARGET_PRIME_COUNT}" == "3" ]] || fail "three-server inventory requires exactly three active prime targets"
+  while IFS= read -r alias; do
+    [[ -n "${alias}" ]] || continue
+    node_name="$(target_node_name_from_alias "${alias}")"
+    address="$(ssh_target_ipv4 "${alias}")" || fail "three-server inventory requires user@IPv4 target aliases (${alias})"
+    pairs+=("${node_name}" "${address}")
+  done <<<"${TARGET_HOST_ALIASES}"
+  python3 - "${destination}" "${pairs[@]}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+out = Path(sys.argv[1])
+pairs = sys.argv[2:]
+if len(pairs) != 6:
+    raise SystemExit("expected exactly three node/address pairs")
+nodes = [{"name": pairs[i], "address": pairs[i + 1]} for i in range(0, len(pairs), 2)]
+out.parent.mkdir(parents=True, exist_ok=True)
+out.write_text(json.dumps({"topology": "three-server-etcd-v1", "bootstrapNode": nodes[0]["name"], "nodes": nodes}, indent=2) + "\n", encoding="utf-8")
+PY
 }
 
 probe_k3s_api_ip() {
@@ -571,59 +608,6 @@ probe_prime_https_ip() {
   [[ "${code}" =~ ^(200|301|302|401|403)$ ]]
 }
 
-# Operator-facing join plan (no SSH). Used by tests and the join script.
-emit_cluster_join_plan() {
-  local alias node_name
-  local -a peer_prime_aliases=()
-  local -a member_aliases=()
-  if [[ "${TARGET_CLUSTER_KIND}" == "single" ]]; then
-    printf 'kind=single host=%s\n' "${TARGET_HOST}"
-    return 0
-  fi
-  printf 'kind=%s prime=%s advertised_node=%s endpoint=%s\n' \
-    "${TARGET_CLUSTER_KIND}" \
-    "${TARGET_PRIME_HOST}" \
-    "$(target_node_name_from_alias "${TARGET_PRIME_HOST}")" \
-    "$(target_prime_control_endpoint)"
-  snapshot_newline_list "${TARGET_PEER_PRIME_ALIASES:-}" peer_prime_aliases
-  snapshot_newline_list "${TARGET_MEMBER_ALIASES:-}" member_aliases
-  if ((${#peer_prime_aliases[@]} > 0)); then
-    for alias in "${peer_prime_aliases[@]}"; do
-      node_name="$(target_node_name_from_alias "${alias}")"
-      printf 'peer-prime enroll=%s join=%s register-role=prime\n' "${node_name}" "${alias}"
-    done
-  fi
-  if ((${#member_aliases[@]} > 0)); then
-    for alias in "${member_aliases[@]}"; do
-      node_name="$(target_node_name_from_alias "${alias}")"
-      printf 'member enroll=%s join=%s register-role=worker\n' "${node_name}" "${alias}"
-    done
-  fi
-}
-
-# Uninstall an owned appliance on a remote host when zonctl is present.
-remote_uninstall_appliance_if_present() {
-  local alias="$1"
-  local sudo_password="$2"
-  local quoted
-  quoted="$(shell_quote "${sudo_password}")"
-  run_ssh_logged "${alias}" "${3:-/dev/null}" "set -euo pipefail
-zonctl_bin=\"\"
-if command -v zonctl >/dev/null 2>&1; then
-  zonctl_bin=\"\$(command -v zonctl)\"
-elif [[ -x /usr/local/bin/zonctl ]]; then
-  zonctl_bin=/usr/local/bin/zonctl
-else
-  zonctl_bin=\"\$(ls -1dt /tmp/appliance-*/appliance-*-foundation/zonctl 2>/dev/null | head -n 1 || true)\"
-fi
-if [[ -n \"\${zonctl_bin}\" && -x \"\${zonctl_bin}\" ]]; then
-  echo \"uninstalling existing appliance on ${alias} before cluster reinstall using \${zonctl_bin}\"
-  printf '%s\\n' ${quoted} | sudo -S -p '' \"\${zonctl_bin}\" uninstall --confirm yes
-else
-  echo \"no zonctl on ${alias}; skipping uninstall (join helper will clear leftover receipt)\"
-fi"
-}
-
 # Copy a newline list into a named array so later ssh/scp cannot steal remaining
 # items from the caller's stdin (OpenSSH reads stdin unless -n / </dev/null).
 snapshot_newline_list() {
@@ -640,18 +624,19 @@ snapshot_newline_list() {
   done <<<"${list}"
 }
 
-# Members and extra primes first, then the advertised prime (caller).
-uninstall_non_advertised_cluster_hosts() {
-  local sudo_password="$1"
-  local log_file="$2"
-  local alias
-  local -a extra_hosts=()
-  snapshot_newline_list "${TARGET_MEMBER_ALIASES:-}${TARGET_PEER_PRIME_ALIASES:-}" extra_hosts
-  if ((${#extra_hosts[@]} > 0)); then
-    for alias in "${extra_hosts[@]}"; do
-      remote_uninstall_appliance_if_present "${alias}" "${sudo_password}" "${log_file}"
-    done
-  fi
+# Operator-facing plan for the one supported release flow (no SSH).
+emit_three_server_stage_plan() {
+  local alias node_name
+  local -a peers=()
+  [[ "${TARGET_CLUSTER_KIND}" == "three-prime-ha" ]] || \
+    fail "three-server stage plan requires exactly three active server targets"
+  printf 'kind=three-prime-ha bootstrap=%s\n' "${TARGET_PRIME_HOST}"
+  snapshot_newline_list "${TARGET_PEER_PRIME_ALIASES:-}" peers
+  for alias in "${peers[@]}"; do
+    node_name="$(target_node_name_from_alias "${alias}")"
+    printf 'server-stage node=%s host=%s\n' "${node_name}" "${alias}"
+  done
+  printf 'cluster-finalize host=%s\n' "${TARGET_PRIME_HOST}"
 }
 
 # Append every alias IPv4 onto EXTRA_TLS_SANS (space-separated).

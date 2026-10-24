@@ -55,9 +55,9 @@ install:
   # verification (+ client_verification) instead of flipping only the profile.
   appliance_profile: storage-landns
 
-  # Existing non-Zon K3s clusters are refused by default. Set true only after
-  # explicitly approving Zon ownership of all existing workloads.
-  # force_adopt: false
+  # New three-server releases stage only empty inventory-matched hosts.
+  # Existing K3s adoption is an explicit migration workflow; do not add a
+  # force_adopt setting here.
 
   # Bundle extract dir on the target (version should match the published release)
   bundle_download_dir: /tmp/appliance-0.1.0

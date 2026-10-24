@@ -72,6 +72,52 @@ def test_three_prime_ha() -> None:
         assert result.stdout.strip() == "three-prime-ha|3|a@10.0.0.2,a@10.0.0.3,"
 
 
+def test_product_runner_requires_exactly_three_active_servers() -> None:
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="target-product-topology-") as tmp:
+        result = _parse(
+            Path(tmp),
+            "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2,a@10.0.0.3\n"
+            "  roles: prime,prime,prime\n",
+            "require_three_server_product_targets",
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+
+        result = _parse(
+            Path(tmp),
+            "target_host:\n  alias: a@10.0.0.1\n",
+            "require_three_server_product_targets",
+        )
+        assert result.returncode != 0
+        assert "exactly three active server targets" in result.stderr
+
+
+def test_three_prime_inventory_is_direct_and_host_portable() -> None:
+    import json
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="target-ha-inventory-") as tmp:
+        inventory = Path(tmp) / "inventory.json"
+        result = _parse(
+            Path(tmp),
+            "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2,a@10.0.0.3\n"
+            "  roles: prime,prime,prime\n",
+            f'write_three_server_inventory "{inventory}"',
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+        payload = json.loads(inventory.read_text(encoding="utf-8"))
+        assert payload == {
+            "topology": "three-server-etcd-v1",
+            "bootstrapNode": "10-0-0-1",
+            "nodes": [
+                {"name": "10-0-0-1", "address": "10.0.0.1"},
+                {"name": "10-0-0-2", "address": "10.0.0.2"},
+                {"name": "10-0-0-3", "address": "10.0.0.3"},
+            ],
+        }
+
+
 def test_reject_two_primes() -> None:
     import tempfile
 
@@ -146,7 +192,7 @@ def test_append_cluster_alias_tls_sans() -> None:
         assert "192.168.1.152" in parts
 
 
-def test_two_node_join_plan() -> None:
+def test_three_server_stage_plan_rejects_legacy_layout() -> None:
     import tempfile
 
     with tempfile.TemporaryDirectory(prefix="target-plan-") as tmp:
@@ -154,16 +200,10 @@ def test_two_node_join_plan() -> None:
             Path(tmp),
             "target_host:\n  alias: zonsys@192.168.1.151,zonsys@192.168.1.152\n"
             "  roles: prime,member\n",
-            "emit_cluster_join_plan",
+            "emit_three_server_stage_plan",
         )
-        assert result.returncode == 0, result.stderr + result.stdout
-        out = result.stdout
-        assert "kind=prime-members" in out
-        assert "prime=zonsys@192.168.1.151" in out
-        assert "advertised_node=192-168-1-151" in out
-        assert "endpoint=https://192.168.1.151:6443" in out
-        assert "member enroll=192-168-1-152 join=zonsys@192.168.1.152 register-role=worker" in out
-        assert "peer-prime" not in out
+        assert result.returncode != 0
+        assert "requires exactly three active server targets" in result.stderr
 
 
 def test_three_prime_join_plan() -> None:
@@ -174,14 +214,14 @@ def test_three_prime_join_plan() -> None:
             Path(tmp),
             "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2,a@10.0.0.3\n"
             "  roles: prime,prime,prime\n",
-            "emit_cluster_join_plan",
+            "emit_three_server_stage_plan",
         )
         assert result.returncode == 0, result.stderr + result.stdout
         out = result.stdout
         assert "kind=three-prime-ha" in out
-        assert "peer-prime enroll=10-0-0-2 join=a@10.0.0.2 register-role=prime" in out
-        assert "peer-prime enroll=10-0-0-3 join=a@10.0.0.3 register-role=prime" in out
-        assert "member enroll=" not in out
+        assert "server-stage node=10-0-0-2 host=a@10.0.0.2" in out
+        assert "server-stage node=10-0-0-3 host=a@10.0.0.3" in out
+        assert "cluster-finalize host=a@10.0.0.1" in out
 
 
 def test_snapshot_newline_list_survives_stdin_drain() -> None:
@@ -192,12 +232,6 @@ def test_snapshot_newline_list_survives_stdin_drain() -> None:
     )
     assert result.returncode == 0, result.stderr + result.stdout
     assert result.stdout.strip() == "a@10.0.0.2,a@10.0.0.3,"
-
-
-def test_remote_uninstall_uses_extracted_zonctl_fallback() -> None:
-    text = COMMON_SH.read_text(encoding="utf-8")
-    assert "/tmp/appliance-*/appliance-*-foundation/zonctl" in text
-    assert "join helper will clear leftover receipt" in text
 
 
 def test_run_ssh_captured_does_not_consume_stdin() -> None:
@@ -217,6 +251,8 @@ def test_verify_target_probes_every_prime_ip() -> None:
         "probe_k3s_api_ip",
         "probe_prime_https_ip",
         "/readyz",
+        "cluster-ha-check",
+        "application HTTPS HA: pending",
     ):
         assert want in text, want
     common = COMMON_SH.read_text(encoding="utf-8")
@@ -228,45 +264,67 @@ def test_join_script_exists() -> None:
     script = Path(__file__).resolve().parent / "join-cluster-nodes-from-devhost.sh"
     text = script.read_text(encoding="utf-8")
     for want in (
+        "snapshot_newline_list",
+        "</dev/null",
+        "run_three_server_flow",
+        "cluster-server-enrollment-create",
+        "THREE_SERVER_OPERATION stage",
+        "THREE_SERVER_OPERATION finalize",
+        "target-three-server-enrollment-mode-",
+        "chmod 0600 \"${enrollment_local}\"",
+        "trap \\\"rm -f -- ${enrollment_file_q}\\\" EXIT",
+        "require_three_server_product_targets",
+        "emit_three_server_stage_plan",
+    ):
+        assert want in text, want
+    for forbidden in (
         "cluster-enrollment-create",
         "cluster-node-register",
         "JOIN_ENROLLMENT_FILE",
         "--worker-role",
-        "emit_cluster_join_plan",
-        "sudo -S -p '' zonctl cluster-enrollment-create",
-        "sudo -S -p '' zonctl cluster-node-register",
-        "--node-name",
         "PRIME_NODE_NAME",
-        'chown \\"\\$SUDO_USER:\\$SUDO_USER\\"',
-        "could not copy enrollment from",
-        "snapshot_newline_list",
         "target-cluster-enroll-",
         "target-cluster-register-",
-        "</dev/null",
     ):
-        assert want in text, want
+        assert forbidden not in text, forbidden
     assert "sudo -n zonctl" not in text
     assert 'done <<<"${TARGET_PEER_PRIME_ALIASES:-}"' not in text
     assert 'done <<<"${TARGET_MEMBER_ALIASES:-}"' not in text
+
+
+def test_release_runner_cannot_select_a_legacy_target_shape() -> None:
+    runner = Path(__file__).resolve().parent / "run-release-from-devhost.sh"
+    text = runner.read_text(encoding="utf-8")
+    assert "parse_target_host_cluster \"${DEVHOST_CONFIG}\"" in text
+    assert "require_three_server_product_targets" in text
+    assert "clusterStageFinalize (three active servers)" in text
+    assert "clusterJoin (legacy prime/member extra hosts)" not in text
+
+    installer = Path(__file__).resolve().parent / "run-install-via-public-helper-on-target.sh"
+    installer_text = installer.read_text(encoding="utf-8")
+    assert "require_three_server_product_targets" in installer_text
+    assert "uninstalling members and extra primes before advertised prime reinstall" not in installer_text
 
 
 def main() -> None:
     test_single_alias_without_roles_is_implicit_prime()
     test_two_node_prime_member()
     test_three_prime_ha()
+    test_product_runner_requires_exactly_three_active_servers()
+    test_three_prime_inventory_is_direct_and_host_portable()
     test_reject_two_primes()
     test_reject_missing_roles_for_multi_node()
     test_reject_first_not_prime()
     test_reject_role_length_mismatch()
     test_node_name_from_ipv4_alias()
     test_append_cluster_alias_tls_sans()
-    test_two_node_join_plan()
+    test_three_server_stage_plan_rejects_legacy_layout()
     test_three_prime_join_plan()
     test_snapshot_newline_list_survives_stdin_drain()
-    test_remote_uninstall_uses_extracted_zonctl_fallback()
     test_run_ssh_captured_does_not_consume_stdin()
     test_verify_target_probes_every_prime_ip()
     test_join_script_exists()
+    test_release_runner_cannot_select_a_legacy_target_shape()
     print("target host cluster tests passed")
 
 

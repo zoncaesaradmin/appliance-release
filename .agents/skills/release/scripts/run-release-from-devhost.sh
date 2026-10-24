@@ -129,6 +129,8 @@ if [[ -n "${BUILD_PUBLISH_CONFIG}" ]]; then
 fi
 
 if [[ -n "${INSTALL_CONFIG}" ]]; then
+  parse_target_host_cluster "${DEVHOST_CONFIG}"
+  require_three_server_product_targets
   log "── install (public helper on target)"
   bash "${SCRIPT_DIR}/run-install-via-public-helper-on-target.sh" \
     --config "${DEVHOST_CONFIG}" \
@@ -149,6 +151,16 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
     APPLIANCE_PROFILE="core"
   fi
 
+  # A three-server install is only an appliance after the peer stages and
+  # bootstrap finalization have passed. Bootstrap product accounts/licenses
+  # after that gate, never against the incomplete first server.
+  log "── clusterStageFinalize (three active servers)"
+  bash "${SCRIPT_DIR}/join-cluster-nodes-from-devhost.sh" \
+    --config "${DEVHOST_CONFIG}" \
+    --build-publish-config "${BUILD_PUBLISH_CONFIG}" \
+    --install-config "${INSTALL_CONFIG}" \
+    --run-dir "${RUN_DIR}"
+
   if bool_true "${BOOTSTRAP_ADMIN}"; then
     log "── bootstrapAdmin (install.bootstrap_admin=true)"
     bash "${SCRIPT_DIR}/bootstrap-admin-on-target.sh" \
@@ -168,13 +180,6 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
   else
     log "── bootstrapDefaultLicense: skipped (install.enable_default_license not true)"
   fi
-
-  log "── clusterJoin (prime/member extra hosts)"
-  bash "${SCRIPT_DIR}/join-cluster-nodes-from-devhost.sh" \
-    --config "${DEVHOST_CONFIG}" \
-    --build-publish-config "${BUILD_PUBLISH_CONFIG}" \
-    --install-config "${INSTALL_CONFIG}" \
-    --run-dir "${RUN_DIR}"
 
   log "── targetVerify"
   bash "${SCRIPT_DIR}/verify-target.sh" \

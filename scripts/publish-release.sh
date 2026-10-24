@@ -390,14 +390,9 @@ for payload in "${RELEASE_FILE_PAYLOADS[@]}"; do
   echo "  ${REMOTE_VERSION_DIR}/$(basename "${payload}")"
 done
 echo
-echo "published helper script:"
+echo "published three-server coordinator helper:"
 echo "  ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_PUBLISHED}"
 echo
-if [[ "${PUBLISH_MODE}" == "appliance_files" ]]; then
-  echo "authenticated install helper example:"
-  echo "  curl -fsSL -H 'Authorization: Bearer <token>' -o install-release.sh ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_PUBLISHED}"
-else
-  echo "bootstrap HTTP install helper example:"
-  echo "  curl -fsSL -o install-release.sh ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_PUBLISHED}"
-fi
-echo "  bash install-release.sh --appliance-name <unique-name> [--appliance-profile <profile>]"
+echo "Do not run this helper directly on one host. Configure this published"
+echo "location as the release runner's bundle store, then run the signed"
+echo "three-server stage/finalize coordinator against exactly three targets."

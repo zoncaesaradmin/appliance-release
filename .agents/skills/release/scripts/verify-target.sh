@@ -638,6 +638,30 @@ if ((TARGET_PRIME_COUNT >= 1)); then
   fi
 fi
 
+# The product-level HTTPS service is deliberately not an HA claim in the
+# Kubernetes-only milestone. For the exact three-server topology, replace the
+# old label/unauthenticated-curl approximation with zonctl's authenticated
+# inventory/etcd gate. It proves all direct API endpoints and all three voting
+# members; ordinary application smoke tests remain anchored to the configured
+# product endpoint until application HA is qualified.
+if [[ "${TARGET_CLUSTER_KIND}" == "three-prime-ha" ]]; then
+  cluster_inventory_remote="/tmp/appliance-three-server-inventory-${RELEASE_VERSION}.json"
+  bundle_root="$(dirname "${BUNDLE_DIR}")"
+  cluster_ha_command="sudo $(shell_quote "${BUNDLE_DIR}/zonctl") cluster-ha-check --state-dir $(shell_quote "${TARGET_STATE_DIR}") --bundle-dir $(shell_quote "${BUNDLE_DIR}") --public-key $(shell_quote "${bundle_root}/release-signing.pub") --cluster-inventory $(shell_quote "${cluster_inventory_remote}") --node-name $(shell_quote "$(target_node_name_from_alias "${TARGET_PRIME_HOST}")") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}") --output json"
+  if run_check "cluster-ha" "${cluster_ha_command}"; then
+    cluster_etcd_code="0"
+    cluster_api_code="0"
+  else
+    cluster_etcd_code="$?"
+    cluster_api_code="${cluster_etcd_code}"
+  fi
+  # Do not let a temporary application placement be reported as an N-1
+  # product HTTPS guarantee. The bootstrap smoke check above still verifies
+  # the installed application normally.
+  cluster_https_code=""
+  echo "application HTTPS HA: pending (Kubernetes-only milestone)" >"${RUN_DIR}/logs/cluster-https.log"
+fi
+
 overall_failed="false"
 for code in "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}"; do
   if [[ "${code}" != "0" ]]; then

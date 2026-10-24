@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
-# install-release.sh — public target-host install helper (fresh install only).
+# install-release.sh — target-host operation helper for the three-server runner.
 #
-# Public path:
-#   1) curl -fsSL -o install-release.sh "<distributor>/…/install-release.sh"
-#   2) bash install-release.sh --appliance-name <unique-name> [--appliance-profile <profile>]
-#
-# This helper does not upgrade in place. If the host already has an owned
-# appliance, fail and require uninstall (or factory-reset), then re-run.
-# Publish stamps PRODUCT_VERSION_EMBEDDED, PATH_PREFIX_EMBEDDED, BASE_URL_EMBEDDED.
-# Other paths and distributor options are product defaults below (rarely edit).
+# The release runner supplies an inventory-bound `stage` or `finalize`
+# operation. This helper intentionally has no standalone fresh-install,
+# upgrade, agent-join, or one-host fallback path.
 set -euo pipefail
 
 usage() {
@@ -16,29 +11,9 @@ usage() {
 usage: install-release.sh --appliance-name NAME [options]
        install-release.sh --help
 
-Public install (fresh host only):
-
-  1) Download this script for the release version you want (version is in the
-     URL; open static HTTP vs appliance_files differ only on this curl, e.g.
-     Authorization header if the store requires a token):
-
-       curl -fsSL -o install-release.sh \
-         "https://downloads.example/appliance/0.1.0/install-release.sh"
-
-  2) Run with a stable unique appliance name (required — identity, TLS SAN /
-     FQDN, and registry realm all key off it):
-
-       bash install-release.sh --appliance-name my-appliance-1
-
-     Optional profile (default: core):
-
-       bash install-release.sh \
-         --appliance-name my-appliance-1 \
-         --appliance-profile storage-landns
-
-  If the host already has an owned appliance, uninstall first, then re-run:
-
-       sudo zonctl uninstall --confirm yes
+This helper is run by the signed three-server release coordinator only. It
+requires an inventory-bound THREE_SERVER_OPERATION of `stage` or `finalize`.
+Do not run it as a standalone one-host installer or as an upgrade mechanism.
 
 Required:
   --appliance-name NAME        Single DNS label for this appliance instance.
@@ -50,17 +25,11 @@ Optional:
                                include core, builder, storage, landns,
                                storage-landns, builder-landns,
                                builder-storage-landns.
-  --force-adopt                Explicitly take ownership of an existing K3s
-                               cluster even when it carries foreign workloads.
   --help, -h                   Show this help
 
-Rare site overrides (authenticated private store TLS, state dir) are product
-defaults near the top of this file after download — edit those variables if
-needed. Not public CLI flags and not release-orchestrator config.
-
-Does not create the first administrator or accept a license (UI or later).
-
-In-place upgrade is not supported by this helper.
+The coordinator supplies private store, inventory, and target values through
+its protected release-run configuration. It does not create the first
+administrator or accept a license (UI or later).
 EOF
 }
 
@@ -76,38 +45,38 @@ BASE_URL_EMBEDDED=""
 # Edit only on the *downloaded* script before running, if a special site needs
 # a non-default path. Not supplied via release YAML or installer CLI.
 # =============================================================================
-DNS_ZONE="appliance.internal"
+DNS_ZONE="${DNS_ZONE:-appliance.internal}"
 # Product/zonctl state directory (permissions and ownership assume this path).
-STATE_DIR="/var/lib/zon/state"
+STATE_DIR="${STATE_DIR:-/var/lib/zon/state}"
 # Leave empty to use stamp + /tmp/appliance-<version>
-PRODUCT_VERSION=""
-PATH_PREFIX=""
-BASE_URL=""
-OUT_DIR=""
-USE_LATEST="0"
+PRODUCT_VERSION="${PRODUCT_VERSION:-}"
+PATH_PREFIX="${PATH_PREFIX:-}"
+BASE_URL="${BASE_URL:-}"
+OUT_DIR="${OUT_DIR:-}"
+USE_LATEST="${USE_LATEST:-0}"
 
 # Authenticated distribution (appliance_files). Open static HTTP: leave empty.
-BEARER_TOKEN=""
-TLS_INSECURE="0"
-TLS_CACERT=""
+BEARER_TOKEN="${BEARER_TOKEN:-}"
+TLS_INSECURE="${TLS_INSECURE:-0}"
+TLS_CACERT="${TLS_CACERT:-}"
 
-NODE_NAME=""
-EXTRA_TLS_SANS=""
+NODE_NAME="${NODE_NAME:-}"
+EXTRA_TLS_SANS="${EXTRA_TLS_SANS:-}"
 # Optional lab LAN image-pull (K3s registries.yaml). Empty = preload-only.
 # The release skill patches host + *_ENV names and preserves credential env
 # into sudo; public operators leave these empty.
-IMAGE_PULL_REGISTRY=""
-IMAGE_PULL_USERNAME_ENV=""
-IMAGE_PULL_TOKEN_ENV=""
-IMAGE_PULL_TLS_VERIFY_ENV=""
-# Skill-patched member/peer join (empty = fresh prime install).
-JOIN_ENROLLMENT_FILE=""
-CLUSTER_SIGNER_FINGERPRINT=""
-# 1 on the advertised prime when the cluster has three primes (embedded etcd).
-CLUSTER_INIT="0"
-DRY_RUN="0"
-OUTPUT_FORMAT="text"
-FORCE_ADOPT="0"
+IMAGE_PULL_REGISTRY="${IMAGE_PULL_REGISTRY:-}"
+IMAGE_PULL_USERNAME_ENV="${IMAGE_PULL_USERNAME_ENV:-}"
+IMAGE_PULL_TOKEN_ENV="${IMAGE_PULL_TOKEN_ENV:-}"
+IMAGE_PULL_TLS_VERIFY_ENV="${IMAGE_PULL_TLS_VERIFY_ENV:-}"
+# Coordinated three-server install mode. These are deliberately patched only
+# by the release runner: the signed bundle selects the topology and zonctl
+# verifies the inventory before mutation. Empty is rejected.
+THREE_SERVER_OPERATION="${THREE_SERVER_OPERATION:-}"
+CLUSTER_INVENTORY_FILE="${CLUSTER_INVENTORY_FILE:-}"
+SERVER_ENROLLMENT_FILE="${SERVER_ENROLLMENT_FILE:-}"
+DRY_RUN="${DRY_RUN:-0}"
+OUTPUT_FORMAT="${OUTPUT_FORMAT:-text}"
 # =============================================================================
 
 APPLIANCE_NAME=""
@@ -122,10 +91,6 @@ while [[ $# -gt 0 ]]; do
     --appliance-profile)
       APPLIANCE_PROFILE="${2:-}"
       shift 2
-      ;;
-    --force-adopt)
-      FORCE_ADOPT="1"
-      shift
       ;;
     --help|-h)
       usage
@@ -173,30 +138,6 @@ announce_zonctl_ready() {
   echo "zonctl is now available at /usr/local/bin/zonctl on the target host."
 }
 
-run_zonctl_step() {
-  local start_message="$1"
-  local success_message="$2"
-  local failure_message="$3"
-  shift 3
-
-  local stdout_file
-  local stderr_file
-  stdout_file="$(mktemp "${OUT_DIR}/.zonctl-stdout.XXXXXX")"
-  stderr_file="$(mktemp "${OUT_DIR}/.zonctl-stderr.XXXXXX")"
-
-  echo "${start_message}"
-  if "$@" >"${stdout_file}" 2>"${stderr_file}"; then
-    echo "${success_message}"
-    rm -f "${stdout_file}" "${stderr_file}"
-    return 0
-  fi
-
-  echo "${failure_message}" >&2
-  print_captured_output "${stdout_file}" "${stderr_file}"
-  rm -f "${stdout_file}" "${stderr_file}"
-  exit 1
-}
-
 capture_zonctl_step() {
   local stdout_file="$1"
   local stderr_file="$2"
@@ -227,6 +168,10 @@ if [[ -z "${APPLIANCE_NAME}" ]]; then
 fi
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="core"
+fi
+if [[ "${THREE_SERVER_OPERATION}" != "stage" && "${THREE_SERVER_OPERATION}" != "finalize" ]]; then
+  echo "install-release: this product requires THREE_SERVER_OPERATION=stage or finalize from the three-server release coordinator" >&2
+  exit 2
 fi
 
 # Optional soft env only when SETTINGS left empty (private store automation
@@ -320,7 +265,6 @@ echo "  tls-cacert:        ${TLS_CACERT:-empty}"
 echo "  image-pull-registry: ${IMAGE_PULL_REGISTRY:-disabled}"
 echo "  extra-tls-sans:    ${EXTRA_TLS_SANS:-none}"
 echo "  node-name:         ${NODE_NAME:-host-hostname}"
-echo "  force-adopt:       ${FORCE_ADOPT}"
 
 mkdir -p "${OUT_DIR}"
 
@@ -687,11 +631,10 @@ echo "[3/5] Bundle extracted to ${BUNDLE_DIR}."
 
 chmod +x "${ZONCTL}"
 
-run_zonctl_step \
-  "[4/5] Running host preflight..." \
-  "[4/5] Host preflight passed." \
-  "[4/5] Host preflight failed." \
-  sudo "${ZONCTL}" preflight --output "${OUTPUT_FORMAT}"
+# cluster-server-stage performs the signed topology-specific host preflight;
+# finalize performs its stricter live Kubernetes/etcd gate. Do not run the old
+# single-host preflight against an already staged server.
+echo "[4/5] Three-server operation uses its topology-specific preflight/gate."
 
 lifecycle_args=(
   --bundle-dir "${BUNDLE_DIR}"
@@ -721,14 +664,8 @@ if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
     lifecycle_args+=(--image-pull-registry-tls-verify-env "${IMAGE_PULL_TLS_VERIFY_ENV}")
   fi
 fi
-if [[ "${CLUSTER_INIT}" == "1" || "${CLUSTER_INIT}" == "true" ]]; then
-  lifecycle_args+=(--cluster-init)
-fi
 if [[ "${DRY_RUN}" == "1" ]]; then
   lifecycle_args+=(--dry-run)
-fi
-if [[ "${FORCE_ADOPT}" == "1" || "${FORCE_ADOPT}" == "true" ]]; then
-  lifecycle_args+=(--force-adopt)
 fi
 
 zonctl_sudo=(sudo)
@@ -743,78 +680,45 @@ fi
 install_stdout="$(mktemp "${OUT_DIR}/.zonctl-install-stdout.XXXXXX")"
 install_stderr="$(mktemp "${OUT_DIR}/.zonctl-install-stderr.XXXXXX")"
 
-if [[ -n "${JOIN_ENROLLMENT_FILE}" ]]; then
-  require_nonempty "CLUSTER_SIGNER_FINGERPRINT" "${CLUSTER_SIGNER_FINGERPRINT}"
-  require_nonempty "NODE_NAME" "${NODE_NAME}"
-  join_args=(
-    --bundle-dir "${BUNDLE_DIR}"
-    --public-key "${PUBLIC_KEY}"
-    --state-dir "${STATE_DIR}"
-    --output "${OUTPUT_FORMAT}"
-    --enrollment-file "${JOIN_ENROLLMENT_FILE}"
-    --cluster-signer-fingerprint "${CLUSTER_SIGNER_FINGERPRINT}"
-    --node-name "${NODE_NAME}"
-  )
-  for pack_dir in "${PACK_DIRS[@]}"; do
-    join_args+=(--pack-dir "${pack_dir}")
-  done
-  if ((${#TLS_SANS[@]} > 0)); then
-    for tls_san in "${TLS_SANS[@]}"; do
-      join_args+=(--tls-san "${tls_san}")
-    done
-  fi
-  if [[ "${DRY_RUN}" == "1" ]]; then
-    join_args+=(--dry-run)
-  fi
-  # Join does not install /usr/local/bin/zonctl. A previous member/peer receipt
-  # (or leftover k3s.service) would fail closed in zonctl cluster-join. Use the
-  # just-extracted binary to uninstall first so lab rejoin and e2e reruns work.
-  leftover_receipt="${STATE_DIR}/installed-state.json"
-  leftover_k3s_unit="/etc/systemd/system/k3s.service"
-  if [[ "${DRY_RUN}" != "1" && ( -e "${leftover_receipt}" || -e "${leftover_k3s_unit}" ) ]]; then
-    echo "[5/5] Removing leftover appliance state on this host before join."
-    if ! capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${ZONCTL}" uninstall --confirm yes --state-dir "${STATE_DIR}" --output "${OUTPUT_FORMAT}"; then
-      print_captured_failure "[5/5] Leftover uninstall failed." "${install_stdout}" "${install_stderr}"
-      rm -f "${install_stdout}" "${install_stderr}"
-      exit 1
+case "${THREE_SERVER_OPERATION}" in
+  stage)
+    require_nonempty "CLUSTER_INVENTORY_FILE" "${CLUSTER_INVENTORY_FILE}"
+    [[ -f "${CLUSTER_INVENTORY_FILE}" ]] || { echo "install-release: cluster inventory is not a file: ${CLUSTER_INVENTORY_FILE}" >&2; exit 2; }
+    stage_args=(cluster-server-stage "${lifecycle_args[@]}" --cluster-inventory "${CLUSTER_INVENTORY_FILE}")
+    if [[ -n "${SERVER_ENROLLMENT_FILE}" ]]; then
+      require_nonempty "CLUSTER_SIGNER_FINGERPRINT" "${CLUSTER_SIGNER_FINGERPRINT}"
+      stage_args+=(--enrollment-file "${SERVER_ENROLLMENT_FILE}" --cluster-signer-fingerprint "${CLUSTER_SIGNER_FINGERPRINT}")
+    elif [[ -n "${CLUSTER_SIGNER_FINGERPRINT}" ]]; then
+      echo "install-release: CLUSTER_SIGNER_FINGERPRINT requires SERVER_ENROLLMENT_FILE for a staged peer" >&2
+      exit 2
     fi
-  fi
-  echo "[5/5] Joining this host to the appliance cluster as ${NODE_NAME}."
-  if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${ZONCTL}" cluster-join "${join_args[@]}"; then
-    echo "[5/5] Cluster join completed."
+    echo "[5/5] Staging this host as an embedded-etcd K3s server."
+    if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${ZONCTL}" "${stage_args[@]}"; then
+      echo "[5/5] K3s server staging completed; appliance finalization remains pending."
+      rm -f "${install_stdout}" "${install_stderr}"
+      exit 0
+    fi
+    print_captured_failure "[5/5] K3s server staging failed." "${install_stdout}" "${install_stderr}"
     rm -f "${install_stdout}" "${install_stderr}"
-    announce_zonctl_ready
-    exit 0
-  fi
-  print_captured_failure "[5/5] Cluster join failed." "${install_stdout}" "${install_stderr}"
-  rm -f "${install_stdout}" "${install_stderr}"
-  exit 1
-fi
-
-echo "[5/5] Installing appliance platform. This can take several minutes."
-if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${ZONCTL}" install "${lifecycle_args[@]}"; then
-  echo "[5/5] Appliance installation completed."
-  rm -f "${install_stdout}" "${install_stderr}"
-  announce_zonctl_ready
-  echo "If this is a fresh install, open the appliance UI to create the first administrator."
-  exit 0
-fi
-
-install_output="$(cat "${install_stdout}" "${install_stderr}")"
-if [[ "${install_output}" == *"refusing to install (reuse-owned)"* || "${install_output}" == *"refusing to install (upgrade-owned)"* ]]; then
-  print_captured_failure "[5/5] Existing owned appliance detected; install refused." "${install_stdout}" "${install_stderr}"
-  rm -f "${install_stdout}" "${install_stderr}"
-  cat >&2 <<'EOF'
-install-release: this helper performs a fresh install only.
-Uninstall the appliance on this host, then re-run install:
-
-  sudo zonctl uninstall --confirm yes
-
-In-place upgrade is not supported by the public install path for now.
-EOF
-  exit 1
-fi
-
-print_captured_failure "[5/5] Appliance installation failed." "${install_stdout}" "${install_stderr}"
-rm -f "${install_stdout}" "${install_stderr}"
-exit 1
+    exit 1
+    ;;
+  finalize)
+    require_nonempty "CLUSTER_INVENTORY_FILE" "${CLUSTER_INVENTORY_FILE}"
+    [[ -f "${CLUSTER_INVENTORY_FILE}" ]] || { echo "install-release: cluster inventory is not a file: ${CLUSTER_INVENTORY_FILE}" >&2; exit 2; }
+    finalize_args=(cluster-finalize "${lifecycle_args[@]}" --cluster-inventory "${CLUSTER_INVENTORY_FILE}")
+    echo "[5/5] Finalizing the three-server Kubernetes/etcd substrate."
+    if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${ZONCTL}" "${finalize_args[@]}"; then
+      echo "[5/5] Three-server appliance finalization completed."
+      rm -f "${install_stdout}" "${install_stderr}"
+      announce_zonctl_ready
+      exit 0
+    fi
+    print_captured_failure "[5/5] Three-server appliance finalization failed." "${install_stdout}" "${install_stderr}"
+    rm -f "${install_stdout}" "${install_stderr}"
+    exit 1
+    ;;
+  *)
+    echo "install-release: THREE_SERVER_OPERATION must be stage or finalize" >&2
+    exit 2
+    ;;
+esac
