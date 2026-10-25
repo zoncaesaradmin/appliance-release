@@ -93,7 +93,7 @@ require_cmd python3
 
 parse_target_host_cluster "${DEVHOST_CONFIG}"
 require_three_server_product_targets
-# TARGET_HOST is the advertised prime after parse_target_host_cluster.
+# TARGET_HOST is the bootstrap server after parse_target_host_cluster.
 PRIME_NODE_NAME="$(target_node_name_from_alias "${TARGET_PRIME_HOST}")"
 RELEASE_VERSION=""
 if [[ -n "${PRODUCT_VERSION:-}" ]]; then

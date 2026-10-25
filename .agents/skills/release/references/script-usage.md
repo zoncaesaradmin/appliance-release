@@ -149,7 +149,6 @@ Minimal lab day-to-day switches (spread across the three files):
 build_host: { alias: zonsys@… }
 target_host:
   alias: zonsys@192.168.1.151,zonsys@192.168.1.152,zonsys@192.168.1.153
-  roles: prime,prime,prime
 report:
   final_ok: true
 

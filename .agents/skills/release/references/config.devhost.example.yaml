@@ -32,14 +32,14 @@ build_host:
 # ============================================================================
 
 target_host:
-  # A new product release requires exactly three comma-separated SSH targets
-  # and three matching prime roles. These aliases must contain the directly
+  # A new product release requires exactly three comma-separated SSH targets.
+  # Every listed target is an active embedded-etcd K3s server. These aliases
+  # must contain the directly
   # reachable IPv4 addresses used by K3s API and embedded-etcd traffic; no
   # floating address or load balancer is required.
   # The first entry is the bootstrap server only. All three are active,
   # schedulable K3s server/etcd nodes after finalization.
   alias: zonsys@192.168.1.151,zonsys@192.168.1.152,zonsys@192.168.1.153
-  roles: prime,prime,prime
   # Appliance state dir is not config: fixed product path /var/lib/zon/state
   # (install-release.sh STATE_DIR / zonctl default). Override only by
   # editing the downloaded install script for special sites.

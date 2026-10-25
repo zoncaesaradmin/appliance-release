@@ -148,7 +148,7 @@ emit_three_server_stage_plan | tee -a "${three_server_log}"
 
 # New signed releases use exactly three active embedded-etcd servers. Reuse
 # the public helper's download path but select its explicit stage/finalize
-# operations; do not invoke the legacy prime/member registration protocol.
+# operations; do not invoke the legacy expandable-node registration protocol.
 run_three_server_flow() {
   local inventory_local="${RUN_DIR}/metadata/three-server-inventory.json"
   local inventory_remote="/tmp/appliance-three-server-inventory-${RELEASE_VERSION}.json"

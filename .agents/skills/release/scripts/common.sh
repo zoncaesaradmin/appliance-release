@@ -429,12 +429,6 @@ csv_items_trimmed() {
   done
 }
 
-# Operator-facing cluster roles (not Kubernetes terms).
-#   prime  — advertised LAN owner; every prime serves the K3s API on its LAN IP; <name>.local points here.
-#   member — joins the same appliance; does not advertise .local.
-TARGET_HOST_ROLE_PRIME="prime"
-TARGET_HOST_ROLE_MEMBER="member"
-
 # DNS-1123 node name from an SSH alias (user@host or host). IPv4 becomes
 # dash-separated so enrollment --node-name stays a valid Kubernetes name.
 target_node_name_from_alias() {
@@ -455,110 +449,54 @@ target_node_name_from_alias() {
   printf '%s\n' "${host}"
 }
 
-# Parse target_host.alias (+ optional target_host.roles) into cluster fields.
-# Sets TARGET_HOST (advertised prime alias, backward compatible), TARGET_PRIME_HOST,
-# TARGET_PRIME_COUNT, TARGET_HOST_COUNT, TARGET_CLUSTER_KIND, TARGET_HOST_ALIASES,
-# TARGET_HOST_ROLES, TARGET_MEMBER_ALIASES, TARGET_PEER_PRIME_ALIASES (newline lists).
+# Parse the product's fixed three-server target inventory. The first alias is
+# the bootstrap server; the remaining two are peer servers. Roles are not an
+# operator input because every target is an active K3s server and etcd member.
+#
+# TARGET_PRIME_* names are retained internally for older shared helpers; they
+# never describe a selectable target role.
 parse_target_host_cluster() {
   local config_path="$1"
   local alias_csv roles_csv
   local -a aliases=()
-  local -a roles=()
-  local item role first_role prime_count=0
+  local item
   TARGET_HOST_ALIASES=""
-  TARGET_HOST_ROLES=""
-  TARGET_MEMBER_ALIASES=""
   TARGET_PEER_PRIME_ALIASES=""
   TARGET_PRIME_HOST=""
   TARGET_HOST=""
-  TARGET_PRIME_COUNT=0
+  TARGET_PRIME_COUNT=3
   TARGET_HOST_COUNT=0
-  TARGET_CLUSTER_KIND=""
+  TARGET_CLUSTER_KIND="three-server-etcd"
 
   alias_csv="$(config_get "${config_path}" "target_host.alias")"
   roles_csv="$(config_get_optional "${config_path}" "target_host.roles" || true)"
+  if [[ -n "$(printf '%s' "${roles_csv}" | tr -d '[:space:]')" ]]; then
+    fail "target_host.roles is obsolete: remove it; all three configured targets are active K3s server/etcd nodes"
+  fi
   while IFS= read -r item; do
     [[ -n "${item}" ]] || continue
     aliases+=("${item}")
   done < <(csv_items_trimmed "${alias_csv}")
   TARGET_HOST_COUNT="${#aliases[@]}"
-  if ((TARGET_HOST_COUNT < 1)); then
-    fail "target_host.alias must name at least one SSH target"
+  if ((TARGET_HOST_COUNT != 3)); then
+    fail "this product release requires exactly three active server targets in target_host.alias (got ${TARGET_HOST_COUNT})"
   fi
-  if ((TARGET_HOST_COUNT == 1)) && [[ -z "$(printf '%s' "${roles_csv}" | tr -d '[:space:]')" ]]; then
-    roles=("${TARGET_HOST_ROLE_PRIME}")
-  else
-    if [[ -z "$(printf '%s' "${roles_csv}" | tr -d '[:space:]')" ]]; then
-      fail "multi-node requires target_host.roles (prime or member, same length as target_host.alias)"
-    fi
-    while IFS= read -r item; do
-      [[ -n "${item}" ]] || continue
-      roles+=("${item}")
-    done < <(csv_items_trimmed "${roles_csv}")
-    if ((${#roles[@]} != TARGET_HOST_COUNT)); then
-      fail "target_host.roles must have one entry per target_host.alias (got ${#roles[@]} roles for ${TARGET_HOST_COUNT} aliases)"
-    fi
-  fi
-  first_role="$(printf '%s' "${roles[0]}" | tr '[:upper:]' '[:lower:]')"
-  if [[ "${first_role}" != "${TARGET_HOST_ROLE_PRIME}" ]]; then
-    fail "first host must be prime (got ${roles[0]})"
-  fi
-  local i
-  for i in "${!aliases[@]}"; do
-    role="$(printf '%s' "${roles[$i]}" | tr '[:upper:]' '[:lower:]')"
-    case "${role}" in
-      "${TARGET_HOST_ROLE_PRIME}")
-        prime_count=$((prime_count + 1))
-        if [[ -z "${TARGET_PRIME_HOST}" ]]; then
-          TARGET_PRIME_HOST="${aliases[$i]}"
-        else
-          TARGET_PEER_PRIME_ALIASES+="${aliases[$i]}"$'\n'
-        fi
-        ;;
-      "${TARGET_HOST_ROLE_MEMBER}")
-        TARGET_MEMBER_ALIASES+="${aliases[$i]}"$'\n'
-        ;;
-      *)
-        fail "target_host.roles entries must be prime or member (got ${roles[$i]})"
-        ;;
-    esac
-    TARGET_HOST_ALIASES+="${aliases[$i]}"$'\n'
-    TARGET_HOST_ROLES+="${role}"$'\n'
+  TARGET_PRIME_HOST="${aliases[0]}"
+  TARGET_PEER_PRIME_ALIASES="${aliases[1]}"$'\n'"${aliases[2]}"$'\n'
+  for item in "${aliases[@]}"; do
+    TARGET_HOST_ALIASES+="${item}"$'\n'
   done
-  TARGET_PRIME_COUNT="${prime_count}"
   TARGET_HOST="${TARGET_PRIME_HOST}"
-  case "${TARGET_PRIME_COUNT}" in
-    1)
-      if ((TARGET_HOST_COUNT == 1)); then
-        TARGET_CLUSTER_KIND="single"
-      else
-        TARGET_CLUSTER_KIND="prime-members"
-      fi
-      ;;
-    2)
-      fail "cluster HA needs three primes (etcd quorum); two primes are not supported"
-      ;;
-    3)
-      TARGET_CLUSTER_KIND="three-prime-ha"
-      ;;
-    *)
-      fail "this release supports one prime or three primes (got ${TARGET_PRIME_COUNT})"
-      ;;
-  esac
 }
 
-# require_three_server_product_targets is the release-runner boundary for the
-# current signed appliance product. The parser retains legacy shapes so old
-# receipts can still be diagnosed/migrated, but a new product release must
-# never begin a one-server, worker, or mixed-role deployment and rely on a
-# later installer failure to stop it.
+# require_three_server_product_targets is kept as a clear call-site assertion
+# for the signed release flow. parse_target_host_cluster already establishes
+# this invariant from target_host.alias.
 require_three_server_product_targets() {
-  [[ "${TARGET_CLUSTER_KIND:-}" == "three-prime-ha" ]] || \
-    fail "this product release requires exactly three active server targets (target_host.roles: prime,prime,prime); legacy one-prime/member layouts require their documented migration path"
+  [[ "${TARGET_CLUSTER_KIND:-}" == "three-server-etcd" ]] || \
+    fail "this product release requires exactly three active server targets"
   [[ "${TARGET_HOST_COUNT:-0}" == "3" && "${TARGET_PRIME_COUNT:-0}" == "3" ]] || \
     fail "this product release requires exactly three active server targets"
-  [[ -z "${TARGET_MEMBER_ALIASES:-}" ]] || \
-    fail "this product release does not support member/agent targets"
 }
 
 # write_three_server_inventory writes the operator-owned, install-time
@@ -569,8 +507,8 @@ write_three_server_inventory() {
   local destination="$1"
   local alias node_name address
   local -a pairs=()
-  [[ "${TARGET_CLUSTER_KIND}" == "three-prime-ha" ]] || fail "three-server inventory requires exactly three prime targets"
-  [[ "${TARGET_HOST_COUNT}" == "3" && "${TARGET_PRIME_COUNT}" == "3" ]] || fail "three-server inventory requires exactly three active prime targets"
+  [[ "${TARGET_CLUSTER_KIND}" == "three-server-etcd" ]] || fail "three-server inventory requires exactly three server targets"
+  [[ "${TARGET_HOST_COUNT}" == "3" && "${TARGET_PRIME_COUNT}" == "3" ]] || fail "three-server inventory requires exactly three active server targets"
   while IFS= read -r alias; do
     [[ -n "${alias}" ]] || continue
     node_name="$(target_node_name_from_alias "${alias}")"
@@ -596,12 +534,12 @@ probe_k3s_api_ip() {
   local ip="$1"
   local code=""
   # K3s often returns 401 on /readyz without a kubeconfig. That still proves
-  # the apiserver is reachable on this prime's existing LAN IP.
+  # the apiserver is reachable on this server's existing LAN IP.
   code="$(curl -ksS -o /dev/null -w '%{http_code}' --connect-timeout 8 --max-time 15 "https://${ip}:6443/readyz" || true)"
   [[ "${code}" =~ ^(200|401|403)$ ]]
 }
 
-probe_prime_https_ip() {
+probe_server_https_ip() {
   local ip="$1"
   local code=""
   code="$(curl -ksS -o /dev/null -w '%{http_code}' --connect-timeout 8 --max-time 15 "https://${ip}/")"
@@ -628,9 +566,9 @@ snapshot_newline_list() {
 emit_three_server_stage_plan() {
   local alias node_name
   local -a peers=()
-  [[ "${TARGET_CLUSTER_KIND}" == "three-prime-ha" ]] || \
+  [[ "${TARGET_CLUSTER_KIND}" == "three-server-etcd" ]] || \
     fail "three-server stage plan requires exactly three active server targets"
-  printf 'kind=three-prime-ha bootstrap=%s\n' "${TARGET_PRIME_HOST}"
+  printf 'kind=three-server-etcd bootstrap=%s\n' "${TARGET_PRIME_HOST}"
   snapshot_newline_list "${TARGET_PEER_PRIME_ALIASES:-}" peers
   for alias in "${peers[@]}"; do
     node_name="$(target_node_name_from_alias "${alias}")"

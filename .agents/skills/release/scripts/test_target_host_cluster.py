@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for prime/member target_host.alias + target_host.roles parsing."""
+"""Tests for the fixed three-server target inventory."""
 
 from __future__ import annotations
 
@@ -28,48 +28,43 @@ def _parse(tmp: Path, body: str, extra: str = "") -> subprocess.CompletedProcess
     )
 
 
-def test_single_alias_without_roles_is_implicit_prime(tmp_path: Path | None = None) -> None:
+def test_exact_three_servers_are_implicit() -> None:
     import tempfile
 
-    with tempfile.TemporaryDirectory(prefix="target-single-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="target-three-server-") as tmp:
         result = _parse(
             Path(tmp),
-            "target_host:\n  alias: zonsys@192.168.1.151\n",
+            "target_host:\n  alias: zonsys@192.168.1.151,zonsys@192.168.1.152,zonsys@192.168.1.153\n",
             'printf "%s|%s|%s|%s\\n" "${TARGET_HOST}" "${TARGET_PRIME_HOST}" '
             '"${TARGET_PRIME_COUNT}" "${TARGET_CLUSTER_KIND}"',
         )
         assert result.returncode == 0, result.stderr + result.stdout
-        assert result.stdout.strip() == "zonsys@192.168.1.151|zonsys@192.168.1.151|1|single"
+        assert result.stdout.strip() == "zonsys@192.168.1.151|zonsys@192.168.1.151|3|three-server-etcd"
 
 
-def test_two_node_prime_member() -> None:
+def test_reject_non_three_server_inventory() -> None:
     import tempfile
 
-    with tempfile.TemporaryDirectory(prefix="target-two-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="target-two-server-") as tmp:
         result = _parse(
             Path(tmp),
-            "target_host:\n  alias: zonsys@192.168.1.151,zonsys@192.168.1.152\n"
-            "  roles: prime,member\n",
-            'printf "%s|%s|%s|%s\\n" "${TARGET_CLUSTER_KIND}" "${TARGET_PRIME_COUNT}" '
-            '"${TARGET_HOST}" "$(printf "%s" "${TARGET_MEMBER_ALIASES}" | tr -d "\\n")"',
+            "target_host:\n  alias: zonsys@192.168.1.151,zonsys@192.168.1.152\n",
         )
-        assert result.returncode == 0, result.stderr + result.stdout
-        assert result.stdout.strip() == "prime-members|1|zonsys@192.168.1.151|zonsys@192.168.1.152"
+        assert result.returncode != 0
+        assert "exactly three active server targets" in result.stderr
 
 
-def test_three_prime_ha() -> None:
+def test_reject_obsolete_roles() -> None:
     import tempfile
 
-    with tempfile.TemporaryDirectory(prefix="target-ha-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="target-obsolete-roles-") as tmp:
         result = _parse(
             Path(tmp),
             "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2,a@10.0.0.3\n"
             "  roles: prime,prime,prime\n",
-            'printf "%s|%s|%s\\n" "${TARGET_CLUSTER_KIND}" "${TARGET_PRIME_COUNT}" '
-            '"$(printf "%s" "${TARGET_PEER_PRIME_ALIASES}" | tr "\\n" ",")"',
         )
-        assert result.returncode == 0, result.stderr + result.stdout
-        assert result.stdout.strip() == "three-prime-ha|3|a@10.0.0.2,a@10.0.0.3,"
+        assert result.returncode != 0
+        assert "target_host.roles is obsolete" in result.stderr
 
 
 def test_product_runner_requires_exactly_three_active_servers() -> None:
@@ -78,8 +73,7 @@ def test_product_runner_requires_exactly_three_active_servers() -> None:
     with tempfile.TemporaryDirectory(prefix="target-product-topology-") as tmp:
         result = _parse(
             Path(tmp),
-            "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2,a@10.0.0.3\n"
-            "  roles: prime,prime,prime\n",
+            "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2,a@10.0.0.3\n",
             "require_three_server_product_targets",
         )
         assert result.returncode == 0, result.stderr + result.stdout
@@ -93,7 +87,7 @@ def test_product_runner_requires_exactly_three_active_servers() -> None:
         assert "exactly three active server targets" in result.stderr
 
 
-def test_three_prime_inventory_is_direct_and_host_portable() -> None:
+def test_three_server_inventory_is_direct_and_host_portable() -> None:
     import json
     import tempfile
 
@@ -101,8 +95,7 @@ def test_three_prime_inventory_is_direct_and_host_portable() -> None:
         inventory = Path(tmp) / "inventory.json"
         result = _parse(
             Path(tmp),
-            "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2,a@10.0.0.3\n"
-            "  roles: prime,prime,prime\n",
+            "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2,a@10.0.0.3\n",
             f'write_three_server_inventory "{inventory}"',
         )
         assert result.returncode == 0, result.stderr + result.stdout
@@ -116,54 +109,6 @@ def test_three_prime_inventory_is_direct_and_host_portable() -> None:
                 {"name": "10-0-0-3", "address": "10.0.0.3"},
             ],
         }
-
-
-def test_reject_two_primes() -> None:
-    import tempfile
-
-    with tempfile.TemporaryDirectory(prefix="target-two-prime-") as tmp:
-        result = _parse(
-            Path(tmp),
-            "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2\n  roles: prime,prime\n",
-        )
-        assert result.returncode != 0
-        assert "three primes" in result.stderr
-
-
-def test_reject_missing_roles_for_multi_node() -> None:
-    import tempfile
-
-    with tempfile.TemporaryDirectory(prefix="target-no-roles-") as tmp:
-        result = _parse(
-            Path(tmp),
-            "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2\n",
-        )
-        assert result.returncode != 0
-        assert "multi-node requires target_host.roles" in result.stderr
-
-
-def test_reject_first_not_prime() -> None:
-    import tempfile
-
-    with tempfile.TemporaryDirectory(prefix="target-member-first-") as tmp:
-        result = _parse(
-            Path(tmp),
-            "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2\n  roles: member,prime\n",
-        )
-        assert result.returncode != 0
-        assert "first host must be prime" in result.stderr
-
-
-def test_reject_role_length_mismatch() -> None:
-    import tempfile
-
-    with tempfile.TemporaryDirectory(prefix="target-len-") as tmp:
-        result = _parse(
-            Path(tmp),
-            "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2\n  roles: prime\n",
-        )
-        assert result.returncode != 0
-        assert "one entry per target_host.alias" in result.stderr
 
 
 def test_node_name_from_ipv4_alias() -> None:
@@ -180,8 +125,7 @@ def test_append_cluster_alias_tls_sans() -> None:
     with tempfile.TemporaryDirectory(prefix="target-sans-") as tmp:
         result = _parse(
             Path(tmp),
-            "target_host:\n  alias: zonsys@192.168.1.151,zonsys@192.168.1.152\n"
-            "  roles: prime,member\n",
+            "target_host:\n  alias: zonsys@192.168.1.151,zonsys@192.168.1.152,zonsys@192.168.1.153\n",
             'EXTRA_TLS_SANS="demo.example"; append_cluster_alias_tls_sans; '
             'printf "%s\\n" "${EXTRA_TLS_SANS}"',
         )
@@ -198,27 +142,25 @@ def test_three_server_stage_plan_rejects_legacy_layout() -> None:
     with tempfile.TemporaryDirectory(prefix="target-plan-") as tmp:
         result = _parse(
             Path(tmp),
-            "target_host:\n  alias: zonsys@192.168.1.151,zonsys@192.168.1.152\n"
-            "  roles: prime,member\n",
+            "target_host:\n  alias: zonsys@192.168.1.151,zonsys@192.168.1.152\n",
             "emit_three_server_stage_plan",
         )
         assert result.returncode != 0
         assert "requires exactly three active server targets" in result.stderr
 
 
-def test_three_prime_join_plan() -> None:
+def test_three_server_join_plan() -> None:
     import tempfile
 
     with tempfile.TemporaryDirectory(prefix="target-ha-plan-") as tmp:
         result = _parse(
             Path(tmp),
-            "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2,a@10.0.0.3\n"
-            "  roles: prime,prime,prime\n",
+            "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2,a@10.0.0.3\n",
             "emit_three_server_stage_plan",
         )
         assert result.returncode == 0, result.stderr + result.stdout
         out = result.stdout
-        assert "kind=three-prime-ha" in out
+        assert "kind=three-server-etcd" in out
         assert "server-stage node=10-0-0-2 host=a@10.0.0.2" in out
         assert "server-stage node=10-0-0-3 host=a@10.0.0.3" in out
         assert "cluster-finalize host=a@10.0.0.1" in out
@@ -249,7 +191,7 @@ def test_verify_target_probes_every_prime_ip() -> None:
         "cluster-api",
         "cluster-https",
         "probe_k3s_api_ip",
-        "probe_prime_https_ip",
+        "probe_server_https_ip",
         "/readyz",
         "cluster-ha-check",
         "application HTTPS HA: pending",
@@ -297,6 +239,7 @@ def test_release_runner_cannot_select_a_legacy_target_shape() -> None:
     text = runner.read_text(encoding="utf-8")
     assert "parse_target_host_cluster \"${DEVHOST_CONFIG}\"" in text
     assert "require_three_server_product_targets" in text
+    assert text.index("require_three_server_product_targets") < text.index('log "── buildPublish"')
     assert "clusterStageFinalize (three active servers)" in text
     assert "clusterJoin (legacy prime/member extra hosts)" not in text
 
@@ -307,19 +250,15 @@ def test_release_runner_cannot_select_a_legacy_target_shape() -> None:
 
 
 def main() -> None:
-    test_single_alias_without_roles_is_implicit_prime()
-    test_two_node_prime_member()
-    test_three_prime_ha()
+    test_exact_three_servers_are_implicit()
+    test_reject_non_three_server_inventory()
+    test_reject_obsolete_roles()
     test_product_runner_requires_exactly_three_active_servers()
-    test_three_prime_inventory_is_direct_and_host_portable()
-    test_reject_two_primes()
-    test_reject_missing_roles_for_multi_node()
-    test_reject_first_not_prime()
-    test_reject_role_length_mismatch()
+    test_three_server_inventory_is_direct_and_host_portable()
     test_node_name_from_ipv4_alias()
     test_append_cluster_alias_tls_sans()
     test_three_server_stage_plan_rejects_legacy_layout()
-    test_three_prime_join_plan()
+    test_three_server_join_plan()
     test_snapshot_newline_list_survives_stdin_drain()
     test_run_ssh_captured_does_not_consume_stdin()
     test_verify_target_probes_every_prime_ip()
