@@ -143,7 +143,7 @@ embedded_etcd_log="${RUN_DIR}/logs/target-embedded-etcd-coordinator.log"
 
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 quoted_sudo_password="$(shell_quote "${target_sudo_password}")"
-log "embedded-etcd stage/finalize kind=${TARGET_CLUSTER_KIND} bootstrap=${TARGET_PRIME_HOST}"
+log "embedded-etcd stage/finalize kind=${TARGET_CLUSTER_KIND} bootstrap=${TARGET_BOOTSTRAP_HOST}"
 emit_embedded_etcd_stage_plan | tee -a "${embedded_etcd_log}"
 
 # New signed releases use one or three active embedded-etcd servers. Reuse
@@ -157,15 +157,15 @@ run_embedded_etcd_flow() {
   local -a peers=()
 
 	write_embedded_etcd_inventory "${inventory_local}"
-  bootstrap_node="$(target_node_name_from_alias "${TARGET_PRIME_HOST}")"
+  bootstrap_node="$(target_node_name_from_alias "${TARGET_BOOTSTRAP_HOST}")"
   bootstrap_zonctl="${OUT_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl"
-  if [[ -n "${TARGET_PEER_PRIME_ALIASES:-}" ]]; then
-    snapshot_newline_list "${TARGET_PEER_PRIME_ALIASES}" peers
+  if [[ -n "${TARGET_PEER_SERVER_ALIASES:-}" ]]; then
+    snapshot_newline_list "${TARGET_PEER_SERVER_ALIASES}" peers
     if ((${#peers[@]} != 2)); then
       fail "embedded-etcd topology requires zero peers (single server) or two peers (three servers)"
     fi
   fi
-  scp -q "${inventory_local}" "${TARGET_PRIME_HOST}:${inventory_remote}"
+  scp -q "${inventory_local}" "${TARGET_BOOTSTRAP_HOST}:${inventory_remote}"
 
   helper_env=""
   helper_env="$(append_env_assignments "${helper_env}" BASE_URL "${BASE_URL}" BEARER_TOKEN "${BEARER_TOKEN}" TLS_INSECURE "${TLS_INSECURE}" PRODUCT_VERSION "${RELEASE_VERSION}" PATH_PREFIX "${PATH_PREFIX}" DNS_ZONE "${DNS_ZONE}" EXTRA_TLS_SANS "${EXTRA_TLS_SANS}" OUT_DIR "${OUT_DIR}" IMAGE_PULL_REGISTRY "${IMAGE_PULL_REGISTRY}" IMAGE_PULL_USERNAME_ENV "${IMAGE_PULL_USERNAME_ENV}" IMAGE_PULL_TOKEN_ENV "${IMAGE_PULL_TOKEN_ENV}" IMAGE_PULL_TLS_VERIFY_ENV "${IMAGE_PULL_TLS_VERIFY_ENV}")"
@@ -181,13 +181,13 @@ run_embedded_etcd_flow() {
     enroll_log="${RUN_DIR}/logs/target-embedded-etcd-enroll-${node_name}.log"
     stage_log="${RUN_DIR}/logs/target-embedded-etcd-stage-${node_name}.log"
     log "creating signed server enrollment for ${alias} as ${node_name}"
-    if ! run_ssh_captured "${TARGET_PRIME_HOST}" "${enroll_log}" "set -euo pipefail; test -x $(shell_quote "${bootstrap_zonctl}"); rm -f -- $(shell_quote "${enrollment_remote}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' $(shell_quote "${bootstrap_zonctl}") cluster-server-enrollment-create --output json --cluster-inventory $(shell_quote "${inventory_remote}") --node-name $(shell_quote "${bootstrap_node}") --server-name $(shell_quote "${node_name}") --enrollment-out $(shell_quote "${enrollment_remote}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' chown \"\$(id -un):\$(id -gn)\" $(shell_quote "${enrollment_remote}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' chmod 0600 $(shell_quote "${enrollment_remote}")"; then
+    if ! run_ssh_captured "${TARGET_BOOTSTRAP_HOST}" "${enroll_log}" "set -euo pipefail; test -x $(shell_quote "${bootstrap_zonctl}"); rm -f -- $(shell_quote "${enrollment_remote}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' $(shell_quote "${bootstrap_zonctl}") cluster-server-enrollment-create --output json --cluster-inventory $(shell_quote "${inventory_remote}") --node-name $(shell_quote "${bootstrap_node}") --server-name $(shell_quote "${node_name}") --enrollment-out $(shell_quote "${enrollment_remote}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' chown \"\$(id -un):\$(id -gn)\" $(shell_quote "${enrollment_remote}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' chmod 0600 $(shell_quote "${enrollment_remote}")"; then
       fail "embedded-etcd enrollment failed for ${node_name}; see ${enroll_log}"
     fi
     fingerprint="$(python3 -c 'import json,sys; lines=open(sys.argv[1], encoding="utf-8").read().splitlines(); hits=[json.loads(x).get("data",{}).get("signerFingerprint","") for x in lines if x.strip().startswith("{") and "signerFingerprint" in x]; print(next((x for x in reversed(hits) if x), ""))' "${enroll_log}")"
     [[ -n "${fingerprint}" ]] || fail "embedded-etcd enrollment missing signer fingerprint for ${node_name}"
     mkdir -p "${RUN_DIR}/enrollments"
-    scp -q "${TARGET_PRIME_HOST}:${enrollment_remote}" "${enrollment_local}" </dev/null
+    scp -q "${TARGET_BOOTSTRAP_HOST}:${enrollment_remote}" "${enrollment_local}" </dev/null
     # scp does not preserve the remote 0600 mode unless explicitly asked.
     # The artifact holds a K3s server token, so make the devhost staging copy
     # private before moving it onward.
@@ -198,9 +198,9 @@ run_embedded_etcd_flow() {
       rm -f "${enrollment_local}"
       fail "could not protect embedded-etcd enrollment on ${alias}; see ${chmod_log}"
     fi
-    if ! run_ssh_captured "${TARGET_PRIME_HOST}" "${RUN_DIR}/logs/target-embedded-etcd-enroll-cleanup-${node_name}.log" "rm -f -- $(shell_quote "${enrollment_remote}")"; then
+    if ! run_ssh_captured "${TARGET_BOOTSTRAP_HOST}" "${RUN_DIR}/logs/target-embedded-etcd-enroll-cleanup-${node_name}.log" "rm -f -- $(shell_quote "${enrollment_remote}")"; then
       rm -f "${enrollment_local}"
-      fail "could not remove transferred embedded-etcd enrollment from ${TARGET_PRIME_HOST}"
+      fail "could not remove transferred embedded-etcd enrollment from ${TARGET_BOOTSTRAP_HOST}"
     fi
     rm -f "${enrollment_local}"
     scp -q "${inventory_local}" "${alias}:${inventory_remote}" </dev/null
@@ -218,11 +218,11 @@ run_embedded_etcd_flow() {
   done
 
   finalize_log="${RUN_DIR}/logs/target-embedded-etcd-finalize.log"
-  scp -q "${LOCAL_HELPER}" "${TARGET_PRIME_HOST}:${SCRIPT_PATH}"
+  scp -q "${LOCAL_HELPER}" "${TARGET_BOOTSTRAP_HOST}:${SCRIPT_PATH}"
 	helper_env="$(append_env_assignments "${helper_env}" NODE_NAME "${bootstrap_node}" EMBEDDED_ETCD_OPERATION finalize CLUSTER_INVENTORY_FILE "${inventory_remote}")"
   remote_cmd="set -euo pipefail; chmod +x $(shell_quote "${SCRIPT_PATH}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' env ${helper_env} bash $(shell_quote "${SCRIPT_PATH}") --appliance-name $(shell_quote "${APPLIANCE_NAME}") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}")"
-  log "finalizing embedded-etcd Kubernetes substrate on ${TARGET_PRIME_HOST}"
-  if ! run_ssh_logged "${TARGET_PRIME_HOST}" "${finalize_log}" "${remote_cmd}"; then
+  log "finalizing embedded-etcd Kubernetes substrate on ${TARGET_BOOTSTRAP_HOST}"
+  if ! run_ssh_logged "${TARGET_BOOTSTRAP_HOST}" "${finalize_log}" "${remote_cmd}"; then
     fail "embedded-etcd finalization failed; see ${finalize_log}"
   fi
   log "embedded-etcd staging and finalization completed; application HA remains pending"

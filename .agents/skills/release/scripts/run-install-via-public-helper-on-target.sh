@@ -94,7 +94,7 @@ require_cmd python3
 parse_target_host_cluster "${DEVHOST_CONFIG}"
 require_embedded_etcd_product_targets
 # TARGET_HOST is the bootstrap server after parse_target_host_cluster.
-PRIME_NODE_NAME="$(target_node_name_from_alias "${TARGET_PRIME_HOST}")"
+BOOTSTRAP_NODE_NAME="$(target_node_name_from_alias "${TARGET_BOOTSTRAP_HOST}")"
 RELEASE_VERSION=""
 if [[ -n "${PRODUCT_VERSION:-}" ]]; then
   RELEASE_VERSION="${PRODUCT_VERSION}"
@@ -185,7 +185,7 @@ CLUSTER_INVENTORY_LOCAL="${RUN_DIR}/metadata/embedded-etcd-inventory.json"
 CLUSTER_INVENTORY_REMOTE="/tmp/appliance-embedded-etcd-inventory-${RELEASE_VERSION}.json"
 write_embedded_etcd_inventory "${CLUSTER_INVENTORY_LOCAL}"
 
-log "target-host=${TARGET_HOST} cluster-kind=${TARGET_CLUSTER_KIND} advertised-node=${PRIME_NODE_NAME}"
+log "target-host=${TARGET_HOST} cluster-kind=${TARGET_CLUSTER_KIND} advertised-node=${BOOTSTRAP_NODE_NAME}"
 log "helper-url=${HELPER_URL} (bundle artifacts); lab uses local helper ${LOCAL_HELPER}"
 log "appliance-name=${APPLIANCE_NAME} profile=${APPLIANCE_PROFILE} dns-zone=${DNS_ZONE}"
 if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
@@ -236,7 +236,7 @@ name=$(shell_quote "${APPLIANCE_NAME}")
 profile=$(shell_quote "${APPLIANCE_PROFILE}")
 dns_zone=$(shell_quote "${DNS_ZONE}")
 extra_tls_sans=$(shell_quote "${EXTRA_TLS_SANS}")
-node_name=$(shell_quote "${PRIME_NODE_NAME}")
+node_name=$(shell_quote "${BOOTSTRAP_NODE_NAME}")
 # Kept in the patch payload solely for compatibility with older helper copies;
 # current embedded-etcd helpers ignore both retired topology controls.
 cluster_init=$(shell_quote "0")
@@ -254,13 +254,13 @@ ${image_pull_exports}
 # migration. A staged bootstrap is the sole resumable state; every other
 # existing appliance or K3s state must go through its separately qualified
 # migration/recovery workflow.
-if [[ "\${embedded_etcd_operation}" == "stage" && -f "$(default_appliance_state_dir)/cluster-bootstrap-state.json" ]]; then
-  echo "resuming an existing embedded-etcd stage"
+if [[ \"\${embedded_etcd_operation}\" == \"stage\" && -f \"$(default_appliance_state_dir)/cluster-bootstrap-state.json\" ]]; then
+  echo \"resuming an existing embedded-etcd stage\"
 elif command -v zonctl >/dev/null 2>&1; then
-  echo \"target has an existing zonctl installation; a fixed three-server release will not factory-reset it. Use the qualified migration/recovery workflow.\" >&2
+  echo \"target has an existing zonctl installation; this release will not factory-reset it. Use the qualified migration/recovery workflow.\" >&2
   exit 2
 elif [[ -x /usr/local/bin/zonctl ]]; then
-  echo \"target has an existing /usr/local/bin/zonctl installation; a fixed three-server release will not factory-reset it. Use the qualified migration/recovery workflow.\" >&2
+  echo \"target has an existing /usr/local/bin/zonctl installation; this release will not factory-reset it. Use the qualified migration/recovery workflow.\" >&2
   exit 2
 fi
 

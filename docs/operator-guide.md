@@ -261,11 +261,11 @@ sudo journalctl -u k3s -f
 
 Common cases:
 
-- interrupted three-server stage or finalization:
+- interrupted embedded-etcd stage or finalization:
   rerun the same signed release-runner flow after inspecting `zonctl status
   --output json` on the affected server; do not run local `repair`
 - `requires-force-adopt`:
-  this is not a supported path for a new three-server release; preserve the
+  this is not a supported path for a new embedded-etcd release; preserve the
   existing cluster for the explicit migration/recovery workflow
 - unhealthy status:
   inspect `zonctl status --output json` and component logs
@@ -289,12 +289,12 @@ Notes for DNS-bearing profiles:
 
 ## When To Use Which Path
 
-- Three fresh, inventory-matched hosts:
-  use the signed three-server release runner.
-- A staged three-server flow was interrupted:
-  preserve all three hosts and rerun that same release-runner flow; it resumes
+- One or three fresh, inventory-matched hosts:
+  use the signed embedded-etcd release runner.
+- A staged embedded-etcd flow was interrupted:
+  preserve the configured hosts and rerun that same release-runner flow; it resumes
   only against matching signed inventory and stage receipts.
-- A finalized three-server appliance needs diagnosis:
+- A finalized embedded-etcd appliance needs diagnosis:
   use `cluster-ha-check`, `status`, `verify`, and `support-bundle`. Its
   cluster-wide upgrade, restore, replacement, uninstall, and reset workflow
   is deliberately not yet qualified; local lifecycle commands fail closed.
@@ -304,7 +304,7 @@ Notes for DNS-bearing profiles:
 
 ## Reboot Guidance
 
-Three-server staging and verification do not require a full host reboot.
+Embedded-etcd staging and verification do not require a full host reboot.
 Do not reboot multiple embedded-etcd servers at once: two available servers
 are required to retain quorum. Cluster-wide maintenance guidance will replace
 this interim restriction once its recovery and rolling-upgrade drills pass.

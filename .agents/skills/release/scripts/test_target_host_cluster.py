@@ -31,19 +31,19 @@ def _parse(tmp: Path, body: str, extra: str = "") -> subprocess.CompletedProcess
 def test_one_and_three_servers_are_implicit() -> None:
     import tempfile
 
-    with tempfile.TemporaryDirectory(prefix="target-three-server-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="target-server-inventory-") as tmp:
         result = _parse(
             Path(tmp),
             "target_host:\n  alias: zonsys@192.168.1.151,zonsys@192.168.1.152,zonsys@192.168.1.153\n",
-            'printf "%s|%s|%s|%s\\n" "${TARGET_HOST}" "${TARGET_PRIME_HOST}" '
-            '"${TARGET_PRIME_COUNT}" "${TARGET_CLUSTER_KIND}"',
+            'printf "%s|%s|%s|%s\\n" "${TARGET_HOST}" "${TARGET_BOOTSTRAP_HOST}" '
+            '"${TARGET_SERVER_COUNT}" "${TARGET_CLUSTER_KIND}"',
         )
         assert result.returncode == 0, result.stderr + result.stdout
         assert result.stdout.strip() == "zonsys@192.168.1.151|zonsys@192.168.1.151|3|three-server-etcd"
         result = _parse(
             Path(tmp),
             "target_host:\n  alias: zonsys@192.168.1.151\n",
-            'printf "%s|%s|%s\\n" "${TARGET_PRIME_COUNT}" "${TARGET_CLUSTER_KIND}" "${TARGET_PEER_PRIME_ALIASES}"',
+            'printf "%s|%s|%s\\n" "${TARGET_SERVER_COUNT}" "${TARGET_CLUSTER_KIND}" "${TARGET_PEER_SERVER_ALIASES}"',
         )
         assert result.returncode == 0, result.stderr + result.stdout
         assert result.stdout.strip() == "1|single-server-etcd|"
@@ -231,7 +231,7 @@ def test_run_ssh_captured_does_not_consume_stdin() -> None:
     assert '</dev/null >"${log_file}"' in text
 
 
-def test_verify_target_probes_every_prime_ip() -> None:
+def test_verify_target_probes_every_server_ip() -> None:
     script = Path(__file__).resolve().parent / "verify-target.sh"
     text = script.read_text(encoding="utf-8")
     for want in (
@@ -272,13 +272,12 @@ def test_join_script_exists() -> None:
         "cluster-node-register",
         "JOIN_ENROLLMENT_FILE",
         "--worker-role",
-        "PRIME_NODE_NAME",
         "target-cluster-enroll-",
         "target-cluster-register-",
     ):
         assert forbidden not in text, forbidden
     assert "sudo -n zonctl" not in text
-    assert 'done <<<"${TARGET_PEER_PRIME_ALIASES:-}"' not in text
+    assert 'done <<<"${TARGET_PEER_SERVER_ALIASES:-}"' not in text
     assert 'done <<<"${TARGET_MEMBER_ALIASES:-}"' not in text
 
 
@@ -311,7 +310,7 @@ def main() -> None:
     test_single_server_finalize_plan()
     test_snapshot_newline_list_survives_stdin_drain()
     test_run_ssh_captured_does_not_consume_stdin()
-    test_verify_target_probes_every_prime_ip()
+    test_verify_target_probes_every_server_ip()
     test_join_script_exists()
     test_release_runner_cannot_select_a_legacy_target_shape()
     print("target host cluster tests passed")

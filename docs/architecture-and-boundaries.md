@@ -33,7 +33,7 @@ private application source.
 - installation and runtime must work with public egress denied
 - the installer is manifest-driven rather than hardcoded
 - K3s ownership never silently takes over a cluster with unrelated workloads.
-  The exact three-server release stages only empty, inventory-matched hosts;
+  The one- or three-server release stages only empty, inventory-matched hosts;
   qualifying adoption or migration of an existing cluster is a separate,
   explicit recovery workflow.
 - versioning is two-tier:

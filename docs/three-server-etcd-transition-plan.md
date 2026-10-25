@@ -1,4 +1,4 @@
-# Three-server embedded-etcd transition plan
+# Embedded-etcd one- or three-server transition plan
 
 Status: implementation in progress. The signed topology contract, staged
 one- or three-server K3s flow, direct API health gate, and fail-closed legacy
@@ -46,13 +46,13 @@ must not erase their data or strand their recovery tools.
 
 | Area | Current behavior | Consequence |
 | --- | --- | --- |
-| K3s | `zonctl install` uses SQLite by default; `--cluster-init` creates the first etcd server and `cluster-join` can add primes or agents. | A three-server release must make etcd initialization mandatory and prevent agent/SQLite completion. |
+| K3s | Legacy `zonctl install` uses SQLite by default; `--cluster-init` creates the first etcd server and `cluster-join` can add primes or agents. | An embedded-etcd release must make etcd initialization mandatory and prevent agent/SQLite completion. |
 | Cluster state | `single-server`, `server-workers`, and `multi-server` receipts; enrollment changes topology before a peer joins. | State must describe observed members and a desired three-server topology separately. |
 | Lifecycle | The first `controlPlaneNode` owns install, backup, upgrade, restore, removal, ingress, and chart placement. | Move cluster operations to a fenced coordinator while keeping one writer for Helm and other shared mutations. |
 | Upgrade | The legacy upgrade takes a local K3s directory backup and may rewrite K3s config without `cluster-init`, `server`, or token-file. PostgreSQL upgrade is already refused because rollback is incomplete. | No three-server upgrade can be enabled until a cluster-wide snapshot, rolling order, config preservation, and application recovery are proven. |
 | Backup | Legacy backup stops one local K3s service and copies its directory. PostgreSQL recovery sets contain the DB dump and blob archive, but no etcd snapshot/token. | Neither path alone is a complete three-server recovery set. |
 | Workloads | Product charts render singleton control-plane, PostgreSQL, blob storage, registry, DNS, UI, workflows, and inference with local/RWO volumes or host paths. | Three-server K3s does not imply application failover. Preserve placement temporarily; redesign each stateful interface before removing it. |
-| Release runner | An exactly-three-server target inventory derives an install-time inventory, stages the bootstrap and two peers with signed server enrollments, then finalizes from the bootstrap. It records Kubernetes/etcd HA separately from product HTTPS HA. The product release runner rejects legacy target shapes. | Qualify the new runner on LAN and VPS hosts. Legacy receipts remain readable for diagnostics and a future explicit migration workflow; they are not an alternate release-runner path. |
+| Release runner | A one- or three-server target inventory derives an install-time inventory, stages the bootstrap and, when present, two peers with signed server enrollments, then finalizes from the bootstrap. It records Kubernetes/etcd health separately from product HTTPS HA. The product release runner rejects legacy target shapes. | Qualify the new runner on LAN and VPS hosts. Legacy receipts remain readable for diagnostics and a future explicit migration workflow; they are not an alternate release-runner path. |
 
 The source surfaces are `appliance-ctl/internal/k3s`, `internal/install`,
 `internal/upgrade`, `internal/backup`, `internal/recoveryset`, `internal/state`,
@@ -121,15 +121,15 @@ and fresh-reinstall behavior.
   internet. Verify each direct API address from the other servers and from
   representative clients; callers retry the other direct address on failure.
 
-Gate: negative fixtures reject one host, two hosts, agents, duplicate names,
+Gate: negative fixtures reject two hosts, agents, duplicate names,
 mixed releases/architectures, foreign clusters, insufficient resources,
 unreachable peers, and an unverified bundle before changing any host.
 
-### 2. Three-server bootstrap and membership in `appliance-ctl`
+### 2. One- or three-server bootstrap and membership in `appliance-ctl`
 
 - Replace `--cluster-init` as a user topology choice with the topology in the
-  verified release and an explicit three-node install inventory. The first
-  server writes `cluster-init`; the other two use `k3s server` with verified
+  verified release and an explicit one- or three-node install inventory. The first
+  server writes `cluster-init`; for a three-server inventory, the other two use `k3s server` with verified
   endpoint, protected server token file, CA pin, and matching critical K3s
   flags. All three receive the same pinned binary and preload set. Never put
   join credentials in arguments, logs, receipts, or support bundles.
@@ -138,8 +138,8 @@ unreachable peers, and an unverified bundle before changing any host.
   member to observed inventory only after matching Kubernetes node UID,
   server/etcd role, version, and Ready state. A failed or expired join is
   rerunnable without inventing a member. Reject a fourth voting server.
-- Install product charts exactly once after three members and quorum are
-  verified. Use an appliance lifecycle lock/lease and a designated current
+- Install product charts exactly once after the planned members and required
+  quorum are verified. Use an appliance lifecycle lock/lease and a designated current
   operation coordinator; the first bootstrap host is not a permanent leader.
   Local node agents can stage binaries/images independently, but shared Helm,
   DNS, secrets, and state mutations have one fenced writer.
@@ -154,10 +154,11 @@ unreachable peers, and an unverified bundle before changing any host.
   rewrite a joining server as an unjoined server. The presence of etcd files
   alone is not proof that a node is correctly enrolled.
 
-Gate: fake-host and VM tests cover initial 1→2→3 bootstrap, interrupted joins
-at each mutation point, rerun, reboot, one failed member, recovered member,
-replacement, stale member rejection, and foreign cluster refusal. Completion
-requires three Ready schedulable servers and three observed etcd members.
+Gate: fake-host and VM tests cover a one-server install, initial 1→2→3
+bootstrap, interrupted joins at each mutation point, rerun, reboot, one failed
+member, recovered member, replacement, stale member rejection, and foreign
+cluster refusal. Completion requires every configured server to be Ready and
+to appear as an observed etcd member.
 
 ### 3. Network and workload baseline
 
@@ -248,7 +249,7 @@ failure during an active write. Only then publish an application HCH claim.
 
 ### 6. Remove obsolete product branches
 
-Once the three-server path, migration tooling, and lifecycle gates pass:
+Once the embedded-etcd path, migration tooling, and lifecycle gates pass:
 
 - Remove agent-mode `zonctl` join and worker upgrade, worker/inference role
   enrollment and registration, `server-workers` creation, one-host public
@@ -267,7 +268,8 @@ Once the three-server path, migration tooling, and lifecycle gates pass:
   instructions so operators do not follow a stale single-node runbook.
 
 Gate: repository searches and schema/CLI tests show only the supported
-three-server write path; old receipts can still be inspected and exported.
+one- or three-server embedded-etcd write path; old receipts can still be
+inspected and exported.
 
 ## Functionality preservation review
 
@@ -275,7 +277,7 @@ The node topology cutover does not remove an appliance profile or capability.
 For each currently supported profile, compare behavior before and after the
 cutover using the same signed product input, client tests, and offline policy.
 
-| Product behavior | Interim three-server requirement | Application HCH completion check |
+| Product behavior | Interim embedded-etcd requirement | Application HCH completion check |
 | --- | --- | --- |
 | Bootstrap, identity, auth, RBAC, licensing, API, MCP, and UI | One chart application and unchanged public contracts; keys and session state survive a controlled restart. | Any one node can fail without losing sign-in or authorized API/UI access; no split-brain writers. |
 | Files, blob storage, artifact registry, and OCI clients | Preserve object bytes, digests, credentials, routes, and pull/push behavior on the anchored owner. | A failed node cannot lose a committed object or publish a partial artifact; registry clients reconnect through the stable origin. |
@@ -318,11 +320,11 @@ surface.
    ADR without editing runtime code.
 2. Add signed topology metadata and negative preflight/schema tests across
    the three repositories.
-3. Implement three-server K3s bootstrap/join plus truthful status and
+3. Implement one- or three-server K3s bootstrap/join plus truthful status and
    Kubernetes-only verification; keep application placement stable.
 4. Implement cluster-safe recovery, rolling upgrade, repair, and replacement.
-5. Prove all current profiles on three servers offline; then retire agent and
-   single-host install branches.
+5. Prove all current profiles on one and three servers offline; then retire
+   agent and legacy single-host install branches.
 6. Implement and qualify application storage/replication and one-node-loss
    operation; then declare application HCH.
 

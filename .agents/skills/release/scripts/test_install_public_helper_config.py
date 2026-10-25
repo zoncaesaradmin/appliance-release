@@ -194,6 +194,16 @@ def test_existing_install_requires_qualified_migration() -> None:
     assert "qualified migration/recovery workflow" in text
 
 
+def test_resume_gate_is_escaped_inside_generated_remote_command() -> None:
+    """The remote command is an outer double-quoted shell string."""
+    text = RUN_INSTALL.read_text(encoding="utf-8")
+    assert (
+        r'if [[ \"\${embedded_etcd_operation}\" == \"stage\" && -f '
+        r'\"$(default_appliance_state_dir)/cluster-bootstrap-state.json\" ]]; then'
+    ) in text
+    assert r'echo \"resuming an existing embedded-etcd stage\"' in text
+
+
 def test_helper_patch_assign_roundtrip() -> None:
     """Mirror the Python patcher used on the target for install knobs."""
     with tempfile.TemporaryDirectory(prefix="helper-patch-") as tmp:
@@ -299,6 +309,7 @@ def main() -> None:
     test_install_release_has_no_legacy_single_host_or_join_path()
     test_run_install_patches_image_pull_and_dns()
     test_existing_install_requires_qualified_migration()
+    test_resume_gate_is_escaped_inside_generated_remote_command()
     test_helper_patch_assign_roundtrip()
     print("install public helper config tests passed")
 

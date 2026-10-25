@@ -454,18 +454,16 @@ target_node_name_from_alias() {
 # not an operator input because every target is an active K3s server and etcd
 # member.
 #
-# TARGET_PRIME_* names are retained internally for older shared helpers; they
-# never describe a selectable target role.
 parse_target_host_cluster() {
   local config_path="$1"
   local alias_csv roles_csv
   local -a aliases=()
   local item
   TARGET_HOST_ALIASES=""
-  TARGET_PEER_PRIME_ALIASES=""
-  TARGET_PRIME_HOST=""
+  TARGET_PEER_SERVER_ALIASES=""
+  TARGET_BOOTSTRAP_HOST=""
   TARGET_HOST=""
-  TARGET_PRIME_COUNT=0
+  TARGET_SERVER_COUNT=0
   TARGET_HOST_COUNT=0
   TARGET_CLUSTER_KIND=""
 
@@ -482,18 +480,18 @@ parse_target_host_cluster() {
   if ((TARGET_HOST_COUNT != 1 && TARGET_HOST_COUNT != 3)); then
     fail "this product release requires exactly one or three active server targets in target_host.alias (got ${TARGET_HOST_COUNT})"
   fi
-  TARGET_PRIME_HOST="${aliases[0]}"
+  TARGET_BOOTSTRAP_HOST="${aliases[0]}"
   if ((TARGET_HOST_COUNT == 3)); then
-    TARGET_PEER_PRIME_ALIASES="${aliases[1]}"$'\n'"${aliases[2]}"$'\n'
+    TARGET_PEER_SERVER_ALIASES="${aliases[1]}"$'\n'"${aliases[2]}"$'\n'
     TARGET_CLUSTER_KIND="three-server-etcd"
   else
     TARGET_CLUSTER_KIND="single-server-etcd"
   fi
-  TARGET_PRIME_COUNT="${TARGET_HOST_COUNT}"
+  TARGET_SERVER_COUNT="${TARGET_HOST_COUNT}"
   for item in "${aliases[@]}"; do
     TARGET_HOST_ALIASES+="${item}"$'\n'
   done
-  TARGET_HOST="${TARGET_PRIME_HOST}"
+  TARGET_HOST="${TARGET_BOOTSTRAP_HOST}"
 }
 
 # require_embedded_etcd_product_targets is the signed release boundary.
@@ -502,7 +500,7 @@ parse_target_host_cluster() {
 require_embedded_etcd_product_targets() {
   [[ "${TARGET_CLUSTER_KIND:-}" == "single-server-etcd" || "${TARGET_CLUSTER_KIND:-}" == "three-server-etcd" ]] || \
     fail "this product release requires exactly one or three active server targets"
-  [[ ("${TARGET_HOST_COUNT:-0}" == "1" || "${TARGET_HOST_COUNT:-0}" == "3") && "${TARGET_PRIME_COUNT:-0}" == "${TARGET_HOST_COUNT:-0}" ]] || \
+  [[ ("${TARGET_HOST_COUNT:-0}" == "1" || "${TARGET_HOST_COUNT:-0}" == "3") && "${TARGET_SERVER_COUNT:-0}" == "${TARGET_HOST_COUNT:-0}" ]] || \
     fail "this product release requires exactly one or three active server targets"
 }
 
@@ -573,15 +571,15 @@ emit_embedded_etcd_stage_plan() {
   local alias node_name
   local -a peers=()
   require_embedded_etcd_product_targets
-  printf 'kind=%s bootstrap=%s\n' "${TARGET_CLUSTER_KIND}" "${TARGET_PRIME_HOST}"
-  if [[ -n "${TARGET_PEER_PRIME_ALIASES:-}" ]]; then
-    snapshot_newline_list "${TARGET_PEER_PRIME_ALIASES}" peers
+  printf 'kind=%s bootstrap=%s\n' "${TARGET_CLUSTER_KIND}" "${TARGET_BOOTSTRAP_HOST}"
+  if [[ -n "${TARGET_PEER_SERVER_ALIASES:-}" ]]; then
+    snapshot_newline_list "${TARGET_PEER_SERVER_ALIASES}" peers
     for alias in "${peers[@]}"; do
       node_name="$(target_node_name_from_alias "${alias}")"
       printf 'server-stage node=%s host=%s\n' "${node_name}" "${alias}"
     done
   fi
-  printf 'cluster-finalize host=%s\n' "${TARGET_PRIME_HOST}"
+  printf 'cluster-finalize host=%s\n' "${TARGET_BOOTSTRAP_HOST}"
 }
 
 # Append every alias IPv4 onto EXTRA_TLS_SANS (space-separated).

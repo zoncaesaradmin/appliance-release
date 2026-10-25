@@ -42,7 +42,7 @@ Legacy adoption behavior:
   refuse unless the legacy caller explicitly uses `--force-adopt`
 
 Zon never silently modifies a cluster it did not create when unrelated
-workloads are present. `--force-adopt` is not a three-server release-runner
+workloads are present. `--force-adopt` is not a one- or three-server release-runner
 option; migration/adoption requires its own qualified workflow.
 
 ## Redaction

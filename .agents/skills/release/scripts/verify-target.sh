@@ -572,7 +572,7 @@ fi
 cluster_etcd_code=""
 cluster_api_code=""
 cluster_https_code=""
-if ((TARGET_PRIME_COUNT >= 1)); then
+if ((TARGET_SERVER_COUNT >= 1)); then
   cluster_api_log="${RUN_DIR}/logs/cluster-api.log"
   cluster_https_log="${RUN_DIR}/logs/cluster-https.log"
   cluster_etcd_log="${RUN_DIR}/logs/cluster-etcd.log"
@@ -581,9 +581,9 @@ if ((TARGET_PRIME_COUNT >= 1)); then
   : >"${cluster_etcd_log}"
   cluster_api_code="0"
   cluster_https_code="0"
-  prime_aliases=()
-  snapshot_newline_list "$(printf '%s\n%s' "${TARGET_PRIME_HOST}" "${TARGET_PEER_PRIME_ALIASES:-}")" prime_aliases
-  if ((TARGET_PRIME_COUNT > 1)); then
+  server_aliases=()
+  snapshot_newline_list "$(printf '%s\n%s' "${TARGET_BOOTSTRAP_HOST}" "${TARGET_PEER_SERVER_ALIASES:-}")" server_aliases
+  if ((TARGET_SERVER_COUNT > 1)); then
     cluster_etcd_code="0"
     nodes_log="${RUN_DIR}/logs/cluster-nodes.log"
     etcd_ready=0
@@ -591,18 +591,18 @@ if ((TARGET_PRIME_COUNT >= 1)); then
       etcd_ready="$(grep -E '[[:space:]]Ready[[:space:]]' "${nodes_log}" | grep -c 'etcd' || true)"
     fi
     {
-      echo "expected_primes=${TARGET_PRIME_COUNT}"
+      echo "expected_servers=${TARGET_SERVER_COUNT}"
       echo "ready_etcd=${etcd_ready}"
     } >>"${cluster_etcd_log}"
-    if ((etcd_ready < TARGET_PRIME_COUNT)); then
-      log "cluster-etcd: expected ${TARGET_PRIME_COUNT} Ready etcd servers, counted ${etcd_ready}"
+    if ((etcd_ready < TARGET_SERVER_COUNT)); then
+      log "cluster-etcd: expected ${TARGET_SERVER_COUNT} Ready etcd servers, counted ${etcd_ready}"
       cluster_etcd_code="1"
     else
       log "cluster-etcd: ${etcd_ready} Ready etcd servers"
     fi
   fi
-  if ((${#prime_aliases[@]} > 0)); then
-    for alias in "${prime_aliases[@]}"; do
+  if ((${#server_aliases[@]} > 0)); then
+    for alias in "${server_aliases[@]}"; do
       ip="$(ssh_target_ipv4 "${alias}")" || {
         echo "unresolvable ${alias}" >>"${cluster_api_log}"
         cluster_api_code="1"
@@ -647,7 +647,7 @@ fi
 if [[ "${TARGET_CLUSTER_KIND}" == "single-server-etcd" || "${TARGET_CLUSTER_KIND}" == "three-server-etcd" ]]; then
   cluster_inventory_remote="/tmp/appliance-embedded-etcd-inventory-${RELEASE_VERSION}.json"
   bundle_root="$(dirname "${BUNDLE_DIR}")"
-  cluster_ha_command="sudo $(shell_quote "${BUNDLE_DIR}/zonctl") cluster-ha-check --state-dir $(shell_quote "${TARGET_STATE_DIR}") --bundle-dir $(shell_quote "${BUNDLE_DIR}") --public-key $(shell_quote "${bundle_root}/release-signing.pub") --cluster-inventory $(shell_quote "${cluster_inventory_remote}") --node-name $(shell_quote "$(target_node_name_from_alias "${TARGET_PRIME_HOST}")") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}") --output json"
+  cluster_ha_command="sudo $(shell_quote "${BUNDLE_DIR}/zonctl") cluster-ha-check --state-dir $(shell_quote "${TARGET_STATE_DIR}") --bundle-dir $(shell_quote "${BUNDLE_DIR}") --public-key $(shell_quote "${bundle_root}/release-signing.pub") --cluster-inventory $(shell_quote "${cluster_inventory_remote}") --node-name $(shell_quote "$(target_node_name_from_alias "${TARGET_BOOTSTRAP_HOST}")") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}") --output json"
   if run_check "cluster-ha" "${cluster_ha_command}"; then
     cluster_etcd_code="0"
     cluster_api_code="0"
@@ -948,15 +948,15 @@ payload.setdefault("checks", {})["dns"] = dns
 Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
 
-python3 - "${RUN_DIR}/metadata/verify.json" "${RUN_DIR}" "${cluster_etcd_code:-}" "${cluster_api_code:-}" "${cluster_https_code:-}" "${TARGET_PRIME_COUNT}" <<'PY'
+python3 - "${RUN_DIR}/metadata/verify.json" "${RUN_DIR}" "${cluster_etcd_code:-}" "${cluster_api_code:-}" "${cluster_https_code:-}" "${TARGET_SERVER_COUNT}" <<'PY'
 import json
 from pathlib import Path
 import sys
 
-out_path, run_dir, etcd_code, api_code, https_code, prime_count = sys.argv[1:7]
+out_path, run_dir, etcd_code, api_code, https_code, server_count = sys.argv[1:7]
 payload = json.loads(Path(out_path).read_text(encoding="utf-8"))
 payload.setdefault("checks", {})["cluster"] = {
-    "primeCount": int(prime_count or 0),
+    "serverCount": int(server_count or 0),
     "etcd": {
         "exitCode": int(etcd_code) if etcd_code != "" else None,
         "log": str(Path(run_dir) / "logs" / "cluster-etcd.log"),
