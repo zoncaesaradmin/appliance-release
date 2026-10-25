@@ -135,6 +135,7 @@ def test_install_release_has_explicit_embedded_etcd_stage_and_finalize_modes() -
     for want in (
         'EMBEDDED_ETCD_OPERATION="${EMBEDDED_ETCD_OPERATION:-}"',
         'CLUSTER_INVENTORY_FILE="${CLUSTER_INVENTORY_FILE:-}"',
+        'CLUSTER_SIGNER_FINGERPRINT="${CLUSTER_SIGNER_FINGERPRINT:-}"',
         "cluster-server-stage",
         "cluster-finalize",
         "SERVER_ENROLLMENT_FILE",

@@ -75,6 +75,9 @@ IMAGE_PULL_TLS_VERIFY_ENV="${IMAGE_PULL_TLS_VERIFY_ENV:-}"
 EMBEDDED_ETCD_OPERATION="${EMBEDDED_ETCD_OPERATION:-}"
 CLUSTER_INVENTORY_FILE="${CLUSTER_INVENTORY_FILE:-}"
 SERVER_ENROLLMENT_FILE="${SERVER_ENROLLMENT_FILE:-}"
+# Required only for a peer's signed enrollment. It is intentionally absent
+# while staging the bootstrap server, so it must be initialized under set -u.
+CLUSTER_SIGNER_FINGERPRINT="${CLUSTER_SIGNER_FINGERPRINT:-}"
 DRY_RUN="${DRY_RUN:-0}"
 OUTPUT_FORMAT="${OUTPUT_FORMAT:-text}"
 # =============================================================================
