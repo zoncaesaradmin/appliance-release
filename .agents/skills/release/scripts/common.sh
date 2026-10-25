@@ -449,9 +449,10 @@ target_node_name_from_alias() {
   printf '%s\n' "${host}"
 }
 
-# Parse the product's fixed three-server target inventory. The first alias is
-# the bootstrap server; the remaining two are peer servers. Roles are not an
-# operator input because every target is an active K3s server and etcd member.
+# Parse the product's embedded-etcd target inventory. The first alias is the
+# bootstrap server; a three-server inventory adds two peer servers. Roles are
+# not an operator input because every target is an active K3s server and etcd
+# member.
 #
 # TARGET_PRIME_* names are retained internally for older shared helpers; they
 # never describe a selectable target role.
@@ -464,39 +465,45 @@ parse_target_host_cluster() {
   TARGET_PEER_PRIME_ALIASES=""
   TARGET_PRIME_HOST=""
   TARGET_HOST=""
-  TARGET_PRIME_COUNT=3
+  TARGET_PRIME_COUNT=0
   TARGET_HOST_COUNT=0
-  TARGET_CLUSTER_KIND="three-server-etcd"
+  TARGET_CLUSTER_KIND=""
 
   alias_csv="$(config_get "${config_path}" "target_host.alias")"
   roles_csv="$(config_get_optional "${config_path}" "target_host.roles" || true)"
   if [[ -n "$(printf '%s' "${roles_csv}" | tr -d '[:space:]')" ]]; then
-    fail "target_host.roles is obsolete: remove it; all three configured targets are active K3s server/etcd nodes"
+    fail "target_host.roles is obsolete: remove it; every configured target is an active K3s server/etcd node"
   fi
   while IFS= read -r item; do
     [[ -n "${item}" ]] || continue
     aliases+=("${item}")
   done < <(csv_items_trimmed "${alias_csv}")
   TARGET_HOST_COUNT="${#aliases[@]}"
-  if ((TARGET_HOST_COUNT != 3)); then
-    fail "this product release requires exactly three active server targets in target_host.alias (got ${TARGET_HOST_COUNT})"
+  if ((TARGET_HOST_COUNT != 1 && TARGET_HOST_COUNT != 3)); then
+    fail "this product release requires exactly one or three active server targets in target_host.alias (got ${TARGET_HOST_COUNT})"
   fi
   TARGET_PRIME_HOST="${aliases[0]}"
-  TARGET_PEER_PRIME_ALIASES="${aliases[1]}"$'\n'"${aliases[2]}"$'\n'
+  if ((TARGET_HOST_COUNT == 3)); then
+    TARGET_PEER_PRIME_ALIASES="${aliases[1]}"$'\n'"${aliases[2]}"$'\n'
+    TARGET_CLUSTER_KIND="three-server-etcd"
+  else
+    TARGET_CLUSTER_KIND="single-server-etcd"
+  fi
+  TARGET_PRIME_COUNT="${TARGET_HOST_COUNT}"
   for item in "${aliases[@]}"; do
     TARGET_HOST_ALIASES+="${item}"$'\n'
   done
   TARGET_HOST="${TARGET_PRIME_HOST}"
 }
 
-# require_three_server_product_targets is kept as a clear call-site assertion
-# for the signed release flow. parse_target_host_cluster already establishes
-# this invariant from target_host.alias.
-require_three_server_product_targets() {
-  [[ "${TARGET_CLUSTER_KIND:-}" == "three-server-etcd" ]] || \
-    fail "this product release requires exactly three active server targets"
-  [[ "${TARGET_HOST_COUNT:-0}" == "3" && "${TARGET_PRIME_COUNT:-0}" == "3" ]] || \
-    fail "this product release requires exactly three active server targets"
+# require_embedded_etcd_product_targets is the signed release boundary.
+# parse_target_host_cluster already establishes the one- or three-server
+# inventory invariant from target_host.alias.
+require_embedded_etcd_product_targets() {
+  [[ "${TARGET_CLUSTER_KIND:-}" == "single-server-etcd" || "${TARGET_CLUSTER_KIND:-}" == "three-server-etcd" ]] || \
+    fail "this product release requires exactly one or three active server targets"
+  [[ ("${TARGET_HOST_COUNT:-0}" == "1" || "${TARGET_HOST_COUNT:-0}" == "3") && "${TARGET_PRIME_COUNT:-0}" == "${TARGET_HOST_COUNT:-0}" ]] || \
+    fail "this product release requires exactly one or three active server targets"
 }
 
 # write_three_server_inventory writes the operator-owned, install-time
@@ -507,8 +514,7 @@ write_three_server_inventory() {
   local destination="$1"
   local alias node_name address
   local -a pairs=()
-  [[ "${TARGET_CLUSTER_KIND}" == "three-server-etcd" ]] || fail "three-server inventory requires exactly three server targets"
-  [[ "${TARGET_HOST_COUNT}" == "3" && "${TARGET_PRIME_COUNT}" == "3" ]] || fail "three-server inventory requires exactly three active server targets"
+  require_embedded_etcd_product_targets
   while IFS= read -r alias; do
     [[ -n "${alias}" ]] || continue
     node_name="$(target_node_name_from_alias "${alias}")"
@@ -522,11 +528,11 @@ from pathlib import Path
 
 out = Path(sys.argv[1])
 pairs = sys.argv[2:]
-if len(pairs) != 6:
-    raise SystemExit("expected exactly three node/address pairs")
+if len(pairs) not in (2, 6):
+    raise SystemExit("expected exactly one or three node/address pairs")
 nodes = [{"name": pairs[i], "address": pairs[i + 1]} for i in range(0, len(pairs), 2)]
 out.parent.mkdir(parents=True, exist_ok=True)
-out.write_text(json.dumps({"topology": "three-server-etcd-v1", "bootstrapNode": nodes[0]["name"], "nodes": nodes}, indent=2) + "\n", encoding="utf-8")
+out.write_text(json.dumps({"topology": "embedded-etcd-v1", "bootstrapNode": nodes[0]["name"], "nodes": nodes}, indent=2) + "\n", encoding="utf-8")
 PY
 }
 
@@ -562,18 +568,19 @@ snapshot_newline_list() {
   done <<<"${list}"
 }
 
-# Operator-facing plan for the one supported release flow (no SSH).
+# Operator-facing plan for the supported embedded-etcd release flow (no SSH).
 emit_three_server_stage_plan() {
   local alias node_name
   local -a peers=()
-  [[ "${TARGET_CLUSTER_KIND}" == "three-server-etcd" ]] || \
-    fail "three-server stage plan requires exactly three active server targets"
-  printf 'kind=three-server-etcd bootstrap=%s\n' "${TARGET_PRIME_HOST}"
-  snapshot_newline_list "${TARGET_PEER_PRIME_ALIASES:-}" peers
-  for alias in "${peers[@]}"; do
-    node_name="$(target_node_name_from_alias "${alias}")"
-    printf 'server-stage node=%s host=%s\n' "${node_name}" "${alias}"
-  done
+  require_embedded_etcd_product_targets
+  printf 'kind=%s bootstrap=%s\n' "${TARGET_CLUSTER_KIND}" "${TARGET_PRIME_HOST}"
+  if [[ -n "${TARGET_PEER_PRIME_ALIASES:-}" ]]; then
+    snapshot_newline_list "${TARGET_PEER_PRIME_ALIASES}" peers
+    for alias in "${peers[@]}"; do
+      node_name="$(target_node_name_from_alias "${alias}")"
+      printf 'server-stage node=%s host=%s\n' "${node_name}" "${alias}"
+    done
+  fi
   printf 'cluster-finalize host=%s\n' "${TARGET_PRIME_HOST}"
 }
 

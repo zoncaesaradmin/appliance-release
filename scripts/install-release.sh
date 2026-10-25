@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install-release.sh — target-host operation helper for the three-server runner.
+# install-release.sh — target-host operation helper for the embedded-etcd runner.
 #
 # The release runner supplies an inventory-bound `stage` or `finalize`
 # operation. This helper intentionally has no standalone fresh-install,
@@ -11,7 +11,7 @@ usage() {
 usage: install-release.sh --appliance-name NAME [options]
        install-release.sh --help
 
-This helper is run by the signed three-server release coordinator only. It
+This helper is run by the signed embedded-etcd release coordinator only. It
 requires an inventory-bound THREE_SERVER_OPERATION of `stage` or `finalize`.
 Do not run it as a standalone one-host installer or as an upgrade mechanism.
 
@@ -170,7 +170,7 @@ if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="core"
 fi
 if [[ "${THREE_SERVER_OPERATION}" != "stage" && "${THREE_SERVER_OPERATION}" != "finalize" ]]; then
-  echo "install-release: this product requires THREE_SERVER_OPERATION=stage or finalize from the three-server release coordinator" >&2
+  echo "install-release: this product requires THREE_SERVER_OPERATION=stage or finalize from the embedded-etcd release coordinator" >&2
   exit 2
 fi
 
@@ -631,7 +631,7 @@ echo "[3/5] Bundle extracted to ${BUNDLE_DIR}."
 
 chmod +x "${ZONCTL}"
 
-# cluster-server-stage performs the signed topology-specific host preflight;
+# cluster-server-stage performs the signed embedded-etcd host preflight;
 # finalize performs its stricter live Kubernetes/etcd gate. Do not run the old
 # single-host preflight against an already staged server.
 echo "[4/5] Three-server operation uses its topology-specific preflight/gate."
@@ -706,14 +706,14 @@ case "${THREE_SERVER_OPERATION}" in
     require_nonempty "CLUSTER_INVENTORY_FILE" "${CLUSTER_INVENTORY_FILE}"
     [[ -f "${CLUSTER_INVENTORY_FILE}" ]] || { echo "install-release: cluster inventory is not a file: ${CLUSTER_INVENTORY_FILE}" >&2; exit 2; }
     finalize_args=(cluster-finalize "${lifecycle_args[@]}" --cluster-inventory "${CLUSTER_INVENTORY_FILE}")
-    echo "[5/5] Finalizing the three-server Kubernetes/etcd substrate."
+    echo "[5/5] Finalizing the embedded-etcd Kubernetes substrate."
     if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${ZONCTL}" "${finalize_args[@]}"; then
-      echo "[5/5] Three-server appliance finalization completed."
+      echo "[5/5] Embedded-etcd appliance finalization completed."
       rm -f "${install_stdout}" "${install_stderr}"
       announce_zonctl_ready
       exit 0
     fi
-    print_captured_failure "[5/5] Three-server appliance finalization failed." "${install_stdout}" "${install_stderr}"
+    print_captured_failure "[5/5] Embedded-etcd appliance finalization failed." "${install_stdout}" "${install_stderr}"
     rm -f "${install_stdout}" "${install_stderr}"
     exit 1
     ;;

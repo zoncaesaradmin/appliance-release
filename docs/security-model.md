@@ -20,7 +20,7 @@ chain.
 ## K3s Ownership
 
 `internal/k3s.DecideOwnership` governs retained legacy local-host receipts.
-For a current `three-server-etcd-v1` release, the staged coordinator accepts
+For a current `embedded-etcd-v1` release, the staged coordinator accepts
 only empty, inventory-matched hosts; it does not adopt an existing K3s service.
 
 - no installed-state and no existing K3s service:

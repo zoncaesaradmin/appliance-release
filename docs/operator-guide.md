@@ -54,13 +54,13 @@ Prefer host names over raw appliance IPs for day-to-day access.
 ## Production installation
 
 New releases have one supported installation path: the signed release runner
-coordinates exactly three hosts. Do **not** download a helper and run
+coordinates exactly one or three hosts. Do **not** download a helper and run
 `zonctl install` or `zonctl upgrade` on one host; those local-host commands
-cannot complete a `three-server-etcd-v1` release and must not be used as a
+cannot complete an `embedded-etcd-v1` release and must not be used as a
 fallback.
 
 The release runner consumes three operator-owned inputs: a dev-host target
-configuration with exactly three `prime` aliases, build/publish configuration,
+configuration with exactly one or three aliases, build/publish configuration,
 and installation identity/profile configuration. It verifies the signed
 foundation bundle on each host, then performs the staged server flow described
 below. The runner and its exact configuration examples are maintained with the
@@ -74,16 +74,16 @@ remain post-install control-plane actions and are not part of K3s bootstrap.
 
 The supported profiles remain `core`, `builder`, `storage`, `landns`,
 `storage-landns`, `builder-landns`, and `builder-storage-landns`. Profile
-selection changes enabled product capability, not the three-server topology.
+selection changes enabled product capability, not the embedded-etcd topology.
 
-## Supported topology: three active K3s servers
+## Supported topology: one or three active K3s servers
 
-A new signed release supports exactly three servers. Every server runs
+A new signed release supports exactly one or three servers. Every server runs
 `k3s server`, participates in embedded etcd, exposes a Kubernetes API, and is
 schedulable for workloads. There are no agent, dedicated worker, or
 one-server-plus-two-agent deployment modes.
 
-The operator supplies an install-time inventory containing the three host
+The operator supplies an install-time inventory containing the one or three host
 names and their directly reachable IPv4 addresses. It is copied to each target
 with the signed bundle but is not embedded in that portable bundle. There is no
 extra reserved VIP or required load balancer. From a laptop, any live server
@@ -95,22 +95,24 @@ curl -k https://192.168.1.153:6443/readyz
 curl -k https://192.168.1.152:6443/readyz
 ```
 
-The certificate contains all three direct addresses. A client needing N-1
-availability must retry another address when a connection fails; a normal
-single URL in a kubeconfig does not supply automatic failover. Peers initially
-join the bootstrap server, then all three direct API addresses are checked.
+The certificate contains every direct inventory address. In a three-server
+installation, a client needing N-1 availability must retry another address
+when a connection fails; a normal single URL in a kubeconfig does not supply
+automatic failover. Peers initially join the bootstrap server, then every
+direct API address is checked.
 
 The release runner performs the signed, resumable sequence:
 
 1. Stage the bootstrap server using `zonctl cluster-server-stage`.
-2. Create a protected, short-lived server enrollment for each of the other
-   two inventory names. Transfer each only through the release runner or a
-   protected offline channel; never paste one into a terminal, ticket, or log.
-3. Stage both peers with `cluster-server-stage`. They are K3s servers, never
+2. For a three-server inventory, create a protected, short-lived server
+   enrollment for each peer. A one-server inventory has no peer enrollment.
+   Transfer each only through the release runner or a protected offline channel;
+   never paste one into a terminal, ticket, or log.
+3. Stage every peer with `cluster-server-stage`. They are K3s servers, never
    agents.
 4. Run `zonctl cluster-finalize` on the bootstrap server. It deploys charts
-   only after all three planned servers are Ready, schedulable, accepting their
-   direct API URLs, and are voting embedded-etcd members.
+only after every planned server is Ready, schedulable, accepting its
+   direct API URLs, and is a voting embedded-etcd member.
 
 Use `zonctl cluster-ha-check` from any running server to repeat the
 Kubernetes/etcd checks. A passing result means Kubernetes control-plane HA,
@@ -119,20 +121,20 @@ storage are intentionally qualified in a later milestone.
 
 Legacy prime/member and worker commands remain readable only for supported
 migration and recovery of older releases. They are not a deployment option
-for a release signed with `three-server-etcd-v1`.
+for a release signed with `embedded-etcd-v1`.
 
 ## Upgrade, backup, and recovery
 
 Cluster-wide rolling upgrade, embedded-etcd snapshot/restore, member
 replacement, uninstall, and factory reset are not yet qualified for the
-three-server topology. Those mutating legacy commands fail closed on a staged
-or finalized three-server appliance so they cannot operate on one etcd member
-as if it were an independent appliance. Preserve all three hosts and use the
+embedded-etcd topology. Those mutating legacy commands fail closed on a staged
+or finalized appliance so they cannot operate on an etcd member as if it were
+an independent appliance. Preserve the complete inventory and use the
 documented recovery process until the cluster-wide workflow has passed its
 failure drills.
 
-The following describes legacy single-node behavior only; do not use it as a
-three-server operating procedure.
+The following describes legacy single-node behavior only; do not use it as an
+embedded-etcd operating procedure.
 
 ### Legacy `zonctl upgrade` behavior
 

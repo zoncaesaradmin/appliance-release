@@ -16,10 +16,10 @@ private application source.
 
 ## Accepted Direction
 
-- A newly signed appliance release requires exactly three active, schedulable
+- A newly signed appliance release requires exactly one or three active, schedulable
   K3s servers with embedded etcd. There are no agents, dedicated workers, or
   one-server-plus-two-agent production layouts.
-- The operator provides three direct server IPv4 addresses at install time.
+- The operator provides one or three direct server IPv4 addresses at install time.
   Each serves the Kubernetes API; clients retry another address after a node
   failure. The Kubernetes milestone has no floating address or mandatory load
   balancer.
@@ -75,11 +75,11 @@ bootstrap trust.
 
 ## Lifecycle Contract
 
-For a current signed three-server release, the public install sequence is:
+For a current signed embedded-etcd release, the public install sequence is:
 
-- `zonctl cluster-server-stage` on the bootstrap and both peers
-- `zonctl cluster-server-enrollment-create` for each peer
-- `zonctl cluster-finalize` once all three servers have joined
+- `zonctl cluster-server-stage` on the bootstrap and, for a three-server inventory, each peer
+- `zonctl cluster-server-enrollment-create` for each peer in a three-server inventory
+- `zonctl cluster-finalize` once every planned server has joined
 - `zonctl cluster-ha-check`, `zonctl status`, `zonctl verify`, and
   `zonctl support-bundle` for read-only health and diagnostics
 

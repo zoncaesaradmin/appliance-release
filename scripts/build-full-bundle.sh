@@ -312,8 +312,8 @@ EXPORT_DIR="${RELEASE_WORK_ROOT}/export"
 OS_VERSION="${USER_OS_VERSION:-${OS_VERSION:-24.04}}"
 K3S_VERSION_OVERRIDE="${USER_K3S_VERSION_OVERRIDE:-}"
 DEPLOYMENT_TOPOLOGY="${USER_DEPLOYMENT_TOPOLOGY:-${DEPLOYMENT_TOPOLOGY:-}}"
-if [[ "${DEPLOYMENT_TOPOLOGY}" != "three-server-etcd-v1" ]]; then
-  echo "build-full-bundle: DEPLOYMENT_TOPOLOGY must be three-server-etcd-v1" >&2
+if [[ "${DEPLOYMENT_TOPOLOGY}" != "embedded-etcd-v1" ]]; then
+  echo "build-full-bundle: DEPLOYMENT_TOPOLOGY must be embedded-etcd-v1" >&2
   exit 2
 fi
 WORKFLOWS_ENABLED="${USER_WORKFLOWS_ENABLED:-${WORKFLOWS_ENABLED:-}}"

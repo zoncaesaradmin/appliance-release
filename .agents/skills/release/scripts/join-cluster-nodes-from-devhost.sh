@@ -68,7 +68,7 @@ require_cmd scp
 require_cmd python3
 
 parse_target_host_cluster "${DEVHOST_CONFIG}"
-require_three_server_product_targets
+require_embedded_etcd_product_targets
 
 RELEASE_VERSION=""
 if [[ -n "${PRODUCT_VERSION:-}" ]]; then
@@ -143,10 +143,10 @@ three_server_log="${RUN_DIR}/logs/target-three-server-coordinator.log"
 
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 quoted_sudo_password="$(shell_quote "${target_sudo_password}")"
-log "three-server stage/finalize kind=${TARGET_CLUSTER_KIND} bootstrap=${TARGET_PRIME_HOST}"
+log "embedded-etcd stage/finalize kind=${TARGET_CLUSTER_KIND} bootstrap=${TARGET_PRIME_HOST}"
 emit_three_server_stage_plan | tee -a "${three_server_log}"
 
-# New signed releases use exactly three active embedded-etcd servers. Reuse
+# New signed releases use one or three active embedded-etcd servers. Reuse
 # the public helper's download path but select its explicit stage/finalize
 # operations; do not invoke the legacy expandable-node registration protocol.
 run_three_server_flow() {
@@ -159,8 +159,12 @@ run_three_server_flow() {
   write_three_server_inventory "${inventory_local}"
   bootstrap_node="$(target_node_name_from_alias "${TARGET_PRIME_HOST}")"
   bootstrap_zonctl="${OUT_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl"
-  snapshot_newline_list "${TARGET_PEER_PRIME_ALIASES:-}" peers
-  ((${#peers[@]} == 2)) || fail "three-server topology requires two peer servers"
+  if [[ -n "${TARGET_PEER_PRIME_ALIASES:-}" ]]; then
+    snapshot_newline_list "${TARGET_PEER_PRIME_ALIASES}" peers
+    if ((${#peers[@]} != 2)); then
+      fail "embedded-etcd topology requires zero peers (single server) or two peers (three servers)"
+    fi
+  fi
   scp -q "${inventory_local}" "${TARGET_PRIME_HOST}:${inventory_remote}"
 
   helper_env=""
@@ -169,7 +173,8 @@ run_three_server_flow() {
     helper_env="$(append_env_assignments "${helper_env}" "${IMAGE_PULL_USERNAME_ENV}" "${IMAGE_PULL_USERNAME}" "${IMAGE_PULL_TOKEN_ENV}" "${IMAGE_PULL_TOKEN}" "${IMAGE_PULL_TLS_VERIFY_ENV}" "${IMAGE_PULL_TLS_VERIFY}")"
   fi
 
-  for alias in "${peers[@]}"; do
+  for alias in "${peers[@]:-}"; do
+    [[ -n "${alias}" ]] || continue
     node_name="$(target_node_name_from_alias "${alias}")"
     enrollment_remote="/tmp/appliance-three-server-${node_name}.enrollment"
     enrollment_local="${RUN_DIR}/enrollments/${node_name}.enrollment"
@@ -220,8 +225,8 @@ run_three_server_flow() {
   if ! run_ssh_logged "${TARGET_PRIME_HOST}" "${finalize_log}" "${remote_cmd}"; then
     fail "three-server finalization failed; see ${finalize_log}"
   fi
-  log "three-server staging and finalization completed; application HA remains pending"
+  log "embedded-etcd staging and finalization completed; application HA remains pending for three-server deployments"
 }
 
 run_three_server_flow
-log "three-server stage/finalize finished; log: ${three_server_log}"
+log "embedded-etcd stage/finalize finished; log: ${three_server_log}"

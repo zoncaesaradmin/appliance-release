@@ -390,9 +390,9 @@ for payload in "${RELEASE_FILE_PAYLOADS[@]}"; do
   echo "  ${REMOTE_VERSION_DIR}/$(basename "${payload}")"
 done
 echo
-echo "published three-server coordinator helper:"
+echo "published embedded-etcd coordinator helper:"
 echo "  ${REMOTE_VERSION_DIR}/${INSTALL_HELPER_PUBLISHED}"
 echo
-echo "Do not run this helper directly on one host. Configure this published"
+echo "Do not run this helper directly. Configure this published"
 echo "location as the release runner's bundle store, then run the signed"
-echo "three-server stage/finalize coordinator against exactly three targets."
+echo "embedded-etcd stage/finalize coordinator against either one or three targets."

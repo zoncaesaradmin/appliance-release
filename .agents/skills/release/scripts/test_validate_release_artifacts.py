@@ -223,20 +223,20 @@ def test_rejects_deployment_topology_mismatch() -> None:
         populate_positive_case(tmp)
         release_path = tmp / "release-input" / "release-input.json"
         release_input = json.loads(release_path.read_text(encoding="utf-8"))
-        release_input["compatibility"]["deploymentTopology"] = "three-server-etcd-v1"
+        release_input["compatibility"]["deploymentTopology"] = "embedded-etcd-v1"
         release_path.write_text(json.dumps(release_input), encoding="utf-8")
         result = run_validator(tmp)
         if result.returncode == 0 or "deploymentTopology" not in result.stderr:
             raise AssertionError(result.stderr or "topology mismatch was accepted")
 
-        write(tmp / "release-input" / "compatibility.json", '{"deploymentTopology":"three-server-etcd-v1"}')
+        write(tmp / "release-input" / "compatibility.json", '{"deploymentTopology":"embedded-etcd-v1"}')
         result = run_validator(tmp)
         if result.returncode == 0 or "deploymentTopology" not in result.stderr:
             raise AssertionError(result.stderr or "unsigned bundle topology mismatch was accepted")
 
         manifest_path = tmp / "bundle" / "release-manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest["compatibility"]["deploymentTopology"] = "three-server-etcd-v1"
+        manifest["compatibility"]["deploymentTopology"] = "embedded-etcd-v1"
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         result = run_validator(tmp)
         if result.returncode != 0:

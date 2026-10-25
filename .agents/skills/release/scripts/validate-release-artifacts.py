@@ -1065,7 +1065,7 @@ def main() -> int:
     if not isinstance(release_compatibility, dict) or not isinstance(bundle_compatibility, dict):
         raise ValueError("release-input and bundle manifest compatibility must be objects")
     topology = release_compatibility.get("deploymentTopology")
-    if topology not in (None, "three-server-etcd-v1"):
+    if topology not in (None, "embedded-etcd-v1"):
         raise ValueError(f"unsupported release-input deploymentTopology: {topology!r}")
     if bundle_compatibility.get("deploymentTopology") != topology:
         raise ValueError("bundle manifest deploymentTopology does not match release-input")

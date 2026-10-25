@@ -148,7 +148,8 @@ Minimal lab day-to-day switches (spread across the three files):
 # lab-devhost.yaml
 build_host: { alias: zonsys@… }
 target_host:
-  alias: zonsys@192.168.1.151,zonsys@192.168.1.152,zonsys@192.168.1.153
+  # One server or three servers; never two.
+  alias: zonsys@192.168.1.151
 report:
   final_ok: true
 

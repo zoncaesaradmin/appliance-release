@@ -2,7 +2,7 @@
 
 > Topology clarification: `single-node-postgres-v1` describes the current
 > **application database** placement, not the appliance/Kubernetes topology.
-> New appliance releases run exactly three active embedded-etcd K3s servers.
+> New appliance releases run one or three active embedded-etcd K3s servers.
 > PostgreSQL application HA is intentionally deferred; this identifier remains
 > until its persistence and failover replacement is qualified.
 

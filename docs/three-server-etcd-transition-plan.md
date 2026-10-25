@@ -1,7 +1,7 @@
 # Three-server embedded-etcd transition plan
 
 Status: implementation in progress. The signed topology contract, staged
-exactly-three-server K3s flow, direct API health gate, and fail-closed legacy
+one- or three-server K3s flow, direct API health gate, and fail-closed legacy
 lifecycle guards are implemented across the three repositories. The remaining
 sections are the qualification and follow-on work required before making a
 production availability claim. This document supersedes the topology direction
@@ -10,7 +10,7 @@ gates below pass.
 
 ## Product contract and scope
 
-The next supported deployment shape is **exactly three schedulable K3s server
+The supported deployment shapes are **exactly one or three schedulable K3s server
 nodes**, each running the pinned K3s binary and participating in embedded etcd.
 There are no K3s agents, dedicated worker nodes, external Kubernetes datastore,
 or one-server-plus-two-agent production mode. All three servers are active
@@ -38,11 +38,9 @@ Application availability is a separate milestone with its own storage and
 service failover acceptance gate. Status, documentation, and reports must name
 these two levels separately.
 
-The earlier exploratory request mentioned both one and three nodes. This plan
-uses the later explicit product choice of **three nodes only** for new releases.
-Old one-server installations remain readable as migration sources; rejecting
-new one-server installs must not erase their data or strand their recovery
-tools.
+New releases accept **one or three nodes only**. Old one-server installations
+remain readable as migration sources; unsupported two-node and agent layouts
+must not erase their data or strand their recovery tools.
 
 ## Existing contracts that constrain the work
 

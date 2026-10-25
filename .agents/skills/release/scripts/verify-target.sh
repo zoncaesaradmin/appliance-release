@@ -644,7 +644,7 @@ fi
 # inventory/etcd gate. It proves all direct API endpoints and all three voting
 # members; ordinary application smoke tests remain anchored to the configured
 # product endpoint until application HA is qualified.
-if [[ "${TARGET_CLUSTER_KIND}" == "three-server-etcd" ]]; then
+if [[ "${TARGET_CLUSTER_KIND}" == "single-server-etcd" || "${TARGET_CLUSTER_KIND}" == "three-server-etcd" ]]; then
   cluster_inventory_remote="/tmp/appliance-three-server-inventory-${RELEASE_VERSION}.json"
   bundle_root="$(dirname "${BUNDLE_DIR}")"
   cluster_ha_command="sudo $(shell_quote "${BUNDLE_DIR}/zonctl") cluster-ha-check --state-dir $(shell_quote "${TARGET_STATE_DIR}") --bundle-dir $(shell_quote "${BUNDLE_DIR}") --public-key $(shell_quote "${bundle_root}/release-signing.pub") --cluster-inventory $(shell_quote "${cluster_inventory_remote}") --node-name $(shell_quote "$(target_node_name_from_alias "${TARGET_PRIME_HOST}")") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}") --output json"

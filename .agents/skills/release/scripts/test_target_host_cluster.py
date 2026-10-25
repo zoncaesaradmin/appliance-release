@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for the fixed three-server target inventory."""
+"""Tests for the one- or three-server embedded-etcd target inventory."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def _parse(tmp: Path, body: str, extra: str = "") -> subprocess.CompletedProcess
     )
 
 
-def test_exact_three_servers_are_implicit() -> None:
+def test_one_and_three_servers_are_implicit() -> None:
     import tempfile
 
     with tempfile.TemporaryDirectory(prefix="target-three-server-") as tmp:
@@ -40,9 +40,16 @@ def test_exact_three_servers_are_implicit() -> None:
         )
         assert result.returncode == 0, result.stderr + result.stdout
         assert result.stdout.strip() == "zonsys@192.168.1.151|zonsys@192.168.1.151|3|three-server-etcd"
+        result = _parse(
+            Path(tmp),
+            "target_host:\n  alias: zonsys@192.168.1.151\n",
+            'printf "%s|%s|%s\\n" "${TARGET_PRIME_COUNT}" "${TARGET_CLUSTER_KIND}" "${TARGET_PEER_PRIME_ALIASES}"',
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert result.stdout.strip() == "1|single-server-etcd|"
 
 
-def test_reject_non_three_server_inventory() -> None:
+def test_reject_two_server_inventory() -> None:
     import tempfile
 
     with tempfile.TemporaryDirectory(prefix="target-two-server-") as tmp:
@@ -51,7 +58,7 @@ def test_reject_non_three_server_inventory() -> None:
             "target_host:\n  alias: zonsys@192.168.1.151,zonsys@192.168.1.152\n",
         )
         assert result.returncode != 0
-        assert "exactly three active server targets" in result.stderr
+        assert "exactly one or three active server targets" in result.stderr
 
 
 def test_reject_obsolete_roles() -> None:
@@ -67,27 +74,33 @@ def test_reject_obsolete_roles() -> None:
         assert "target_host.roles is obsolete" in result.stderr
 
 
-def test_product_runner_requires_exactly_three_active_servers() -> None:
+def test_product_runner_requires_one_or_three_active_servers() -> None:
     import tempfile
 
     with tempfile.TemporaryDirectory(prefix="target-product-topology-") as tmp:
         result = _parse(
             Path(tmp),
             "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2,a@10.0.0.3\n",
-            "require_three_server_product_targets",
+            "require_embedded_etcd_product_targets",
         )
         assert result.returncode == 0, result.stderr + result.stdout
 
         result = _parse(
             Path(tmp),
             "target_host:\n  alias: a@10.0.0.1\n",
-            "require_three_server_product_targets",
+            "require_embedded_etcd_product_targets",
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+        result = _parse(
+            Path(tmp),
+            "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2\n",
+            "require_embedded_etcd_product_targets",
         )
         assert result.returncode != 0
-        assert "exactly three active server targets" in result.stderr
+        assert "exactly one or three active server targets" in result.stderr
 
 
-def test_three_server_inventory_is_direct_and_host_portable() -> None:
+def test_inventory_is_direct_and_host_portable() -> None:
     import json
     import tempfile
 
@@ -101,13 +114,32 @@ def test_three_server_inventory_is_direct_and_host_portable() -> None:
         assert result.returncode == 0, result.stderr + result.stdout
         payload = json.loads(inventory.read_text(encoding="utf-8"))
         assert payload == {
-            "topology": "three-server-etcd-v1",
+            "topology": "embedded-etcd-v1",
             "bootstrapNode": "10-0-0-1",
             "nodes": [
                 {"name": "10-0-0-1", "address": "10.0.0.1"},
                 {"name": "10-0-0-2", "address": "10.0.0.2"},
                 {"name": "10-0-0-3", "address": "10.0.0.3"},
             ],
+        }
+
+
+def test_single_server_inventory_is_direct_and_host_portable() -> None:
+    import json
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="target-single-server-inventory-") as tmp:
+        inventory = Path(tmp) / "inventory.json"
+        result = _parse(
+            Path(tmp),
+            "target_host:\n  alias: a@10.0.0.1\n",
+            f'write_three_server_inventory "{inventory}"',
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert json.loads(inventory.read_text(encoding="utf-8")) == {
+            "topology": "embedded-etcd-v1",
+            "bootstrapNode": "10-0-0-1",
+            "nodes": [{"name": "10-0-0-1", "address": "10.0.0.1"}],
         }
 
 
@@ -136,7 +168,7 @@ def test_append_cluster_alias_tls_sans() -> None:
         assert "192.168.1.152" in parts
 
 
-def test_three_server_stage_plan_rejects_legacy_layout() -> None:
+def test_stage_plan_rejects_two_server_layout() -> None:
     import tempfile
 
     with tempfile.TemporaryDirectory(prefix="target-plan-") as tmp:
@@ -146,7 +178,7 @@ def test_three_server_stage_plan_rejects_legacy_layout() -> None:
             "emit_three_server_stage_plan",
         )
         assert result.returncode != 0
-        assert "requires exactly three active server targets" in result.stderr
+        assert "requires exactly one or three active server targets" in result.stderr
 
 
 def test_three_server_join_plan() -> None:
@@ -163,6 +195,22 @@ def test_three_server_join_plan() -> None:
         assert "kind=three-server-etcd" in out
         assert "server-stage node=10-0-0-2 host=a@10.0.0.2" in out
         assert "server-stage node=10-0-0-3 host=a@10.0.0.3" in out
+        assert "cluster-finalize host=a@10.0.0.1" in out
+
+
+def test_single_server_finalize_plan() -> None:
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="target-single-server-plan-") as tmp:
+        result = _parse(
+            Path(tmp),
+            "target_host:\n  alias: a@10.0.0.1\n",
+            "emit_three_server_stage_plan",
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+        out = result.stdout
+        assert "kind=single-server-etcd" in out
+        assert "server-stage node=" not in out
         assert "cluster-finalize host=a@10.0.0.1" in out
 
 
@@ -215,7 +263,7 @@ def test_join_script_exists() -> None:
         "target-three-server-enrollment-mode-",
         "chmod 0600 \"${enrollment_local}\"",
         "trap \\\"rm -f -- ${enrollment_file_q}\\\" EXIT",
-        "require_three_server_product_targets",
+        "require_embedded_etcd_product_targets",
         "emit_three_server_stage_plan",
     ):
         assert want in text, want
@@ -238,27 +286,29 @@ def test_release_runner_cannot_select_a_legacy_target_shape() -> None:
     runner = Path(__file__).resolve().parent / "run-release-from-devhost.sh"
     text = runner.read_text(encoding="utf-8")
     assert "parse_target_host_cluster \"${DEVHOST_CONFIG}\"" in text
-    assert "require_three_server_product_targets" in text
-    assert text.index("require_three_server_product_targets") < text.index('log "── buildPublish"')
-    assert "clusterStageFinalize (three active servers)" in text
+    assert "require_embedded_etcd_product_targets" in text
+    assert text.index("require_embedded_etcd_product_targets") < text.index('log "── buildPublish"')
+    assert "clusterStageFinalize (embedded etcd: one or three active servers)" in text
     assert "clusterJoin (legacy prime/member extra hosts)" not in text
 
     installer = Path(__file__).resolve().parent / "run-install-via-public-helper-on-target.sh"
     installer_text = installer.read_text(encoding="utf-8")
-    assert "require_three_server_product_targets" in installer_text
+    assert "require_embedded_etcd_product_targets" in installer_text
     assert "uninstalling members and extra primes before advertised prime reinstall" not in installer_text
 
 
 def main() -> None:
-    test_exact_three_servers_are_implicit()
-    test_reject_non_three_server_inventory()
+    test_one_and_three_servers_are_implicit()
+    test_reject_two_server_inventory()
     test_reject_obsolete_roles()
-    test_product_runner_requires_exactly_three_active_servers()
-    test_three_server_inventory_is_direct_and_host_portable()
+    test_product_runner_requires_one_or_three_active_servers()
+    test_inventory_is_direct_and_host_portable()
+    test_single_server_inventory_is_direct_and_host_portable()
     test_node_name_from_ipv4_alias()
     test_append_cluster_alias_tls_sans()
-    test_three_server_stage_plan_rejects_legacy_layout()
+    test_stage_plan_rejects_two_server_layout()
     test_three_server_join_plan()
+    test_single_server_finalize_plan()
     test_snapshot_newline_list_survives_stdin_drain()
     test_run_ssh_captured_does_not_consume_stdin()
     test_verify_target_probes_every_prime_ip()

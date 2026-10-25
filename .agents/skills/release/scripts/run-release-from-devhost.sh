@@ -94,11 +94,11 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
   reject_removed_verification_argo_keys "${INSTALL_CONFIG}"
   reject_removed_install_image_pull_literal_registry "${INSTALL_CONFIG}"
 
-  # An install request is always the fixed three-active-server product. Do
-  # this before a potentially expensive build/publish so a legacy target
+  # An install request is always the signed embedded-etcd product. Do this
+  # before a potentially expensive build/publish so an invalid target
   # layout cannot create a release export that it is not allowed to install.
   parse_target_host_cluster "${DEVHOST_CONFIG}"
-  require_three_server_product_targets
+  require_embedded_etcd_product_targets
 fi
 
 RUN_DIR="$(config_get_optional "${DEVHOST_CONFIG}" "report.run_dir" || true)"
@@ -158,7 +158,7 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
   # A three-server install is only an appliance after the peer stages and
   # bootstrap finalization have passed. Bootstrap product accounts/licenses
   # after that gate, never against the incomplete first server.
-  log "── clusterStageFinalize (three active servers)"
+  log "── clusterStageFinalize (embedded etcd: one or three active servers)"
   bash "${SCRIPT_DIR}/join-cluster-nodes-from-devhost.sh" \
     --config "${DEVHOST_CONFIG}" \
     --build-publish-config "${BUILD_PUBLISH_CONFIG}" \

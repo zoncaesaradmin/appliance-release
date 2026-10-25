@@ -130,7 +130,7 @@ def test_install_release_wires_image_pull_flags() -> None:
     assert "image-pull-registry:" in text
 
 
-def test_install_release_has_explicit_three_server_stage_and_finalize_modes() -> None:
+def test_install_release_has_explicit_embedded_etcd_stage_and_finalize_modes() -> None:
     text = INSTALL_HELPER.read_text(encoding="utf-8")
     for want in (
         'THREE_SERVER_OPERATION="${THREE_SERVER_OPERATION:-}"',
@@ -138,7 +138,7 @@ def test_install_release_has_explicit_three_server_stage_and_finalize_modes() ->
         "cluster-server-stage",
         "cluster-finalize",
         "SERVER_ENROLLMENT_FILE",
-        "Three-server appliance finalization completed",
+        "Embedded-etcd appliance finalization completed",
     ):
         assert want in text, want
 
@@ -177,7 +177,7 @@ def test_run_install_patches_image_pull_and_dns() -> None:
     assert "--preserve-env=" in text
     assert "LOCAL_HELPER" in text
     assert "scp -q" in text
-    assert "require_three_server_product_targets" in text
+    assert "require_embedded_etcd_product_targets" in text
     assert 'THREE_SERVER_OPERATION="stage"' in text
     # Patched into the downloaded helper on the target (escaped inside remote_cmd).
     assert 'set_assign(text, \\"IMAGE_PULL_REGISTRY\\"' in text
@@ -295,7 +295,7 @@ def main() -> None:
     test_partial_image_pull_registry_fails()
     test_resolve_install_extra_tls_sans()
     test_install_release_wires_image_pull_flags()
-    test_install_release_has_explicit_three_server_stage_and_finalize_modes()
+    test_install_release_has_explicit_embedded_etcd_stage_and_finalize_modes()
     test_install_release_has_no_legacy_single_host_or_join_path()
     test_run_install_patches_image_pull_and_dns()
     test_existing_install_requires_qualified_migration()
