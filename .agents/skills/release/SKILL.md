@@ -115,11 +115,11 @@ CLI path presence selects stages (no `build_flow.skip` / `install.skip`):
 
 - `--build-publish-config` → build/publish on the build host
 - `--install-config` → explicit lab cleanup only when configured → signed
-  three-server stage/finalize → optional bootstrap → target/client verify →
+  embedded-etcd stage/finalize → optional bootstrap → target/client verify →
   report
 
 **Reinstall policy (current):** no local-host in-place upgrade or uninstall
-path exists for the three-server product. The runner stages matching clean
+path exists for the embedded-etcd product. The runner stages matching clean
 hosts and finalizes only after quorum gates pass. Config-preserving cluster
 upgrade is parked until the coordinated lifecycle is qualified.
 

@@ -109,7 +109,7 @@ def test_inventory_is_direct_and_host_portable() -> None:
         result = _parse(
             Path(tmp),
             "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2,a@10.0.0.3\n",
-            f'write_three_server_inventory "{inventory}"',
+            f'write_embedded_etcd_inventory "{inventory}"',
         )
         assert result.returncode == 0, result.stderr + result.stdout
         payload = json.loads(inventory.read_text(encoding="utf-8"))
@@ -133,7 +133,7 @@ def test_single_server_inventory_is_direct_and_host_portable() -> None:
         result = _parse(
             Path(tmp),
             "target_host:\n  alias: a@10.0.0.1\n",
-            f'write_three_server_inventory "{inventory}"',
+            f'write_embedded_etcd_inventory "{inventory}"',
         )
         assert result.returncode == 0, result.stderr + result.stdout
         assert json.loads(inventory.read_text(encoding="utf-8")) == {
@@ -175,7 +175,7 @@ def test_stage_plan_rejects_two_server_layout() -> None:
         result = _parse(
             Path(tmp),
             "target_host:\n  alias: zonsys@192.168.1.151,zonsys@192.168.1.152\n",
-            "emit_three_server_stage_plan",
+            "emit_embedded_etcd_stage_plan",
         )
         assert result.returncode != 0
         assert "requires exactly one or three active server targets" in result.stderr
@@ -188,7 +188,7 @@ def test_three_server_join_plan() -> None:
         result = _parse(
             Path(tmp),
             "target_host:\n  alias: a@10.0.0.1,a@10.0.0.2,a@10.0.0.3\n",
-            "emit_three_server_stage_plan",
+            "emit_embedded_etcd_stage_plan",
         )
         assert result.returncode == 0, result.stderr + result.stdout
         out = result.stdout
@@ -205,7 +205,7 @@ def test_single_server_finalize_plan() -> None:
         result = _parse(
             Path(tmp),
             "target_host:\n  alias: a@10.0.0.1\n",
-            "emit_three_server_stage_plan",
+            "emit_embedded_etcd_stage_plan",
         )
         assert result.returncode == 0, result.stderr + result.stdout
         out = result.stdout
@@ -256,15 +256,15 @@ def test_join_script_exists() -> None:
     for want in (
         "snapshot_newline_list",
         "</dev/null",
-        "run_three_server_flow",
+        "run_embedded_etcd_flow",
         "cluster-server-enrollment-create",
-        "THREE_SERVER_OPERATION stage",
-        "THREE_SERVER_OPERATION finalize",
-        "target-three-server-enrollment-mode-",
+        "EMBEDDED_ETCD_OPERATION stage",
+        "EMBEDDED_ETCD_OPERATION finalize",
+        "target-embedded-etcd-enrollment-mode-",
         "chmod 0600 \"${enrollment_local}\"",
         "trap \\\"rm -f -- ${enrollment_file_q}\\\" EXIT",
         "require_embedded_etcd_product_targets",
-        "emit_three_server_stage_plan",
+        "emit_embedded_etcd_stage_plan",
     ):
         assert want in text, want
     for forbidden in (

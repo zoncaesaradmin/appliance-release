@@ -506,11 +506,11 @@ require_embedded_etcd_product_targets() {
     fail "this product release requires exactly one or three active server targets"
 }
 
-# write_three_server_inventory writes the operator-owned, install-time
-# inventory consumed by the signed three-server bundle. It deliberately derives
+# write_embedded_etcd_inventory writes the operator-owned, install-time
+# inventory consumed by the signed embedded-etcd bundle. It deliberately derives
 # only names and directly reachable IPv4 addresses from the devhost target
 # configuration; no target identity is written into the portable bundle.
-write_three_server_inventory() {
+write_embedded_etcd_inventory() {
   local destination="$1"
   local alias node_name address
   local -a pairs=()
@@ -518,7 +518,7 @@ write_three_server_inventory() {
   while IFS= read -r alias; do
     [[ -n "${alias}" ]] || continue
     node_name="$(target_node_name_from_alias "${alias}")"
-    address="$(ssh_target_ipv4 "${alias}")" || fail "three-server inventory requires user@IPv4 target aliases (${alias})"
+    address="$(ssh_target_ipv4 "${alias}")" || fail "embedded-etcd inventory requires user@IPv4 target aliases (${alias})"
     pairs+=("${node_name}" "${address}")
   done <<<"${TARGET_HOST_ALIASES}"
   python3 - "${destination}" "${pairs[@]}" <<'PY'
@@ -569,7 +569,7 @@ snapshot_newline_list() {
 }
 
 # Operator-facing plan for the supported embedded-etcd release flow (no SSH).
-emit_three_server_stage_plan() {
+emit_embedded_etcd_stage_plan() {
   local alias node_name
   local -a peers=()
   require_embedded_etcd_product_targets

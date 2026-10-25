@@ -133,7 +133,7 @@ def test_install_release_wires_image_pull_flags() -> None:
 def test_install_release_has_explicit_embedded_etcd_stage_and_finalize_modes() -> None:
     text = INSTALL_HELPER.read_text(encoding="utf-8")
     for want in (
-        'THREE_SERVER_OPERATION="${THREE_SERVER_OPERATION:-}"',
+        'EMBEDDED_ETCD_OPERATION="${EMBEDDED_ETCD_OPERATION:-}"',
         'CLUSTER_INVENTORY_FILE="${CLUSTER_INVENTORY_FILE:-}"',
         "cluster-server-stage",
         "cluster-finalize",
@@ -145,7 +145,7 @@ def test_install_release_has_explicit_embedded_etcd_stage_and_finalize_modes() -
 
 def test_install_release_has_no_legacy_single_host_or_join_path() -> None:
     text = INSTALL_HELPER.read_text(encoding="utf-8")
-    assert "requires THREE_SERVER_OPERATION=stage or finalize" in text
+    assert "requires EMBEDDED_ETCD_OPERATION=stage or finalize" in text
     for forbidden in (
         "JOIN_ENROLLMENT_FILE",
         "cluster-join",
@@ -162,7 +162,7 @@ def test_install_release_has_no_legacy_single_host_or_join_path() -> None:
         env=os.environ.copy(),
     )
     assert standalone.returncode == 2
-    assert "requires THREE_SERVER_OPERATION=stage or finalize" in standalone.stderr
+    assert "requires EMBEDDED_ETCD_OPERATION=stage or finalize" in standalone.stderr
 
 
 def test_run_install_patches_image_pull_and_dns() -> None:
@@ -178,7 +178,7 @@ def test_run_install_patches_image_pull_and_dns() -> None:
     assert "LOCAL_HELPER" in text
     assert "scp -q" in text
     assert "require_embedded_etcd_product_targets" in text
-    assert 'THREE_SERVER_OPERATION="stage"' in text
+    assert 'EMBEDDED_ETCD_OPERATION="stage"' in text
     # Patched into the downloaded helper on the target (escaped inside remote_cmd).
     assert 'set_assign(text, \\"IMAGE_PULL_REGISTRY\\"' in text
     assert 'set_assign(text, \\"DNS_ZONE\\"' in text

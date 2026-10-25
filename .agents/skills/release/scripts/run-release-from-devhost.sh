@@ -155,7 +155,7 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
     APPLIANCE_PROFILE="core"
   fi
 
-  # A three-server install is only an appliance after the peer stages and
+  # An embedded-etcd install is only an appliance after the peer stages and
   # bootstrap finalization have passed. Bootstrap product accounts/licenses
   # after that gate, never against the incomplete first server.
   log "── clusterStageFinalize (embedded etcd: one or three active servers)"

@@ -170,7 +170,7 @@ install:
 See the three `references/config.*.example.yaml` files for the full schemas.
 
 The release runner stages the bootstrap K3s server, stages two signed server
-peers, then finalizes product charts only after the three-server Kubernetes
+peers, then finalizes product charts only after the embedded-etcd Kubernetes
 and embedded-etcd gate passes. Interrupted stage/finalize runs are rerunnable
 with the same inventory. It does not choose a single-host or worker layout.
 Cluster-wide upgrade and recovery are not yet qualified for this topology.

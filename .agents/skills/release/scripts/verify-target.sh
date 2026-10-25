@@ -595,10 +595,10 @@ if ((TARGET_PRIME_COUNT >= 1)); then
       echo "ready_etcd=${etcd_ready}"
     } >>"${cluster_etcd_log}"
     if ((etcd_ready < TARGET_PRIME_COUNT)); then
-      log "cluster-etcd: expected ${TARGET_PRIME_COUNT} Ready etcd primes, counted ${etcd_ready}"
+      log "cluster-etcd: expected ${TARGET_PRIME_COUNT} Ready etcd servers, counted ${etcd_ready}"
       cluster_etcd_code="1"
     else
-      log "cluster-etcd: ${etcd_ready} Ready etcd primes"
+      log "cluster-etcd: ${etcd_ready} Ready etcd servers"
     fi
   fi
   if ((${#prime_aliases[@]} > 0)); then
@@ -630,22 +630,22 @@ if ((TARGET_PRIME_COUNT >= 1)); then
     log "cluster-api: see ${cluster_api_log}"
     log "cluster-https: see ${cluster_https_log}"
     if [[ "${cluster_api_code}" != "0" ]]; then
-      log "cluster-api: K3s API not reachable on every Ready prime IP"
+      log "cluster-api: K3s API not reachable on every Ready server IP"
     fi
     if [[ "${cluster_https_code}" != "0" ]]; then
-      log "cluster-https: Traefik HTTPS not reachable on every Ready prime IP"
+      log "cluster-https: Traefik HTTPS not reachable on every Ready server IP"
     fi
   fi
 fi
 
 # The product-level HTTPS service is deliberately not an HA claim in the
-# Kubernetes-only milestone. For the exact three-server topology, replace the
+# Kubernetes-only milestone. For the embedded-etcd topology, replace the
 # old label/unauthenticated-curl approximation with zonctl's authenticated
-# inventory/etcd gate. It proves all direct API endpoints and all three voting
+# inventory/etcd gate. It proves all direct API endpoints and the expected voting
 # members; ordinary application smoke tests remain anchored to the configured
 # product endpoint until application HA is qualified.
 if [[ "${TARGET_CLUSTER_KIND}" == "single-server-etcd" || "${TARGET_CLUSTER_KIND}" == "three-server-etcd" ]]; then
-  cluster_inventory_remote="/tmp/appliance-three-server-inventory-${RELEASE_VERSION}.json"
+  cluster_inventory_remote="/tmp/appliance-embedded-etcd-inventory-${RELEASE_VERSION}.json"
   bundle_root="$(dirname "${BUNDLE_DIR}")"
   cluster_ha_command="sudo $(shell_quote "${BUNDLE_DIR}/zonctl") cluster-ha-check --state-dir $(shell_quote "${TARGET_STATE_DIR}") --bundle-dir $(shell_quote "${BUNDLE_DIR}") --public-key $(shell_quote "${bundle_root}/release-signing.pub") --cluster-inventory $(shell_quote "${cluster_inventory_remote}") --node-name $(shell_quote "$(target_node_name_from_alias "${TARGET_PRIME_HOST}")") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}") --output json"
   if run_check "cluster-ha" "${cluster_ha_command}"; then

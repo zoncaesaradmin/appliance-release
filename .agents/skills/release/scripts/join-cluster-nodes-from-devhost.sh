@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# join-cluster-nodes-from-devhost.sh — Mac/devhost side three-server coordinator.
+# join-cluster-nodes-from-devhost.sh — Mac/devhost side embedded-etcd coordinator.
 #
 # Stages the two remaining embedded-etcd servers from the bootstrap server,
 # then finalizes the product only after the Kubernetes/etcd quorum gate.
@@ -139,24 +139,24 @@ if [[ -z "${RUN_DIR}" ]]; then
 fi
 ensure_release_run_dirs "${RUN_DIR}"
 mkdir -p "${RUN_DIR}/enrollments"
-three_server_log="${RUN_DIR}/logs/target-three-server-coordinator.log"
+embedded_etcd_log="${RUN_DIR}/logs/target-embedded-etcd-coordinator.log"
 
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 quoted_sudo_password="$(shell_quote "${target_sudo_password}")"
 log "embedded-etcd stage/finalize kind=${TARGET_CLUSTER_KIND} bootstrap=${TARGET_PRIME_HOST}"
-emit_three_server_stage_plan | tee -a "${three_server_log}"
+emit_embedded_etcd_stage_plan | tee -a "${embedded_etcd_log}"
 
 # New signed releases use one or three active embedded-etcd servers. Reuse
 # the public helper's download path but select its explicit stage/finalize
 # operations; do not invoke the legacy expandable-node registration protocol.
-run_three_server_flow() {
-  local inventory_local="${RUN_DIR}/metadata/three-server-inventory.json"
-  local inventory_remote="/tmp/appliance-three-server-inventory-${RELEASE_VERSION}.json"
+run_embedded_etcd_flow() {
+	local inventory_local="${RUN_DIR}/metadata/embedded-etcd-inventory.json"
+	local inventory_remote="/tmp/appliance-embedded-etcd-inventory-${RELEASE_VERSION}.json"
   local bootstrap_node bootstrap_zonctl enrollment_remote enrollment_local fingerprint alias node_name
   local enroll_log stage_log finalize_log chmod_log remote_cmd helper_env node_helper_env enrollment_file_q
   local -a peers=()
 
-  write_three_server_inventory "${inventory_local}"
+	write_embedded_etcd_inventory "${inventory_local}"
   bootstrap_node="$(target_node_name_from_alias "${TARGET_PRIME_HOST}")"
   bootstrap_zonctl="${OUT_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl"
   if [[ -n "${TARGET_PEER_PRIME_ALIASES:-}" ]]; then
@@ -176,16 +176,16 @@ run_three_server_flow() {
   for alias in "${peers[@]:-}"; do
     [[ -n "${alias}" ]] || continue
     node_name="$(target_node_name_from_alias "${alias}")"
-    enrollment_remote="/tmp/appliance-three-server-${node_name}.enrollment"
+    enrollment_remote="/tmp/appliance-embedded-etcd-${node_name}.enrollment"
     enrollment_local="${RUN_DIR}/enrollments/${node_name}.enrollment"
-    enroll_log="${RUN_DIR}/logs/target-three-server-enroll-${node_name}.log"
-    stage_log="${RUN_DIR}/logs/target-three-server-stage-${node_name}.log"
+    enroll_log="${RUN_DIR}/logs/target-embedded-etcd-enroll-${node_name}.log"
+    stage_log="${RUN_DIR}/logs/target-embedded-etcd-stage-${node_name}.log"
     log "creating signed server enrollment for ${alias} as ${node_name}"
     if ! run_ssh_captured "${TARGET_PRIME_HOST}" "${enroll_log}" "set -euo pipefail; test -x $(shell_quote "${bootstrap_zonctl}"); rm -f -- $(shell_quote "${enrollment_remote}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' $(shell_quote "${bootstrap_zonctl}") cluster-server-enrollment-create --output json --cluster-inventory $(shell_quote "${inventory_remote}") --node-name $(shell_quote "${bootstrap_node}") --server-name $(shell_quote "${node_name}") --enrollment-out $(shell_quote "${enrollment_remote}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' chown \"\$(id -un):\$(id -gn)\" $(shell_quote "${enrollment_remote}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' chmod 0600 $(shell_quote "${enrollment_remote}")"; then
-      fail "three-server enrollment failed for ${node_name}; see ${enroll_log}"
+      fail "embedded-etcd enrollment failed for ${node_name}; see ${enroll_log}"
     fi
     fingerprint="$(python3 -c 'import json,sys; lines=open(sys.argv[1], encoding="utf-8").read().splitlines(); hits=[json.loads(x).get("data",{}).get("signerFingerprint","") for x in lines if x.strip().startswith("{") and "signerFingerprint" in x]; print(next((x for x in reversed(hits) if x), ""))' "${enroll_log}")"
-    [[ -n "${fingerprint}" ]] || fail "three-server enrollment missing signer fingerprint for ${node_name}"
+    [[ -n "${fingerprint}" ]] || fail "embedded-etcd enrollment missing signer fingerprint for ${node_name}"
     mkdir -p "${RUN_DIR}/enrollments"
     scp -q "${TARGET_PRIME_HOST}:${enrollment_remote}" "${enrollment_local}" </dev/null
     # scp does not preserve the remote 0600 mode unless explicitly asked.
@@ -193,19 +193,19 @@ run_three_server_flow() {
     # private before moving it onward.
     chmod 0600 "${enrollment_local}"
     scp -q "${enrollment_local}" "${alias}:${enrollment_remote}" </dev/null
-    chmod_log="${RUN_DIR}/logs/target-three-server-enrollment-mode-${node_name}.log"
+    chmod_log="${RUN_DIR}/logs/target-embedded-etcd-enrollment-mode-${node_name}.log"
     if ! run_ssh_captured "${alias}" "${chmod_log}" "chmod 0600 $(shell_quote "${enrollment_remote}")"; then
       rm -f "${enrollment_local}"
-      fail "could not protect three-server enrollment on ${alias}; see ${chmod_log}"
+      fail "could not protect embedded-etcd enrollment on ${alias}; see ${chmod_log}"
     fi
-    if ! run_ssh_captured "${TARGET_PRIME_HOST}" "${RUN_DIR}/logs/target-three-server-enroll-cleanup-${node_name}.log" "rm -f -- $(shell_quote "${enrollment_remote}")"; then
+    if ! run_ssh_captured "${TARGET_PRIME_HOST}" "${RUN_DIR}/logs/target-embedded-etcd-enroll-cleanup-${node_name}.log" "rm -f -- $(shell_quote "${enrollment_remote}")"; then
       rm -f "${enrollment_local}"
-      fail "could not remove transferred three-server enrollment from ${TARGET_PRIME_HOST}"
+      fail "could not remove transferred embedded-etcd enrollment from ${TARGET_PRIME_HOST}"
     fi
     rm -f "${enrollment_local}"
     scp -q "${inventory_local}" "${alias}:${inventory_remote}" </dev/null
     scp -q "${LOCAL_HELPER}" "${alias}:${SCRIPT_PATH}" </dev/null
-    node_helper_env="$(append_env_assignments "${helper_env}" NODE_NAME "${node_name}" THREE_SERVER_OPERATION stage CLUSTER_INVENTORY_FILE "${inventory_remote}" SERVER_ENROLLMENT_FILE "${enrollment_remote}" CLUSTER_SIGNER_FINGERPRINT "${fingerprint}")"
+	node_helper_env="$(append_env_assignments "${helper_env}" NODE_NAME "${node_name}" EMBEDDED_ETCD_OPERATION stage CLUSTER_INVENTORY_FILE "${inventory_remote}" SERVER_ENROLLMENT_FILE "${enrollment_remote}" CLUSTER_SIGNER_FINGERPRINT "${fingerprint}")"
     enrollment_file_q="$(shell_quote "${enrollment_remote}")"
     # Always remove the remote token envelope, including a failed stage. The
     # stage receipt/K3s token-file are the only durable, protected state; a
@@ -213,20 +213,20 @@ run_three_server_flow() {
     remote_cmd="set -euo pipefail; trap \"rm -f -- ${enrollment_file_q}\" EXIT; chmod +x $(shell_quote "${SCRIPT_PATH}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' env ${node_helper_env} bash $(shell_quote "${SCRIPT_PATH}") --appliance-name $(shell_quote "${APPLIANCE_NAME}") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}")"
     log "staging embedded-etcd server ${alias}"
     if ! run_ssh_logged "${alias}" "${stage_log}" "${remote_cmd}"; then
-      fail "three-server staging failed for ${alias}; see ${stage_log}"
+      fail "embedded-etcd staging failed for ${alias}; see ${stage_log}"
     fi
   done
 
-  finalize_log="${RUN_DIR}/logs/target-three-server-finalize.log"
+  finalize_log="${RUN_DIR}/logs/target-embedded-etcd-finalize.log"
   scp -q "${LOCAL_HELPER}" "${TARGET_PRIME_HOST}:${SCRIPT_PATH}"
-  helper_env="$(append_env_assignments "${helper_env}" NODE_NAME "${bootstrap_node}" THREE_SERVER_OPERATION finalize CLUSTER_INVENTORY_FILE "${inventory_remote}")"
+	helper_env="$(append_env_assignments "${helper_env}" NODE_NAME "${bootstrap_node}" EMBEDDED_ETCD_OPERATION finalize CLUSTER_INVENTORY_FILE "${inventory_remote}")"
   remote_cmd="set -euo pipefail; chmod +x $(shell_quote "${SCRIPT_PATH}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' env ${helper_env} bash $(shell_quote "${SCRIPT_PATH}") --appliance-name $(shell_quote "${APPLIANCE_NAME}") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}")"
-  log "finalizing three-server Kubernetes/etcd substrate on ${TARGET_PRIME_HOST}"
+  log "finalizing embedded-etcd Kubernetes substrate on ${TARGET_PRIME_HOST}"
   if ! run_ssh_logged "${TARGET_PRIME_HOST}" "${finalize_log}" "${remote_cmd}"; then
-    fail "three-server finalization failed; see ${finalize_log}"
+    fail "embedded-etcd finalization failed; see ${finalize_log}"
   fi
-  log "embedded-etcd staging and finalization completed; application HA remains pending for three-server deployments"
+  log "embedded-etcd staging and finalization completed; application HA remains pending"
 }
 
-run_three_server_flow
-log "embedded-etcd stage/finalize finished; log: ${three_server_log}"
+run_embedded_etcd_flow
+log "embedded-etcd stage/finalize finished; log: ${embedded_etcd_log}"

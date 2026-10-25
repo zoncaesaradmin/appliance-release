@@ -55,7 +55,7 @@ install:
   # verification (+ client_verification) instead of flipping only the profile.
   appliance_profile: storage-landns
 
-  # New three-server releases stage only empty inventory-matched hosts.
+  # New embedded-etcd releases stage only empty inventory-matched hosts.
   # Existing K3s adoption is an explicit migration workflow; do not add a
   # force_adopt setting here.
 

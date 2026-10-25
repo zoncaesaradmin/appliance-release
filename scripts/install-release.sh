@@ -12,7 +12,7 @@ usage: install-release.sh --appliance-name NAME [options]
        install-release.sh --help
 
 This helper is run by the signed embedded-etcd release coordinator only. It
-requires an inventory-bound THREE_SERVER_OPERATION of `stage` or `finalize`.
+requires an inventory-bound EMBEDDED_ETCD_OPERATION of `stage` or `finalize`.
 Do not run it as a standalone one-host installer or as an upgrade mechanism.
 
 Required:
@@ -69,10 +69,10 @@ IMAGE_PULL_REGISTRY="${IMAGE_PULL_REGISTRY:-}"
 IMAGE_PULL_USERNAME_ENV="${IMAGE_PULL_USERNAME_ENV:-}"
 IMAGE_PULL_TOKEN_ENV="${IMAGE_PULL_TOKEN_ENV:-}"
 IMAGE_PULL_TLS_VERIFY_ENV="${IMAGE_PULL_TLS_VERIFY_ENV:-}"
-# Coordinated three-server install mode. These are deliberately patched only
+# Coordinated embedded-etcd install mode. These are deliberately patched only
 # by the release runner: the signed bundle selects the topology and zonctl
 # verifies the inventory before mutation. Empty is rejected.
-THREE_SERVER_OPERATION="${THREE_SERVER_OPERATION:-}"
+EMBEDDED_ETCD_OPERATION="${EMBEDDED_ETCD_OPERATION:-}"
 CLUSTER_INVENTORY_FILE="${CLUSTER_INVENTORY_FILE:-}"
 SERVER_ENROLLMENT_FILE="${SERVER_ENROLLMENT_FILE:-}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -169,8 +169,8 @@ fi
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="core"
 fi
-if [[ "${THREE_SERVER_OPERATION}" != "stage" && "${THREE_SERVER_OPERATION}" != "finalize" ]]; then
-  echo "install-release: this product requires THREE_SERVER_OPERATION=stage or finalize from the embedded-etcd release coordinator" >&2
+if [[ "${EMBEDDED_ETCD_OPERATION}" != "stage" && "${EMBEDDED_ETCD_OPERATION}" != "finalize" ]]; then
+  echo "install-release: this product requires EMBEDDED_ETCD_OPERATION=stage or finalize from the embedded-etcd release coordinator" >&2
   exit 2
 fi
 
@@ -634,7 +634,7 @@ chmod +x "${ZONCTL}"
 # cluster-server-stage performs the signed embedded-etcd host preflight;
 # finalize performs its stricter live Kubernetes/etcd gate. Do not run the old
 # single-host preflight against an already staged server.
-echo "[4/5] Three-server operation uses its topology-specific preflight/gate."
+echo "[4/5] Embedded-etcd operation uses its topology-specific preflight/gate."
 
 lifecycle_args=(
   --bundle-dir "${BUNDLE_DIR}"
@@ -680,7 +680,7 @@ fi
 install_stdout="$(mktemp "${OUT_DIR}/.zonctl-install-stdout.XXXXXX")"
 install_stderr="$(mktemp "${OUT_DIR}/.zonctl-install-stderr.XXXXXX")"
 
-case "${THREE_SERVER_OPERATION}" in
+case "${EMBEDDED_ETCD_OPERATION}" in
   stage)
     require_nonempty "CLUSTER_INVENTORY_FILE" "${CLUSTER_INVENTORY_FILE}"
     [[ -f "${CLUSTER_INVENTORY_FILE}" ]] || { echo "install-release: cluster inventory is not a file: ${CLUSTER_INVENTORY_FILE}" >&2; exit 2; }
@@ -718,7 +718,7 @@ case "${THREE_SERVER_OPERATION}" in
     exit 1
     ;;
   *)
-    echo "install-release: THREE_SERVER_OPERATION must be stage or finalize" >&2
+    echo "install-release: EMBEDDED_ETCD_OPERATION must be stage or finalize" >&2
     exit 2
     ;;
 esac

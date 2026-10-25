@@ -67,7 +67,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --force-adopt)
-      fail "--force-adopt is not supported for the fixed three-server product; use the explicit migration workflow"
+      fail "--force-adopt is not supported for the embedded-etcd product; use the explicit migration workflow"
       ;;
     --help|-h)
       usage
@@ -134,7 +134,7 @@ case "$(printf '%s' "${FORCE_ADOPT}" | tr '[:upper:]' '[:lower:]')" in
   1|true|yes|on) FORCE_ADOPT="1" ;;
   *) fail "install.force_adopt must be a boolean" ;;
 esac
-[[ "${FORCE_ADOPT}" != "1" ]] || fail "install.force_adopt is not supported for the fixed three-server product; use the explicit migration workflow"
+[[ "${FORCE_ADOPT}" != "1" ]] || fail "install.force_adopt is not supported for the embedded-etcd product; use the explicit migration workflow"
 
 BASE_URL=""
 BEARER_TOKEN=""
@@ -177,13 +177,13 @@ fi
 ensure_release_run_dirs "${RUN_DIR}"
 install_log="${RUN_DIR}/logs/target-public-install.log"
 
-THREE_SERVER_OPERATION=""
+EMBEDDED_ETCD_OPERATION=""
 CLUSTER_INVENTORY_LOCAL=""
 CLUSTER_INVENTORY_REMOTE=""
-THREE_SERVER_OPERATION="stage"
-CLUSTER_INVENTORY_LOCAL="${RUN_DIR}/metadata/three-server-inventory.json"
-CLUSTER_INVENTORY_REMOTE="/tmp/appliance-three-server-inventory-${RELEASE_VERSION}.json"
-write_three_server_inventory "${CLUSTER_INVENTORY_LOCAL}"
+EMBEDDED_ETCD_OPERATION="stage"
+CLUSTER_INVENTORY_LOCAL="${RUN_DIR}/metadata/embedded-etcd-inventory.json"
+CLUSTER_INVENTORY_REMOTE="/tmp/appliance-embedded-etcd-inventory-${RELEASE_VERSION}.json"
+write_embedded_etcd_inventory "${CLUSTER_INVENTORY_LOCAL}"
 
 log "target-host=${TARGET_HOST} cluster-kind=${TARGET_CLUSTER_KIND} advertised-node=${PRIME_NODE_NAME}"
 log "helper-url=${HELPER_URL} (bundle artifacts); lab uses local helper ${LOCAL_HELPER}"
@@ -214,7 +214,7 @@ fi
 log "uploading local install helper to ${TARGET_HOST}:${SCRIPT_PATH}"
 scp -q "${LOCAL_HELPER}" "${TARGET_HOST}:${SCRIPT_PATH}"
 if [[ -n "${CLUSTER_INVENTORY_LOCAL}" ]]; then
-  log "uploading three-server inventory to ${TARGET_HOST}:${CLUSTER_INVENTORY_REMOTE}"
+  log "uploading embedded-etcd inventory to ${TARGET_HOST}:${CLUSTER_INVENTORY_REMOTE}"
   scp -q "${CLUSTER_INVENTORY_LOCAL}" "${TARGET_HOST}:${CLUSTER_INVENTORY_REMOTE}"
 fi
 
@@ -238,7 +238,7 @@ dns_zone=$(shell_quote "${DNS_ZONE}")
 extra_tls_sans=$(shell_quote "${EXTRA_TLS_SANS}")
 node_name=$(shell_quote "${PRIME_NODE_NAME}")
 # Kept in the patch payload solely for compatibility with older helper copies;
-# current three-server helpers ignore both retired topology controls.
+# current embedded-etcd helpers ignore both retired topology controls.
 cluster_init=$(shell_quote "0")
 force_adopt=$(shell_quote "0")
 out_dir=$(shell_quote "${OUT_DIR}")
@@ -246,16 +246,16 @@ image_pull_registry=$(shell_quote "${IMAGE_PULL_REGISTRY}")
 image_pull_username_env=$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")
 image_pull_token_env=$(shell_quote "${IMAGE_PULL_TOKEN_ENV}")
 image_pull_tls_verify_env=$(shell_quote "${IMAGE_PULL_TLS_VERIFY_ENV}")
-three_server_operation=$(shell_quote "${THREE_SERVER_OPERATION}")
+embedded_etcd_operation=$(shell_quote "${EMBEDDED_ETCD_OPERATION}")
 cluster_inventory_file=$(shell_quote "${CLUSTER_INVENTORY_REMOTE}")
 ${image_pull_exports}
 
-# Never turn a new three-server installation into an implicit destructive
+# Never turn a new embedded-etcd installation into an implicit destructive
 # migration. A staged bootstrap is the sole resumable state; every other
 # existing appliance or K3s state must go through its separately qualified
 # migration/recovery workflow.
-if [[ "\${three_server_operation}" == "stage" && -f "$(default_appliance_state_dir)/cluster-bootstrap-state.json" ]]; then
-  echo "resuming an existing three-server stage"
+if [[ "\${embedded_etcd_operation}" == "stage" && -f "$(default_appliance_state_dir)/cluster-bootstrap-state.json" ]]; then
+  echo "resuming an existing embedded-etcd stage"
 elif command -v zonctl >/dev/null 2>&1; then
   echo \"target has an existing zonctl installation; a fixed three-server release will not factory-reset it. Use the qualified migration/recovery workflow.\" >&2
   exit 2
@@ -266,7 +266,7 @@ fi
 
 chmod +x \"\${script_path}\"
 
-python3 - \"\${script_path}\" \"\${base_url}\" \"\${bearer}\" \"\${tls_insecure}\" \"\${version}\" \"\${prefix}\" \"\${dns_zone}\" \"\${extra_tls_sans}\" \"\${out_dir}\" \"\${image_pull_registry}\" \"\${image_pull_username_env}\" \"\${image_pull_token_env}\" \"\${image_pull_tls_verify_env}\" \"\${node_name}\" \"\${cluster_init}\" \"\${force_adopt}\" \"\${three_server_operation}\" \"\${cluster_inventory_file}\" <<'PY'
+python3 - \"\${script_path}\" \"\${base_url}\" \"\${bearer}\" \"\${tls_insecure}\" \"\${version}\" \"\${prefix}\" \"\${dns_zone}\" \"\${extra_tls_sans}\" \"\${out_dir}\" \"\${image_pull_registry}\" \"\${image_pull_username_env}\" \"\${image_pull_token_env}\" \"\${image_pull_tls_verify_env}\" \"\${node_name}\" \"\${cluster_init}\" \"\${force_adopt}\" \"\${embedded_etcd_operation}\" \"\${cluster_inventory_file}\" <<'PY'
 from pathlib import Path
 import json
 import re
@@ -289,7 +289,7 @@ import sys
     node_name,
     cluster_init,
     force_adopt,
-    three_server_operation,
+    embedded_etcd_operation,
     cluster_inventory_file,
 ) = sys.argv[1:19]
 text = Path(path).read_text(encoding=\"utf-8\")
@@ -319,12 +319,12 @@ text = set_assign(text, \"IMAGE_PULL_TLS_VERIFY_ENV\", image_pull_tls_verify_env
 text = set_assign(text, \"NODE_NAME\", node_name)
 text = set_assign(text, \"CLUSTER_INIT\", cluster_init)
 text = set_assign(text, \"FORCE_ADOPT\", force_adopt)
-text = set_assign(text, \"THREE_SERVER_OPERATION\", three_server_operation)
+text = set_assign(text, \"EMBEDDED_ETCD_OPERATION\", embedded_etcd_operation)
 text = set_assign(text, \"CLUSTER_INVENTORY_FILE\", cluster_inventory_file)
 Path(path).write_text(text, encoding=\"utf-8\")
 PY
 
-echo \"running three-server install helper via non-interactive sudo\"
+echo \"running embedded-etcd install helper via non-interactive sudo\"
 printf '%s\\n' ${quoted_sudo_password} | sudo -S -p ''${sudo_preserve} bash \"\${script_path}\" --appliance-name \"\${name}\" --appliance-profile \"\${profile}\"
 "
 
