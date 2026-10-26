@@ -126,12 +126,14 @@ for a release signed with `embedded-etcd-v1`.
 ## Upgrade, backup, and recovery
 
 Cluster-wide rolling upgrade, embedded-etcd snapshot/restore, member
-replacement, uninstall, and factory reset are not yet qualified for the
-embedded-etcd topology. Those mutating legacy commands fail closed on a staged
-or finalized appliance so they cannot operate on an etcd member as if it were
-an independent appliance. Preserve the complete inventory and use the
-documented recovery process until the cluster-wide workflow has passed its
-failure drills.
+replacement, and uninstall are not yet qualified for the embedded-etcd
+topology. Those mutating legacy commands fail closed on a staged or finalized
+appliance so they cannot operate on an etcd member as if it were an
+independent appliance. Factory reset is the exception for a finalized
+one-server receipt: that host is the only etcd member, so the local reset
+removes the whole cluster. A three-server receipt and any staged peer still
+fail closed. Preserve the complete inventory and use the documented recovery
+process until the cluster-wide workflow has passed its failure drills.
 
 The following describes legacy single-node behavior only; do not use it as an
 embedded-etcd operating procedure.
@@ -190,7 +192,7 @@ sudo zonctl uninstall \
   --output text
 ```
 
-Factory reset:
+Factory reset. On a finalized one-server embedded-etcd appliance this is the reset of the only etcd member. A three-server receipt still refuses this command.
 
 ```bash
 sudo zonctl factory-reset \
@@ -296,8 +298,9 @@ Notes for DNS-bearing profiles:
   only against matching signed inventory and stage receipts.
 - A finalized embedded-etcd appliance needs diagnosis:
   use `cluster-ha-check`, `status`, `verify`, and `support-bundle`. Its
-  cluster-wide upgrade, restore, replacement, uninstall, and reset workflow
-  is deliberately not yet qualified; local lifecycle commands fail closed.
+  cluster-wide upgrade, restore, replacement, and uninstall workflow is
+  deliberately not yet qualified; those local lifecycle commands fail closed.
+  Factory reset is available when the installed receipt lists exactly one server.
 - An older one-server/prime-member receipt:
   use the separately documented legacy export/migration or recovery procedure;
   it is not an alternate new-install path.

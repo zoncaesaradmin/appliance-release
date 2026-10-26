@@ -84,8 +84,10 @@ For a current signed embedded-etcd release, the public install sequence is:
   `zonctl support-bundle` for read-only health and diagnostics
 
 Until the coordinated etcd lifecycle is qualified, mutating local-host
-commands (`backup`, `restore`, `upgrade`, `repair`, `uninstall`, and
-`factory-reset`) fail closed for this topology. Older `install`,
+commands (`backup`, `restore`, `upgrade`, `repair`, and `uninstall`) fail
+closed for this topology. `factory-reset` is allowed only when the installed
+receipt lists exactly one embedded-etcd server; a three-server receipt and a
+staged peer still fail closed. Older `install`,
 prime/member enrollment, and worker commands are legacy migration surfaces,
 not alternate deployment modes.
 
