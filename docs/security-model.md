@@ -21,10 +21,15 @@ chain.
 
 `internal/k3s.DecideOwnership` governs retained legacy local-host receipts.
 For a current `embedded-etcd-v1` release, the staged coordinator accepts
-only empty, inventory-matched hosts; it does not adopt an existing K3s service.
+only an empty, inventory-matched host, or its own inactive leftover unit;
+it does not adopt an existing K3s service.
 
 - no installed-state and no existing K3s service:
   fresh install
+- no installed-state, no bootstrap receipt, and the K3s unit is the
+  release-owned unit but is not active:
+  stop that unit, remove its data directory, then fresh stage. An active
+  service, or a unit this release did not write, is left in place.
 - installed-state recorded and service present:
   reuse or upgrade
 - installed-state recorded but service missing:
