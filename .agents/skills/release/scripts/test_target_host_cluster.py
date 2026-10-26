@@ -242,6 +242,7 @@ def test_verify_target_probes_every_server_ip() -> None:
         "probe_server_https_ip",
         "/readyz",
         "cluster-ha-check",
+        "--pack-dir",
         "application HTTPS HA: pending",
     ):
         assert want in text, want

@@ -647,7 +647,30 @@ fi
 if [[ "${TARGET_CLUSTER_KIND}" == "single-server-etcd" || "${TARGET_CLUSTER_KIND}" == "three-server-etcd" ]]; then
   cluster_inventory_remote="/tmp/appliance-embedded-etcd-inventory-${RELEASE_VERSION}.json"
   bundle_root="$(dirname "${BUNDLE_DIR}")"
-  cluster_ha_command="sudo $(shell_quote "${BUNDLE_DIR}/zonctl") cluster-ha-check --state-dir $(shell_quote "${TARGET_STATE_DIR}") --bundle-dir $(shell_quote "${BUNDLE_DIR}") --public-key $(shell_quote "${bundle_root}/release-signing.pub") --cluster-inventory $(shell_quote "${cluster_inventory_remote}") --node-name $(shell_quote "$(target_node_name_from_alias "${TARGET_BOOTSTRAP_HOST}")") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}") --output json"
+  # Training and other host-enabled profiles keep the host-agent image in a
+  # sibling delivery pack (deviceuser). Foundation alone cannot satisfy that
+  # reference. Pass every extracted sibling pack the installer left beside it.
+  cluster_ha_inner="$(cat <<EOF
+set -euo pipefail
+pack_args=()
+shopt -s nullglob
+for dir in $(shell_quote "${bundle_root}")/appliance-${RELEASE_VERSION}-*; do
+  [[ -d "\${dir}" && -f "\${dir}/release-manifest.json" ]] || continue
+  [[ "\${dir}" == $(shell_quote "${BUNDLE_DIR}") ]] && continue
+  pack_args+=(--pack-dir "\${dir}")
+done
+exec $(shell_quote "${BUNDLE_DIR}/zonctl") cluster-ha-check \\
+  --state-dir $(shell_quote "${TARGET_STATE_DIR}") \\
+  --bundle-dir $(shell_quote "${BUNDLE_DIR}") \\
+  --public-key $(shell_quote "${bundle_root}/release-signing.pub") \\
+  --cluster-inventory $(shell_quote "${cluster_inventory_remote}") \\
+  --node-name $(shell_quote "$(target_node_name_from_alias "${TARGET_BOOTSTRAP_HOST}")") \\
+  --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}") \\
+  --output json \\
+  "\${pack_args[@]}"
+EOF
+)"
+  cluster_ha_command="sudo ${cluster_ha_inner}"
   if run_check "cluster-ha" "${cluster_ha_command}"; then
     cluster_etcd_code="0"
     cluster_api_code="0"
