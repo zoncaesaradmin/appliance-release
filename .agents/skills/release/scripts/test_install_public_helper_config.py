@@ -199,8 +199,9 @@ def test_resume_gate_is_escaped_inside_generated_remote_command() -> None:
     """The remote command is an outer double-quoted shell string."""
     text = RUN_INSTALL.read_text(encoding="utf-8")
     assert (
-        r'if [[ \"\${embedded_etcd_operation}\" == \"stage\" && -f '
-        r'\"$(default_appliance_state_dir)/cluster-bootstrap-state.json\" ]]; then'
+        r'if [[ \"\${embedded_etcd_operation}\" == \"stage\" ]] && printf '
+        r"'%s\\n' ${quoted_sudo_password} | sudo -S -p '' test -f "
+        r'\"$(default_appliance_state_dir)/cluster-bootstrap-state.json\"; then'
     ) in text
     assert r'echo \"resuming an existing embedded-etcd stage\"' in text
 

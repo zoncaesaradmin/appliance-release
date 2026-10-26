@@ -2,9 +2,8 @@
 # run-install-via-public-helper-on-target.sh — Mac/devhost side (install only).
 #
 # Builds the full curl URL and auth flags on *this* machine (using config +
-# devhost DEV_* env), SSHs to the target, performs an explicit destructive
-# factory reset when zonctl is already present, scp's the local
-# scripts/install-release.sh, patches
+# devhost DEV_* env), SSHs to the target, resumes a recorded embedded-etcd
+# stage, scp's the local scripts/install-release.sh, patches
 # stamped settings + optional lab install knobs (dns_zone, TLS SANs, image-pull
 # registry, out dir), and runs:
 #   install-release.sh --appliance-name … --appliance-profile …
@@ -251,16 +250,15 @@ cluster_inventory_file=$(shell_quote "${CLUSTER_INVENTORY_REMOTE}")
 ${image_pull_exports}
 
 # Never turn a new embedded-etcd installation into an implicit destructive
-# migration. A staged bootstrap is the sole resumable state; every other
-# existing appliance or K3s state must go through its separately qualified
-# migration/recovery workflow.
-if [[ \"\${embedded_etcd_operation}\" == \"stage\" && -f \"$(default_appliance_state_dir)/cluster-bootstrap-state.json\" ]]; then
+# migration. A recorded bootstrap is the sole resumable state. The state
+# directory is mode 0750 and owned by root, so the SSH user cannot see that
+# receipt with a plain -f test; sudo is required or an installed zonctl looks
+# like an unrelated appliance. Every other existing zonctl must go through
+# its separately qualified migration/recovery workflow.
+if [[ \"\${embedded_etcd_operation}\" == \"stage\" ]] && printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' test -f \"$(default_appliance_state_dir)/cluster-bootstrap-state.json\"; then
   echo \"resuming an existing embedded-etcd stage\"
-elif command -v zonctl >/dev/null 2>&1; then
+elif command -v zonctl >/dev/null 2>&1 || [[ -x /usr/local/bin/zonctl ]]; then
   echo \"target has an existing zonctl installation; this release will not factory-reset it. Use the qualified migration/recovery workflow.\" >&2
-  exit 2
-elif [[ -x /usr/local/bin/zonctl ]]; then
-  echo \"target has an existing /usr/local/bin/zonctl installation; this release will not factory-reset it. Use the qualified migration/recovery workflow.\" >&2
   exit 2
 fi
 
