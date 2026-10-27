@@ -88,9 +88,10 @@ For a current signed embedded-etcd release, the public install sequence is:
 
 Until the coordinated etcd lifecycle is qualified, mutating local-host
 commands (`backup`, `restore`, `upgrade`, `repair`, and `uninstall`) fail
-closed for this topology. `factory-reset` is allowed only when the installed
-receipt lists exactly one embedded-etcd server; a three-server receipt and a
-staged peer still fail closed. Older `install`,
+closed for this topology. `factory-reset` removes the host it is run on.
+A one-server receipt is the whole cluster. A three-server receipt and a
+staged peer reset that host only; run the same command on every server
+before treating the cluster as gone. Older `install`,
 prime/member enrollment, and worker commands are legacy migration surfaces,
 not alternate deployment modes.
 

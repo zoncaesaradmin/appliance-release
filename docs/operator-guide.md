@@ -129,11 +129,11 @@ Cluster-wide rolling upgrade, embedded-etcd snapshot/restore, member
 replacement, and uninstall are not yet qualified for the embedded-etcd
 topology. Those mutating legacy commands fail closed on a staged or finalized
 appliance so they cannot operate on an etcd member as if it were an
-independent appliance. Factory reset is the exception for a finalized
-one-server receipt: that host is the only etcd member, so the local reset
-removes the whole cluster. A three-server receipt and any staged peer still
-fail closed. Preserve the complete inventory and use the documented recovery
-process until the cluster-wide workflow has passed its failure drills.
+independent appliance. Factory reset is local to the host where it is run.
+On a finalized one-server receipt that host is the only etcd member, so the
+reset removes the whole cluster. On a three-server receipt, and on a staged
+peer, the same command removes that host and leaves the other servers in
+place. Run it on every server before installing again.
 
 The following describes legacy single-node behavior only; do not use it as an
 embedded-etcd operating procedure.
@@ -192,7 +192,7 @@ sudo zonctl uninstall \
   --output text
 ```
 
-Factory reset. On a finalized one-server embedded-etcd appliance this is the reset of the only etcd member. A three-server receipt still refuses this command.
+Factory reset. On a finalized one-server embedded-etcd appliance this is the reset of the only etcd member. On a three-server cluster, run it once on the bootstrap and once on each peer. Each invocation resets that host only.
 
 ```bash
 sudo zonctl factory-reset \
