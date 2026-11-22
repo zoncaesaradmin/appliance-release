@@ -342,7 +342,8 @@ wrap_command_for_target() {
   case "${command}" in
     sudo\ *)
       local command_without_sudo="${command#sudo }"
-      printf "printf '%%s\\n' %s | sudo -S -p '' bash -lc %s" \
+      printf "if sudo -n true 2>/dev/null; then sudo -n bash -lc %s; else printf '%%s\\n' %s | sudo -S -p '' bash -lc %s; fi" \
+        "$(shell_quote "${command_without_sudo}")" \
         "$(shell_quote "${TARGET_SUDO_PASSWORD}")" \
         "$(shell_quote "${command_without_sudo}")"
       ;;

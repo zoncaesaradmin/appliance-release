@@ -110,7 +110,9 @@ trap 'rm -f /tmp/zon-first-admin-pw' EXIT
 /appliance-server bootstrap init --admin-username $(shell_quote "${ADMIN_USERNAME}") --admin-password-file /tmp/zon-first-admin-pw"
 remote_script="$(cat <<EOF
 set -euo pipefail
-printf '%s\n' $(shell_quote "${target_sudo_password}") | sudo -S -p '' -v >/dev/null
+if ! sudo -n true 2>/dev/null; then
+  printf '%s\n' $(shell_quote "${target_sudo_password}") | sudo -S -p '' -v >/dev/null
+fi
 echo '[target bootstrap] Waiting for control-plane rollout...'
 sudo -n kubectl -n $(shell_quote "${NAMESPACE}") rollout status deploy/$(shell_quote "${DEPLOYMENT}") --timeout=180s >/dev/null
 stdout_file=\$(mktemp)

@@ -91,7 +91,9 @@ target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target 
 
 remote_script="$(cat <<EOF
 set -euo pipefail
-printf '%s\n' $(shell_quote "${target_sudo_password}") | sudo -S -p '' -v >/dev/null
+if ! sudo -n true 2>/dev/null; then
+  printf '%s\n' $(shell_quote "${target_sudo_password}") | sudo -S -p '' -v >/dev/null
+fi
 echo '[target license] Waiting for control-plane rollout...'
 sudo -n kubectl -n $(shell_quote "${NAMESPACE}") rollout status deploy/$(shell_quote "${DEPLOYMENT}") --timeout=180s >/dev/null
 stdout_file=\$(mktemp)
