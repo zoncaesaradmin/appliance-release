@@ -148,7 +148,8 @@ bash ./scripts/build-full-bundle.sh
 
 Optional: `PRODUCT_VERSION=…` overrides `configs/default-product-version`.
 
-In offline mode, K3s / Helm / CRDs / host-packages come from the LAN files API.
+In offline mode, K3s / Helm / CRDs / host-packages / the pinned cloudflared
+host connector come from the LAN files API.
 Online mode uses public upstreams for those same pins (K3s from GitHub, Helm
 from get.helm.sh). Files API / LAN build-cache stay off when `OFFLINE_BUILD=0`.
 

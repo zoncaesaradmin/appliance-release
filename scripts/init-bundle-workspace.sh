@@ -550,6 +550,7 @@ add_artifact_file("uiImage", "oci-images", "oci-images", image_reference_field=T
 add_artifact_file("hostAgentImage", "oci-images", "oci-images", image_reference_field=True)
 add_artifact_file("blobStorageImage", "oci-images", "oci-images", image_reference_field=True)
 add_artifact_file("hostAgentBinary", "bin", "appliance")
+add_artifact_file("cloudflaredBinary", "bin", "appliance")
 add_artifact_file("workflowControllerImage", "oci-images", "oci-images", image_reference_field=True)
 add_artifact_file("workflowExecutorImage", "oci-images", "oci-images", image_reference_field=True)
 add_extra_oci_images()

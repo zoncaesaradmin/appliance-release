@@ -130,6 +130,11 @@ source "${SCRIPT_DIR}/lib/target-arch.sh"
 source "${SCRIPT_DIR}/lib/fs-link.sh"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/third-party-freeze.sh"
+# The host-native local Cloudflare connector is a pinned release input. It is
+# bundled for portable offline installs, but activated only when an operator
+# supplies a local tunnel token at install time.
+# shellcheck disable=SC1091
+source "${RELEASE_REPO_DIR}/deps/cloudflared/pins.env"
 DEFAULTS_FILE="${RELEASE_REPO_DIR}/configs/product-bundle.ci.env"
 
 USER_PRODUCT_VERSION="${PRODUCT_VERSION-}"
@@ -2064,6 +2069,29 @@ fi
 
 mkdir -p "${CODE_REPO_DIR}/.run"
 
+# Cloudflared is a host binary, not a product container. Acquire it with the
+# same single online/offline source policy as every other third-party input,
+# then pass the verified file into appliance-code's release-input archive.
+CLOUDFLARED_BINARY_PATH="${CODE_REPO_DIR}/.run/cloudflared"
+case "${TARGET_ARCH}" in
+  amd64) CLOUDFLARED_SHA256="${CLOUDFLARED_SHA256_AMD64}"; CLOUDFLARED_ASSET_ARCH=amd64 ;;
+  arm64) CLOUDFLARED_SHA256="${CLOUDFLARED_SHA256_ARM64}"; CLOUDFLARED_ASSET_ARCH=arm64 ;;
+  *) echo "build-full-bundle: unsupported TARGET_ARCH ${TARGET_ARCH} for cloudflared" >&2; exit 2 ;;
+esac
+if offline_build_enabled; then
+  CLOUDFLARED_REMOTE="cloudflared/${CLOUDFLARED_VERSION}/${TARGET_ARCH}/cloudflared"
+  files_api_download "${CLOUDFLARED_REMOTE}" "${CLOUDFLARED_BINARY_PATH}" || {
+    echo "build-full-bundle: missing offline cloudflared seed ${CLOUDFLARED_REMOTE}" >&2
+    echo "build-full-bundle: run TARGET_ARCH=${TARGET_ARCH} make -C deps/cloudflared release" >&2
+    exit 1
+  }
+else
+  curl -fsSL -o "${CLOUDFLARED_BINARY_PATH}" \
+    "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${CLOUDFLARED_ASSET_ARCH}"
+fi
+printf '%s  %s\n' "${CLOUDFLARED_SHA256}" "${CLOUDFLARED_BINARY_PATH}" | sha256sum -c -
+chmod 0755 "${CLOUDFLARED_BINARY_PATH}"
+
 WORKFLOWS_CRDS_DIR_FOR_DEV=""
 WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
 WORKFLOW_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
@@ -2154,6 +2182,9 @@ OPEN_WEBUI_GATEWAY_IMAGE_REF=""
 
 BLOB_STORAGE_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/blob-storage-image.tar"
 BLOB_STORAGE_IMAGE_REF=""
+CHANNEL_INTEGRATION_IMAGE_OUT="/workspace/.run/channel-integration-image.tar"
+CHANNEL_INTEGRATION_IMAGE_REF_FILE="/workspace/.run/channel-integration-image.reference"
+CHANNEL_INTEGRATION_IMAGE_REF=""
 
 if [[ "${NEED_WORKSPACE_PROVISIONER_IMAGE:-0}" == "1" ]]; then
   WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:2.49.0}"
@@ -2643,6 +2674,22 @@ if bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
 fi
 
 PRODUCT_PACKAGE_LINES=""
+CHANNEL_INTEGRATION_PACKAGE_LINES=""
+CHANNEL_INTEGRATION_ARCHIVE_ARG_LINES=""
+if [[ "${NEED_CHANNEL_INTEGRATION_IMAGE:-0}" == "1" ]] && ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
+  CHANNEL_INTEGRATION_PACKAGE_LINES=$(cat <<CHANNEL_EOF
+make package-channel-integration-image-archive OUT_FILE="\${CHANNEL_INTEGRATION_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}" \\
+  REFERENCE_OUT_FILE="\${CHANNEL_INTEGRATION_IMAGE_REF_FILE}" \\
+  GO_IMAGE=$(shell_quote "${CP_GO_IMAGE}") \\
+  RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \\
+  RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
+CHANNEL_INTEGRATION_IMAGE_REF="\$(tr -d '\r\n' < "\${CHANNEL_INTEGRATION_IMAGE_REF_FILE}")"
+CHANNEL_EOF
+)
+  CHANNEL_INTEGRATION_ARCHIVE_ARG_LINES='  --extra-oci-image "${CHANNEL_INTEGRATION_IMAGE_OUT}" \
+  --extra-oci-image-reference "${CHANNEL_INTEGRATION_IMAGE_REF}" \
+'
+fi
 if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
   PRODUCT_PACKAGE_LINES=$(cat <<PRODUCT_EOF
 make package-control-plane-image-archive OUT_FILE="\${CONTROL_PLANE_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}" \\
@@ -2658,6 +2705,7 @@ make package-ui-image-archive OUT_FILE="\${UI_IMAGE_OUT}" IMAGE_TAG="\${CODE_VER
   RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
 ${HOST_AGENTD_PACKAGE_LINES}
 ${HOST_AGENT_IMAGE_PACKAGE_LINES}
+${CHANNEL_INTEGRATION_PACKAGE_LINES}
 PRODUCT_EOF
 )
 fi
@@ -2690,6 +2738,7 @@ if bool_true $(shell_quote "${WORKFLOWS_ENABLED}"); then
 fi
 
 ${BUNDLED_IMAGE_ARG_LINES}
+${CHANNEL_INTEGRATION_ARCHIVE_ARG_LINES}
 
 bash ./scripts/package/archive-release-input.sh \\
   --out-file "/workspace/.run/release-input-${PRODUCT_VERSION}.tar.gz" \\
@@ -2708,6 +2757,7 @@ ${HOST_AGENT_IMAGE_ARCHIVE_ARG_LINES}  --blob-storage-image "\${BLOB_STORAGE_IMA
   "\${HOST_PACKAGES_ARGS[@]}" \\
   --k3s-version $(shell_quote "${K3S_VERSION}") \\
   --deployment-topology $(shell_quote "${DEPLOYMENT_TOPOLOGY}") \\
+  --cloudflared-binary "/workspace/.run/cloudflared" \\
 ${ARTIFACT_SERVER_ARCHIVE_ARG_LINES}${DNS_ARCHIVE_ARG_LINES}${INFERENCE_ARCHIVE_ARG_LINES}${OPEN_WEBUI_ARCHIVE_ARG_LINES}  --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \\
   "\${WORKFLOWS_ARGS[@]}" \\
   "\${BUNDLED_IMAGE_ARGS[@]}"
@@ -2739,6 +2789,9 @@ MESSAGE_BROKER_IMAGE_OUT="/workspace/.run/message-broker-image.tar"
 MESSAGE_BROKER_IMAGE_REF_FILE="/workspace/.run/message-broker-image.reference"
 POSTGRES_IMAGE_OUT="/workspace/.run/postgres-image.tar"
 POSTGRES_IMAGE_REF_FILE="/workspace/.run/postgres-image.reference"
+CHANNEL_INTEGRATION_IMAGE_OUT="/workspace/.run/channel-integration-image.tar"
+CHANNEL_INTEGRATION_IMAGE_REF_FILE="/workspace/.run/channel-integration-image.reference"
+CHANNEL_INTEGRATION_IMAGE_REF=""
 OPEN_WEBUI_IMAGE_ARCHIVE="/workspace/.run/open-webui-image.tar"
 OPEN_WEBUI_GATEWAY_IMAGE_ARCHIVE="/workspace/.run/open-webui-gateway-image.tar"
 WORKFLOWS_ARGS=()

@@ -90,6 +90,7 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | `service-build-bases` | `golang`/`node`/`alpine-3.24.1-runtime`/`controlplane-ui-web-deps` with `-${TARGET_ARCH}` (or host-arch for compile) | CP/UI/hostagent |
 | `host-packages` | files `host-packages/ubuntu-…/${TARGET_ARCH}/…` | host-packages unpack |
 | `platform-inputs` | files `k3s/${TARGET_ARCH}/…`, `helm/…-linux-${TARGET_ARCH}` | K3s + Helm |
+| `cloudflared` | files `cloudflared/2026.11.1/${TARGET_ARCH}/cloudflared` | pinned host-native local Cloudflare Tunnel connector; bundled in foundation, enabled only with a local token |
 
 ### Arch-scoped OCI build-cache tags (mandatory)
 
