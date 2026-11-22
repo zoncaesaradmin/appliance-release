@@ -268,6 +268,7 @@ PY
 INSTALL_METADATA_PATH="${RUN_DIR}/metadata/install.json"
 BUNDLE_DIR=""
 BUNDLE_BIN_DIR=""
+BUNDLE_TRANSPORT=""
 TARGET_SUDO_PASSWORD="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 DEFAULT_TARGET_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 RELEASE_VERSION=""
@@ -283,6 +284,7 @@ fi
 
 if [[ -f "${INSTALL_METADATA_PATH}" ]]; then
   BUNDLE_DIR="$(read_install_metadata_value "${INSTALL_METADATA_PATH}" "bundleDir" || true)"
+  BUNDLE_TRANSPORT="$(read_install_metadata_value "${INSTALL_METADATA_PATH}" "bundleTransport" || true)"
   if [[ -n "${BUNDLE_DIR}" ]]; then
     BUNDLE_BIN_DIR="${BUNDLE_DIR}/bin"
   fi
@@ -615,14 +617,27 @@ if ((TARGET_SERVER_COUNT >= 1)); then
         echo "skip ${ip} (${node_name} not Ready)" | tee -a "${cluster_api_log}" "${cluster_https_log}" >/dev/null
         continue
       fi
-      if probe_k3s_api_ip "${ip}"; then
-        echo "api ok https://${ip}:6443/readyz" >>"${cluster_api_log}"
+      # probe_k3s_api_ip remains the LAN path; cloud bundles use the target
+      # loopback through probe_k3s_api_target because the public 6443 port is
+      # intentionally not exposed by the EC2 security group.
+      if probe_k3s_api_target "${alias}" "${ip}"; then
+        if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
+          echo "api ok ${alias} via https://127.0.0.1:6443/readyz" >>"${cluster_api_log}"
+        else
+          echo "api ok https://${ip}:6443/readyz" >>"${cluster_api_log}"
+        fi
       else
         echo "api fail https://${ip}:6443/readyz" >>"${cluster_api_log}"
         cluster_api_code="1"
       fi
-      if probe_server_https_ip "${ip}"; then
-        echo "https ok https://${ip}/" >>"${cluster_https_log}"
+      # probe_server_https_ip remains the LAN path; cloud bundles use the
+      # target loopback through probe_server_https_target.
+      if probe_server_https_target "${alias}" "${ip}"; then
+        if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
+          echo "https ok ${alias} via https://127.0.0.1/" >>"${cluster_https_log}"
+        else
+          echo "https ok https://${ip}/" >>"${cluster_https_log}"
+        fi
       else
         echo "https fail https://${ip}/" >>"${cluster_https_log}"
         cluster_https_code="1"

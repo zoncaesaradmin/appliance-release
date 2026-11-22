@@ -567,6 +567,30 @@ probe_server_https_ip() {
   [[ "${code}" =~ ^(200|301|302|401|403)$ ]]
 }
 
+probe_k3s_api_target() {
+  local alias="$1"
+  local ip="$2"
+  if [[ "${BUNDLE_TRANSPORT:-}" == "devhost_scp" ]]; then
+    local code=""
+    code="$(ssh -q -T -n "${alias}" 'curl -ksS -o /dev/null -w "%{http_code}" --connect-timeout 8 --max-time 15 https://127.0.0.1:6443/readyz' 2>/dev/null || true)"
+    [[ "${code}" =~ ^(200|401|403)$ ]]
+    return
+  fi
+  probe_k3s_api_ip "${ip}"
+}
+
+probe_server_https_target() {
+  local alias="$1"
+  local ip="$2"
+  if [[ "${BUNDLE_TRANSPORT:-}" == "devhost_scp" ]]; then
+    local code=""
+    code="$(ssh -q -T -n "${alias}" 'curl -ksS -o /dev/null -w "%{http_code}" --connect-timeout 8 --max-time 15 https://127.0.0.1/' 2>/dev/null || true)"
+    [[ "${code}" =~ ^(200|301|302|401|403)$ ]]
+    return
+  fi
+  probe_server_https_ip "${ip}"
+}
+
 # Copy a newline list into a named array so later ssh/scp cannot steal remaining
 # items from the caller's stdin (OpenSSH reads stdin unless -n / </dev/null).
 snapshot_newline_list() {
