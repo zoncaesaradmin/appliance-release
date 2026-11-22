@@ -1548,7 +1548,7 @@ export_bundled_oci_archive() {
   local pull_ref="$1"
   local local_or_expected_ref="$2"
   local output_path="$3"
-  local local_name artifact_id rc
+  local local_name artifact_id rc bundle_ref
 
   local_name="$(oci_bundle_local_name "${local_or_expected_ref}")"
   if [[ "${local_name}" != registry.local/* ]]; then
@@ -1567,17 +1567,35 @@ export_bundled_oci_archive() {
   rc=$?
   set -e
   if [[ "${rc}" -eq 0 ]]; then
-    finalize_bundled_oci_archive "${output_path}" "${local_name}" "${local_or_expected_ref}"
-    return 0
+    # A freeze entry may predate a corrected digest pin. Validate the restored
+    # archive before treating it as a usable hit or writing it back.
+    bundle_ref="$(finalize_bundled_oci_archive "${output_path}" "${local_name}" "${local_or_expected_ref}")"
+    if [[ "${local_or_expected_ref}" == *@sha256:* && "${bundle_ref}" != "${local_or_expected_ref}" ]]; then
+      echo "build-full-bundle: ignoring frozen ${artifact_id}: archived platform manifest ${bundle_ref##*@} does not match configured pin ${local_or_expected_ref##*@}" >&2
+      rm -f "${output_path}" "${output_path%.tar}.reference" "${output_path%.tar}.source-id"
+      if [[ "$(tpf_mode)" == "require" ]]; then
+        echo "build-full-bundle: required third-party freeze contains no archive matching ${local_or_expected_ref}" >&2
+        return 2
+      fi
+    else
+      printf '%s' "${bundle_ref}"
+      return 0
+    fi
   fi
   if [[ "${rc}" -eq 2 ]]; then
     exit 2
   fi
 
   skopeo_copy_oci_archive "${pull_ref}" "${output_path}" "${local_name}:bundled"
-  finalize_bundled_oci_archive "${output_path}" "${local_name}" "${local_or_expected_ref}"
+  bundle_ref="$(finalize_bundled_oci_archive "${output_path}" "${local_name}" "${local_or_expected_ref}")"
+  if [[ "${local_or_expected_ref}" == *@sha256:* && "${bundle_ref}" != "${local_or_expected_ref}" ]]; then
+    echo "build-full-bundle: refusing to freeze ${artifact_id}: exported platform manifest ${bundle_ref##*@} does not match configured pin ${local_or_expected_ref##*@}" >&2
+    rm -f "${output_path}" "${output_path%.tar}.reference" "${output_path%.tar}.source-id"
+    return 1
+  fi
   TPF_FP_INPUTS=("${pull_ref}" "${local_name}" "${local_or_expected_ref}" "${TARGET_ARCH}" "${BUNDLE_IMAGE_OS:-linux}")
   tpf_store_oci "${artifact_id}" "${output_path}" || true
+  printf '%s' "${bundle_ref}"
 }
 
 # derive_workflows_version_from_code_repo reads the pinned workflows engine
@@ -2686,8 +2704,10 @@ make package-channel-integration-image-archive OUT_FILE="\${CHANNEL_INTEGRATION_
 CHANNEL_INTEGRATION_IMAGE_REF="\$(tr -d '\r\n' < "\${CHANNEL_INTEGRATION_IMAGE_REF_FILE}")"
 CHANNEL_EOF
 )
-  CHANNEL_INTEGRATION_ARCHIVE_ARG_LINES='  --extra-oci-image "${CHANNEL_INTEGRATION_IMAGE_OUT}" \
-  --extra-oci-image-reference "${CHANNEL_INTEGRATION_IMAGE_REF}" \
+  CHANNEL_INTEGRATION_ARCHIVE_ARG_LINES='BUNDLED_IMAGE_ARGS+=(
+  --extra-oci-image "${CHANNEL_INTEGRATION_IMAGE_OUT}"
+  --extra-oci-image-reference "${CHANNEL_INTEGRATION_IMAGE_REF}"
+)
 '
 fi
 if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
