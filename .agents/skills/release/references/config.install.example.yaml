@@ -72,8 +72,9 @@ install:
 
   # Optional local-LAN Cloudflare Tunnel token. This is also a protected
   # devhost path, copied temporarily to the target. Omit for EC2/cloud installs.
-  # The Cloudflare tunnel route should target https://127.0.0.1:443 on the local
-  # host, with Cloudflare origin certificate verification disabled.
+  # The Cloudflare tunnel route should target http://127.0.0.1:80 on the local
+  # host. zonctl installs a narrow host redirect for cloudflared; no Cloudflare
+  # dashboard IP change is needed.
   # cloudflare_tunnel_token_file: /Users/me/secrets/cloudflared-tunnel.token
 
   # Optional direct Traefik TLS material for cloud/public installs. These are
