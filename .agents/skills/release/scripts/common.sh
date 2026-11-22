@@ -982,7 +982,7 @@ stage_target_bundle_export() {
   local remove_cmd=""
   [[ "${remote_root}" == /tmp/zon-appliance-bundle-* ]] || fail "refusing unsafe target bundle root: ${remote_root}"
   if [[ -n "${sudo_password}" ]]; then
-    remove_cmd="printf '%s\\n' $(shell_quote "${sudo_password}") | sudo -S -p '' rm -rf -- $(shell_quote "${remote_root}")"
+    remove_cmd="if sudo -n true 2>/dev/null; then sudo -n rm -rf -- $(shell_quote "${remote_root}"); else printf '%s\\n' $(shell_quote "${sudo_password}") | sudo -S -p '' rm -rf -- $(shell_quote "${remote_root}"); fi"
   else
     remove_cmd="rm -rf -- $(shell_quote "${remote_root}")"
   fi
@@ -997,7 +997,7 @@ cleanup_target_bundle_export() {
   local remove_cmd=""
   [[ "${remote_root}" == /tmp/zon-appliance-bundle-* ]] || fail "refusing unsafe target bundle root: ${remote_root}"
   if [[ -n "${sudo_password}" ]]; then
-    remove_cmd="printf '%s\\n' $(shell_quote "${sudo_password}") | sudo -S -p '' rm -rf -- $(shell_quote "${remote_root}")"
+    remove_cmd="if sudo -n true 2>/dev/null; then sudo -n rm -rf -- $(shell_quote "${remote_root}"); else printf '%s\\n' $(shell_quote "${sudo_password}") | sudo -S -p '' rm -rf -- $(shell_quote "${remote_root}"); fi"
   else
     remove_cmd="rm -rf -- $(shell_quote "${remote_root}")"
   fi
