@@ -33,6 +33,10 @@ go.work.sum
 .run/
 bin/
 
+# Python bytecode from release scripts
+__pycache__/
+*.py[cod]
+
 # Offline deps package staging / seed leftovers
 deps/*/.staging/
 deps/**/*.log

@@ -28,7 +28,7 @@ Use this index to find the one canonical document for your task.
 
 ## Specialized / Internal
 
-- Automation Runtime architecture and metadata contract:
+- Action Runtime architecture and metadata contract:
   [internal/generic-workflow-engine-plan.md](internal/generic-workflow-engine-plan.md)
 - PostgreSQL control-plane migration and deployment-profile implementation:
   [internal/postgresql-deployment-profile-plan.md](internal/postgresql-deployment-profile-plan.md)
@@ -41,5 +41,5 @@ Use this index to find the one canonical document for your task.
 
 - Bundle assembly examples live under
   [examples](examples).
-- Automation Runtime metadata bundle contract fixture lives under
+- Action Runtime metadata bundle contract fixture lives under
   [examples/metadata-bundle-contract](examples/metadata-bundle-contract).

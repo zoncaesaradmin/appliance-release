@@ -15,9 +15,9 @@ Control Plane remains the manager and reconciler for that workload.
 
 ## Explicit Boundary
 
-Application Management and Automation Runtime are separate concerns.
+Application Management and Action Runtime are separate concerns.
 
-Automation Runtime remains unchanged and continues to:
+Action Runtime remains unchanged and continues to:
 
 - execute the existing DSL-based automation definitions;
 - parse and validate workflow inputs and outputs;
@@ -25,7 +25,7 @@ Automation Runtime remains unchanged and continues to:
 - provide the existing metadata-bundle and automation contracts;
 - remain independent of custom application containers.
 
-This plan must not modify, rename, extend, or re-purpose Automation Runtime,
+This plan must not modify, rename, extend, or re-purpose Action Runtime,
 its workflow DSL, its workflow APIs, its metadata-bundle execution behavior, or
 its Argo Workflows integration.
 
@@ -42,7 +42,7 @@ deployment.
 ```text
 Control Plane pod
 |- existing Control Plane APIs
-|- existing Automation Runtime integration
+|- existing Action Runtime integration
 `- Application Management capability
    |- application definitions and instances
    |- configuration and secrets
@@ -241,7 +241,7 @@ this capability unless an implementation requirement demonstrates the need.
 - Add Application Management as a clearly isolated modular-monolith area inside
   the existing Control Plane service. It shares the existing process, port,
   authentication, storage, and lifecycle, but must not be mixed into generic
-  handlers or the Automation Runtime packages.
+  handlers or the Action Runtime packages.
 - Keep separable package boundaries for:
   - application definitions and schema validation;
   - application instances and lifecycle state;
@@ -271,7 +271,7 @@ this capability unless an implementation requirement demonstrates the need.
   by managed workloads.
 - Add unit, API, reconciliation, restart, failure-retry, upgrade, rollback,
   backup, restore, and security tests.
-- Do not change Automation Runtime packages, workflow DSL behavior, metadata
+- Do not change Action Runtime packages, workflow DSL behavior, metadata
   automation execution, or Argo workflow behavior.
 
 ### `appliance-ctl`
@@ -318,7 +318,7 @@ definition -> release-input -> signed bundle -> zonctl verification/import
 The first implementation will not add:
 
 - a separate Application Runtime service or pod;
-- changes to Automation Runtime or its DSL;
+- changes to Action Runtime or its DSL;
 - Argo as an application-runtime dependency;
 - Helm application support;
 - raw Kubernetes manifest deployment;
@@ -339,7 +339,7 @@ The plan is complete when:
 - The `apps` namespace exists before the first application-management request.
 - Application Management code is modular inside the Control Plane modular
   monolith and has narrow separable package boundaries.
-- Automation Runtime behavior and code boundaries are unchanged.
+- Action Runtime behavior and code boundaries are unchanged.
 - A signed, digest-pinned container definition can be installed and reconciled.
 - Configuration, secrets, broker access, storage, health, and permissions are
   enforced.

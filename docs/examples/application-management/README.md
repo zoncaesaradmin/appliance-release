@@ -1,7 +1,7 @@
 # Application Management Example
 
 Application Management is a built-in Control Plane capability, not a separate
-runtime service and not part of Automation Runtime. The Control Plane accepts a
+runtime service and not part of Action Runtime. The Control Plane accepts a
 validated, digest-pinned application definition and reconciles its workload in
 the permanently provisioned `apps` namespace.
 

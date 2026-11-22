@@ -13,7 +13,7 @@ host. Builder workspace data is separate and defaults to `/data/zon/workspaces`.
 The Control Plane always provisions an `apps` namespace for Application
 Management, even when no application is installed. It is separate from
 `ace-apps`, which is reserved for co-packaged UI, host-agent, and Automation
-Runtime components. Application Management does not modify Automation Runtime.
+Runtime components. Application Management does not modify Action Runtime.
 
 ## Qualified Host Baseline
 

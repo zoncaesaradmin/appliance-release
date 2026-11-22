@@ -1,9 +1,9 @@
-# Automation Runtime Plan
+# Action Runtime Plan
 
 ## Purpose
 
 This document defines the architecture and packaging contract for adding the
-Automation Runtime, a generic metadata and DSL execution service, to the
+Action Runtime, a generic metadata and DSL execution service, to the
 appliance.
 
 The core direction is:
@@ -13,7 +13,7 @@ The core direction is:
   rebuilding the whole appliance binary every time
 - treat dynamic workflow definitions as metadata content, alongside profiles,
   capabilities, UI policy, notifications, and MCP tool descriptors
-- move complete metadata-bundle ownership to Automation Runtime and make other
+- move complete metadata-bundle ownership to Action Runtime and make other
   services consume active metadata through it
 
 ## Current Baseline
@@ -29,9 +29,9 @@ The current cross-repo state already gives us part of the foundation:
 - the control plane currently loads typed metadata sections such as
   `profiles/` and `capabilities/`
 - the appliance already has a separate Argo-backed runtime for developer flows;
-  that runtime is not the execution engine for Automation Runtime
+  that runtime is not the execution engine for Action Runtime
 
-What is missing is the Automation Runtime service, its metadata-bundle contract,
+What is missing is the Action Runtime service, its metadata-bundle contract,
 and its restricted Open Workflow execution engine.
 
 ## Product Direction
@@ -42,8 +42,8 @@ Instead:
 
 - the software bundle provides the execution engine, APIs, runtime images, and
   safety controls
-- Automation Runtime is part of the foundation and the universal `base`
-  capability, independent of the dev-platform pack
+- Action Runtime is part of the foundation pack and the `actions` capability,
+  which requires `base` and remains independent of the dev-platform pack
 - the active metadata bundle provides named workflow-bearing metadata sections
   that extend what the appliance can do
 - a metadata-bundle update may add, remove, disable, or revise supported
@@ -59,14 +59,14 @@ This preserves the existing invariant:
 
 ## Metadata Bundle Lifecycle
 
-Automation Runtime is the sole authority and writer for the complete metadata
+Action Runtime is the sole authority and writer for the complete metadata
 bundle after this service is introduced. The control plane keeps the existing
 northbound API, authentication, RBAC, and UI behavior, but uses Automation
 Runtime for bundle status, validation, installation, rollback, and all active
 bundle content it consumes.
 
 Every software release carries an immutable, verified base metadata bundle. The
-installer stages that bundle before Automation Runtime starts. It is never
+installer stages that bundle before Action Runtime starts. It is never
 overwritten by a dynamic upload and is always available as the fallback bundle
 for that software release.
 
@@ -317,26 +317,26 @@ Expected ownership split:
 - `appliance-ctl`
   - stage the immutable release-provided base metadata bundle before the runtime
     starts
-  - preserve and restore Automation Runtime bundle storage and state through
+  - preserve and restore Action Runtime bundle storage and state through
     appliance lifecycle operations
   - include active bundle and registry-generation status in diagnostics
 - `appliance-code`
   - define the `debug-tools/` and `mcp-tools/` metadata layout
-  - build the Automation Runtime service, image, and chart
+  - build the Action Runtime service, image, and chart
   - migrate complete metadata-bundle ownership out of the control plane
   - compile supported DSL definitions into an internal representation
   - expose the minimal bundle and automation invocation contracts
 
 ## Runtime Service
 
-Automation Runtime is a separate pod and ClusterIP service, but not a separate
+Action Runtime is a separate pod and ClusterIP service, but not a separate
 product-facing API authority.
 
 The clean split is:
 
 - keep the **control plane** as the northbound API gateway, identity/RBAC
   authority, admin UI backend, and broad appliance coordinator
-- make **Automation Runtime** the sole authority for complete metadata-bundle
+- make **Action Runtime** the sole authority for complete metadata-bundle
   storage, validation, activation, rollback, normalized reads, DSL compilation,
   registry management, and execution
 
@@ -372,12 +372,12 @@ So the new service should own these as one bounded context.
 
 ## Service Name
 
-- canonical service and binary name: `automation-runtime`
-- user-facing name: `Automation Runtime`
+- canonical service and binary name: `action-runtime`
+- user-facing name: `Action Runtime`
 
 Reason:
 
-- “automation” is the clearest description of what the service actually does
+- “action” describes the appliance-managed operation the service executes
 - “runtime” communicates that this is the process that materializes signed
   dynamic behavior
 - the service is broader than metadata upload alone and narrower than the whole
@@ -414,7 +414,7 @@ Use a two-surface model:
 ### Control-plane-facing APIs
 
 These remain stable user/admin entry points. The control plane authenticates,
-authorizes, audits, and proxies them to Automation Runtime:
+authorizes, audits, and proxies them to Action Runtime:
 
 Use `automations` in the public API. Avoid `workflows` because it is too easily
 confused with Argo Workflows and the internal execution substrate.
@@ -428,7 +428,7 @@ APIs remain the administrative contract:
 - `POST /api/v1/appliance/metadata-bundle/rollback`
 
 The rollback request may contain an optional target metadata version. Without a
-target, Automation Runtime selects the immediately previous active version. The
+target, Action Runtime selects the immediately previous active version. The
 status response includes the immutable base version and retained compatible
 versions so an administrator can select a target without a separate listing API.
 
@@ -489,14 +489,14 @@ The control plane should still own:
 The control plane must stop reading bundle files or maintaining a separate
 active/previous bundle database after migration. Profile, capability, UI,
 notification, and other bundle-backed consumers use the normalized active
-bundle returned by Automation Runtime and may cache it by immutable generation
+bundle returned by Action Runtime and may cache it by immutable generation
 or digest.
 
 The control plane fetches the active generation during startup, invalidates its
 cache after each successful install or rollback response, and uses generation or
 digest validation for subsequent refreshes. This requires no reload endpoint.
 
-Automation Runtime does not become a second user identity system.
+Action Runtime does not become a second user identity system.
 
 Request flow:
 
@@ -529,11 +529,11 @@ Not allowed initially:
 - duplicating user/session/token logic there
 
 No external ingress, user login, session handling, or tool-specific invocation
-API is added to Automation Runtime.
+API is added to Action Runtime.
 
 ## Deployment And Storage Contract
 
-Automation Runtime ships in the foundation pack and is enabled by the universal
+Action Runtime ships in the foundation pack and is enabled by the universal
 `base` capability. It does not depend on Argo, the dev-platform pack, or the
 `workflows` capability.
 
@@ -542,11 +542,11 @@ in-memory registry have one authority. The runtime owns:
 
 - read-write access to `/data/zon/metadata-bundles`
 - its persisted active/previous/history state on its own service storage
-- service logs at `/data/zon/logs/automation-runtime/`
+- service logs at `/data/zon/logs/action-runtime/`
 
 After migration, the control plane does not need direct bundle filesystem
 access. The installer may seed the immutable base bundle into the bundle path
-before Helm starts, but day-2 writes go only through Automation Runtime.
+before Helm starts, but day-2 writes go only through Action Runtime.
 
 The chart must assign a distinct fixed numeric UID/GID, use the appliance shared
 filesystem GID where required, run non-root with a read-only root filesystem,
@@ -593,7 +593,7 @@ inside this same service once we have:
 The implementation may migrate code in incremental commits, but the released
 service boundary has one final ownership model:
 
-1. add the Automation Runtime service, foundation image, chart, storage, and
+1. add the Action Runtime service, foundation image, chart, storage, and
    health contract
 2. move complete metadata parsing, verification, persisted state, install,
    activation, and rollback ownership from the control plane into the runtime
@@ -607,7 +607,7 @@ service boundary has one final ownership model:
    debug-specific runtime behavior or APIs
 
 Do not ship an intermediate dual-writer state. Until migration is complete, the
-existing control plane remains authoritative; once Automation Runtime is
+existing control plane remains authoritative; once Action Runtime is
 enabled, it becomes the only bundle authority.
 
 ## First End-To-End Slice
@@ -622,7 +622,7 @@ The slice contains:
 - one workflow input schema and one workflow output schema
 - one illustrative `allowed-apis.yaml`
 - one symbolic action implemented by the installed software
-- one generic public control-plane invocation routed to Automation Runtime
+- one generic public control-plane invocation routed to Action Runtime
 
 That will prove:
 
@@ -634,7 +634,7 @@ That will prove:
 
 ## Implementation Order
 
-1. Add and package the base-capability Automation Runtime pod and service.
+1. Add and package the `actions`-capability Action Runtime pod and service.
 2. Move the full metadata-bundle lifecycle and active state into the runtime.
 3. Move control-plane bundle readers to the runtime contract and remove direct
    bundle ownership from the control plane.
@@ -656,7 +656,7 @@ No separate workflow-definition artifact should be introduced at the release
 layer for this feature unless a later design proves that metadata-bundle
 carriage is insufficient.
 
-The release implementation must add the Automation Runtime image and chart to
+The release implementation must add the Action Runtime image and chart to
 the foundation component graph and signed manifest independently of the
 developer workflows/Argo artifacts.
 
@@ -671,6 +671,6 @@ or runtime abstractions yet:
 - automation discovery and standalone input-validation APIs
 - asynchronous runs, persisted execution history, and run-log APIs
 - schedules, events, retries, parallelism, waits, and nested workflows
-- multiple Automation Runtime replicas
+- multiple Action Runtime replicas
 - dynamic-bundle retention and deletion policy
 - external schema, catalog, plugin, image, or code retrieval

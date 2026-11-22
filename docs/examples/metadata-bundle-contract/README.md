@@ -1,6 +1,6 @@
 # Metadata Bundle Contract Fixture
 
-This example is the release-side contract fixture for the Automation Runtime
+This example is the release-side contract fixture for the Action Runtime
 metadata bundle layout.
 
 It is intentionally small and illustrative:

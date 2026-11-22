@@ -27,9 +27,10 @@ architecture: amd64
 packs:
   - id: foundation
     filename: appliance-0.1.0-foundation-amd64.tar.gz
-    capabilities: [base, lan-discovery, files, video]
+    capabilities: [base, actions, lan-discovery, files, video]
 capabilityPacks:
   base: foundation
+  actions: foundation
   lan-discovery: foundation
   files: foundation
   video: foundation
@@ -42,17 +43,17 @@ capabilityPacks:
   future: future-package
 profiles:
   core:
-    capabilities: [base, lan-discovery, files, applications]
+    capabilities: [base, actions, lan-discovery, files, applications]
   training:
-    capabilities: [base, lan-discovery, files, video]
+    capabilities: [base, actions, lan-discovery, files, video]
   storage-landns:
-    capabilities: [base, lan-discovery, files, artifact, dns]
+    capabilities: [base, actions, lan-discovery, files, artifact, dns]
   builder-lanllm-storage-landns:
-    capabilities: [base, lan-discovery, host, files, workflows, build, artifact, dns, inference, applications]
+    capabilities: [base, actions, lan-discovery, host, files, workflows, build, artifact, dns, inference, applications]
   lanllm:
-    capabilities: [base, lan-discovery, inference, applications]
+    capabilities: [base, actions, lan-discovery, inference, applications]
   future-profile:
-    capabilities: [base, lan-discovery, future]
+    capabilities: [base, actions, lan-discovery, future]
 EOF
 
 cat >"${TMP}/all-packs.yaml" <<'EOF'
@@ -61,7 +62,7 @@ architecture: amd64
 packs:
   - id: foundation
     filename: appliance-0.1.0-foundation-amd64.tar.gz
-    capabilities: [base, lan-discovery, files, video]
+    capabilities: [base, actions, lan-discovery, files, video]
   - id: dev-platform
     filename: appliance-0.1.0-dev-platform-amd64.tar.gz
     capabilities: [artifact, dns, workflows, build]
@@ -73,6 +74,7 @@ packs:
     capabilities: [inference]
 capabilityPacks:
   base: foundation
+  actions: foundation
   lan-discovery: foundation
   files: foundation
   video: foundation
@@ -85,15 +87,15 @@ capabilityPacks:
   inference: std-llm
 profiles:
   core:
-    capabilities: [base, lan-discovery, files, applications]
+    capabilities: [base, actions, lan-discovery, files, applications]
   training:
-    capabilities: [base, lan-discovery, files, video]
+    capabilities: [base, actions, lan-discovery, files, video]
   storage-landns:
-    capabilities: [base, lan-discovery, files, artifact, dns]
+    capabilities: [base, actions, lan-discovery, files, artifact, dns]
   builder-lanllm-storage-landns:
-    capabilities: [base, lan-discovery, host, files, workflows, build, artifact, dns, inference, applications]
+    capabilities: [base, actions, lan-discovery, host, files, workflows, build, artifact, dns, inference, applications]
   lanllm:
-    capabilities: [base, lan-discovery, inference, applications]
+    capabilities: [base, actions, lan-discovery, inference, applications]
 EOF
 
 got="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"

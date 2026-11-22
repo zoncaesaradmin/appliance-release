@@ -94,7 +94,7 @@ Today or planned next, that payload may include:
   schemas executed by the already-installed software runtime
 
 This means dynamic workflow capability should ship through the signed metadata
-bundle. Its Go-native Automation Runtime image and chart must ship in the
+bundle. Its Go-native Action Runtime image and chart must ship in the
 foundation independently of the developer workflows/Argo artifacts listed
 above.
 
