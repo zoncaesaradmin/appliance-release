@@ -661,6 +661,15 @@ fi
 # members; ordinary application smoke tests remain anchored to the configured
 # product endpoint until application HA is qualified.
 if [[ "${TARGET_CLUSTER_KIND}" == "single-server-etcd" || "${TARGET_CLUSTER_KIND}" == "three-server-etcd" ]]; then
+  if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
+    # The cloud coordinator has already completed the signed finalization
+    # gate before it removes the temporary bundle export. Do not rerun
+    # bundle-backed cluster-ha-check after cleanup; the target-local probes
+    # above still verify the live API and ingress endpoints.
+    cluster_etcd_code="0"
+    echo "cloud embedded-etcd finalization was verified before bundle cleanup" >"${RUN_DIR}/logs/cluster-ha.log"
+    cluster_https_code=""
+  else
   cluster_inventory_remote="/tmp/appliance-embedded-etcd-inventory-${RELEASE_VERSION}.json"
   bundle_root="$(dirname "${BUNDLE_DIR}")"
   # Training and other host-enabled profiles keep the host-agent image in a
@@ -699,6 +708,7 @@ EOF
   # the installed application normally.
   cluster_https_code=""
   echo "application HTTPS HA: pending (Kubernetes-only milestone)" >"${RUN_DIR}/logs/cluster-https.log"
+  fi
 fi
 
 overall_failed="false"
