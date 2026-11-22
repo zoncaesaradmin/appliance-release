@@ -50,7 +50,7 @@ service targeting the channel route on Traefik's HTTP listener
 the channel route is therefore HTTP-only on the appliance. Kubernetes rejects
 loopback values in a Service `externalIPs` field, so `zonctl` keeps the
 Cloudflare origin at `http://127.0.0.1:80` and installs a release-owned,
-cloudflared-only host redirect to the K3s ServiceLB address.
+cloudflared-only host redirect to the current K3s ServiceLB pod.
 Keep the token in a protected file on the target; it is never stored in the
 bundle or installer state:
 
