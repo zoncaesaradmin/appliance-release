@@ -47,7 +47,10 @@ Create the tunnel and its public hostname in Cloudflare, with the tunnel
 service targeting the channel route on Traefik's HTTP listener
 `http://127.0.0.1:80`. Set the HTTP Host header to the external hostname
 (`walocal.zonited.com` in the example below). Cloudflare terminates public TLS;
-the channel route is therefore HTTP-only on the appliance.
+the channel route is therefore HTTP-only on the appliance. When the protected
+tunnel token is supplied, `zonctl` installs a release-owned localhost origin
+forwarder for this address; it does not add `127.0.0.1` to the Kubernetes
+Service `externalIPs` field.
 Keep the token in a protected file on the target; it is never stored in the
 bundle or installer state:
 
@@ -93,3 +96,56 @@ needed for `application-core`; the channel-integration image and the pinned
 host connector are carried by foundation. The runner copies the protected
 files to the target only for finalization, passes their paths and external
 origin settings to `zonctl`, and removes the temporary target copies afterward.
+
+## Cloud EC2 release runner
+
+Cloud installation uses the same signed-bundle runner. There is no separate
+connected `prepare-environment.sh` or application downloader: the runner
+builds/publishes the signed bundle, prepares K3s on the EC2 host, preloads the
+bundle, and finalizes the Helm release in one workflow.
+
+Use the same command as a LAN install, with a cloud target alias and a cloud
+install file:
+
+```sh
+bash .agents/skills/release/scripts/run-release-from-devhost.sh \
+  --config "$HOME/ec2-devhost.yaml" \
+  --build-publish-config "$HOME/ec2-build-publish.yaml" \
+  --install-config "$HOME/ec2-install.yaml"
+```
+
+The cloud install file differs only in the edge settings:
+
+```yaml
+install:
+  bootstrap_admin: true
+  enable_default_license: true
+  appliance_name: app
+  dns_zone: example.com
+  appliance_profile: application-core
+  public_origin: https://app.example.com
+  tls_termination: traefik
+  channel_integration_runtime_file: /Users/me/secrets/whatsapp-runtime.json
+  tls_cert_file: /Users/me/secrets/app.example.com.crt
+  tls_key_file: /Users/me/secrets/app.example.com.key
+  tls_secret_name: capp-tls
+  # Do not set cloudflare_tunnel_token_file for EC2.
+```
+
+The cloud DNS record must point `app.example.com` to the EC2 address (prefer an
+Elastic IP), and the security group must permit SSH from the operator and TCP
+80/443 from the intended clients. The target must be able to reach the
+configured signed-bundle `bundle_store`; the installer does not download
+unverified packages from the public internet. `tls_termination: traefik`
+means Traefik terminates HTTPS directly on the instance. Cloudflare Tunnel is
+local-LAN-only and is not installed in this mode.
+
+For direct Traefik TLS, `tls_cert_file`, `tls_key_file`, and (optionally)
+`tls_secret_name` are the appliance equivalents of `CAPP_TLS_CERT_FILE`,
+`CAPP_TLS_KEY_FILE`, and `CAPP_TLS_SECRET`. The files remain on the devhost,
+are copied only for finalization, and are removed from the target afterward.
+`additional_tls_sans_csv` is separate: it adds SANs to installer-generated
+appliance/K3s certificates but never modifies the supplied public certificate.
+It can be omitted for a normal cloud hostname when the supplied certificate
+covers that hostname; retain it only for additional internal or K3s API names.
+The appliance still creates its internal `appliance-ca` for control-plane trust.

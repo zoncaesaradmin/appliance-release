@@ -33,6 +33,12 @@ Optional:
                                independent of the internal appliance identity.
   TLS_TERMINATION              Public edge for channel integrations: traefik
                                or cloudflare (cloudflare uses Traefik HTTP).
+  TLS_CERT_FILE                Protected public TLS certificate PEM for direct
+                               Traefik TLS (cloud installs).
+  TLS_KEY_FILE                 Protected public TLS private key PEM for direct
+                               Traefik TLS (cloud installs).
+  TLS_SECRET_NAME              Kubernetes TLS Secret name for the supplied
+                               certificate (default: appliance-tls).
   CLOUDFLARE_TUNNEL_TOKEN_FILE
                                Protected Cloudflare Tunnel token for local
                                LAN installs. Omit for cloud installs.
@@ -84,6 +90,9 @@ CHANNEL_INTEGRATION_RUNTIME_FILE="${CHANNEL_INTEGRATION_RUNTIME_FILE:-}"
 CLOUDFLARE_TUNNEL_TOKEN_FILE="${CLOUDFLARE_TUNNEL_TOKEN_FILE:-}"
 PUBLIC_ORIGIN="${PUBLIC_ORIGIN:-}"
 TLS_TERMINATION="${TLS_TERMINATION:-}"
+TLS_CERT_FILE="${TLS_CERT_FILE:-}"
+TLS_KEY_FILE="${TLS_KEY_FILE:-}"
+TLS_SECRET_NAME="${TLS_SECRET_NAME:-}"
 # Coordinated embedded-etcd install mode. These are deliberately patched only
 # by the release runner: the signed bundle selects the topology and zonctl
 # verifies the inventory before mutation. Empty is rejected.
@@ -273,6 +282,20 @@ fi
 if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" && ! -f "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" ]]; then
   echo "install-release: Cloudflare Tunnel token file is not a file: ${CLOUDFLARE_TUNNEL_TOKEN_FILE}" >&2
   exit 2
+fi
+if [[ -n "${TLS_CERT_FILE}" || -n "${TLS_KEY_FILE}" ]]; then
+  if [[ -z "${TLS_CERT_FILE}" || -z "${TLS_KEY_FILE}" ]]; then
+    echo "install-release: TLS_CERT_FILE and TLS_KEY_FILE must be supplied together" >&2
+    exit 2
+  fi
+  if [[ ! -f "${TLS_CERT_FILE}" || ! -f "${TLS_KEY_FILE}" ]]; then
+    echo "install-release: TLS_CERT_FILE and TLS_KEY_FILE must name regular files" >&2
+    exit 2
+  fi
+  if [[ "${TLS_TERMINATION}" == "cloudflare" ]]; then
+    echo "install-release: TLS_CERT_FILE/TLS_KEY_FILE are for direct Traefik TLS; omit them with cloudflare termination" >&2
+    exit 2
+  fi
 fi
 
 echo "install-release: using settings"
@@ -698,6 +721,13 @@ if [[ -n "${PUBLIC_ORIGIN}" ]]; then
 fi
 if [[ -n "${TLS_TERMINATION}" ]]; then
   lifecycle_args+=(--tls-termination "${TLS_TERMINATION}")
+fi
+if [[ -n "${TLS_CERT_FILE}" ]]; then
+  lifecycle_args+=(--tls-cert-file "${TLS_CERT_FILE}")
+  lifecycle_args+=(--tls-key-file "${TLS_KEY_FILE}")
+fi
+if [[ -n "${TLS_SECRET_NAME}" ]]; then
+  lifecycle_args+=(--tls-secret-name "${TLS_SECRET_NAME}")
 fi
 if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" ]]; then
   lifecycle_args+=(--cloudflare-tunnel-token-file "${CLOUDFLARE_TUNNEL_TOKEN_FILE}")

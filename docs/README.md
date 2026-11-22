@@ -25,6 +25,8 @@ Use this index to find the one canonical document for your task.
   [offline-build-deps.md](offline-build-deps.md)
 - Running the lower-level manual bundle assembly path:
   [manual-bundle-assembly.md](manual-bundle-assembly.md)
+- Installing `application-core` locally or on an EC2 host:
+  [channel-integration-install.md](channel-integration-install.md)
 
 ## Specialized / Internal
 

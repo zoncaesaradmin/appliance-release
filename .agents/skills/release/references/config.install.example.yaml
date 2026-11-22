@@ -76,6 +76,13 @@ install:
   # host, with Cloudflare origin certificate verification disabled.
   # cloudflare_tunnel_token_file: /Users/me/secrets/cloudflared-tunnel.token
 
+  # Optional direct Traefik TLS material for cloud/public installs. These are
+  # protected devhost paths; the release runner copies them temporarily to the
+  # target for finalization and removes the target copies afterward.
+  # tls_cert_file: /Users/me/secrets/app.example.com.crt
+  # tls_key_file: /Users/me/secrets/app.example.com.key
+  # tls_secret_name: capp-tls
+
   # New embedded-etcd releases stage only empty inventory-matched hosts.
   # Existing K3s adoption is an explicit migration workflow; do not add a
   # force_adopt setting here.
@@ -88,6 +95,10 @@ install:
   # tls_namespace / control_plane_deployment are product-fixed
   # (ace-system / controlplane; zonctl defaultChartNamespace + chart name) — do not set
 
+  # additional_tls_sans_csv adds SANs to installer-generated appliance/K3s
+  # certificates. It does not modify a supplied public certificate and is not
+  # a replacement for tls_cert_file/tls_key_file. Keep it only when additional
+  # internal or K3s API names are needed.
   # additional_tls_sans_csv: 192.168.1.101
   #
   # Optional: teach target K3s/containerd to pull from the LAN registry

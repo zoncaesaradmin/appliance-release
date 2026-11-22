@@ -94,11 +94,20 @@ PUBLIC_ORIGIN="$(config_get_optional "${INSTALL_CONFIG}" "install.public_origin"
 PUBLIC_ORIGIN="$(printf '%s' "${PUBLIC_ORIGIN}" | tr -d '[:space:]')"
 TLS_TERMINATION="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_termination" || true)"
 TLS_TERMINATION="$(printf '%s' "${TLS_TERMINATION}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+TLS_CERT_FILE="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_cert_file" || true)"
+TLS_KEY_FILE="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_key_file" || true)"
+TLS_SECRET_NAME="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_secret_name" || true)"
 if [[ -n "${PUBLIC_ORIGIN}" && ! "${PUBLIC_ORIGIN}" =~ ^https://[A-Za-z0-9][A-Za-z0-9.-]*$ ]]; then
   fail "install.public_origin must be an HTTPS origin without a port or path"
 fi
 if [[ -n "${TLS_TERMINATION}" && "${TLS_TERMINATION}" != traefik && "${TLS_TERMINATION}" != cloudflare ]]; then
   fail "install.tls_termination must be traefik or cloudflare"
+fi
+if [[ -n "${TLS_CERT_FILE}" || -n "${TLS_KEY_FILE}" ]]; then
+  [[ -n "${TLS_CERT_FILE}" && -n "${TLS_KEY_FILE}" ]] || fail "install.tls_cert_file and install.tls_key_file must be supplied together"
+  [[ "${TLS_CERT_FILE}" == /* ]] || fail "install.tls_cert_file must be an absolute path on this devhost"
+  [[ "${TLS_KEY_FILE}" == /* ]] || fail "install.tls_key_file must be an absolute path on this devhost"
+  [[ "${TLS_TERMINATION}" != cloudflare ]] || fail "install.tls_cert_file/install.tls_key_file are for direct Traefik TLS; omit them with cloudflare termination"
 fi
 
 # These are developer-host paths to protected files. Their contents never go
@@ -123,6 +132,10 @@ if [[ -n "${CHANNEL_INTEGRATION_RUNTIME_FILE}" ]]; then
 fi
 if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" ]]; then
   validate_protected_install_file "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" "install.cloudflare_tunnel_token_file"
+fi
+if [[ -n "${TLS_CERT_FILE}" ]]; then
+  validate_protected_install_file "${TLS_CERT_FILE}" "install.tls_cert_file"
+  validate_protected_install_file "${TLS_KEY_FILE}" "install.tls_key_file"
 fi
 
 resolve_install_extra_tls_sans "${INSTALL_CONFIG}"
@@ -188,7 +201,7 @@ run_embedded_etcd_flow() {
 	local inventory_remote="/tmp/appliance-embedded-etcd-inventory-${RELEASE_VERSION}.json"
   local bootstrap_node bootstrap_zonctl enrollment_remote enrollment_local fingerprint alias node_name
   local enroll_log stage_log finalize_log chmod_log remote_cmd helper_env node_helper_env enrollment_file_q
-  local runtime_remote token_remote secret_cleanup
+  local runtime_remote token_remote tls_cert_remote tls_key_remote secret_cleanup
   local -a peers=()
 
 	write_embedded_etcd_inventory "${inventory_local}"
@@ -203,7 +216,7 @@ run_embedded_etcd_flow() {
   scp -q "${inventory_local}" "${TARGET_BOOTSTRAP_HOST}:${inventory_remote}"
 
   helper_env=""
-	helper_env="$(append_env_assignments "${helper_env}" BASE_URL "${BASE_URL}" BEARER_TOKEN "${BEARER_TOKEN}" TLS_INSECURE "${TLS_INSECURE}" PRODUCT_VERSION "${RELEASE_VERSION}" PATH_PREFIX "${PATH_PREFIX}" DNS_ZONE "${DNS_ZONE}" PUBLIC_ORIGIN "${PUBLIC_ORIGIN}" TLS_TERMINATION "${TLS_TERMINATION}" EXTRA_TLS_SANS "${EXTRA_TLS_SANS}" OUT_DIR "${OUT_DIR}" IMAGE_PULL_REGISTRY "${IMAGE_PULL_REGISTRY}" IMAGE_PULL_USERNAME_ENV "${IMAGE_PULL_USERNAME_ENV}" IMAGE_PULL_TOKEN_ENV "${IMAGE_PULL_TOKEN_ENV}" IMAGE_PULL_TLS_VERIFY_ENV "${IMAGE_PULL_TLS_VERIFY_ENV}")"
+	helper_env="$(append_env_assignments "${helper_env}" BASE_URL "${BASE_URL}" BEARER_TOKEN "${BEARER_TOKEN}" TLS_INSECURE "${TLS_INSECURE}" PRODUCT_VERSION "${RELEASE_VERSION}" PATH_PREFIX "${PATH_PREFIX}" DNS_ZONE "${DNS_ZONE}" PUBLIC_ORIGIN "${PUBLIC_ORIGIN}" TLS_TERMINATION "${TLS_TERMINATION}" TLS_SECRET_NAME "${TLS_SECRET_NAME}" EXTRA_TLS_SANS "${EXTRA_TLS_SANS}" OUT_DIR "${OUT_DIR}" IMAGE_PULL_REGISTRY "${IMAGE_PULL_REGISTRY}" IMAGE_PULL_USERNAME_ENV "${IMAGE_PULL_USERNAME_ENV}" IMAGE_PULL_TOKEN_ENV "${IMAGE_PULL_TOKEN_ENV}" IMAGE_PULL_TLS_VERIFY_ENV "${IMAGE_PULL_TLS_VERIFY_ENV}")"
   if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
     helper_env="$(append_env_assignments "${helper_env}" "${IMAGE_PULL_USERNAME_ENV}" "${IMAGE_PULL_USERNAME}" "${IMAGE_PULL_TOKEN_ENV}" "${IMAGE_PULL_TOKEN}" "${IMAGE_PULL_TLS_VERIFY_ENV}" "${IMAGE_PULL_TLS_VERIFY}")"
   fi
@@ -268,6 +281,28 @@ run_embedded_etcd_flow() {
 	  run_ssh_captured "${TARGET_BOOTSTRAP_HOST}" "${RUN_DIR}/logs/target-cloudflare-token-protection.log" "chmod 0600 $(shell_quote "${token_remote}")"
 	  helper_env="$(append_env_assignments "${helper_env}" CLOUDFLARE_TUNNEL_TOKEN_FILE "${token_remote}")"
 	  secret_cleanup+="rm -f -- $(shell_quote "${token_remote}"); "
+	fi
+	if [[ -n "${TLS_CERT_FILE}" ]]; then
+	  tls_cert_remote="/tmp/zon-tls-cert-${RELEASE_VERSION}.pem"
+	  tls_key_remote="/tmp/zon-tls-key-${RELEASE_VERSION}.pem"
+	  if ! scp -q "${TLS_CERT_FILE}" "${TARGET_BOOTSTRAP_HOST}:${tls_cert_remote}"; then
+	    ssh "${TARGET_BOOTSTRAP_HOST}" "rm -f -- $(shell_quote "${tls_cert_remote}")" >/dev/null 2>&1 || true
+	    fail "could not transfer TLS certificate to ${TARGET_BOOTSTRAP_HOST}"
+	  fi
+	  if ! run_ssh_captured "${TARGET_BOOTSTRAP_HOST}" "${RUN_DIR}/logs/target-tls-cert-protection.log" "chmod 0600 $(shell_quote "${tls_cert_remote}")"; then
+	    ssh "${TARGET_BOOTSTRAP_HOST}" "rm -f -- $(shell_quote "${tls_cert_remote}")" >/dev/null 2>&1 || true
+	    fail "could not protect transferred TLS certificate on ${TARGET_BOOTSTRAP_HOST}"
+	  fi
+	  if ! scp -q "${TLS_KEY_FILE}" "${TARGET_BOOTSTRAP_HOST}:${tls_key_remote}"; then
+	    ssh "${TARGET_BOOTSTRAP_HOST}" "rm -f -- $(shell_quote "${tls_cert_remote}") $(shell_quote "${tls_key_remote}")" >/dev/null 2>&1 || true
+	    fail "could not transfer TLS key to ${TARGET_BOOTSTRAP_HOST}"
+	  fi
+	  if ! run_ssh_captured "${TARGET_BOOTSTRAP_HOST}" "${RUN_DIR}/logs/target-tls-key-protection.log" "chmod 0600 $(shell_quote "${tls_key_remote}")"; then
+	    ssh "${TARGET_BOOTSTRAP_HOST}" "rm -f -- $(shell_quote "${tls_cert_remote}") $(shell_quote "${tls_key_remote}")" >/dev/null 2>&1 || true
+	    fail "could not protect transferred TLS key on ${TARGET_BOOTSTRAP_HOST}"
+	  fi
+	  helper_env="$(append_env_assignments "${helper_env}" TLS_CERT_FILE "${tls_cert_remote}" TLS_KEY_FILE "${tls_key_remote}")"
+	  secret_cleanup+="rm -f -- $(shell_quote "${tls_cert_remote}") $(shell_quote "${tls_key_remote}"); "
 	fi
 	helper_env="$(append_env_assignments "${helper_env}" NODE_NAME "${bootstrap_node}" EMBEDDED_ETCD_OPERATION finalize CLUSTER_INVENTORY_FILE "${inventory_remote}")"
   remote_cmd="set -euo pipefail; trap \"${secret_cleanup}\" EXIT; chmod +x $(shell_quote "${SCRIPT_PATH}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' env ${helper_env} bash $(shell_quote "${SCRIPT_PATH}") --appliance-name $(shell_quote "${APPLIANCE_NAME}") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}")"

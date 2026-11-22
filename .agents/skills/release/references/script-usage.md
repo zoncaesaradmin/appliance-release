@@ -107,7 +107,8 @@ Notes:
   `token_env: DEV_REGISTRY_TOKEN`, `tls_verify_env: DEV_REGISTRY_TLS_VERIFY`.
   Export those env vars on the Mac before install. Do not set literal
   `install.image_pull_registry.registry` (rejected). Also applied from install
-  YAML: `dns_zone`, `additional_tls_sans_csv`, and `bundle_download_dir`.
+  YAML: `dns_zone`, `additional_tls_sans_csv`, `tls_cert_file`,
+  `tls_key_file`, `tls_secret_name`, and `bundle_download_dir`.
   Omit the block for preload-only.
 - Publish always uses the appliance file API on `DEV_REGISTRY`
   (`https://$DEV_REGISTRY/api/v1/files/appliance/<version>/`). Token/TLS reuse
@@ -116,6 +117,10 @@ Notes:
   that already ends in the files path. `static_http` / SSH publish was removed.
 - For advanced extra SANs beyond the derived FQDN and the automatic
   `hostname.local` SAN, use `install.additional_tls_sans_csv` in the config.
+  For a public cloud certificate, use the protected `install.tls_cert_file`
+  and `install.tls_key_file` paths (plus optional `install.tls_secret_name`);
+  the SAN setting does not modify that public certificate or provide its key,
+  so it is not a substitute for those fields.
 - For builder* profiles (`builder`, `builder-landns`, `builder-storage-landns`),
   the build catalog is **runtime state**: upload it after install via
   `PUT /api/v1/builder/catalog` (Builder Settings in the UI) using an
