@@ -33,8 +33,13 @@ usage: run-install-via-public-helper-on-target.sh \
 
 The devhost prepares bundle access, identity/profile, and optional
 install.image_pull_registry / dns_zone / additional_tls_sans_csv /
-bundle_download_dir. The target uses the coordinator-patched helper only to
-stage the bootstrap server; it never performs a standalone public install.
+bundle_download_dir. Channel integration and local Cloudflare protected files
+are supplied through install.channel_integration_runtime_file and
+install.cloudflare_tunnel_token_file. The external callback edge is supplied
+through install.public_origin and install.tls_termination; all four settings
+are copied or passed during finalization by the cluster coordinator. The target
+uses the coordinator-patched helper only to stage the bootstrap server; it
+never performs a standalone public install.
 
 Export APPLIANCE_TARGET_SUDO_PASSWORD on the Mac (same as other install paths).
 When install.image_pull_registry is set, also export the named DEV_REGISTRY*
@@ -116,6 +121,10 @@ fi
 DNS_ZONE="$(config_get_optional "${INSTALL_CONFIG}" "install.dns_zone" || true)"
 DNS_ZONE="$(printf '%s' "${DNS_ZONE}" | tr -d '[:space:]')"
 [[ -n "${DNS_ZONE}" ]] || fail "install.dns_zone is required in install config"
+PUBLIC_ORIGIN="$(config_get_optional "${INSTALL_CONFIG}" "install.public_origin" || true)"
+PUBLIC_ORIGIN="$(printf '%s' "${PUBLIC_ORIGIN}" | tr -d '[:space:]')"
+TLS_TERMINATION="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_termination" || true)"
+TLS_TERMINATION="$(printf '%s' "${TLS_TERMINATION}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 
 resolve_install_extra_tls_sans "${INSTALL_CONFIG}"
 append_cluster_alias_tls_sans
@@ -344,6 +353,8 @@ python3 - "${RUN_DIR}/metadata/install.json" \
   "${APPLIANCE_PROFILE}" \
   "${APPLIANCE_NAME}" \
   "${DNS_ZONE}" \
+  "${PUBLIC_ORIGIN}" \
+  "${TLS_TERMINATION}" \
   "${IMAGE_PULL_REGISTRY}" \
   "${EXTRA_TLS_SANS}" \
   "${install_log}" <<'PY'
@@ -365,10 +376,12 @@ from pathlib import Path
     appliance_profile,
     appliance_name,
     dns_zone,
+    public_origin,
+    tls_termination,
     image_pull_registry,
     extra_tls_sans,
     install_log,
-) = sys.argv[1:17]
+) = sys.argv[1:19]
 
 payload = {
     "configPath": config_path,
@@ -384,6 +397,8 @@ payload = {
     "applianceProfile": appliance_profile,
     "applianceName": appliance_name,
     "dnsZone": dns_zone,
+    "publicOrigin": public_origin or None,
+    "tlsTermination": tls_termination or None,
     "imagePullRegistry": image_pull_registry or None,
     "extraTlsSans": extra_tls_sans or None,
     "installMode": "public-helper",

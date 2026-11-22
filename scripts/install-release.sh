@@ -22,9 +22,20 @@ Required:
 
 Optional:
   --appliance-profile NAME     Install profile (default: core). Valid v1 values
-                               include core, builder, storage, landns,
+                               include core, application-core, builder, storage, landns,
                                storage-landns, builder-landns,
                                builder-storage-landns.
+  CHANNEL_INTEGRATION_RUNTIME_FILE
+                               Protected JSON descriptor for the
+                               channel-integrations capability. The release
+                               runner sets this from install.yaml.
+  PUBLIC_ORIGIN                External HTTPS origin for application callbacks;
+                               independent of the internal appliance identity.
+  TLS_TERMINATION              Public edge for channel integrations: traefik
+                               or cloudflare (cloudflare uses Traefik HTTP).
+  CLOUDFLARE_TUNNEL_TOKEN_FILE
+                               Protected Cloudflare Tunnel token for local
+                               LAN installs. Omit for cloud installs.
   --help, -h                   Show this help
 
 The coordinator supplies private store, inventory, and target values through
@@ -69,6 +80,10 @@ IMAGE_PULL_REGISTRY="${IMAGE_PULL_REGISTRY:-}"
 IMAGE_PULL_USERNAME_ENV="${IMAGE_PULL_USERNAME_ENV:-}"
 IMAGE_PULL_TOKEN_ENV="${IMAGE_PULL_TOKEN_ENV:-}"
 IMAGE_PULL_TLS_VERIFY_ENV="${IMAGE_PULL_TLS_VERIFY_ENV:-}"
+CHANNEL_INTEGRATION_RUNTIME_FILE="${CHANNEL_INTEGRATION_RUNTIME_FILE:-}"
+CLOUDFLARE_TUNNEL_TOKEN_FILE="${CLOUDFLARE_TUNNEL_TOKEN_FILE:-}"
+PUBLIC_ORIGIN="${PUBLIC_ORIGIN:-}"
+TLS_TERMINATION="${TLS_TERMINATION:-}"
 # Coordinated embedded-etcd install mode. These are deliberately patched only
 # by the release runner: the signed bundle selects the topology and zonctl
 # verifies the inventory before mutation. Empty is rejected.
@@ -250,6 +265,14 @@ if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
     echo "install-release: image pull TLS verify env ${IMAGE_PULL_TLS_VERIFY_ENV} is empty" >&2
     exit 2
   fi
+fi
+if [[ -n "${CHANNEL_INTEGRATION_RUNTIME_FILE}" && ! -f "${CHANNEL_INTEGRATION_RUNTIME_FILE}" ]]; then
+  echo "install-release: channel integration runtime descriptor is not a file: ${CHANNEL_INTEGRATION_RUNTIME_FILE}" >&2
+  exit 2
+fi
+if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" && ! -f "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" ]]; then
+  echo "install-release: Cloudflare Tunnel token file is not a file: ${CLOUDFLARE_TUNNEL_TOKEN_FILE}" >&2
+  exit 2
 fi
 
 echo "install-release: using settings"
@@ -666,6 +689,18 @@ if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
   if [[ -n "${IMAGE_PULL_TLS_VERIFY_ENV}" ]]; then
     lifecycle_args+=(--image-pull-registry-tls-verify-env "${IMAGE_PULL_TLS_VERIFY_ENV}")
   fi
+fi
+if [[ -n "${CHANNEL_INTEGRATION_RUNTIME_FILE}" ]]; then
+  lifecycle_args+=(--channel-integration-runtime-file "${CHANNEL_INTEGRATION_RUNTIME_FILE}")
+fi
+if [[ -n "${PUBLIC_ORIGIN}" ]]; then
+  lifecycle_args+=(--public-origin "${PUBLIC_ORIGIN}")
+fi
+if [[ -n "${TLS_TERMINATION}" ]]; then
+  lifecycle_args+=(--tls-termination "${TLS_TERMINATION}")
+fi
+if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" ]]; then
+  lifecycle_args+=(--cloudflare-tunnel-token-file "${CLOUDFLARE_TUNNEL_TOKEN_FILE}")
 fi
 if [[ "${DRY_RUN}" == "1" ]]; then
   lifecycle_args+=(--dry-run)

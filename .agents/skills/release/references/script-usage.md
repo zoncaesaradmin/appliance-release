@@ -80,10 +80,11 @@ Notes:
 - Host mDNS and Wi-Fi AP packages are always in the signed bundle and staged
   at install; enable them day-2 via Admin UI/API after first admin login (not
   via install config flags).
-- Set `install.appliance_name` and `install.dns_zone` (both required). The
-  installer derives the FQDN as `<appliance_name>.<dns_zone>` for TLS,
-  `canonicalOrigin`, and the registry realm. There is no separate `public_host`
-  override.
+- Set `install.appliance_name` and `install.dns_zone` (both required) for the
+  internal appliance identity. When `channel-integrations` is enabled, also
+  set `install.public_origin` to the external HTTPS callback origin and
+  `install.tls_termination` to `cloudflare` (local named tunnel) or `traefik`
+  (direct TLS). The external origin is not derived from the internal FQDN.
 - Control-plane **namespace** and **deployment name** are product-fixed, not
   install YAML: namespace `ace-system` (`zonctl` `defaultChartNamespace`) and
   deployment `controlplane` (chart `appliance-control-plane` fullname /

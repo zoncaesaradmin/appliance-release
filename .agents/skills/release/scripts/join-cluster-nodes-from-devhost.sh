@@ -90,6 +90,40 @@ fi
 DNS_ZONE="$(config_get_optional "${INSTALL_CONFIG}" "install.dns_zone" || true)"
 DNS_ZONE="$(printf '%s' "${DNS_ZONE}" | tr -d '[:space:]')"
 [[ -n "${DNS_ZONE}" ]] || fail "install.dns_zone is required in install config"
+PUBLIC_ORIGIN="$(config_get_optional "${INSTALL_CONFIG}" "install.public_origin" || true)"
+PUBLIC_ORIGIN="$(printf '%s' "${PUBLIC_ORIGIN}" | tr -d '[:space:]')"
+TLS_TERMINATION="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_termination" || true)"
+TLS_TERMINATION="$(printf '%s' "${TLS_TERMINATION}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+if [[ -n "${PUBLIC_ORIGIN}" && ! "${PUBLIC_ORIGIN}" =~ ^https://[A-Za-z0-9][A-Za-z0-9.-]*$ ]]; then
+  fail "install.public_origin must be an HTTPS origin without a port or path"
+fi
+if [[ -n "${TLS_TERMINATION}" && "${TLS_TERMINATION}" != traefik && "${TLS_TERMINATION}" != cloudflare ]]; then
+  fail "install.tls_termination must be traefik or cloudflare"
+fi
+
+# These are developer-host paths to protected files. Their contents never go
+# into YAML, the bundle, or logs; they are copied to the bootstrap target only
+# for the final zonctl invocation and removed after the operation.
+CHANNEL_INTEGRATION_RUNTIME_FILE="$(config_get_optional "${INSTALL_CONFIG}" "install.channel_integration_runtime_file" || true)"
+CLOUDFLARE_TUNNEL_TOKEN_FILE="$(config_get_optional "${INSTALL_CONFIG}" "install.cloudflare_tunnel_token_file" || true)"
+validate_protected_install_file() {
+  local path="$1" label="$2"
+  [[ "${path}" == /* ]] || fail "${label} must be an absolute path on this devhost"
+  [[ -f "${path}" ]] || fail "${label} not found: ${path}"
+  python3 - "${path}" "${label}" <<'PY'
+import os, stat, sys
+path, label = sys.argv[1:]
+mode = stat.S_IMODE(os.stat(path).st_mode)
+if mode & 0o077:
+    raise SystemExit(f"{label} must not be group/world accessible (mode {mode:04o})")
+PY
+}
+if [[ -n "${CHANNEL_INTEGRATION_RUNTIME_FILE}" ]]; then
+  validate_protected_install_file "${CHANNEL_INTEGRATION_RUNTIME_FILE}" "install.channel_integration_runtime_file"
+fi
+if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" ]]; then
+  validate_protected_install_file "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" "install.cloudflare_tunnel_token_file"
+fi
 
 resolve_install_extra_tls_sans "${INSTALL_CONFIG}"
 append_cluster_alias_tls_sans
@@ -154,6 +188,7 @@ run_embedded_etcd_flow() {
 	local inventory_remote="/tmp/appliance-embedded-etcd-inventory-${RELEASE_VERSION}.json"
   local bootstrap_node bootstrap_zonctl enrollment_remote enrollment_local fingerprint alias node_name
   local enroll_log stage_log finalize_log chmod_log remote_cmd helper_env node_helper_env enrollment_file_q
+  local runtime_remote token_remote secret_cleanup
   local -a peers=()
 
 	write_embedded_etcd_inventory "${inventory_local}"
@@ -168,7 +203,7 @@ run_embedded_etcd_flow() {
   scp -q "${inventory_local}" "${TARGET_BOOTSTRAP_HOST}:${inventory_remote}"
 
   helper_env=""
-  helper_env="$(append_env_assignments "${helper_env}" BASE_URL "${BASE_URL}" BEARER_TOKEN "${BEARER_TOKEN}" TLS_INSECURE "${TLS_INSECURE}" PRODUCT_VERSION "${RELEASE_VERSION}" PATH_PREFIX "${PATH_PREFIX}" DNS_ZONE "${DNS_ZONE}" EXTRA_TLS_SANS "${EXTRA_TLS_SANS}" OUT_DIR "${OUT_DIR}" IMAGE_PULL_REGISTRY "${IMAGE_PULL_REGISTRY}" IMAGE_PULL_USERNAME_ENV "${IMAGE_PULL_USERNAME_ENV}" IMAGE_PULL_TOKEN_ENV "${IMAGE_PULL_TOKEN_ENV}" IMAGE_PULL_TLS_VERIFY_ENV "${IMAGE_PULL_TLS_VERIFY_ENV}")"
+	helper_env="$(append_env_assignments "${helper_env}" BASE_URL "${BASE_URL}" BEARER_TOKEN "${BEARER_TOKEN}" TLS_INSECURE "${TLS_INSECURE}" PRODUCT_VERSION "${RELEASE_VERSION}" PATH_PREFIX "${PATH_PREFIX}" DNS_ZONE "${DNS_ZONE}" PUBLIC_ORIGIN "${PUBLIC_ORIGIN}" TLS_TERMINATION "${TLS_TERMINATION}" EXTRA_TLS_SANS "${EXTRA_TLS_SANS}" OUT_DIR "${OUT_DIR}" IMAGE_PULL_REGISTRY "${IMAGE_PULL_REGISTRY}" IMAGE_PULL_USERNAME_ENV "${IMAGE_PULL_USERNAME_ENV}" IMAGE_PULL_TOKEN_ENV "${IMAGE_PULL_TOKEN_ENV}" IMAGE_PULL_TLS_VERIFY_ENV "${IMAGE_PULL_TLS_VERIFY_ENV}")"
   if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
     helper_env="$(append_env_assignments "${helper_env}" "${IMAGE_PULL_USERNAME_ENV}" "${IMAGE_PULL_USERNAME}" "${IMAGE_PULL_TOKEN_ENV}" "${IMAGE_PULL_TOKEN}" "${IMAGE_PULL_TLS_VERIFY_ENV}" "${IMAGE_PULL_TLS_VERIFY}")"
   fi
@@ -219,8 +254,23 @@ run_embedded_etcd_flow() {
 
   finalize_log="${RUN_DIR}/logs/target-embedded-etcd-finalize.log"
   scp -q "${LOCAL_HELPER}" "${TARGET_BOOTSTRAP_HOST}:${SCRIPT_PATH}"
+	secret_cleanup=""
+	if [[ -n "${CHANNEL_INTEGRATION_RUNTIME_FILE}" ]]; then
+	  runtime_remote="/tmp/zon-channel-integration-runtime-${RELEASE_VERSION}.json"
+	  scp -q "${CHANNEL_INTEGRATION_RUNTIME_FILE}" "${TARGET_BOOTSTRAP_HOST}:${runtime_remote}"
+	  run_ssh_captured "${TARGET_BOOTSTRAP_HOST}" "${RUN_DIR}/logs/target-channel-runtime-protection.log" "chmod 0600 $(shell_quote "${runtime_remote}")"
+	  helper_env="$(append_env_assignments "${helper_env}" CHANNEL_INTEGRATION_RUNTIME_FILE "${runtime_remote}")"
+	  secret_cleanup+="rm -f -- $(shell_quote "${runtime_remote}"); "
+	fi
+	if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" ]]; then
+	  token_remote="/tmp/zon-cloudflare-tunnel-token-${RELEASE_VERSION}"
+	  scp -q "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" "${TARGET_BOOTSTRAP_HOST}:${token_remote}"
+	  run_ssh_captured "${TARGET_BOOTSTRAP_HOST}" "${RUN_DIR}/logs/target-cloudflare-token-protection.log" "chmod 0600 $(shell_quote "${token_remote}")"
+	  helper_env="$(append_env_assignments "${helper_env}" CLOUDFLARE_TUNNEL_TOKEN_FILE "${token_remote}")"
+	  secret_cleanup+="rm -f -- $(shell_quote "${token_remote}"); "
+	fi
 	helper_env="$(append_env_assignments "${helper_env}" NODE_NAME "${bootstrap_node}" EMBEDDED_ETCD_OPERATION finalize CLUSTER_INVENTORY_FILE "${inventory_remote}")"
-  remote_cmd="set -euo pipefail; chmod +x $(shell_quote "${SCRIPT_PATH}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' env ${helper_env} bash $(shell_quote "${SCRIPT_PATH}") --appliance-name $(shell_quote "${APPLIANCE_NAME}") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}")"
+  remote_cmd="set -euo pipefail; trap \"${secret_cleanup}\" EXIT; chmod +x $(shell_quote "${SCRIPT_PATH}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' env ${helper_env} bash $(shell_quote "${SCRIPT_PATH}") --appliance-name $(shell_quote "${APPLIANCE_NAME}") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}")"
   log "finalizing embedded-etcd Kubernetes substrate on ${TARGET_BOOTSTRAP_HOST}"
   if ! run_ssh_logged "${TARGET_BOOTSTRAP_HOST}" "${finalize_log}" "${remote_cmd}"; then
     fail "embedded-etcd finalization failed; see ${finalize_log}"

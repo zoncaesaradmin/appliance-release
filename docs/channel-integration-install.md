@@ -33,6 +33,9 @@ instance (for example `app.example.com`) and forward `https://app.example.com/we
 to Meta. The K3s, image preload, Helm release, namespace, and service wiring are
 the same as a local install. The pod has a narrowly scoped HTTPS egress rule for
 the Meta Graph API; the rest of the appliance remains default-deny.
+Use `public_origin: https://app.example.com` and
+`tls_termination: traefik` for a direct-Traefik cloud edge; omit the Cloudflare
+token file.
 
 The installer fails closed if the capability's image is absent from the signed
 bundle or if the runtime descriptor is missing or group/world readable.
@@ -41,7 +44,10 @@ bundle or if the runtime descriptor is missing or group/world readable.
 
 For a local server, Cloudflare Tunnel is an optional host-native connector.
 Create the tunnel and its public hostname in Cloudflare, with the tunnel
-service targeting the local Traefik HTTP listener `http://127.0.0.1:80`.
+service targeting the channel route on Traefik's HTTP listener
+`http://127.0.0.1:80`. Set the HTTP Host header to the external hostname
+(`walocal.zonited.com` in the example below). Cloudflare terminates public TLS;
+the channel route is therefore HTTP-only on the appliance.
 Keep the token in a protected file on the target; it is never stored in the
 bundle or installer state:
 
@@ -52,6 +58,8 @@ sudo zonctl install \
   --appliance-profile application-core \
   --appliance-name app \
   --dns-zone example.com \
+  --public-origin https://walocal.zonited.com \
+  --tls-termination cloudflare \
   --channel-integration-runtime-file /root/channel-integration-runtime.json \
   --cloudflare-tunnel-token-file /root/cloudflared-tunnel.token
 ```
@@ -64,3 +72,24 @@ service is installed there, and the cloud deployment uses direct Traefik TLS.
 Cloudflare Tunnel is intentionally not a separate catalog capability: it is an
 optional host transport for `channel-integrations`. Supplying its token for a
 profile without that capability is rejected by the installer.
+
+## Three-YAML release runner
+
+For `run-release-from-devhost.sh`, select `application-core` in the install
+YAML and point the two optional settings at protected files on the devhost:
+
+```yaml
+install:
+  appliance_profile: application-core
+  public_origin: https://walocal.zonited.com
+  tls_termination: cloudflare
+  channel_integration_runtime_file: /absolute/path/channel-integration-runtime.json
+  # Local LAN only; omit for EC2/cloud:
+  # cloudflare_tunnel_token_file: /absolute/path/cloudflare-tunnel.token
+```
+
+The build/publish YAML must publish at least `foundation`. No additional pack is
+needed for `application-core`; the channel-integration image and the pinned
+host connector are carried by foundation. The runner copies the protected
+files to the target only for finalization, passes their paths and external
+origin settings to `zonctl`, and removes the temporary target copies afterward.
