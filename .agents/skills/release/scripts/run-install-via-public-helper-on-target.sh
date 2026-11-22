@@ -347,7 +347,7 @@ import sys
     force_adopt,
     embedded_etcd_operation,
     cluster_inventory_file,
-) = sys.argv[1:19]
+) = sys.argv[1:20]
 text = Path(path).read_text(encoding=\"utf-8\")
 
 def set_assign(text, name, value):

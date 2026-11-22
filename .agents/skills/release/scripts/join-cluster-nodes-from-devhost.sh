@@ -132,6 +132,11 @@ if mode & 0o077:
     raise SystemExit(f"{label} must not be group/world accessible (mode {mode:04o})")
 PY
 }
+validate_install_file() {
+  local path="$1" label="$2"
+  [[ "${path}" == /* ]] || fail "${label} must be an absolute path on this devhost"
+  [[ -f "${path}" ]] || fail "${label} not found: ${path}"
+}
 if [[ -n "${CHANNEL_INTEGRATION_RUNTIME_FILE}" ]]; then
   validate_protected_install_file "${CHANNEL_INTEGRATION_RUNTIME_FILE}" "install.channel_integration_runtime_file"
 fi
@@ -139,7 +144,10 @@ if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" ]]; then
   validate_protected_install_file "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" "install.cloudflare_tunnel_token_file"
 fi
 if [[ -n "${TLS_CERT_FILE}" ]]; then
-  validate_protected_install_file "${TLS_CERT_FILE}" "install.tls_cert_file"
+  # A certificate is public material and may be mode 0644 in a normal
+  # certificate directory. It is copied to the target and protected there;
+  # the private key remains subject to the strict source-file check.
+  validate_install_file "${TLS_CERT_FILE}" "install.tls_cert_file"
   validate_protected_install_file "${TLS_KEY_FILE}" "install.tls_key_file"
 fi
 
