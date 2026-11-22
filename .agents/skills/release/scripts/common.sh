@@ -504,6 +504,23 @@ require_embedded_etcd_product_targets() {
     fail "this product release requires exactly one or three active server targets"
 }
 
+# target_cluster_address returns the address assigned to the target's local
+# interface when cloud devhost_scp transport is active. A public EC2 address
+# is an SSH destination, not an address assigned to the instance itself.
+target_cluster_address() {
+  local alias="$1"
+  local detected=""
+  if bool_true "${TARGET_REMOTE_ADDRESS_DISCOVERY:-false}"; then
+    detected="$(ssh -q -T -n "${alias}" 'ip -4 -o addr show scope global 2>/dev/null' </dev/null 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
+    if [[ "${detected}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+      printf '%s\n' "${detected}"
+      return 0
+    fi
+    fail "could not determine a local IPv4 interface on target ${alias}; cloud embedded-etcd inventory cannot use its public SSH address"
+  fi
+  ssh_target_ipv4 "${alias}"
+}
+
 # write_embedded_etcd_inventory writes the operator-owned, install-time
 # inventory consumed by the signed embedded-etcd bundle. It deliberately derives
 # only names and directly reachable IPv4 addresses from the devhost target
@@ -516,7 +533,7 @@ write_embedded_etcd_inventory() {
   while IFS= read -r alias; do
     [[ -n "${alias}" ]] || continue
     node_name="$(target_node_name_from_alias "${alias}")"
-    address="$(ssh_target_ipv4 "${alias}")" || fail "embedded-etcd inventory requires user@IPv4 target aliases (${alias})"
+    address="$(target_cluster_address "${alias}")" || fail "embedded-etcd inventory requires a reachable IPv4 target alias (${alias})"
     pairs+=("${node_name}" "${address}")
   done <<<"${TARGET_HOST_ALIASES}"
   python3 - "${destination}" "${pairs[@]}" <<'PY'
@@ -584,13 +601,19 @@ emit_embedded_etcd_stage_plan() {
 
 # Append every alias IPv4 onto EXTRA_TLS_SANS (space-separated).
 append_cluster_alias_tls_sans() {
-  local alias host
+  local alias host local_host
   while IFS= read -r alias; do
     [[ -n "${alias}" ]] || continue
     host=""
     if host="$(ssh_target_ipv4 "${alias}" 2>/dev/null)"; then
       if [[ " ${EXTRA_TLS_SANS:-} " != *" ${host} "* ]]; then
         EXTRA_TLS_SANS="${EXTRA_TLS_SANS:+${EXTRA_TLS_SANS} }${host}"
+      fi
+    fi
+    if bool_true "${TARGET_REMOTE_ADDRESS_DISCOVERY:-false}"; then
+      local_host="$(target_cluster_address "${alias}")"
+      if [[ " ${EXTRA_TLS_SANS:-} " != *" ${local_host} "* ]]; then
+        EXTRA_TLS_SANS="${EXTRA_TLS_SANS:+${EXTRA_TLS_SANS} }${local_host}"
       fi
     fi
   done <<<"${TARGET_HOST_ALIASES:-}"
@@ -922,17 +945,31 @@ stage_target_bundle_export() {
   local target="$2"
   local remote_root="$3"
   local release_version="$4"
+  local sudo_password="${5:-}"
   local remote_release_dir="${remote_root}/appliance/${release_version}"
+  local remove_cmd=""
   [[ "${remote_root}" == /tmp/zon-appliance-bundle-* ]] || fail "refusing unsafe target bundle root: ${remote_root}"
-  ssh -q -T "${target}" "rm -rf -- $(shell_quote "${remote_root}") && mkdir -p -- $(shell_quote "${remote_release_dir}")"
+  if [[ -n "${sudo_password}" ]]; then
+    remove_cmd="printf '%s\\n' $(shell_quote "${sudo_password}") | sudo -S -p '' rm -rf -- $(shell_quote "${remote_root}")"
+  else
+    remove_cmd="rm -rf -- $(shell_quote "${remote_root}")"
+  fi
+  ssh -q -T "${target}" "${remove_cmd} && mkdir -p -- $(shell_quote "${remote_release_dir}")"
   scp -q -r "${export_dir}/." "${target}:${remote_release_dir}/"
 }
 
 cleanup_target_bundle_export() {
   local target="$1"
   local remote_root="$2"
+  local sudo_password="${3:-}"
+  local remove_cmd=""
   [[ "${remote_root}" == /tmp/zon-appliance-bundle-* ]] || fail "refusing unsafe target bundle root: ${remote_root}"
-  ssh -q -T "${target}" "rm -rf -- $(shell_quote "${remote_root}")"
+  if [[ -n "${sudo_password}" ]]; then
+    remove_cmd="printf '%s\\n' $(shell_quote "${sudo_password}") | sudo -S -p '' rm -rf -- $(shell_quote "${remote_root}")"
+  else
+    remove_cmd="rm -rf -- $(shell_quote "${remote_root}")"
+  fi
+  ssh -q -T "${target}" "${remove_cmd}"
 }
 
 product_control_plane_namespace() {

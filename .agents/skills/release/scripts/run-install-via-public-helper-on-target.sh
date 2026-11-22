@@ -122,6 +122,10 @@ fi
 readonly PATH_PREFIX="appliance"
 BUNDLE_MODE="$(resolve_bundle_store_mode "${BUILD_PUBLISH_CONFIG}")"
 BUNDLE_TRANSPORT="$(resolve_install_bundle_transport "${INSTALL_CONFIG}")"
+TARGET_REMOTE_ADDRESS_DISCOVERY="false"
+if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
+  TARGET_REMOTE_ADDRESS_DISCOVERY="true"
+fi
 APPLIANCE_NAME="$(config_get "${INSTALL_CONFIG}" "install.appliance_name")"
 APPLIANCE_PROFILE="$(config_get_optional "${INSTALL_CONFIG}" "install.appliance_profile" || true)"
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
@@ -237,12 +241,12 @@ quoted_sudo_password="$(shell_quote "${target_sudo_password}")"
 bundle_staged="0"
 if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
   log "copying validated bundle export to ${TARGET_HOST}:${REMOTE_BUNDLE_ROOT}/"
-  if ! stage_target_bundle_export "${BUNDLE_EXPORT_DIR}" "${TARGET_HOST}" "${REMOTE_BUNDLE_ROOT}" "${RELEASE_VERSION}"; then
-    cleanup_target_bundle_export "${TARGET_HOST}" "${REMOTE_BUNDLE_ROOT}" >/dev/null 2>&1 || true
+  if ! stage_target_bundle_export "${BUNDLE_EXPORT_DIR}" "${TARGET_HOST}" "${REMOTE_BUNDLE_ROOT}" "${RELEASE_VERSION}" "${target_sudo_password}"; then
+    cleanup_target_bundle_export "${TARGET_HOST}" "${REMOTE_BUNDLE_ROOT}" "${target_sudo_password}" >/dev/null 2>&1 || true
     fail "could not copy validated bundle export to ${TARGET_HOST}"
   fi
   bundle_staged="1"
-  trap 'if [[ "${bundle_staged:-0}" == 1 ]]; then cleanup_target_bundle_export "${TARGET_HOST}" "${REMOTE_BUNDLE_ROOT}" >/dev/null 2>&1 || true; fi' EXIT
+  trap 'if [[ "${bundle_staged:-0}" == 1 ]]; then cleanup_target_bundle_export "${TARGET_HOST}" "${REMOTE_BUNDLE_ROOT}" "${target_sudo_password}" >/dev/null 2>&1 || true; fi' EXIT
 fi
 
 # Fully concrete remote command: no permanent target env; sudo auth from this job only.
@@ -260,7 +264,7 @@ fi
 
 bundle_failure_cleanup=""
 if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
-  bundle_failure_cleanup="bundle_root=$(shell_quote "${REMOTE_BUNDLE_ROOT}"); trap 'status=\$?; if [[ \"\$status\" -ne 0 ]]; then rm -rf -- \"\$bundle_root\"; fi; exit \"\$status\"' EXIT"
+  bundle_failure_cleanup="bundle_root=$(shell_quote "${REMOTE_BUNDLE_ROOT}"); bundle_sudo_password=$(shell_quote "${target_sudo_password}"); bundle_cleanup() { printf '%s\\n' \"\$bundle_sudo_password\" | sudo -S -p '' rm -rf -- \"\$bundle_root\"; }; trap 'status=\$?; if [[ \"\$status\" -ne 0 ]]; then bundle_cleanup; fi; exit \"\$status\"' EXIT"
 fi
 
 log "uploading local install helper to ${TARGET_HOST}:${SCRIPT_PATH}"

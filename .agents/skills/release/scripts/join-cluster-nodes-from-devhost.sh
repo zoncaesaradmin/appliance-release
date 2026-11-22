@@ -83,6 +83,10 @@ fi
 readonly PATH_PREFIX="appliance"
 BUNDLE_MODE="$(resolve_bundle_store_mode "${BUILD_PUBLISH_CONFIG}")"
 BUNDLE_TRANSPORT="$(resolve_install_bundle_transport "${INSTALL_CONFIG}")"
+TARGET_REMOTE_ADDRESS_DISCOVERY="false"
+if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
+  TARGET_REMOTE_ADDRESS_DISCOVERY="true"
+fi
 APPLIANCE_NAME="$(config_get "${INSTALL_CONFIG}" "install.appliance_name")"
 APPLIANCE_PROFILE="$(config_get_optional "${INSTALL_CONFIG}" "install.appliance_profile" || true)"
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
@@ -163,7 +167,7 @@ if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
   # Match the bootstrap helper: all downloaded/extracted files live under the
   # run-scoped root and are removed with the copied export after finalize.
   OUT_DIR="${REMOTE_BUNDLE_ROOT}/work"
-  trap 'cleanup_target_bundle_export "${TARGET_BOOTSTRAP_HOST}" "${REMOTE_BUNDLE_ROOT}" >/dev/null 2>&1 || true' EXIT
+  trap 'cleanup_target_bundle_export "${TARGET_BOOTSTRAP_HOST}" "${REMOTE_BUNDLE_ROOT}" "${target_sudo_password}" >/dev/null 2>&1 || true' EXIT
 fi
 
 BASE_URL=""
@@ -235,8 +239,8 @@ run_embedded_etcd_flow() {
     bootstrap_release_dir="${REMOTE_BUNDLE_ROOT}/appliance/${RELEASE_VERSION}"
     if ! ssh -q -T "${TARGET_BOOTSTRAP_HOST}" "test -f $(shell_quote "${bootstrap_release_dir}/release-index.yaml")"; then
       log "copying validated bundle export to ${TARGET_BOOTSTRAP_HOST}:${REMOTE_BUNDLE_ROOT}/"
-      if ! stage_target_bundle_export "${BUNDLE_EXPORT_DIR}" "${TARGET_BOOTSTRAP_HOST}" "${REMOTE_BUNDLE_ROOT}" "${RELEASE_VERSION}"; then
-        cleanup_target_bundle_export "${TARGET_BOOTSTRAP_HOST}" "${REMOTE_BUNDLE_ROOT}" >/dev/null 2>&1 || true
+      if ! stage_target_bundle_export "${BUNDLE_EXPORT_DIR}" "${TARGET_BOOTSTRAP_HOST}" "${REMOTE_BUNDLE_ROOT}" "${RELEASE_VERSION}" "${target_sudo_password}"; then
+        cleanup_target_bundle_export "${TARGET_BOOTSTRAP_HOST}" "${REMOTE_BUNDLE_ROOT}" "${target_sudo_password}" >/dev/null 2>&1 || true
         fail "could not copy validated bundle export to ${TARGET_BOOTSTRAP_HOST}"
       fi
     fi
@@ -287,10 +291,10 @@ run_embedded_etcd_flow() {
     # rerun obtains a fresh signed envelope.
     peer_cleanup="rm -f -- ${enrollment_file_q}"
     if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
-      peer_cleanup+="; rm -rf -- $(shell_quote "${REMOTE_BUNDLE_ROOT}")"
+      peer_cleanup+="; printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' rm -rf -- $(shell_quote "${REMOTE_BUNDLE_ROOT}")"
       log "copying validated bundle export to ${alias}:${REMOTE_BUNDLE_ROOT}/"
-      if ! stage_target_bundle_export "${BUNDLE_EXPORT_DIR}" "${alias}" "${REMOTE_BUNDLE_ROOT}" "${RELEASE_VERSION}"; then
-        cleanup_target_bundle_export "${alias}" "${REMOTE_BUNDLE_ROOT}" >/dev/null 2>&1 || true
+      if ! stage_target_bundle_export "${BUNDLE_EXPORT_DIR}" "${alias}" "${REMOTE_BUNDLE_ROOT}" "${RELEASE_VERSION}" "${target_sudo_password}"; then
+        cleanup_target_bundle_export "${alias}" "${REMOTE_BUNDLE_ROOT}" "${target_sudo_password}" >/dev/null 2>&1 || true
         fail "could not copy validated bundle export to ${alias}"
       fi
     fi
@@ -298,12 +302,12 @@ run_embedded_etcd_flow() {
     log "staging embedded-etcd server ${alias}"
     if ! run_ssh_logged "${alias}" "${stage_log}" "${remote_cmd}"; then
       if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
-        cleanup_target_bundle_export "${alias}" "${REMOTE_BUNDLE_ROOT}" >/dev/null 2>&1 || true
+        cleanup_target_bundle_export "${alias}" "${REMOTE_BUNDLE_ROOT}" "${target_sudo_password}" >/dev/null 2>&1 || true
       fi
       fail "embedded-etcd staging failed for ${alias}; see ${stage_log}"
     fi
     if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
-      if ! cleanup_target_bundle_export "${alias}" "${REMOTE_BUNDLE_ROOT}" >/dev/null 2>&1; then
+      if ! cleanup_target_bundle_export "${alias}" "${REMOTE_BUNDLE_ROOT}" "${target_sudo_password}" >/dev/null 2>&1; then
         fail "could not remove temporary bundle export from ${alias}"
       fi
     fi
@@ -349,7 +353,7 @@ run_embedded_etcd_flow() {
 	  secret_cleanup+="rm -f -- $(shell_quote "${tls_cert_remote}") $(shell_quote "${tls_key_remote}"); "
 	fi
 	if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
-	  secret_cleanup+="rm -rf -- $(shell_quote "${REMOTE_BUNDLE_ROOT}"); "
+	  secret_cleanup+="printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' rm -rf -- $(shell_quote "${REMOTE_BUNDLE_ROOT}"); "
 	fi
 	helper_env="$(append_env_assignments "${helper_env}" NODE_NAME "${bootstrap_node}" EMBEDDED_ETCD_OPERATION finalize CLUSTER_INVENTORY_FILE "${inventory_remote}")"
   remote_cmd="set -euo pipefail; trap \"${secret_cleanup}\" EXIT; chmod +x $(shell_quote "${SCRIPT_PATH}"); printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' env ${helper_env} bash $(shell_quote "${SCRIPT_PATH}") --appliance-name $(shell_quote "${APPLIANCE_NAME}") --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}")"
@@ -358,7 +362,7 @@ run_embedded_etcd_flow() {
     fail "embedded-etcd finalization failed; see ${finalize_log}"
   fi
   if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
-    if ! cleanup_target_bundle_export "${TARGET_BOOTSTRAP_HOST}" "${REMOTE_BUNDLE_ROOT}" >/dev/null 2>&1; then
+    if ! cleanup_target_bundle_export "${TARGET_BOOTSTRAP_HOST}" "${REMOTE_BUNDLE_ROOT}" "${target_sudo_password}" >/dev/null 2>&1; then
       fail "could not remove temporary bundle export from ${TARGET_BOOTSTRAP_HOST}"
     fi
     trap - EXIT
