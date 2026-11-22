@@ -381,7 +381,15 @@ Path(path).write_text(text, encoding=\"utf-8\")
 PY
 
 echo \"running embedded-etcd install helper via non-interactive sudo\"
+# Do not leave the remote command ending directly in the nested sudo/bash
+# invocation. Some Ubuntu EC2 SSH configurations report a spurious status 1
+# for that shape even when the helper exits successfully. Capture the real
+# helper status and make it the explicit status of the outer shell instead.
+set +e
 printf '%s\\n' ${quoted_sudo_password} | sudo -S -p ''${sudo_preserve} bash \"\${script_path}\" --appliance-name \"\${name}\" --appliance-profile \"\${profile}\"
+helper_status=\$?
+set -e
+exit \"\${helper_status}\"
 "
 
 log "running public install helper on ${TARGET_HOST}"
