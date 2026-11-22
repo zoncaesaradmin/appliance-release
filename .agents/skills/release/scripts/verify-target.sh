@@ -289,6 +289,9 @@ if [[ -f "${INSTALL_METADATA_PATH}" ]]; then
     BUNDLE_BIN_DIR="${BUNDLE_DIR}/bin"
   fi
 fi
+if [[ -z "${BUNDLE_TRANSPORT}" ]]; then
+  BUNDLE_TRANSPORT="$(config_get_optional "${INSTALL_CONFIG}" "install.bundle_transport" || true)"
+fi
 if [[ -z "${BUNDLE_DIR}" && -n "${RELEASE_VERSION}" ]]; then
   BUNDLE_DIR="/tmp/appliance-${RELEASE_VERSION}/appliance-${RELEASE_VERSION}-foundation"
   BUNDLE_BIN_DIR="${BUNDLE_DIR}/bin"
