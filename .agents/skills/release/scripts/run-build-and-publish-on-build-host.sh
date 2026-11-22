@@ -25,6 +25,8 @@ sudo). Pack selection comes from build_flow.appliance_packs in the YAML.
 
 Required: build-publish config path + build_host (via --config or --build-host).
 Optional: --run-dir, --remote-run-dir, --remote-config-path, --skip-repo-sync.
+For a subsequent install with install.bundle_transport=devhost_scp, the
+release driver adds --collect-bundle-export to collect the published export.
 EOF
 }
 
@@ -35,6 +37,7 @@ REMOTE_CONFIG_PATH=""
 RUN_DIR=""
 REMOTE_RUN_DIR=""
 SKIP_REPO_SYNC="false"
+COLLECT_BUNDLE_EXPORT="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -64,6 +67,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-repo-sync)
       SKIP_REPO_SYNC="true"
+      shift
+      ;;
+    --collect-bundle-export)
+      COLLECT_BUNDLE_EXPORT="true"
       shift
       ;;
     --help|-h)
@@ -104,6 +111,7 @@ ensure_release_run_dirs "${RUN_DIR}"
 
 REMOTE_BUILD_ROOT="$(resolve_build_publish_remote_build_root "${BUILD_PUBLISH_CONFIG}")"
 REMOTE_REPO_PATH="$(derive_remote_repo_path_from_build_root "${REMOTE_BUILD_ROOT}")"
+REMOTE_EXPORT_DIR="$(derive_remote_export_dir_from_build_root "${REMOTE_BUILD_ROOT}")"
 REMOTE_REPO_SOURCE="$(config_get_optional "${BUILD_PUBLISH_CONFIG}" "release_workspace.remote_repo_source" || true)"
 REMOTE_REPO_REF="$(config_get "${BUILD_PUBLISH_CONFIG}" "release_workspace.remote_repo_ref")"
 if [[ -z "${REMOTE_REPO_SOURCE}" ]]; then
@@ -201,6 +209,24 @@ remote_cmd+="bash $(shell_quote "${remote_worker}") \"\${args[@]}\""
 log "running build-and-publish.sh --local on ${BUILD_HOST} (env from devhost)"
 if ! run_ssh_logged "${BUILD_HOST}" "${worker_log}" "${remote_cmd}"; then
   fail "build/publish on ${BUILD_HOST} failed; see ${worker_log}"
+fi
+
+if bool_true "${COLLECT_BUNDLE_EXPORT}"; then
+  # The worker publishes from this exact signed export on the build host. Keep
+  # a devhost copy for install.bundle_transport=devhost_scp so the target need
+  # not reach the LAN Artifact Server. This is a read-only collection from the
+  # published location; install-release.sh still verifies the signed index and
+  # every artifact checksum on the target.
+  local_export_dir="${RUN_DIR}/artifacts/export"
+  mkdir -p "${local_export_dir}"
+  if ! ssh -q -T "${BUILD_HOST}" "test -f $(shell_quote "${REMOTE_EXPORT_DIR}/release-index.yaml") && test -f $(shell_quote "${REMOTE_EXPORT_DIR}/release-signing.pub") && test -f $(shell_quote "${REMOTE_EXPORT_DIR}/sha256sum.txt")"; then
+    fail "published bundle export is missing on ${BUILD_HOST}: ${REMOTE_EXPORT_DIR}"
+  fi
+  log "collecting published bundle export from ${BUILD_HOST}:${REMOTE_EXPORT_DIR}"
+  if ! scp -q -r "${BUILD_HOST}:${REMOTE_EXPORT_DIR}/." "${local_export_dir}/"; then
+    fail "could not collect published bundle export from ${BUILD_HOST}:${REMOTE_EXPORT_DIR}"
+  fi
+  log "bundle export collected to ${local_export_dir}"
 fi
 
 log "build/publish on ${BUILD_HOST} finished"

@@ -101,6 +101,11 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
   require_embedded_etcd_product_targets
 fi
 
+COLLECT_BUNDLE_EXPORT="false"
+if [[ -n "${INSTALL_CONFIG}" && "$(resolve_install_bundle_transport "${INSTALL_CONFIG}")" == "devhost_scp" ]]; then
+  COLLECT_BUNDLE_EXPORT="true"
+fi
+
 RUN_DIR="$(config_get_optional "${DEVHOST_CONFIG}" "report.run_dir" || true)"
 # Full build/publish leaves multi-GB OCI copies under .run/appliance-release.
 # Wipe prior runs before creating this run's directory so disk does not grow
@@ -128,10 +133,15 @@ fi
 
 if [[ -n "${BUILD_PUBLISH_CONFIG}" ]]; then
   log "── buildPublish"
-  bash "${SCRIPT_DIR}/run-build-and-publish-on-build-host.sh" \
+  build_publish_args=( \
     --config "${DEVHOST_CONFIG}" \
     --build-publish-config "${BUILD_PUBLISH_CONFIG}" \
-    --run-dir "${RUN_DIR}"
+    --run-dir "${RUN_DIR}" \
+  )
+  if bool_true "${COLLECT_BUNDLE_EXPORT}"; then
+    build_publish_args+=(--collect-bundle-export)
+  fi
+  bash "${SCRIPT_DIR}/run-build-and-publish-on-build-host.sh" "${build_publish_args[@]}"
 fi
 
 if [[ -n "${INSTALL_CONFIG}" ]]; then

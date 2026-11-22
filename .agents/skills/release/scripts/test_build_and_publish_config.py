@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = ROOT / ".agents" / "skills" / "release" / "scripts" / "build-and-publish.sh"
 COMMON = ROOT / ".agents" / "skills" / "release" / "scripts" / "common.sh"
+RUN_BUILD = ROOT / ".agents" / "skills" / "release" / "scripts" / "run-build-and-publish-on-build-host.sh"
 
 MINIMAL_VALID_CONFIG = """
 release_workspace:
@@ -578,6 +579,19 @@ def test_resolve_third_party_freeze_from_config() -> None:
             raise AssertionError(result.stdout + result.stderr)
 
 
+def test_build_runner_collects_published_export_for_target_transport() -> None:
+    text = RUN_BUILD.read_text(encoding="utf-8")
+    for want in (
+        'REMOTE_EXPORT_DIR="$(derive_remote_export_dir_from_build_root',
+        'local_export_dir="${RUN_DIR}/artifacts/export"',
+        "published bundle export is missing",
+        'scp -q -r "${BUILD_HOST}:${REMOTE_EXPORT_DIR}/." "${local_export_dir}/"',
+        "bundle export collected to",
+    ):
+        if want not in text:
+            raise AssertionError(want)
+
+
 def main() -> None:
     test_requires_local()
     test_dockerhub_source_names_are_not_overwritten_before_lookup()
@@ -597,6 +611,7 @@ def main() -> None:
     test_resolve_appliance_packs_from_config()
     test_rejects_appliance_packs_env()
     test_resolve_third_party_freeze_from_config()
+    test_build_runner_collects_published_export_for_target_transport()
     print("build-and-publish config tests passed")
 
 
