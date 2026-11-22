@@ -47,10 +47,9 @@ Create the tunnel and its public hostname in Cloudflare, with the tunnel
 service targeting the channel route on Traefik's HTTP listener
 `http://127.0.0.1:80`. Set the HTTP Host header to the external hostname
 (`walocal.zonited.com` in the example below). Cloudflare terminates public TLS;
-the channel route is therefore HTTP-only on the appliance. When the protected
-tunnel token is supplied, `zonctl` installs a release-owned localhost origin
-forwarder for this address; it does not add `127.0.0.1` to the Kubernetes
-Service `externalIPs` field.
+the channel route is therefore HTTP-only on the appliance. K3s ServiceLB owns
+the host port and serves this localhost origin directly; `zonctl` does not add
+`127.0.0.1` to the Kubernetes Service `externalIPs` field.
 Keep the token in a protected file on the target; it is never stored in the
 bundle or installer state:
 
