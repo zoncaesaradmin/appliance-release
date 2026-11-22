@@ -125,6 +125,7 @@ install:
   appliance_profile: application-core
   public_origin: https://app.example.com
   tls_termination: traefik
+  bundle_transport: devhost_scp
   channel_integration_runtime_file: /Users/me/secrets/whatsapp-runtime.json
   tls_cert_file: /Users/me/secrets/app.example.com.crt
   tls_key_file: /Users/me/secrets/app.example.com.key
@@ -134,9 +135,14 @@ install:
 
 The cloud DNS record must point `app.example.com` to the EC2 address (prefer an
 Elastic IP), and the security group must permit SSH from the operator and TCP
-80/443 from the intended clients. The target must be able to reach the
-configured signed-bundle `bundle_store`; the installer does not download
-unverified packages from the public internet. `tls_termination: traefik`
+80/443 from the intended clients. `bundle_transport: devhost_scp` makes the
+release runner copy the already-validated signed export from the devhost to a
+run-specific temporary directory on EC2. The target installs from that local
+`file://` copy, and the coordinator removes it after stage/finalize (including
+failure cleanup), including the helper's temporary download/extraction work
+directory. This avoids requiring EC2 to reach the LAN Artifact Server;
+bundle signature and checksum verification are unchanged. Omit the setting to
+use the normal configured signed-bundle distributor. `tls_termination: traefik`
 means Traefik terminates HTTPS directly on the instance. Cloudflare Tunnel is
 local-LAN-only and is not installed in this mode.
 

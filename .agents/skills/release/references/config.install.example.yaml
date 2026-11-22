@@ -91,6 +91,14 @@ install:
   # Bundle extract dir on the target (version should match the published release)
   bundle_download_dir: /tmp/appliance-0.1.0
 
+  # Cloud EC2 alternative when the target cannot reach the LAN Artifact
+  # Server. The release runner copies the validated export to the target over
+  # SSH, installs from that local copy, and removes the temporary copy after
+  # stage/finalize. Its run-scoped work directory also replaces
+  # bundle_download_dir so the complete temporary footprint is removed.
+  # Omit this key for the normal distributor path.
+  # bundle_transport: devhost_scp
+
   # Used when install.bootstrap_admin is true
   bootstrap_admin_username: admin
   # tls_namespace / control_plane_deployment are product-fixed

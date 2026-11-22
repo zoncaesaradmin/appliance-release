@@ -122,6 +122,45 @@ def test_resolve_install_extra_tls_sans() -> None:
         assert result.stdout.strip() == "192.168.1.101 demo.example"
 
 
+def test_resolve_install_bundle_transport_defaults_and_validates() -> None:
+    with tempfile.TemporaryDirectory(prefix="bundle-transport-") as tmp:
+        cfg = Path(tmp) / "install.yaml"
+        cfg.write_text("install:\n  appliance_name: x\n", encoding="utf-8")
+        result = _bash(
+            f'source "{COMMON_SH}"; resolve_install_bundle_transport "{cfg}"'
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "distributor"
+
+        cfg.write_text("install:\n  bundle_transport: devhost_scp\n", encoding="utf-8")
+        result = _bash(
+            f'source "{COMMON_SH}"; resolve_install_bundle_transport "{cfg}"'
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "devhost_scp"
+
+        cfg.write_text("install:\n  bundle_transport: ftp\n", encoding="utf-8")
+        result = _bash(
+            f'source "{COMMON_SH}"; resolve_install_bundle_transport "{cfg}"'
+        )
+        assert result.returncode != 0
+        assert "distributor or devhost_scp" in result.stderr
+
+
+def test_resolve_target_bundle_export_dir_requires_signed_foundation_inputs() -> None:
+    with tempfile.TemporaryDirectory(prefix="bundle-export-") as tmp:
+        run_dir = Path(tmp)
+        export_dir = run_dir / "artifacts" / "export"
+        export_dir.mkdir(parents=True)
+        for name in ("release-index.yaml", "release-signing.pub", "sha256sum.txt", "appliance-0.1.0-foundation.tar.gz"):
+            (export_dir / name).write_text("x\n", encoding="utf-8")
+        result = _bash(
+            f'source "{COMMON_SH}"; resolve_target_bundle_export_dir "{run_dir}"'
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == str(export_dir)
+
+
 def test_install_release_wires_image_pull_flags() -> None:
     text = INSTALL_HELPER.read_text(encoding="utf-8")
     assert 'IMAGE_PULL_REGISTRY="${IMAGE_PULL_REGISTRY:-}"' in text
@@ -190,7 +229,10 @@ def test_run_install_patches_image_pull_and_dns() -> None:
 def test_existing_install_requires_qualified_migration() -> None:
     text = RUN_INSTALL.read_text(encoding="utf-8")
     assert "factory-reset --confirm yes --acknowledge-data-loss --force-data-loss" not in text
-    assert "rm -rf --" not in text
+    # Cloud devhost_scp cleanup removes only its run-scoped temporary bundle;
+    # it must not turn the existing-install gate into a factory reset.
+    assert "cleanup_target_bundle_export" in text
+    assert "REMOTE_BUNDLE_ROOT" in text
     assert "will not factory-reset it" in text
     assert "qualified migration/recovery workflow" in text
 

@@ -871,6 +871,70 @@ resolve_install_extra_tls_sans() {
   fi
 }
 
+# Bundle transport used by the target-side embedded-etcd coordinator. The
+# default keeps the existing authenticated distributor path. Cloud targets
+# may select devhost_scp so the runner copies the already-validated export to
+# the target and the helper reads it through file:// without reaching a LAN
+# Artifact Server.
+resolve_install_bundle_transport() {
+  local config_path="$1"
+  local transport=""
+  transport="$(config_get_optional "${config_path}" "install.bundle_transport" || true)"
+  transport="$(printf '%s' "${transport}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  if [[ -z "${transport}" ]]; then
+    transport="distributor"
+  fi
+  case "${transport}" in
+    distributor|devhost_scp) printf '%s\n' "${transport}" ;;
+    *) fail "install.bundle_transport must be distributor or devhost_scp (got ${transport})" ;;
+  esac
+}
+
+# The build-and-publish worker collects this exact export on the devhost under
+# RUN_DIR. Validate the small signed-file contract before copying it to a
+# target; install-release.sh performs the authoritative checksum verification.
+resolve_target_bundle_export_dir() {
+  local run_dir="$1"
+  local export_dir="${run_dir}/artifacts/export"
+  [[ -d "${export_dir}" ]] || fail "devhost_scp requires collected bundle export: ${export_dir}"
+  [[ -f "${export_dir}/release-index.yaml" ]] || fail "devhost_scp bundle export is missing release-index.yaml: ${export_dir}"
+  [[ -f "${export_dir}/release-signing.pub" ]] || fail "devhost_scp bundle export is missing release-signing.pub: ${export_dir}"
+  [[ -f "${export_dir}/sha256sum.txt" ]] || fail "devhost_scp bundle export is missing sha256sum.txt: ${export_dir}"
+  find "${export_dir}" -maxdepth 1 -type f -name '*foundation*.tar.gz' -print -quit | grep -q . || \
+    fail "devhost_scp bundle export is missing a foundation pack archive: ${export_dir}"
+  printf '%s\n' "${export_dir}"
+}
+
+target_bundle_remote_root() {
+  local release_version="$1"
+  local run_dir="$2"
+  local version_component=""
+  local run_id="${run_dir##*/}"
+  version_component="$(printf '%s' "${release_version}" | tr -cd 'A-Za-z0-9._-')"
+  [[ -n "${version_component}" ]] || fail "release version cannot form a target bundle path: ${release_version}"
+  run_id="$(printf '%s' "${run_id}" | tr -cd 'A-Za-z0-9._-')"
+  [[ -n "${run_id}" ]] || run_id="run"
+  printf '/tmp/zon-appliance-bundle-%s-%s\n' "${version_component}" "${run_id}"
+}
+
+stage_target_bundle_export() {
+  local export_dir="$1"
+  local target="$2"
+  local remote_root="$3"
+  local release_version="$4"
+  local remote_release_dir="${remote_root}/appliance/${release_version}"
+  [[ "${remote_root}" == /tmp/zon-appliance-bundle-* ]] || fail "refusing unsafe target bundle root: ${remote_root}"
+  ssh -q -T "${target}" "rm -rf -- $(shell_quote "${remote_root}") && mkdir -p -- $(shell_quote "${remote_release_dir}")"
+  scp -q -r "${export_dir}/." "${target}:${remote_release_dir}/"
+}
+
+cleanup_target_bundle_export() {
+  local target="$1"
+  local remote_root="$2"
+  [[ "${remote_root}" == /tmp/zon-appliance-bundle-* ]] || fail "refusing unsafe target bundle root: ${remote_root}"
+  ssh -q -T "${target}" "rm -rf -- $(shell_quote "${remote_root}")"
+}
+
 product_control_plane_namespace() {
   printf '%s\n' "${PRODUCT_CONTROL_PLANE_NAMESPACE}"
 }

@@ -109,6 +109,13 @@ Notes:
   `install.image_pull_registry.registry` (rejected). Also applied from install
   YAML: `dns_zone`, `additional_tls_sans_csv`, `tls_cert_file`,
   `tls_key_file`, `tls_secret_name`, and `bundle_download_dir`.
+- For a cloud target that cannot reach the LAN Artifact Server, set
+  `install.bundle_transport: devhost_scp`. The release runner copies the
+  collected, signed export to a run-specific `/tmp` directory on the target,
+  uses the same helper through a local `file://` source, and removes that
+  temporary copy plus its download/extraction work directory after
+  stage/finalize. The default `distributor` transport is unchanged for LAN
+  installs.
   Omit the block for preload-only.
 - Publish always uses the appliance file API on `DEV_REGISTRY`
   (`https://$DEV_REGISTRY/api/v1/files/appliance/<version>/`). Token/TLS reuse

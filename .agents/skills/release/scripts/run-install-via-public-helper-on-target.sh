@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # run-install-via-public-helper-on-target.sh — Mac/devhost side (install only).
 #
-# Builds the full curl URL and auth flags on *this* machine (using config +
-# devhost DEV_* env), SSHs to the target, resumes a recorded embedded-etcd
+# Resolves the selected bundle transport and auth flags on *this* machine
+# (using config + devhost DEV_* env), SSHs to the target, resumes a recorded
+# embedded-etcd
 # stage, scp's the local scripts/install-release.sh, patches
 # stamped settings + optional lab install knobs (dns_zone, TLS SANs, image-pull
 # registry, out dir), and runs:
 #   install-release.sh --appliance-name … --appliance-profile …
 #
-# Bundle/charts/images still download from the distributor; only the helper
-# script itself comes from the local release checkout so lab wiring cannot
-# silently lag a stale published copy.
+# By default bundle/charts/images download from the distributor. With
+# install.bundle_transport=devhost_scp, the runner copies the collected signed
+# export to the target and the helper reads that copy through file:// instead.
+# The helper script itself always comes from the local release checkout so lab
+# wiring cannot silently lag a stale published copy.
 #
 # Lab policy: always factory-reset then fresh install (no in-place upgrade).
 # A data-preserving uninstall cannot be followed by a fresh PostgreSQL
@@ -33,13 +36,19 @@ usage: run-install-via-public-helper-on-target.sh \
 
 The devhost prepares bundle access, identity/profile, and optional
 install.image_pull_registry / dns_zone / additional_tls_sans_csv /
-bundle_download_dir. Channel integration and local Cloudflare protected files
+bundle_download_dir / bundle_transport. Set bundle_transport to devhost_scp for
+an EC2 target that cannot reach the LAN Artifact Server. Channel integration
+and local Cloudflare protected files
 are supplied through install.channel_integration_runtime_file and
 install.cloudflare_tunnel_token_file. The external callback edge is supplied
 through install.public_origin and install.tls_termination; all four settings
 are copied or passed during finalization by the cluster coordinator. The target
 uses the coordinator-patched helper only to stage the bootstrap server; it
 never performs a standalone public install.
+
+With devhost_scp, the run-scoped target work directory replaces
+install.bundle_download_dir so the copied, downloaded, and extracted files
+are removed together after finalization.
 
 Export APPLIANCE_TARGET_SUDO_PASSWORD on the Mac (same as other install paths).
 When install.image_pull_registry is set, also export the named DEV_REGISTRY*
@@ -112,6 +121,7 @@ fi
 # Matches scripts/publish-release.sh PUBLISH_PATH_PREFIX.
 readonly PATH_PREFIX="appliance"
 BUNDLE_MODE="$(resolve_bundle_store_mode "${BUILD_PUBLISH_CONFIG}")"
+BUNDLE_TRANSPORT="$(resolve_install_bundle_transport "${INSTALL_CONFIG}")"
 APPLIANCE_NAME="$(config_get "${INSTALL_CONFIG}" "install.appliance_name")"
 APPLIANCE_PROFILE="$(config_get_optional "${INSTALL_CONFIG}" "install.appliance_profile" || true)"
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
@@ -136,6 +146,21 @@ if [[ -z "${OUT_DIR}" ]]; then
   OUT_DIR="/tmp/appliance-${RELEASE_VERSION}"
 fi
 
+if [[ -z "${RUN_DIR}" ]]; then
+  RUN_DIR="$(default_release_run_dir)"
+fi
+ensure_release_run_dirs "${RUN_DIR}"
+install_log="${RUN_DIR}/logs/target-public-install.log"
+BUNDLE_EXPORT_DIR=""
+REMOTE_BUNDLE_ROOT=""
+if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
+  BUNDLE_EXPORT_DIR="$(resolve_target_bundle_export_dir "${RUN_DIR}")"
+  REMOTE_BUNDLE_ROOT="$(target_bundle_remote_root "${RELEASE_VERSION}" "${RUN_DIR}")"
+  # Keep downloads and extraction beside the copied export so one cleanup
+  # removes the complete temporary bundle footprint from the target.
+  OUT_DIR="${REMOTE_BUNDLE_ROOT}/work"
+fi
+
 FORCE_ADOPT="$(config_get_optional "${INSTALL_CONFIG}" "install.force_adopt" || true)"
 case "$(printf '%s' "${FORCE_ADOPT}" | tr '[:upper:]' '[:lower:]')" in
   ""|0|false|no|off) FORCE_ADOPT="0" ;;
@@ -148,42 +173,44 @@ BASE_URL=""
 BEARER_TOKEN=""
 TLS_INSECURE="0"
 
-case "${BUNDLE_MODE}" in
-  static_http)
-    BASE_URL="$(resolve_static_http_base_url "${BUILD_PUBLISH_CONFIG}")"
-    ;;
-  appliance_files)
-    BASE_URL="$(resolve_appliance_files_base_url "${BUILD_PUBLISH_CONFIG}")"
-    token_env="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "token_env" || true)"
-    if [[ -z "${token_env}" ]]; then
-      token_env="DEV_REGISTRY_TOKEN"
-    fi
-    BEARER_TOKEN="$(resolve_secret "${token_env}" "Bundle store token (${token_env})")"
-    tls_env="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "tls_verify_env" || true)"
-    if [[ -z "${tls_env}" ]]; then
-      tls_env="DEV_REGISTRY_TLS_VERIFY"
-    fi
-    tls_verify="$(resolve_env_value "${tls_env}" "Bundle store TLS verify (${tls_env})")"
-    case "$(printf '%s' "${tls_verify}" | tr '[:upper:]' '[:lower:]')" in
-      0|false|no|off) TLS_INSECURE="1" ;;
-      *) TLS_INSECURE="0" ;;
-    esac
-    ;;
-  *)
-    fail "unsupported bundle_store.mode: ${BUNDLE_MODE}"
-    ;;
-esac
+if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
+  BASE_URL="file://${REMOTE_BUNDLE_ROOT}"
+else
+  case "${BUNDLE_MODE}" in
+    static_http)
+      BASE_URL="$(resolve_static_http_base_url "${BUILD_PUBLISH_CONFIG}")"
+      ;;
+    appliance_files)
+      BASE_URL="$(resolve_appliance_files_base_url "${BUILD_PUBLISH_CONFIG}")"
+      token_env="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "token_env" || true)"
+      if [[ -z "${token_env}" ]]; then
+        token_env="DEV_REGISTRY_TOKEN"
+      fi
+      BEARER_TOKEN="$(resolve_secret "${token_env}" "Bundle store token (${token_env})")"
+      tls_env="$(bundle_store_get_optional "${BUILD_PUBLISH_CONFIG}" "tls_verify_env" || true)"
+      if [[ -z "${tls_env}" ]]; then
+        tls_env="DEV_REGISTRY_TLS_VERIFY"
+      fi
+      tls_verify="$(resolve_env_value "${tls_env}" "Bundle store TLS verify (${tls_env})")"
+      case "$(printf '%s' "${tls_verify}" | tr '[:upper:]' '[:lower:]')" in
+        0|false|no|off) TLS_INSECURE="1" ;;
+        *) TLS_INSECURE="0" ;;
+      esac
+      ;;
+    *)
+      fail "unsupported bundle_store.mode: ${BUNDLE_MODE}"
+      ;;
+  esac
+fi
 
-HELPER_URL="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-release.sh"
+if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
+  HELPER_URL="devhost-scp://${REMOTE_BUNDLE_ROOT}"
+else
+  HELPER_URL="${BASE_URL}/${PATH_PREFIX}/${RELEASE_VERSION}/install-release.sh"
+fi
 SCRIPT_PATH="/tmp/install-release-${RELEASE_VERSION}.sh"
 LOCAL_HELPER="$(skill_release_repo_root "${SCRIPT_DIR}")/scripts/install-release.sh"
 [[ -f "${LOCAL_HELPER}" ]] || fail "local install helper missing: ${LOCAL_HELPER}"
-
-if [[ -z "${RUN_DIR}" ]]; then
-  RUN_DIR="$(default_release_run_dir)"
-fi
-ensure_release_run_dirs "${RUN_DIR}"
-install_log="${RUN_DIR}/logs/target-public-install.log"
 
 EMBEDDED_ETCD_OPERATION=""
 CLUSTER_INVENTORY_LOCAL=""
@@ -194,6 +221,7 @@ CLUSTER_INVENTORY_REMOTE="/tmp/appliance-embedded-etcd-inventory-${RELEASE_VERSI
 write_embedded_etcd_inventory "${CLUSTER_INVENTORY_LOCAL}"
 
 log "target-host=${TARGET_HOST} cluster-kind=${TARGET_CLUSTER_KIND} advertised-node=${BOOTSTRAP_NODE_NAME}"
+log "bundle-transport=${BUNDLE_TRANSPORT}"
 log "helper-url=${HELPER_URL} (bundle artifacts); lab uses local helper ${LOCAL_HELPER}"
 log "appliance-name=${APPLIANCE_NAME} profile=${APPLIANCE_PROFILE} dns-zone=${DNS_ZONE}"
 if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
@@ -205,6 +233,17 @@ fi
 
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 quoted_sudo_password="$(shell_quote "${target_sudo_password}")"
+
+bundle_staged="0"
+if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
+  log "copying validated bundle export to ${TARGET_HOST}:${REMOTE_BUNDLE_ROOT}/"
+  if ! stage_target_bundle_export "${BUNDLE_EXPORT_DIR}" "${TARGET_HOST}" "${REMOTE_BUNDLE_ROOT}" "${RELEASE_VERSION}"; then
+    cleanup_target_bundle_export "${TARGET_HOST}" "${REMOTE_BUNDLE_ROOT}" >/dev/null 2>&1 || true
+    fail "could not copy validated bundle export to ${TARGET_HOST}"
+  fi
+  bundle_staged="1"
+  trap 'if [[ "${bundle_staged:-0}" == 1 ]]; then cleanup_target_bundle_export "${TARGET_HOST}" "${REMOTE_BUNDLE_ROOT}" >/dev/null 2>&1 || true; fi' EXIT
+fi
 
 # Fully concrete remote command: no permanent target env; sudo auth from this job only.
 image_pull_exports=""
@@ -219,6 +258,11 @@ if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
   sudo_preserve=" --preserve-env=$(shell_quote "${IMAGE_PULL_PRESERVE_ENV}")"
 fi
 
+bundle_failure_cleanup=""
+if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
+  bundle_failure_cleanup="bundle_root=$(shell_quote "${REMOTE_BUNDLE_ROOT}"); trap 'status=\$?; if [[ \"\$status\" -ne 0 ]]; then rm -rf -- \"\$bundle_root\"; fi; exit \"\$status\"' EXIT"
+fi
+
 log "uploading local install helper to ${TARGET_HOST}:${SCRIPT_PATH}"
 scp -q "${LOCAL_HELPER}" "${TARGET_HOST}:${SCRIPT_PATH}"
 if [[ -n "${CLUSTER_INVENTORY_LOCAL}" ]]; then
@@ -231,9 +275,10 @@ fi
 # recovery must be separately qualified rather than hiding a reset here.
 # Nested sudo under one non-interactive sudo so zonctl does not wait on a TTY.
 # The local helper (scp above) keeps coordinator wiring aligned with the
-# current release skill while bundles/charts/images download from the signed
-# distributor base.
+# current release skill while the selected bundle transport supplies the
+# signed release files.
 remote_cmd="set -euo pipefail
+${bundle_failure_cleanup}
 script_path=$(shell_quote "${SCRIPT_PATH}")
 base_url=$(shell_quote "${BASE_URL}")
 bearer=$(shell_quote "${BEARER_TOKEN}")
@@ -346,6 +391,7 @@ python3 - "${RUN_DIR}/metadata/install.json" \
   "${HELPER_URL}" \
   "${RELEASE_VERSION}" \
   "${BUNDLE_MODE}" \
+  "${BUNDLE_TRANSPORT}" \
   "${BASE_URL}" \
   "${PATH_PREFIX}" \
   "$(default_appliance_state_dir)" \
@@ -369,6 +415,7 @@ from pathlib import Path
     helper_url,
     release_version,
     distribution_mode,
+    bundle_transport,
     base_url,
     path_prefix,
     state_dir,
@@ -389,6 +436,7 @@ payload = {
     "helperUrl": helper_url,
     "releaseVersion": release_version,
     "distributionMode": distribution_mode,
+    "bundleTransport": bundle_transport,
     "baseUrl": base_url or None,
     "pathPrefix": path_prefix,
     "stateDir": state_dir,
@@ -410,5 +458,7 @@ Path(out_path).parent.mkdir(parents=True, exist_ok=True)
 Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
 
-
+if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
+  trap - EXIT
+fi
 log "target public install finished; log: ${install_log}"

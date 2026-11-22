@@ -263,7 +263,8 @@ def test_join_script_exists() -> None:
         "EMBEDDED_ETCD_OPERATION finalize",
         "target-embedded-etcd-enrollment-mode-",
         "chmod 0600 \"${enrollment_local}\"",
-        "trap \\\"rm -f -- ${enrollment_file_q}\\\" EXIT",
+        "peer_cleanup=",
+        "trap \\\"${peer_cleanup}\\\" EXIT",
         "require_embedded_etcd_product_targets",
         "emit_embedded_etcd_stage_plan",
     ):
