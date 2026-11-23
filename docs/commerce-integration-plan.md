@@ -13,10 +13,11 @@ The first commerce slice contains:
 - ForwardAuth integration with the existing control-plane identity/RBAC contract.
 - The existing channel-integration adapter as a separate `ace-apps` workload.
 
-Identity, users, tokens, and RBAC remain owned by the production control-plane
-service. The separate `capp` Core API is not promoted because its current
-runtime is development-only; Micro Zone administration is a follow-up
-control-plane/commerce contract.
+The application mobile identity slice (OTP challenge, verification, and
+sessions) is promoted as its own `application-identity` service. Operator
+identity, tokens, and RBAC remain owned by the production control-plane
+service. The remaining `capp` Core API domains (property, microzone, and
+geocode administration) are follow-up contracts.
 
 This slice does not yet claim to implement merchant administration, payments,
 fulfillment, or a complete WhatsApp ordering conversation. Those remain later
@@ -31,8 +32,8 @@ application features built on the same APIs.
 | `appliance-release` | Bundle orchestration, component inventory, cross-repository validation, and operator documentation |
 | `capp` | Application-domain source/design upstream; its local/cloud development scripts are not product installer code |
 
-The uncommitted `../capp` worktree must remain untouched while the production
-port is prepared. Only reviewed runtime source and contracts are promoted.
+The uncommitted `../capp` worktree remains untouched. Only reviewed runtime
+source and contracts are promoted.
 
 ## Runtime layout
 
@@ -50,6 +51,7 @@ ace-apps
   action-runtime
   channel-integration
   ordering
+  application-identity
 ```
 
 Ordering is an application service. It is not merged into the appliance
@@ -59,11 +61,11 @@ to the app-stack bundle. Existing profiles remain unchanged.
 
 ## Mandatory production-hardening gate
 
-The uncommitted `capp` Core API remains a follow-up item. It currently uses
-development-only OTP, socket, database-marker, and geocoder assumptions, so it
-is deliberately not part of this release. A future Core API promotion needs a
-product-supported authentication boundary, offline-safe startup, and its own
-signed image/migration contract before it can be added to this capability.
+The remaining `capp` Core API remains a follow-up item. Its property, microzone,
+and geocoder handlers are not part of this release. The promoted identity
+slice retains only the local/test OTP inbox and private Unix socket; it refuses
+production environments until a reviewed SMS/provider adapter and abuse
+controls are implemented.
 
 Ordering is gated on the existing ForwardAuth identity and permission contract.
 The service accepts the trusted user identity headers emitted by Traefik and
@@ -77,8 +79,8 @@ image as its required artifact. The templates live in the existing appliance
 control-plane chart so the release path remains one chart and one installer
 contract.
 
-The capability is included in the foundation delivery pack but is activated
-only by `application-core`. Do not reuse the existing `applications` capability;
+The capability is included in the app-stack delivery pack and is activated only
+by `application-core`. Do not reuse the existing `applications` capability;
 that capability means host-agent-backed application management.
 
 ## Database and secret contract

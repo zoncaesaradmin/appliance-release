@@ -67,7 +67,7 @@ packs:
     capabilities: [base, actions, lan-discovery, files, video]
   - id: app-stack
     filename: appliance-0.1.0-app-stack-amd64.tar.gz
-    capabilities: [channel-integrations, commerce]
+    capabilities: [channel-integrations, commerce, application-identity]
   - id: dev-platform
     filename: appliance-0.1.0-dev-platform-amd64.tar.gz
     capabilities: [artifact, dns, workflows, build]
@@ -92,6 +92,7 @@ capabilityPacks:
   inference: std-llm
   channel-integrations: app-stack
   commerce: app-stack
+  application-identity: app-stack
 profiles:
   core:
     capabilities: [base, actions, lan-discovery, files, applications]
@@ -104,7 +105,7 @@ profiles:
   lanllm:
     capabilities: [base, actions, lan-discovery, inference, applications]
   application-core:
-    capabilities: [base, channel-integrations, commerce]
+    capabilities: [base, channel-integrations, commerce, application-identity]
 EOF
 
 got="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"
