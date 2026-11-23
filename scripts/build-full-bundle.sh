@@ -2177,7 +2177,8 @@ if bool_true "${WORKFLOWS_ENABLED}"; then
 fi
 
 # Bundled supplemental images for release-input (--extra-oci-image flags):
-# workspace-provisioner when the dev-platform pack is selected.
+# workspace-provisioner when the dev-platform pack is selected, plus
+# application-owned service images selected by the metadata catalog.
 BUNDLED_IMAGE_ARCHIVES=()
 BUNDLED_IMAGE_REFS=()
 
@@ -2203,6 +2204,9 @@ BLOB_STORAGE_IMAGE_REF=""
 CHANNEL_INTEGRATION_IMAGE_OUT="/workspace/.run/channel-integration-image.tar"
 CHANNEL_INTEGRATION_IMAGE_REF_FILE="/workspace/.run/channel-integration-image.reference"
 CHANNEL_INTEGRATION_IMAGE_REF=""
+ORDERING_IMAGE_OUT="/workspace/.run/ordering-image.tar"
+ORDERING_IMAGE_REF_FILE="/workspace/.run/ordering-image.reference"
+ORDERING_IMAGE_REF=""
 
 if [[ "${NEED_WORKSPACE_PROVISIONER_IMAGE:-0}" == "1" ]]; then
   WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:2.49.0}"
@@ -2694,6 +2698,8 @@ fi
 PRODUCT_PACKAGE_LINES=""
 CHANNEL_INTEGRATION_PACKAGE_LINES=""
 CHANNEL_INTEGRATION_ARCHIVE_ARG_LINES=""
+ORDERING_PACKAGE_LINES=""
+ORDERING_ARCHIVE_ARG_LINES=""
 if [[ "${NEED_CHANNEL_INTEGRATION_IMAGE:-0}" == "1" ]] && ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
   CHANNEL_INTEGRATION_PACKAGE_LINES=$(cat <<CHANNEL_EOF
 make package-channel-integration-image-archive OUT_FILE="\${CHANNEL_INTEGRATION_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}" \\
@@ -2707,6 +2713,22 @@ CHANNEL_EOF
   CHANNEL_INTEGRATION_ARCHIVE_ARG_LINES='BUNDLED_IMAGE_ARGS+=(
   --extra-oci-image "${CHANNEL_INTEGRATION_IMAGE_OUT}"
   --extra-oci-image-reference "${CHANNEL_INTEGRATION_IMAGE_REF}"
+)
+'
+fi
+if [[ "${NEED_ORDERING_IMAGE:-0}" == "1" ]] && ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
+  ORDERING_PACKAGE_LINES=$(cat <<ORDERING_EOF
+make package-ordering-image-archive OUT_FILE="\${ORDERING_IMAGE_OUT}" IMAGE_TAG="\${CODE_VERSION}" \\
+  REFERENCE_OUT_FILE="\${ORDERING_IMAGE_REF_FILE}" \\
+  GO_IMAGE=$(shell_quote "${CP_GO_IMAGE}") \\
+  RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \\
+  RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
+ORDERING_IMAGE_REF="\$(tr -d '\r\n' < "\${ORDERING_IMAGE_REF_FILE}")"
+ORDERING_EOF
+)
+  ORDERING_ARCHIVE_ARG_LINES='BUNDLED_IMAGE_ARGS+=(
+  --extra-oci-image "${ORDERING_IMAGE_OUT}"
+  --extra-oci-image-reference "${ORDERING_IMAGE_REF}"
 )
 '
 fi
@@ -2726,6 +2748,7 @@ make package-ui-image-archive OUT_FILE="\${UI_IMAGE_OUT}" IMAGE_TAG="\${CODE_VER
 ${HOST_AGENTD_PACKAGE_LINES}
 ${HOST_AGENT_IMAGE_PACKAGE_LINES}
 ${CHANNEL_INTEGRATION_PACKAGE_LINES}
+${ORDERING_PACKAGE_LINES}
 PRODUCT_EOF
 )
 fi
@@ -2812,6 +2835,9 @@ POSTGRES_IMAGE_REF_FILE="/workspace/.run/postgres-image.reference"
 CHANNEL_INTEGRATION_IMAGE_OUT="/workspace/.run/channel-integration-image.tar"
 CHANNEL_INTEGRATION_IMAGE_REF_FILE="/workspace/.run/channel-integration-image.reference"
 CHANNEL_INTEGRATION_IMAGE_REF=""
+ORDERING_IMAGE_OUT="/workspace/.run/ordering-image.tar"
+ORDERING_IMAGE_REF_FILE="/workspace/.run/ordering-image.reference"
+ORDERING_IMAGE_REF=""
 OPEN_WEBUI_IMAGE_ARCHIVE="/workspace/.run/open-webui-image.tar"
 OPEN_WEBUI_GATEWAY_IMAGE_ARCHIVE="/workspace/.run/open-webui-gateway-image.tar"
 WORKFLOWS_ARGS=()
