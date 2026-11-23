@@ -430,7 +430,7 @@ if [[ -z "${USER_ARTIFACT_SERVER_SOURCE_IMAGE}" ]]; then
   ARTIFACT_SERVER_SOURCE_IMAGE="ghcr.io/project-zot/zot-linux-${TARGET_ARCH}:v${ARTIFACT_SERVER_VERSION}"
 fi
 
-# Pack selection (default all = foundation + dev-platform + deviceuser + std-llm;
+# Pack selection (default all = foundation + app-stack + dev-platform + deviceuser + std-llm;
 # open-webui stays opt-in even for all).
 APPLIANCE_PACKS="${USER_APPLIANCE_PACKS:-${APPLIANCE_PACKS:-all}}"
 appliance_packs_resolve
@@ -583,12 +583,14 @@ INPUTS_DIR="${WORKSPACE}/inputs"
 GENERATED_DIR="${WORKSPACE}/generated"
 CONFIG_OUT="${GENERATED_DIR}/product-bundle.env"
 BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-foundation"
+APP_STACK_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-app-stack"
 DEV_PLATFORM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-dev-platform"
 DEVICEUSER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 CPU_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-std-llm"
 ACC_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-acc-llm"
 OPEN_WEBUI_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-open-webui"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" foundation)"
+APP_STACK_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" app-stack)"
 DEV_PLATFORM_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" dev-platform)"
 DEVICEUSER_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" deviceuser)"
 CPU_LLM_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" std-llm)"
@@ -3060,6 +3062,10 @@ if appliance_pack_wanted foundation; then
   create_gzip_tarball "${BUNDLE_ARCHIVE}" "$(dirname "${BUNDLE_DIR}")" "$(basename "${BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${BUNDLE_ARCHIVE}")
 fi
+if appliance_pack_wanted app-stack; then
+  create_gzip_tarball "${APP_STACK_ARCHIVE}" "$(dirname "${APP_STACK_BUNDLE_DIR}")" "$(basename "${APP_STACK_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${APP_STACK_ARCHIVE}")
+fi
 if appliance_pack_wanted dev-platform; then
   create_gzip_tarball "${DEV_PLATFORM_ARCHIVE}" "$(dirname "${DEV_PLATFORM_BUNDLE_DIR}")" "$(basename "${DEV_PLATFORM_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${DEV_PLATFORM_ARCHIVE}")
@@ -3088,6 +3094,7 @@ python3 "${SCRIPT_DIR}/write-release-index.py" "${RELEASE_INDEX}" "${PRODUCT_VER
   "${CODE_REPO_DIR}/metadata-bundle/base/packages/catalog.yaml" \
   ${APPLIANCE_PACKS_RESOLVED} \
   "$(basename "${BUNDLE_ARCHIVE}")" \
+  "$(basename "${APP_STACK_ARCHIVE}")" \
   "$(basename "${DEV_PLATFORM_ARCHIVE}")" \
   "$(basename "${DEVICEUSER_ARCHIVE}")" \
   "$(basename "${CPU_LLM_ARCHIVE}")" \
@@ -3115,6 +3122,9 @@ echo
 echo "final packs (${APPLIANCE_PACKS_RESOLVED}) TARGET_ARCH=${TARGET_ARCH}:"
 if appliance_pack_wanted foundation; then
   echo "  ${BUNDLE_DIR}"
+fi
+if appliance_pack_wanted app-stack; then
+  echo "  ${APP_STACK_BUNDLE_DIR}"
 fi
 if appliance_pack_wanted dev-platform; then
   echo "  ${DEV_PLATFORM_BUNDLE_DIR}"

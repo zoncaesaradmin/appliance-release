@@ -3,13 +3,13 @@
 #
 # Env:
 #   APPLIANCE_PACKS   CSV or single token. Default: all
-#                     Values: all | foundation | dev-platform | deviceuser | std-llm | acc-llm | open-webui
-#                     Examples: all ; foundation ; foundation,dev-platform ; foundation,acc-llm
+#                     Values: all | foundation | app-stack | dev-platform | deviceuser | std-llm | acc-llm | open-webui
+#                     Examples: all ; foundation ; foundation,app-stack ; foundation,app-stack,dev-platform
 #                     Chat showcase: foundation,std-llm,open-webui
 #
 # After appliance_packs_resolve:
 #   APPLIANCE_PACKS_RESOLVED   space-separated, stable order:
-#     foundation [dev-platform] [deviceuser] [std-llm|acc-llm] [open-webui]
+#     foundation [app-stack] [dev-platform] [deviceuser] [std-llm|acc-llm] [open-webui]
 #   appliance_pack_wanted ID   returns 0 when ID is selected
 #
 # foundation is always included (required deliverable). Unknown ids fail closed.
@@ -23,6 +23,7 @@ appliance_packs_resolve() {
   local token=""
   local want_all=0
   local want_foundation=0
+  local want_app_stack=0
   local want_dev_platform=0
   local want_deviceuser=0
   local want_std_llm=0
@@ -46,6 +47,9 @@ appliance_packs_resolve() {
         ;;
       foundation)
         want_foundation=1
+        ;;
+      app-stack)
+        want_app_stack=1
         ;;
       dev-platform)
         want_dev_platform=1
@@ -75,7 +79,7 @@ appliance_packs_resolve() {
         return 2
         ;;
       *)
-        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|dev-platform|deviceuser|std-llm|acc-llm|open-webui)" >&2
+        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|app-stack|dev-platform|deviceuser|std-llm|acc-llm|open-webui)" >&2
         return 2
         ;;
     esac
@@ -83,6 +87,7 @@ appliance_packs_resolve() {
 
   if [[ "${want_all}" -eq 1 ]]; then
     want_foundation=1
+    want_app_stack=1
     want_dev_platform=1
     want_deviceuser=1
     want_std_llm=1
@@ -106,6 +111,9 @@ appliance_packs_resolve() {
   fi
 
   APPLIANCE_PACKS_RESOLVED="foundation"
+  if [[ "${want_app_stack}" -eq 1 ]]; then
+    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} app-stack"
+  fi
   if [[ "${want_dev_platform}" -eq 1 ]]; then
     APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} dev-platform"
   fi

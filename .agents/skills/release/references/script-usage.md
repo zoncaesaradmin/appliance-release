@@ -37,7 +37,7 @@ Notes:
   keys must appear in their role file (fixed lab values are fine in YAML).
 - `build_flow.mode` must be `online` or `offline` (exactly one source policy).
 - Production delivery: use `build_flow.appliance_packs: all`. The complete set is
-  foundation, storage-network, build-workflows, deviceuser, and std-llm
+  foundation, app-stack, storage-network, build-workflows, deviceuser, and std-llm
   (architecture is `build_flow.target_arch`, required; no default). Open WebUI
   is a separate opt-in pack (`open-webui`; requires `std-llm` or `acc-llm`) and
   is not part of `all`. Add it for chat-showcase SKUs.

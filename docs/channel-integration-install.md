@@ -1,7 +1,7 @@
 # Channel integration installation
 
 The signed `application-core` profile enables the `channel-integrations`
-capability. The capability is delivered in the foundation bundle and renders
+capability. The capability is delivered in the app-stack bundle and renders
 one `channel-integration` Deployment and ClusterIP Service in `ace-apps`.
 
 The adapter is optional at runtime, but its protected Meta/WhatsApp descriptor
@@ -91,9 +91,10 @@ install:
   # cloudflare_tunnel_token_file: /absolute/path/cloudflare-tunnel.token
 ```
 
-The build/publish YAML must publish at least `foundation`. No additional pack is
-needed for `application-core`; the channel-integration image and the pinned
-host connector are carried by foundation. The runner copies the protected
+The build/publish YAML must publish both `foundation` and `app-stack` (or use
+`all`). The `application-core` profile maps its application capabilities to the
+`app-stack` pack, so the installer downloads that optional pack automatically.
+The runner copies the protected
 files to the target only for finalization, passes their paths and external
 origin settings to `zonctl`, and removes the temporary target copies afterward.
 

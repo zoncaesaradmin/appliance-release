@@ -207,6 +207,7 @@ That script:
 Outputs:
 
 - `${RELEASE_WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-foundation` (foundation pack dir)
+- `${RELEASE_WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-app-stack` (application services pack dir)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-foundation-${TARGET_ARCH}.tar.gz`
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-dev-platform-${TARGET_ARCH}.tar.gz` (when dev-platform pack selected)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-deviceuser-${TARGET_ARCH}.tar.gz` (when deviceuser pack selected)

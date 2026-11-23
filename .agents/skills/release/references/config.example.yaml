@@ -22,9 +22,10 @@
 # - Scripts fail closed: required keys must appear in their role file.
 # - Absolute remote paths only (no ~/... on build/target hosts).
 # - Secrets never live in these files — only env *names* under *_env keys.
-# - Packaging pack set is build_flow.appliance_packs (all|foundation|…); install.appliance_profile
+# - Packaging pack set is build_flow.appliance_packs (all|foundation|foundation,app-stack|…); install.appliance_profile
 #   selects what the target turns on from the published packs. verification.*.enabled must match
-#   that profile (lanllm → workflows/builder/artifact/dns all false; see config.install.example.yaml).
+#   that profile (application-core requires foundation+app-stack; lanllm → workflows/builder/artifact/dns
+#   all false; see config.install.example.yaml).
 # - Offline builds require TARGET_ARCH=amd64 make seed-build-deps first (every deps/* package, including
 #   dns/coredns, inference/ollama, and blob-storage/minio). Online builds pull the same pins from upstream.
 #   Set build_flow.target_arch: amd64 (or arm64) in the build-publish config; required, no default.

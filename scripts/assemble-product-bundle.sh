@@ -85,6 +85,7 @@ DOWNLOADS_DIR="${WORKDIR}/downloads"
 STAGING_DIR="${WORKDIR}/staging"
 RELEASE_INPUT_DIR="${WORKDIR}/release-input"
 BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-foundation"
+APP_STACK_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-app-stack"
 DEV_PLATFORM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-dev-platform"
 DEVICEUSER_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 CPU_LLM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-std-llm"
@@ -638,6 +639,7 @@ assemble_all_packs() {
     config_path="${WORKDIR}/bundle-assembly.${pack_id}.json"
     case "${pack_id}" in
       foundation) bundle_dir="${BUNDLE_DIR}" ;;
+      app-stack) bundle_dir="${APP_STACK_BUNDLE_DIR}" ;;
       dev-platform) bundle_dir="${DEV_PLATFORM_BUNDLE_DIR}" ;;
       deviceuser) bundle_dir="${DEVICEUSER_BUNDLE_DIR}" ;;
       std-llm) bundle_dir="${CPU_LLM_BUNDLE_DIR}" ;;
@@ -692,13 +694,16 @@ if [[ -n "${VALUES_FILE:-}" ]]; then
   cp "${VALUES_FILE}" "${STAGING_DIR}/values-minimal.yaml"
 fi
 
-rm -rf "${BUNDLE_DIR}" "${DEV_PLATFORM_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}" "${ACC_LLM_BUNDLE_DIR}" "${OPEN_WEBUI_BUNDLE_DIR}"
+rm -rf "${BUNDLE_DIR}" "${APP_STACK_BUNDLE_DIR}" "${DEV_PLATFORM_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}" "${ACC_LLM_BUNDLE_DIR}" "${OPEN_WEBUI_BUNDLE_DIR}"
 
 assemble_all_packs
 
 echo "packs ready (${APPLIANCE_PACKS_RESOLVED}) TARGET_ARCH=${TARGET_ARCH}:"
 if appliance_pack_wanted foundation; then
   echo "  foundation: ${BUNDLE_DIR}"
+fi
+if appliance_pack_wanted app-stack; then
+  echo "  app-stack: ${APP_STACK_BUNDLE_DIR}"
 fi
 if appliance_pack_wanted dev-platform; then
   echo "  dev-platform: ${DEV_PLATFORM_BUNDLE_DIR}"

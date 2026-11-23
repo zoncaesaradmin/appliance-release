@@ -55,7 +55,7 @@ ace-apps
 Ordering is an application service. It is not merged into the appliance
 `controlplane` process. Its idempotent schema bootstrap runs at service startup
 against the appliance PostgreSQL database; no second migration image is added
-to the foundation bundle. Existing profiles remain unchanged.
+to the app-stack bundle. Existing profiles remain unchanged.
 
 ## Mandatory production-hardening gate
 

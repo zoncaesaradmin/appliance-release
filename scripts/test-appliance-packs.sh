@@ -21,11 +21,11 @@ assert_eq() {
 APPLIANCE_PACKS=""
 appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS}" "all" "empty defaults to all token"
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform deviceuser std-llm" "empty → all packs"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation app-stack dev-platform deviceuser std-llm" "empty → all packs"
 
 APPLIANCE_PACKS="all"
 appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform deviceuser std-llm" "all"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation app-stack dev-platform deviceuser std-llm" "all"
 
 APPLIANCE_PACKS="foundation"
 appliance_packs_resolve
@@ -36,6 +36,11 @@ appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform" "foundation+dev-platform"
 appliance_pack_wanted dev-platform || fail "dev-platform should be wanted"
 appliance_pack_wanted std-llm && fail "std-llm should not be wanted"
+
+APPLIANCE_PACKS="app-stack"
+appliance_packs_resolve
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation app-stack" "app-stack auto-includes foundation"
+appliance_pack_wanted app-stack || fail "app-stack should be wanted"
 
 APPLIANCE_PACKS="std-llm"
 appliance_packs_resolve

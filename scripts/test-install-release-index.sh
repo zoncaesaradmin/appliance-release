@@ -54,6 +54,8 @@ profiles:
     capabilities: [base, actions, lan-discovery, inference, applications]
   future-profile:
     capabilities: [base, actions, lan-discovery, future]
+  application-core:
+    capabilities: [base, channel-integrations, application-services]
 EOF
 
 cat >"${TMP}/all-packs.yaml" <<'EOF'
@@ -63,6 +65,9 @@ packs:
   - id: foundation
     filename: appliance-0.1.0-foundation-amd64.tar.gz
     capabilities: [base, actions, lan-discovery, files, video]
+  - id: app-stack
+    filename: appliance-0.1.0-app-stack-amd64.tar.gz
+    capabilities: [channel-integrations, application-services]
   - id: dev-platform
     filename: appliance-0.1.0-dev-platform-amd64.tar.gz
     capabilities: [artifact, dns, workflows, build]
@@ -85,6 +90,8 @@ capabilityPacks:
   host: deviceuser
   applications: deviceuser
   inference: std-llm
+  channel-integrations: app-stack
+  application-services: app-stack
 profiles:
   core:
     capabilities: [base, actions, lan-discovery, files, applications]
@@ -96,18 +103,23 @@ profiles:
     capabilities: [base, actions, lan-discovery, host, files, workflows, build, artifact, dns, inference, applications]
   lanllm:
     capabilities: [base, actions, lan-discovery, inference, applications]
+  application-core:
+    capabilities: [base, channel-integrations, application-services]
 EOF
 
 got="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"
 [[ "${got}" == "foundation" ]] || fail "foundation-only index: got '${got}'"
 
 got="$(published_pack_ids_from_index "${TMP}/all-packs.yaml")"
-[[ "${got}" == "foundation dev-platform deviceuser std-llm" ]] || fail "all-packs index: got '${got}'"
+[[ "${got}" == "foundation app-stack dev-platform deviceuser std-llm" ]] || fail "all-packs index: got '${got}'"
 
 pack_id_is_published foundation "${got}" || fail "foundation should be published"
 pack_id_is_published dev-platform "${got}" || fail "dev-platform should be published"
 pack_id_is_published deviceuser "${got}" || fail "deviceuser should be published"
 pack_id_is_published std-llm "foundation" && fail "std-llm must not be published in foundation-only set"
+
+req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "application-core" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+[[ "${req}" == "app-stack" ]] || fail "application-core packs: '${req}'"
 
 archive="$(pack_filename_from_index "${TMP}/all-packs.yaml" "dev-platform")"
 [[ "${archive}" == "appliance-0.1.0-dev-platform-amd64.tar.gz" ]] || fail "dev-platform archive: '${archive}'"
