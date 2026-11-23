@@ -1,4 +1,4 @@
-# Application Services Integration Plan
+# Commerce Integration Plan
 
 This plan brings the application functionality currently being developed in
 `../capp` into the signed appliance product without importing the development
@@ -6,7 +6,7 @@ deployment workflow or weakening the air-gap contract.
 
 ## Scope
 
-The first application-services slice contains:
+The first commerce slice contains:
 
 - Ordering offerings and order creation/read APIs.
 - An ordering-owned PostgreSQL schema in the appliance database.
@@ -16,7 +16,7 @@ The first application-services slice contains:
 Identity, users, tokens, and RBAC remain owned by the production control-plane
 service. The separate `capp` Core API is not promoted because its current
 runtime is development-only; Micro Zone administration is a follow-up
-control-plane/application-services contract.
+control-plane/commerce contract.
 
 This slice does not yet claim to implement merchant administration, payments,
 fulfillment, or a complete WhatsApp ordering conversation. Those remain later
@@ -72,7 +72,7 @@ does not accept a caller-supplied user ID or a capp session cookie.
 ## Delivery model
 
 Keep the existing `application-core` profile; do not create another profile.
-Add one capability named `application-services` with the signed `ordering`
+Add one capability named `commerce` with the signed `ordering`
 image as its required artifact. The templates live in the existing appliance
 control-plane chart so the release path remains one chart and one installer
 contract.
@@ -123,7 +123,7 @@ bundle, Git, command arguments, or logs.
 
 ### Phase 3: Signed artifact contract
 
-- Add `application-services` to the signed metadata catalogs.
+- Add `commerce` to the signed metadata catalogs.
 - Add image/archive export targets and digest-pinned references.
 - Extend release-input schema, verification, assembly, and image preload.
 - Ensure profiles without the capability do not select or start these images.
@@ -148,7 +148,7 @@ Run verification in every edited repository:
 6. Cloud EC2 install from a copied local bundle with target cleanup.
 7. API smoke tests for ForwardAuth-protected offerings, idempotent order
    creation, and order retrieval.
-8. Confirm profiles without `application-services` remain unchanged.
+8. Confirm profiles without `commerce` remain unchanged.
 
 No real build server, publish server, or target host run is part of the code
 change until these repository-local gates pass.

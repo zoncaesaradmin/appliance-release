@@ -28,7 +28,7 @@ Use this index to find the one canonical document for your task.
 - Installing `application-core` locally or on an EC2 host:
   [channel-integration-install.md](channel-integration-install.md)
 - Integrating Core API and Ordering application services:
-  [application-services-integration-plan.md](application-services-integration-plan.md)
+  [commerce-integration-plan.md](commerce-integration-plan.md)
 
 ## Specialized / Internal
 

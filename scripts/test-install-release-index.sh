@@ -55,7 +55,7 @@ profiles:
   future-profile:
     capabilities: [base, actions, lan-discovery, future]
   application-core:
-    capabilities: [base, channel-integrations, application-services]
+    capabilities: [base, channel-integrations, commerce]
 EOF
 
 cat >"${TMP}/all-packs.yaml" <<'EOF'
@@ -67,7 +67,7 @@ packs:
     capabilities: [base, actions, lan-discovery, files, video]
   - id: app-stack
     filename: appliance-0.1.0-app-stack-amd64.tar.gz
-    capabilities: [channel-integrations, application-services]
+    capabilities: [channel-integrations, commerce]
   - id: dev-platform
     filename: appliance-0.1.0-dev-platform-amd64.tar.gz
     capabilities: [artifact, dns, workflows, build]
@@ -91,7 +91,7 @@ capabilityPacks:
   applications: deviceuser
   inference: std-llm
   channel-integrations: app-stack
-  application-services: app-stack
+  commerce: app-stack
 profiles:
   core:
     capabilities: [base, actions, lan-discovery, files, applications]
@@ -104,7 +104,7 @@ profiles:
   lanllm:
     capabilities: [base, actions, lan-discovery, inference, applications]
   application-core:
-    capabilities: [base, channel-integrations, application-services]
+    capabilities: [base, channel-integrations, commerce]
 EOF
 
 got="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"
