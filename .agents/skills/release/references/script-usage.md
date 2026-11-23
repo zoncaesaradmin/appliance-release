@@ -116,6 +116,9 @@ Notes:
   temporary copy plus its download/extraction work directory after
   stage/finalize. The default `distributor` transport is unchanged for LAN
   installs.
+  The SSH alias may be the EC2 public address; before staging, the runner
+  discovers the address assigned to the target's local interface and uses it
+  for the embedded-etcd inventory and K3s node identity.
   Omit the block for preload-only.
 - Publish always uses the appliance file API on `DEV_REGISTRY`
   (`https://$DEV_REGISTRY/api/v1/files/appliance/<version>/`). Token/TLS reuse

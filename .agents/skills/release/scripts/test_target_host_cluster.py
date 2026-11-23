@@ -143,6 +143,40 @@ def test_single_server_inventory_is_direct_and_host_portable() -> None:
         }
 
 
+def test_cloud_inventory_uses_target_local_address_for_identity() -> None:
+    """A public EC2 SSH alias must not become the local node identity."""
+
+    import json
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="target-cloud-inventory-") as tmp:
+        root = Path(tmp)
+        fake_bin = root / "bin"
+        fake_bin.mkdir()
+        fake_ssh = fake_bin / "ssh"
+        fake_ssh.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf '%s\\n' '2: eth0    inet 172.31.13.84/20 scope global eth0'\n",
+            encoding="utf-8",
+        )
+        fake_ssh.chmod(0o755)
+        inventory = root / "inventory.json"
+        result = _parse(
+            root,
+            "target_host:\n  alias: ubuntu@3.110.123.46\n",
+            f'PATH="{fake_bin}:$PATH"; TARGET_REMOTE_ADDRESS_DISCOVERY=true; '
+            f'write_embedded_etcd_inventory "{inventory}"',
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert json.loads(inventory.read_text(encoding="utf-8")) == {
+            "topology": "embedded-etcd-v1",
+            "bootstrapNode": "172-31-13-84",
+            "nodes": [
+                {"name": "172-31-13-84", "address": "172.31.13.84"}
+            ],
+        }
+
+
 def test_node_name_from_ipv4_alias() -> None:
     result = _bash(
         f'source "{COMMON_SH}"; target_node_name_from_alias zonsys@192.168.1.152'
@@ -305,6 +339,7 @@ def main() -> None:
     test_product_runner_requires_one_or_three_active_servers()
     test_inventory_is_direct_and_host_portable()
     test_single_server_inventory_is_direct_and_host_portable()
+    test_cloud_inventory_uses_target_local_address_for_identity()
     test_node_name_from_ipv4_alias()
     test_append_cluster_alias_tls_sans()
     test_stage_plan_rejects_two_server_layout()

@@ -153,6 +153,9 @@ if [[ -z "${RUN_DIR}" ]]; then
 fi
 
 parse_target_host_cluster "${DEVHOST_CONFIG}"
+# Verification must use the same target-local identity as installation. The
+# configured SSH alias can be a public/NAT address in cloud deployments.
+TARGET_REMOTE_ADDRESS_DISCOVERY="true"
 TARGET_STATE_DIR="$(default_appliance_state_dir)"
 STATUS_CMD="${STATUS_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.status_command" || true)}"
 VERIFY_CMD="${VERIFY_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.verify_command" || true)}"
@@ -563,7 +566,7 @@ if ((TARGET_HOST_COUNT > 1)); then
       snapshot_newline_list "${TARGET_HOST_ALIASES:-}" expected_node_aliases
       if ((${#expected_node_aliases[@]} > 0)); then
         for alias in "${expected_node_aliases[@]}"; do
-          node_name="$(target_node_name_from_alias "${alias}")"
+          node_name="$(target_node_name_for_alias "${alias}")"
           if ! grep -Eq "^${node_name}[[:space:]]" "${RUN_DIR}/logs/cluster-nodes.log"; then
             log "cluster-nodes: missing ${node_name} (${alias})"
           fi
@@ -609,13 +612,28 @@ if ((TARGET_SERVER_COUNT >= 1)); then
   fi
   if ((${#server_aliases[@]} > 0)); then
     for alias in "${server_aliases[@]}"; do
-      ip="$(ssh_target_ipv4 "${alias}")" || {
+      if bool_true "${TARGET_REMOTE_ADDRESS_DISCOVERY:-false}"; then
+        ip="$(target_cluster_address "${alias}")" || {
+          echo "unresolvable ${alias}" >>"${cluster_api_log}"
+          cluster_api_code="1"
+          cluster_https_code="1"
+          continue
+        }
+      else
+        ip="$(ssh_target_ipv4 "${alias}")" || {
+          echo "unresolvable ${alias}" >>"${cluster_api_log}"
+          cluster_api_code="1"
+          cluster_https_code="1"
+          continue
+        }
+      fi
+      node_name="$(target_node_name_for_alias "${alias}")"
+      if [[ -z "${node_name}" ]]; then
         echo "unresolvable ${alias}" >>"${cluster_api_log}"
         cluster_api_code="1"
         cluster_https_code="1"
         continue
-      }
-      node_name="$(target_node_name_from_alias "${alias}")"
+      fi
       if [[ -f "${RUN_DIR}/logs/cluster-nodes.log" ]] && ! grep -Eq "^${node_name}[[:space:]]+Ready[[:space:]]" "${RUN_DIR}/logs/cluster-nodes.log"; then
         echo "skip ${ip} (${node_name} not Ready)" | tee -a "${cluster_api_log}" "${cluster_https_log}" >/dev/null
         continue
@@ -624,7 +642,7 @@ if ((TARGET_SERVER_COUNT >= 1)); then
       # loopback through probe_k3s_api_target because the public 6443 port is
       # intentionally not exposed by the EC2 security group.
       if probe_k3s_api_target "${alias}" "${ip}"; then
-        if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
+        if bool_true "${TARGET_REMOTE_ADDRESS_DISCOVERY:-false}"; then
           echo "api ok ${alias} via https://127.0.0.1:6443/readyz" >>"${cluster_api_log}"
         else
           echo "api ok https://${ip}:6443/readyz" >>"${cluster_api_log}"
@@ -636,7 +654,7 @@ if ((TARGET_SERVER_COUNT >= 1)); then
       # probe_server_https_ip remains the LAN path; cloud bundles use the
       # target loopback through probe_server_https_target.
       if probe_server_https_target "${alias}" "${ip}"; then
-        if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
+        if bool_true "${TARGET_REMOTE_ADDRESS_DISCOVERY:-false}"; then
           echo "https ok ${alias} via https://127.0.0.1/" >>"${cluster_https_log}"
         else
           echo "https ok https://${ip}/" >>"${cluster_https_log}"
@@ -692,7 +710,7 @@ exec $(shell_quote "${BUNDLE_DIR}/zonctl") cluster-ha-check \\
   --bundle-dir $(shell_quote "${BUNDLE_DIR}") \\
   --public-key $(shell_quote "${bundle_root}/release-signing.pub") \\
   --cluster-inventory $(shell_quote "${cluster_inventory_remote}") \\
-  --node-name $(shell_quote "$(target_node_name_from_alias "${TARGET_BOOTSTRAP_HOST}")") \\
+  --node-name $(shell_quote "$(target_node_name_for_alias "${TARGET_BOOTSTRAP_HOST}")") \\
   --appliance-profile $(shell_quote "${APPLIANCE_PROFILE}") \\
   --output json \\
   "\${pack_args[@]}"

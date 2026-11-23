@@ -33,10 +33,11 @@ build_host:
 
 target_host:
   # A new product release requires either one or three comma-separated SSH
-  # targets. Every listed target is an active embedded-etcd K3s server. These
-  # aliases must contain the directly
-  # reachable IPv4 addresses used by K3s API and embedded-etcd traffic; no
-  # floating address or load balancer is required.
+  # targets. Every listed target is an active embedded-etcd K3s server. The
+  # aliases are SSH destinations; the coordinator discovers each target's
+  # local IPv4 address before writing the K3s/etcd inventory. This allows an
+  # EC2 public/NAT address here while keeping private target-local identities
+  # in the cluster inventory. No floating address or load balancer is required.
   # The first entry is the bootstrap server only. With three entries, all are
   # active, schedulable K3s server/etcd nodes after finalization.
   alias: zonsys@192.168.1.151,zonsys@192.168.1.152,zonsys@192.168.1.153

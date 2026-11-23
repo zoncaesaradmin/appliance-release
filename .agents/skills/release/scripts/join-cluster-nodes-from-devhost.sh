@@ -83,10 +83,9 @@ fi
 readonly PATH_PREFIX="appliance"
 BUNDLE_MODE="$(resolve_bundle_store_mode "${BUILD_PUBLISH_CONFIG}")"
 BUNDLE_TRANSPORT="$(resolve_install_bundle_transport "${INSTALL_CONFIG}")"
-TARGET_REMOTE_ADDRESS_DISCOVERY="false"
-if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
-  TARGET_REMOTE_ADDRESS_DISCOVERY="true"
-fi
+# The SSH alias may be a public/NAT address. Always discover the target-local
+# address so the inventory and zonctl's local lifecycle check agree.
+TARGET_REMOTE_ADDRESS_DISCOVERY="true"
 APPLIANCE_NAME="$(config_get "${INSTALL_CONFIG}" "install.appliance_name")"
 APPLIANCE_PROFILE="$(config_get_optional "${INSTALL_CONFIG}" "install.appliance_profile" || true)"
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
@@ -233,7 +232,7 @@ run_embedded_etcd_flow() {
   local -a peers=()
 
 	write_embedded_etcd_inventory "${inventory_local}"
-  bootstrap_node="$(target_node_name_from_alias "${TARGET_BOOTSTRAP_HOST}")"
+  bootstrap_node="$(target_node_name_for_alias "${TARGET_BOOTSTRAP_HOST}")"
   bootstrap_zonctl="${OUT_DIR}/appliance-${RELEASE_VERSION}-foundation/zonctl"
   if [[ -n "${TARGET_PEER_SERVER_ALIASES:-}" ]]; then
     snapshot_newline_list "${TARGET_PEER_SERVER_ALIASES}" peers
@@ -262,7 +261,7 @@ run_embedded_etcd_flow() {
 
   for alias in "${peers[@]:-}"; do
     [[ -n "${alias}" ]] || continue
-    node_name="$(target_node_name_from_alias "${alias}")"
+    node_name="$(target_node_name_for_alias "${alias}")"
     enrollment_remote="/tmp/appliance-embedded-etcd-${node_name}.enrollment"
     enrollment_local="${RUN_DIR}/enrollments/${node_name}.enrollment"
     enroll_log="${RUN_DIR}/logs/target-embedded-etcd-enroll-${node_name}.log"

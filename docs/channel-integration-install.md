@@ -147,6 +147,11 @@ use the normal configured signed-bundle distributor. `tls_termination: traefik`
 means Traefik terminates HTTPS directly on the instance. Cloudflare Tunnel is
 local-LAN-only and is not installed in this mode.
 
+The EC2 SSH alias may be its public address. The runner discovers the
+instance's private/local IPv4 address over SSH and uses that address for the
+embedded-etcd inventory and K3s node identity; the public address remains an
+external SSH/TLS endpoint only.
+
 For direct Traefik TLS, `tls_cert_file`, `tls_key_file`, and (optionally)
 `tls_secret_name` are the appliance equivalents of `CAPP_TLS_CERT_FILE`,
 `CAPP_TLS_KEY_FILE`, and `CAPP_TLS_SECRET`. The files remain on the devhost,

@@ -449,6 +449,23 @@ target_node_name_from_alias() {
   printf '%s\n' "${host}"
 }
 
+# Resolve the appliance node identity from the address the target actually
+# owns. A cloud SSH alias may be a public/NAT address which is not assigned to
+# any local interface; using that alias as the K3s node name makes the local
+# receipt look like a worker during day-two lifecycle checks. Release
+# coordinators enable TARGET_REMOTE_ADDRESS_DISCOVERY before calling this
+# helper. LAN aliases retain the historical direct-address behavior.
+target_node_name_for_alias() {
+  local alias="$1"
+  local address=""
+  if bool_true "${TARGET_REMOTE_ADDRESS_DISCOVERY:-false}"; then
+    address="$(target_cluster_address "${alias}")" || return 1
+    target_node_name_from_alias "${address}"
+    return 0
+  fi
+  target_node_name_from_alias "${alias}"
+}
+
 # Parse the product's embedded-etcd target inventory. The first alias is the
 # bootstrap server; a three-server inventory adds two peer servers. Roles are
 # not an operator input because every target is an active K3s server and etcd
@@ -505,8 +522,8 @@ require_embedded_etcd_product_targets() {
 }
 
 # target_cluster_address returns the address assigned to the target's local
-# interface when cloud devhost_scp transport is active. A public EC2 address
-# is an SSH destination, not an address assigned to the instance itself.
+# interface when remote address discovery is active. A public EC2 address is
+# an SSH destination, not an address assigned to the instance itself.
 target_cluster_address() {
   local alias="$1"
   local detected=""
@@ -532,7 +549,7 @@ write_embedded_etcd_inventory() {
   require_embedded_etcd_product_targets
   while IFS= read -r alias; do
     [[ -n "${alias}" ]] || continue
-    node_name="$(target_node_name_from_alias "${alias}")"
+    node_name="$(target_node_name_for_alias "${alias}")"
     address="$(target_cluster_address "${alias}")" || fail "embedded-etcd inventory requires a reachable IPv4 target alias (${alias})"
     pairs+=("${node_name}" "${address}")
   done <<<"${TARGET_HOST_ALIASES}"
@@ -570,7 +587,7 @@ probe_server_https_ip() {
 probe_k3s_api_target() {
   local alias="$1"
   local ip="$2"
-  if [[ "${BUNDLE_TRANSPORT:-}" == "devhost_scp" ]]; then
+  if bool_true "${TARGET_REMOTE_ADDRESS_DISCOVERY:-false}"; then
     local code=""
     code="$(ssh -q -T -n "${alias}" 'curl -ksS -o /dev/null -w "%{http_code}" --connect-timeout 8 --max-time 15 https://127.0.0.1:6443/readyz' 2>/dev/null || true)"
     [[ "${code}" =~ ^(200|401|403)$ ]]
@@ -582,7 +599,7 @@ probe_k3s_api_target() {
 probe_server_https_target() {
   local alias="$1"
   local ip="$2"
-  if [[ "${BUNDLE_TRANSPORT:-}" == "devhost_scp" ]]; then
+  if bool_true "${TARGET_REMOTE_ADDRESS_DISCOVERY:-false}"; then
     local code=""
     code="$(ssh -q -T -n "${alias}" 'curl -ksS -o /dev/null -w "%{http_code}" --connect-timeout 8 --max-time 15 https://127.0.0.1/' 2>/dev/null || true)"
     [[ "${code}" =~ ^(200|301|302|401|403)$ ]]
@@ -607,7 +624,9 @@ snapshot_newline_list() {
   done <<<"${list}"
 }
 
-# Operator-facing plan for the supported embedded-etcd release flow (no SSH).
+# Operator-facing plan for the supported embedded-etcd release flow. When
+# remote address discovery is enabled, node names are resolved through SSH so
+# the plan matches the inventory that will be staged.
 emit_embedded_etcd_stage_plan() {
   local alias node_name
   local -a peers=()
@@ -616,7 +635,7 @@ emit_embedded_etcd_stage_plan() {
   if [[ -n "${TARGET_PEER_SERVER_ALIASES:-}" ]]; then
     snapshot_newline_list "${TARGET_PEER_SERVER_ALIASES}" peers
     for alias in "${peers[@]}"; do
-      node_name="$(target_node_name_from_alias "${alias}")"
+      node_name="$(target_node_name_for_alias "${alias}")"
       printf 'server-stage node=%s host=%s\n' "${node_name}" "${alias}"
     done
   fi

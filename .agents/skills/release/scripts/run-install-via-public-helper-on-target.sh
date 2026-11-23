@@ -106,8 +106,13 @@ require_cmd python3
 
 parse_target_host_cluster "${DEVHOST_CONFIG}"
 require_embedded_etcd_product_targets
+# The SSH alias may be a public/NAT address. Always discover the target-local
+# address so the inventory and zonctl's local lifecycle check agree.
+TARGET_REMOTE_ADDRESS_DISCOVERY="true"
 # TARGET_HOST is the bootstrap server after parse_target_host_cluster.
-BOOTSTRAP_NODE_NAME="$(target_node_name_from_alias "${TARGET_BOOTSTRAP_HOST}")"
+# The SSH alias may be a public/NAT address (for example an EC2 public IP).
+# Use the address assigned to the target interface for the K3s node identity.
+BOOTSTRAP_NODE_NAME="$(target_node_name_for_alias "${TARGET_BOOTSTRAP_HOST}")"
 RELEASE_VERSION=""
 if [[ -n "${PRODUCT_VERSION:-}" ]]; then
   RELEASE_VERSION="${PRODUCT_VERSION}"
@@ -122,10 +127,6 @@ fi
 readonly PATH_PREFIX="appliance"
 BUNDLE_MODE="$(resolve_bundle_store_mode "${BUILD_PUBLISH_CONFIG}")"
 BUNDLE_TRANSPORT="$(resolve_install_bundle_transport "${INSTALL_CONFIG}")"
-TARGET_REMOTE_ADDRESS_DISCOVERY="false"
-if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
-  TARGET_REMOTE_ADDRESS_DISCOVERY="true"
-fi
 APPLIANCE_NAME="$(config_get "${INSTALL_CONFIG}" "install.appliance_name")"
 APPLIANCE_PROFILE="$(config_get_optional "${INSTALL_CONFIG}" "install.appliance_profile" || true)"
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
