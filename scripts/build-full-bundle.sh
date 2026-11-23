@@ -2782,6 +2782,7 @@ fi
 
 ${BUNDLED_IMAGE_ARG_LINES}
 ${CHANNEL_INTEGRATION_ARCHIVE_ARG_LINES}
+${ORDERING_ARCHIVE_ARG_LINES}
 
 bash ./scripts/package/archive-release-input.sh \\
   --out-file "/workspace/.run/release-input-${PRODUCT_VERSION}.tar.gz" \\
