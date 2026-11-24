@@ -47,7 +47,12 @@ Create the tunnel and its public hostname in Cloudflare, with the tunnel
 service targeting the channel route on Traefik's HTTP listener
 `http://127.0.0.1:80`. Set the HTTP Host header to the external hostname
 (`walocal.zonited.com` in the example below). Cloudflare terminates public TLS;
-the channel route is therefore HTTP-only on the appliance. Kubernetes rejects
+the channel route is therefore HTTP-only on the appliance. In
+`tls_termination: cloudflare` mode the main UI/API route is also published on
+Traefik's local `web` entrypoint, so the public root and `/app/login` (or
+`/console/login` for operator profiles) work through the same tunnel. This does
+not enable the `plaintext-http` capability: application cookies remain Secure
+because the browser-facing origin is still HTTPS. Kubernetes rejects
 loopback values in a Service `externalIPs` field, so `zonctl` keeps the
 Cloudflare origin at `http://127.0.0.1:80` and installs a release-owned,
 cloudflared-only host redirect to the current K3s ServiceLB pod.
