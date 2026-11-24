@@ -59,7 +59,8 @@ the Meta Graph API; the rest of the appliance remains default-deny.
 Use `public_origin: https://app.example.com`,
 `channel_integration_origin: https://channels.example.com`, and
 `tls_termination: traefik` for a direct-Traefik cloud edge; omit the Cloudflare
-token file.
+token file. The separate channel origin is optional and is shown here only for
+the cloud split-host deployment.
 
 The installer fails closed if the capability's image is absent from the signed
 bundle or if the runtime descriptor is missing or group/world readable.
@@ -73,8 +74,8 @@ to the WhatsApp JSON.
 For a local server, Cloudflare Tunnel is an optional host-native connector.
 Create the tunnel and its public hostnames in Cloudflare, with both ingress
 rules targeting Traefik's HTTP listener at `http://127.0.0.1:80`. Preserve the
-HTTP Host header for each external hostname (`app-local.zonited.com` and
-`channels-local.zonited.com` in the example below).
+HTTP Host header for each external hostname (`local.app.zonited.com` and
+`local.channels.zonited.com` in the example below).
 Cloudflare terminates public TLS;
 the channel route is therefore HTTP-only on the appliance. In
 `tls_termination: cloudflare` mode the main UI/API route is also published on
@@ -95,8 +96,8 @@ sudo zonctl install \
   --appliance-profile application-core \
   --appliance-name app \
   --dns-zone example.com \
-  --public-origin https://app-local.zonited.com \
-  --channel-integration-origin https://channels-local.zonited.com \
+  --public-origin https://local.app.zonited.com \
+  --channel-integration-origin https://local.channels.zonited.com \
   --tls-termination cloudflare \
   --channel-integration-runtime-file /root/channel-integration-runtime.json \
   --cloudflare-tunnel-token-file /root/cloudflared-tunnel.token
@@ -119,8 +120,8 @@ YAML and point the two optional settings at protected files on the devhost:
 ```yaml
 install:
   appliance_profile: application-core
-  public_origin: https://app-local.zonited.com
-  channel_integration_origin: https://channels-local.zonited.com
+  public_origin: https://local.app.zonited.com
+  channel_integration_origin: https://local.channels.zonited.com
   tls_termination: cloudflare
   channel_integration_runtime_file: /absolute/path/channel-integration-runtime.json
   # Local LAN only; omit for EC2/cloud:
