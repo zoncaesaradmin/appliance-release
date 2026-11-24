@@ -41,7 +41,8 @@ an EC2 target that cannot reach the LAN Artifact Server. Channel integration
 and local Cloudflare protected files
 are supplied through install.channel_integration_runtime_file and
 install.cloudflare_tunnel_token_file. The external callback edge is supplied
-through install.public_origin and install.tls_termination; all four settings
+through install.public_origin, install.channel_integration_origin, and
+install.tls_termination; these settings
 are copied or passed during finalization by the cluster coordinator. The target
 uses the coordinator-patched helper only to stage the bootstrap server; it
 never performs a standalone public install.
@@ -138,8 +139,16 @@ DNS_ZONE="$(printf '%s' "${DNS_ZONE}" | tr -d '[:space:]')"
 [[ -n "${DNS_ZONE}" ]] || fail "install.dns_zone is required in install config"
 PUBLIC_ORIGIN="$(config_get_optional "${INSTALL_CONFIG}" "install.public_origin" || true)"
 PUBLIC_ORIGIN="$(printf '%s' "${PUBLIC_ORIGIN}" | tr -d '[:space:]')"
+CHANNEL_INTEGRATION_ORIGIN="$(config_get_optional "${INSTALL_CONFIG}" "install.channel_integration_origin" || true)"
+CHANNEL_INTEGRATION_ORIGIN="$(printf '%s' "${CHANNEL_INTEGRATION_ORIGIN}" | tr -d '[:space:]')"
 TLS_TERMINATION="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_termination" || true)"
 TLS_TERMINATION="$(printf '%s' "${TLS_TERMINATION}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+if [[ -n "${PUBLIC_ORIGIN}" && ! "${PUBLIC_ORIGIN}" =~ ^https://[A-Za-z0-9][A-Za-z0-9.-]*$ ]]; then
+  fail "install.public_origin must be an HTTPS origin without a port or path"
+fi
+if [[ -n "${CHANNEL_INTEGRATION_ORIGIN}" && ! "${CHANNEL_INTEGRATION_ORIGIN}" =~ ^https://[A-Za-z0-9][A-Za-z0-9.-]*$ ]]; then
+  fail "install.channel_integration_origin must be an HTTPS origin without a port or path"
+fi
 
 resolve_install_extra_tls_sans "${INSTALL_CONFIG}"
 append_cluster_alias_tls_sans
@@ -348,7 +357,7 @@ import sys
     force_adopt,
     embedded_etcd_operation,
     cluster_inventory_file,
-) = sys.argv[1:20]
+) = sys.argv[1:21]
 text = Path(path).read_text(encoding=\"utf-8\")
 
 def set_assign(text, name, value):
@@ -413,6 +422,7 @@ python3 - "${RUN_DIR}/metadata/install.json" \
   "${APPLIANCE_NAME}" \
   "${DNS_ZONE}" \
   "${PUBLIC_ORIGIN}" \
+  "${CHANNEL_INTEGRATION_ORIGIN}" \
   "${TLS_TERMINATION}" \
   "${IMAGE_PULL_REGISTRY}" \
   "${EXTRA_TLS_SANS}" \
@@ -437,6 +447,7 @@ from pathlib import Path
     appliance_name,
     dns_zone,
     public_origin,
+    channel_integration_origin,
     tls_termination,
     image_pull_registry,
     extra_tls_sans,
@@ -459,6 +470,7 @@ payload = {
     "applianceName": appliance_name,
     "dnsZone": dns_zone,
     "publicOrigin": public_origin or None,
+    "channelIntegrationOrigin": channel_integration_origin or None,
     "tlsTermination": tls_termination or None,
     "imagePullRegistry": image_pull_registry or None,
     "extraTlsSans": extra_tls_sans or None,

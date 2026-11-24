@@ -31,6 +31,8 @@ Optional:
                                runner sets this from install.yaml.
   PUBLIC_ORIGIN                External HTTPS origin for application callbacks;
                                independent of the internal appliance identity.
+  CHANNEL_INTEGRATION_ORIGIN   External HTTPS origin for channel webhooks;
+                               defaults to PUBLIC_ORIGIN.
   TLS_TERMINATION              Public edge for channel integrations: traefik
                                or cloudflare (cloudflare uses Traefik HTTP).
   TLS_CERT_FILE                Protected public TLS certificate PEM for direct
@@ -87,6 +89,7 @@ IMAGE_PULL_USERNAME_ENV="${IMAGE_PULL_USERNAME_ENV:-}"
 IMAGE_PULL_TOKEN_ENV="${IMAGE_PULL_TOKEN_ENV:-}"
 IMAGE_PULL_TLS_VERIFY_ENV="${IMAGE_PULL_TLS_VERIFY_ENV:-}"
 CHANNEL_INTEGRATION_RUNTIME_FILE="${CHANNEL_INTEGRATION_RUNTIME_FILE:-}"
+CHANNEL_INTEGRATION_ORIGIN="${CHANNEL_INTEGRATION_ORIGIN:-}"
 CLOUDFLARE_TUNNEL_TOKEN_FILE="${CLOUDFLARE_TUNNEL_TOKEN_FILE:-}"
 PUBLIC_ORIGIN="${PUBLIC_ORIGIN:-}"
 TLS_TERMINATION="${TLS_TERMINATION:-}"
@@ -718,6 +721,9 @@ if [[ -n "${CHANNEL_INTEGRATION_RUNTIME_FILE}" ]]; then
 fi
 if [[ -n "${PUBLIC_ORIGIN}" ]]; then
   lifecycle_args+=(--public-origin "${PUBLIC_ORIGIN}")
+fi
+if [[ -n "${CHANNEL_INTEGRATION_ORIGIN}" ]]; then
+  lifecycle_args+=(--channel-integration-origin "${CHANNEL_INTEGRATION_ORIGIN}")
 fi
 if [[ -n "${TLS_TERMINATION}" ]]; then
   lifecycle_args+=(--tls-termination "${TLS_TERMINATION}")

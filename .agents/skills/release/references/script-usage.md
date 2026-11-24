@@ -82,9 +82,12 @@ Notes:
   via install config flags).
 - Set `install.appliance_name` and `install.dns_zone` (both required) for the
   internal appliance identity. When `channel-integrations` is enabled, also
-  set `install.public_origin` to the external HTTPS callback origin and
-  `install.tls_termination` to `cloudflare` (local named tunnel) or `traefik`
-  (direct TLS). The external origin is not derived from the internal FQDN.
+  set `install.public_origin` to the application HTTPS origin and optionally
+  set `install.channel_integration_origin` to the separate channel webhook
+  origin. If omitted, the channel origin falls back to `public_origin` for
+  compatibility. Set `install.tls_termination` to `cloudflare` (local named
+  tunnel) or `traefik` (direct TLS). These origins are not derived from the
+  internal FQDN.
 - Control-plane **namespace** and **deployment name** are product-fixed, not
   install YAML: namespace `ace-system` (`zonctl` `defaultChartNamespace`) and
   deployment `controlplane` (chart `appliance-control-plane` fullname /

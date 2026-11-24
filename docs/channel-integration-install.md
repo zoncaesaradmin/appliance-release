@@ -50,12 +50,14 @@ sudo zonctl install \
   --channel-integration-runtime-file /root/channel-integration-runtime.json
 ```
 
-For a cloud EC2 deployment, point the public DNS name and TLS SANs at the
-instance (for example `app.example.com`) and forward `https://app.example.com/webhook`
-to Meta. The K3s, image preload, Helm release, namespace, and service wiring are
+For a cloud EC2 deployment, point the application and channel DNS names at the
+same instance (for example `app.example.com` and `channels.example.com`) and
+forward `https://channels.example.com/webhook` to Meta. The K3s, image preload,
+Helm release, namespace, and service wiring are
 the same as a local install. The pod has a narrowly scoped HTTPS egress rule for
 the Meta Graph API; the rest of the appliance remains default-deny.
-Use `public_origin: https://app.example.com` and
+Use `public_origin: https://app.example.com`,
+`channel_integration_origin: https://channels.example.com`, and
 `tls_termination: traefik` for a direct-Traefik cloud edge; omit the Cloudflare
 token file.
 
@@ -69,10 +71,11 @@ to the WhatsApp JSON.
 ## Local LAN reachability
 
 For a local server, Cloudflare Tunnel is an optional host-native connector.
-Create the tunnel and its public hostname in Cloudflare, with the tunnel
-service targeting the channel route on Traefik's HTTP listener
-`http://127.0.0.1:80`. Set the HTTP Host header to the external hostname
-(`walocal.zonited.com` in the example below). Cloudflare terminates public TLS;
+Create the tunnel and its public hostnames in Cloudflare, with both ingress
+rules targeting Traefik's HTTP listener at `http://127.0.0.1:80`. Preserve the
+HTTP Host header for each external hostname (`app-local.zonited.com` and
+`channels-local.zonited.com` in the example below).
+Cloudflare terminates public TLS;
 the channel route is therefore HTTP-only on the appliance. In
 `tls_termination: cloudflare` mode the main UI/API route is also published on
 Traefik's local `web` entrypoint, so the public root and `/app/login` (or
@@ -92,7 +95,8 @@ sudo zonctl install \
   --appliance-profile application-core \
   --appliance-name app \
   --dns-zone example.com \
-  --public-origin https://walocal.zonited.com \
+  --public-origin https://app-local.zonited.com \
+  --channel-integration-origin https://channels-local.zonited.com \
   --tls-termination cloudflare \
   --channel-integration-runtime-file /root/channel-integration-runtime.json \
   --cloudflare-tunnel-token-file /root/cloudflared-tunnel.token
@@ -115,7 +119,8 @@ YAML and point the two optional settings at protected files on the devhost:
 ```yaml
 install:
   appliance_profile: application-core
-  public_origin: https://walocal.zonited.com
+  public_origin: https://app-local.zonited.com
+  channel_integration_origin: https://channels-local.zonited.com
   tls_termination: cloudflare
   channel_integration_runtime_file: /absolute/path/channel-integration-runtime.json
   # Local LAN only; omit for EC2/cloud:
@@ -156,18 +161,21 @@ install:
   dns_zone: example.com
   appliance_profile: application-core
   public_origin: https://app.example.com
+  channel_integration_origin: https://channels.example.com
   tls_termination: traefik
   bundle_transport: devhost_scp
   channel_integration_runtime_file: /Users/me/secrets/whatsapp-runtime.json
-  tls_cert_file: /Users/me/secrets/app.example.com.crt
-  tls_key_file: /Users/me/secrets/app.example.com.key
+  tls_cert_file: /Users/me/secrets/app-and-channels.example.com.crt
+  tls_key_file: /Users/me/secrets/app-and-channels.example.com.key
   tls_secret_name: capp-tls
   # Do not set cloudflare_tunnel_token_file for EC2.
 ```
 
-The cloud DNS record must point `app.example.com` to the EC2 address (prefer an
-Elastic IP), and the security group must permit SSH from the operator and TCP
-80/443 from the intended clients. `bundle_transport: devhost_scp` makes the
+The cloud DNS records must point both `app.example.com` and
+`channels.example.com` to the EC2 address (prefer an Elastic IP), and the
+security group must permit SSH from the operator and TCP 80/443 from the
+intended clients. The certificate supplied to Traefik must cover both names
+(or use a wildcard). `bundle_transport: devhost_scp` makes the
 release runner copy the already-validated signed export from the devhost to a
 run-specific temporary directory on EC2. The target installs from that local
 `file://` copy, and the coordinator removes it after stage/finalize (including

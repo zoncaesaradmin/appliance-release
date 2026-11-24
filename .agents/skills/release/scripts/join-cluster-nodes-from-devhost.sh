@@ -96,6 +96,8 @@ DNS_ZONE="$(printf '%s' "${DNS_ZONE}" | tr -d '[:space:]')"
 [[ -n "${DNS_ZONE}" ]] || fail "install.dns_zone is required in install config"
 PUBLIC_ORIGIN="$(config_get_optional "${INSTALL_CONFIG}" "install.public_origin" || true)"
 PUBLIC_ORIGIN="$(printf '%s' "${PUBLIC_ORIGIN}" | tr -d '[:space:]')"
+CHANNEL_INTEGRATION_ORIGIN="$(config_get_optional "${INSTALL_CONFIG}" "install.channel_integration_origin" || true)"
+CHANNEL_INTEGRATION_ORIGIN="$(printf '%s' "${CHANNEL_INTEGRATION_ORIGIN}" | tr -d '[:space:]')"
 TLS_TERMINATION="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_termination" || true)"
 TLS_TERMINATION="$(printf '%s' "${TLS_TERMINATION}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 TLS_CERT_FILE="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_cert_file" || true)"
@@ -103,6 +105,9 @@ TLS_KEY_FILE="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_key_file" |
 TLS_SECRET_NAME="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_secret_name" || true)"
 if [[ -n "${PUBLIC_ORIGIN}" && ! "${PUBLIC_ORIGIN}" =~ ^https://[A-Za-z0-9][A-Za-z0-9.-]*$ ]]; then
   fail "install.public_origin must be an HTTPS origin without a port or path"
+fi
+if [[ -n "${CHANNEL_INTEGRATION_ORIGIN}" && ! "${CHANNEL_INTEGRATION_ORIGIN}" =~ ^https://[A-Za-z0-9][A-Za-z0-9.-]*$ ]]; then
+  fail "install.channel_integration_origin must be an HTTPS origin without a port or path"
 fi
 if [[ -n "${TLS_TERMINATION}" && "${TLS_TERMINATION}" != traefik && "${TLS_TERMINATION}" != cloudflare ]]; then
   fail "install.tls_termination must be traefik or cloudflare"
@@ -254,7 +259,7 @@ run_embedded_etcd_flow() {
   fi
 
   helper_env=""
-	helper_env="$(append_env_assignments "${helper_env}" BASE_URL "${BASE_URL}" BEARER_TOKEN "${BEARER_TOKEN}" TLS_INSECURE "${TLS_INSECURE}" PRODUCT_VERSION "${RELEASE_VERSION}" PATH_PREFIX "${PATH_PREFIX}" DNS_ZONE "${DNS_ZONE}" PUBLIC_ORIGIN "${PUBLIC_ORIGIN}" TLS_TERMINATION "${TLS_TERMINATION}" TLS_SECRET_NAME "${TLS_SECRET_NAME}" EXTRA_TLS_SANS "${EXTRA_TLS_SANS}" OUT_DIR "${OUT_DIR}" IMAGE_PULL_REGISTRY "${IMAGE_PULL_REGISTRY}" IMAGE_PULL_USERNAME_ENV "${IMAGE_PULL_USERNAME_ENV}" IMAGE_PULL_TOKEN_ENV "${IMAGE_PULL_TOKEN_ENV}" IMAGE_PULL_TLS_VERIFY_ENV "${IMAGE_PULL_TLS_VERIFY_ENV}")"
+	helper_env="$(append_env_assignments "${helper_env}" BASE_URL "${BASE_URL}" BEARER_TOKEN "${BEARER_TOKEN}" TLS_INSECURE "${TLS_INSECURE}" PRODUCT_VERSION "${RELEASE_VERSION}" PATH_PREFIX "${PATH_PREFIX}" DNS_ZONE "${DNS_ZONE}" PUBLIC_ORIGIN "${PUBLIC_ORIGIN}" CHANNEL_INTEGRATION_ORIGIN "${CHANNEL_INTEGRATION_ORIGIN}" TLS_TERMINATION "${TLS_TERMINATION}" TLS_SECRET_NAME "${TLS_SECRET_NAME}" EXTRA_TLS_SANS "${EXTRA_TLS_SANS}" OUT_DIR "${OUT_DIR}" IMAGE_PULL_REGISTRY "${IMAGE_PULL_REGISTRY}" IMAGE_PULL_USERNAME_ENV "${IMAGE_PULL_USERNAME_ENV}" IMAGE_PULL_TOKEN_ENV "${IMAGE_PULL_TOKEN_ENV}" IMAGE_PULL_TLS_VERIFY_ENV "${IMAGE_PULL_TLS_VERIFY_ENV}")"
   if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
     helper_env="$(append_env_assignments "${helper_env}" "${IMAGE_PULL_USERNAME_ENV}" "${IMAGE_PULL_USERNAME}" "${IMAGE_PULL_TOKEN_ENV}" "${IMAGE_PULL_TOKEN}" "${IMAGE_PULL_TLS_VERIFY_ENV}" "${IMAGE_PULL_TLS_VERIFY}")"
   fi

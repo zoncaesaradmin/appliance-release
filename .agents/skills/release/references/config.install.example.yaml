@@ -61,7 +61,8 @@ install:
   # identity above. For a local named Cloudflare Tunnel, Cloudflare terminates
   # public HTTPS and the channel webhook uses Traefik's HTTP entrypoint.
   # Required when application-core enables channel-integrations.
-  # public_origin: https://walocal.zonited.com
+  # public_origin: https://app-local.zonited.com
+  # channel_integration_origin: https://channels-local.zonited.com
   # tls_termination: cloudflare
 
   # Optional channel-integrations runtime descriptor. This is a protected
@@ -81,8 +82,8 @@ install:
   # Optional direct Traefik TLS material for cloud/public installs. These are
   # protected devhost paths; the release runner copies them temporarily to the
   # target for finalization and removes the target copies afterward.
-  # tls_cert_file: /Users/me/secrets/app.example.com.crt
-  # tls_key_file: /Users/me/secrets/app.example.com.key
+  # tls_cert_file: /Users/me/secrets/app.zonited.com.crt
+  # tls_key_file: /Users/me/secrets/app.zonited.com.key
   # tls_secret_name: capp-tls
 
   # New embedded-etcd releases stage only empty inventory-matched hosts.
