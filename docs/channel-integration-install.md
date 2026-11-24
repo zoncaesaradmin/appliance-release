@@ -74,8 +74,8 @@ to the WhatsApp JSON.
 For a local server, Cloudflare Tunnel is an optional host-native connector.
 Create the tunnel and its public hostnames in Cloudflare, with both ingress
 rules targeting Traefik's HTTP listener at `http://127.0.0.1:80`. Preserve the
-HTTP Host header for each external hostname (`local.app.zonited.com` and
-`local.channels.zonited.com` in the example below).
+HTTP Host header for each external hostname (`local-app.zonited.com` and
+`local-channels.zonited.com` in the example below).
 Cloudflare terminates public TLS;
 the channel route is therefore HTTP-only on the appliance. In
 `tls_termination: cloudflare` mode the main UI/API route is also published on
@@ -96,8 +96,8 @@ sudo zonctl install \
   --appliance-profile application-core \
   --appliance-name app \
   --dns-zone example.com \
-  --public-origin https://local.app.zonited.com \
-  --channel-integration-origin https://local.channels.zonited.com \
+  --public-origin https://local-app.zonited.com \
+  --channel-integration-origin https://local-channels.zonited.com \
   --tls-termination cloudflare \
   --channel-integration-runtime-file /root/channel-integration-runtime.json \
   --cloudflare-tunnel-token-file /root/cloudflared-tunnel.token
@@ -120,8 +120,8 @@ YAML and point the two optional settings at protected files on the devhost:
 ```yaml
 install:
   appliance_profile: application-core
-  public_origin: https://local.app.zonited.com
-  channel_integration_origin: https://local.channels.zonited.com
+  public_origin: https://local-app.zonited.com
+  channel_integration_origin: https://local-channels.zonited.com
   tls_termination: cloudflare
   channel_integration_runtime_file: /absolute/path/channel-integration-runtime.json
   # Local LAN only; omit for EC2/cloud:

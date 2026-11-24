@@ -61,8 +61,8 @@ install:
   # identity above. For a local named Cloudflare Tunnel, Cloudflare terminates
   # public HTTPS and the channel webhook uses Traefik's HTTP entrypoint.
   # Required when application-core enables channel-integrations.
-  # public_origin: https://local.app.zonited.com
-  # channel_integration_origin: https://local.channels.zonited.com
+  # public_origin: https://local-app.zonited.com
+  # channel_integration_origin: https://local-channels.zonited.com
   # tls_termination: cloudflare
 
   # Optional channel-integrations runtime descriptor. This is a protected
