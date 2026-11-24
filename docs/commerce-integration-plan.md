@@ -19,9 +19,22 @@ identity, tokens, and RBAC remain owned by the production control-plane
 service. The remaining `capp` Core API domains (property, microzone, and
 geocode administration) are follow-up contracts.
 
+The broader application identity, channel, role, zone, and tenant model is
+captured in [Application identity, authorization, and tenancy model](application-identity-authorization-tenancy.md).
+That model deliberately allows identified users without zone membership and
+keeps customer, zone-administrator, vendor, and tenant privileges scoped to
+their relevant memberships.
+
 This slice does not yet claim to implement merchant administration, payments,
 fulfillment, or a complete WhatsApp ordering conversation. Those remain later
 application features built on the same APIs.
+
+The current Ordering gateway integration is a bootstrap contract, not the final
+end-user authorization design. It accepts trusted identity headers emitted by
+the existing operator ForwardAuth path. Customer, vendor, zone-admin, and
+channel-originated requests must move to the generic application principal
+defined in the linked model before they can use Ordering or any later
+application API.
 
 ## Ownership
 
@@ -67,9 +80,13 @@ slice retains only the local/test OTP inbox and private Unix socket; it refuses
 production environments until a reviewed SMS/provider adapter and abuse
 controls are implemented.
 
-Ordering is gated on the existing ForwardAuth identity and permission contract.
-The service accepts the trusted user identity headers emitted by Traefik and
-does not accept a caller-supplied user ID or a capp session cookie.
+Ordering is currently gated on the existing ForwardAuth identity and permission
+contract. It accepts only trusted user identity headers emitted by Traefik and
+does not accept a caller-supplied user ID or an application session cookie.
+This remains a safe bootstrap boundary, but it is not sufficient for end-user
+access: the planned application-principal gateway path must add trusted
+channel, tenant, zone-scope, and application-permission context before
+customer or vendor application APIs are exposed.
 
 ## Delivery model
 
@@ -154,6 +171,19 @@ Run verification in every edited repository:
 
 No real build server, publish server, or target host run is part of the code
 change until these repository-local gates pass.
+
+### Follow-on: End-user authorization foundation
+
+Before exposing Ordering to application users or channel conversations:
+
+- implement the generic application user, channel, tenant, membership, and
+  principal contract in the application identity foundation;
+- add a trusted gateway/introspection path for application sessions and channel
+  interactions without weakening operator ForwardAuth;
+- require Ordering to evaluate tenant and zone scope in addition to the trusted
+  user identity; and
+- cover the verification matrix in
+  [Application identity, authorization, and tenancy model](application-identity-authorization-tenancy.md).
 
 ## Done gate
 

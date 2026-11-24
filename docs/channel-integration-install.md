@@ -14,9 +14,29 @@ do not put it in Git, the release bundle, shell history, or support bundles:
   "app_secret": "...",
   "graph_access_token": "...",
   "phone_number_id": "1234567890",
-  "graph_api_version": "v21.0"
+  "graph_api_version": "v21.0",
+  "tenant_id": "zonited-solutions",
+  "channel_id": "customer-whatsapp"
 }
 ```
+
+`tenant_id` and `channel_id` are provider-neutral application identity
+bindings. They are optional for the first customer endpoint and default to
+`zonited-solutions` and `customer-whatsapp`; use a distinct stable channel ID for each
+additional platform number after that channel has been provisioned in the
+identity store. The adapter verifies Meta's signature first, then resolves the
+sender through the internal identity contract. It never forwards a WhatsApp
+sender or caller-supplied identity headers to application APIs.
+
+For a customer message, the identity response includes a short-lived discovery
+link bound to that channel sender. The adapter replies with that link so the
+person can open `/app/discover`, share browser location, see up to five public
+zones within 10 km, and submit a pending join request. A WhatsApp location
+message is accepted as a normal inbound event, but the browser discovery flow
+remains the authoritative location submission. A login is required before the
+join request is submitted; no membership is granted automatically. If no zone
+is nearby, the signed-in user can request a new Zonity by name. That request is
+reviewed and created only by authorized tenant/platform staff.
 
 ```sh
 chmod 600 /root/channel-integration-runtime.json
@@ -39,6 +59,10 @@ token file.
 
 The installer fails closed if the capability's image is absent from the signed
 bundle or if the runtime descriptor is missing or group/world readable.
+When application identity is enabled, the installer also creates the
+target-local internal identity key and injects it only into the identity and
+channel-integration pods; it is not a runtime-file field and must not be added
+to the WhatsApp JSON.
 
 ## Local LAN reachability
 

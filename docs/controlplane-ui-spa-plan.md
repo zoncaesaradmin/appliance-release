@@ -97,6 +97,19 @@ No new product functionality is required in this migration unless needed to
 support the UI architecture itself, such as OpenAPI completion, mock support,
 or browser-safe auth handling.
 
+## Application entrypoint boundary
+
+The appliance console remains an operator-only SPA surface. The application
+PWA is a separate audience and must not reuse the console's login, bearer
+tokens, roles, or navigation as an end-user authorization mechanism.
+
+Future customer, vendor, and zone-administration PWA entrypoints select an
+application channel/audience, but their path is never itself an authorization
+grant. Their APIs must consume the generic application principal and enforce
+tenant, role, service, and zone scope server-side. The complete model and
+execution sequence are in
+[Application identity, authorization, and tenancy model](application-identity-authorization-tenancy.md).
+
 ## Milestone Plan
 
 ### Milestone 1: Contract Freeze
