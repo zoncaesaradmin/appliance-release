@@ -708,10 +708,12 @@ The first end-to-end customer slice now follows the model above:
    longitude to the shared onboarding API. The API caps the search to 10 km,
    returns at most five active public zones, and calculates distance on the
    server.
-4. The user must have an application session before submitting a pending join
-   request. No membership, vendor privilege, zone-admin role, or service
-   permission is granted by discovery. Approval remains an explicit later
-   operation.
+4. The user must have an application session before submitting a join request.
+   The server checks the submitted location against the Zonity's join radius
+   (1 km by default). If a Zonity has an active Zonity admin, the request is
+   pending Zonity admin approval. If it has no admin, the request may be
+   auto-approved and a membership is created under the no-admin policy.
+   No vendor privilege or unrelated service permission is granted by discovery.
 
 If no nearby zone exists, the signed-in user can submit a named Zonity creation
 request. This records a request for tenant/platform review only. There is no
@@ -723,6 +725,27 @@ The nearby discovery endpoint accepts either the application session cookie
 a new Zonity require the application session, even when the flow started from
 WhatsApp. The current WhatsApp adapter also recognizes location messages, but
 the browser link is still the authoritative location submission path; provider
-location payloads are not trusted as an authorization grant. Zone catalog administration,
-approval/rejection UI, confirmation delivery, real SMS delivery, vendor
-onboarding, and provider retry/idempotency persistence remain follow-up work.
+location payloads are not trusted as an authorization grant. Zone catalog
+administration, Zonity admin assignment, no-admin outreach, approval/rejection UI,
+confirmation delivery, real SMS delivery, vendor onboarding, and provider
+retry/idempotency persistence remain follow-up work.
+
+### Role wording
+
+- **Zonity admin**: a scoped community/local administrator for one Zonity.
+  This role reviews join requests and can be invited when a Zonity has no
+  admin.
+- **Tenant operator**: an employee or authorized operator of the tenant that
+  owns/manages the Zonity. This role can administer tenant data and create a
+  Zonity after reviewing a creation request.
+- **Platform operator**: a Zonited Solutions operator with platform-level
+  control across tenants and appliance operations.
+
+These names keep the local Zonity role separate from backend tenant and
+platform administration. The implementation uses the scoped
+`identity_zone_admins` record for the first role; it does not expose an
+end-user Zonity creation API.
+
+The presence/absence of a Zonity admin, the join radius, and any future member
+count threshold are approval-policy inputs. The current implementation leaves
+the member-count threshold unset rather than hard-coding it.

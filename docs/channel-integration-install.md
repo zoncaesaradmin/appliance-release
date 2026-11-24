@@ -34,9 +34,11 @@ person can open `/app/discover`, share browser location, see up to five public
 zones within 10 km, and submit a pending join request. A WhatsApp location
 message is accepted as a normal inbound event, but the browser discovery flow
 remains the authoritative location submission. A login is required before the
-join request is submitted; no membership is granted automatically. If no zone
+join request is submitted, and the submitted location must be within the
+Zonity's join radius (1 km by default). A Zonity admin reviews the request;
+when no admin exists, the no-admin policy may auto-approve it. If no zone
 is nearby, the signed-in user can request a new Zonity by name. That request is
-reviewed and created only by authorized tenant/platform staff.
+reviewed and created only by authorized tenant operators or platform operators.
 
 ```sh
 chmod 600 /root/channel-integration-runtime.json
