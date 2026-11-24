@@ -152,7 +152,10 @@ require_config_path() {
 }
 
 default_release_run_dir() {
-  printf '%s/.run/appliance-release/%s\n' "${PWD}" "$(date -u +%Y%m%dT%H%M%SZ)"
+  # Keep the readable UTC timestamp, but add process/random entropy so two
+  # release attempts started in the same second cannot select the same run
+  # directory and prune each other's metadata while they are still running.
+  printf '%s/.run/appliance-release/%s-%s-%s\n' "${PWD}" "$(date -u +%Y%m%dT%H%M%SZ)" "$$" "${RANDOM}"
 }
 
 default_release_run_root() {

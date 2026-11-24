@@ -224,6 +224,10 @@ def test_run_install_patches_image_pull_and_dns() -> None:
     assert 'set_assign(text, \\"DNS_ZONE\\"' in text
     assert 'set_assign(text, \\"EXTRA_TLS_SANS\\"' in text
     assert 'set_assign(text, \\"OUT_DIR\\"' in text
+    # The install metadata writer receives 20 values after the script path;
+    # slicing only through argv[19] drops the final install-log argument and
+    # fails after a successful embedded-etcd stage.
+    assert ") = sys.argv[1:21]" in text
 
 
 def test_existing_install_requires_qualified_migration() -> None:

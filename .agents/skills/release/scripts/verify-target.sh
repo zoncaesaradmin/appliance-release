@@ -975,6 +975,7 @@ if failure_log_cmd:
         "log": str(run_dir_path / "logs" / "failure-logs.log"),
     }
 
+Path(out_path).parent.mkdir(parents=True, exist_ok=True)
 Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 print("true" if final_failed else "false")
 PY

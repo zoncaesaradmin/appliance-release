@@ -452,7 +452,7 @@ from pathlib import Path
     image_pull_registry,
     extra_tls_sans,
     install_log,
-) = sys.argv[1:20]
+) = sys.argv[1:21]
 
 payload = {
     "configPath": config_path,

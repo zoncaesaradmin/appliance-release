@@ -281,6 +281,9 @@ def test_verify_target_probes_every_server_ip() -> None:
     ):
         assert want in text, want
     common = COMMON_SH.read_text(encoding="utf-8")
+    assert "default_release_run_dir" in common
+    assert "%s-%s" in common
+    assert "Path(out_path).parent.mkdir(parents=True, exist_ok=True)" in text
     assert "https://${ip}:6443/readyz" in common
     assert "401|403" in common
 
