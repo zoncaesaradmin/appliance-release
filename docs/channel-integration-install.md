@@ -15,10 +15,17 @@ do not put it in Git, the release bundle, shell history, or support bundles:
   "graph_access_token": "...",
   "phone_number_id": "1234567890",
   "graph_api_version": "v21.0",
+  "otp_template_name": "your_approved_authentication_template",
+  "otp_template_language": "en_US",
   "tenant_id": "zonited-solutions",
   "channel_id": "customer-whatsapp"
 }
 ```
+
+The configured template must be an approved WhatsApp authentication template
+whose body accepts the six-digit code parameter. The installer does not create
+or approve Meta templates; configure that template in the WhatsApp Business
+account first.
 
 `tenant_id` and `channel_id` are provider-neutral application identity
 bindings. They are optional for the first customer endpoint and default to
@@ -27,6 +34,15 @@ additional platform number after that channel has been provisioned in the
 identity store. The adapter verifies Meta's signature first, then resolves the
 sender through the internal identity contract. It never forwards a WhatsApp
 sender or caller-supplied identity headers to application APIs.
+
+When both application identity and channel integrations are enabled, OTP
+delivery uses the appliance's existing JetStream messaging SDK. Identity
+creates and stores the challenge, then publishes an encrypted,
+provider-neutral `event.identity.otp.requested` event. The channel adapter is
+the durable WhatsApp consumer: it decrypts the code in memory and sends the
+configured authentication template through the existing Meta client. Identity
+does not import Meta or select a provider. Local/test mode keeps the internal
+OTP inbox and does not require messaging or a WhatsApp template.
 
 For a customer message, the identity response includes a short-lived discovery
 link bound to that channel sender. The adapter replies with that link so the
