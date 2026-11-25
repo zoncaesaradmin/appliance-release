@@ -119,6 +119,7 @@ freeze-third-party:
 .PHONY: verify-shell
 verify-shell:
 	@bash -n $$(find scripts -type f -name '*.sh' | LC_ALL=C sort)
+	@bash -n scripts/hermes/appliance-run
 	@bash -n $$(find deps -type f -name '*.sh' | LC_ALL=C sort)
 	@bash -n $$(find "$(RELEASE_SKILL_SCRIPT_DIR)" -type f -name '*.sh' | LC_ALL=C sort)
 	@bash -n configs/product-bundle.sample.env
@@ -130,6 +131,7 @@ verify-help:
 	@for script in $$(find scripts -type f -name '*.sh' | LC_ALL=C sort); do \
 		bash "$$script" --help >/dev/null; \
 	done
+	@bash scripts/hermes/appliance-run --help >/dev/null
 	@for script in $$(find "$(RELEASE_SKILL_SCRIPT_DIR)" -type f -name '*.sh' | LC_ALL=C sort); do \
 		bash "$$script" --help >/dev/null; \
 	done

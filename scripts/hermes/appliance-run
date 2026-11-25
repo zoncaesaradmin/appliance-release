@@ -1,0 +1,465 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Hermes-side day-2 runner.  This file is intentionally self-contained: it is
+# installed on the Hermes host, while all build/deploy work is streamed over
+# SSH.  No helper is copied to an appliance target.
+
+SCRIPT_NAME="$(basename "$0")"
+BUILD_HOST="${APPLIANCE_BUILD_HOST:-zonsys@192.168.1.151}"
+TARGET_HOST="${APPLIANCE_TARGET_HOST:-zonsys@192.168.1.155}"
+REGISTRY_HOST="${APPLIANCE_REGISTRY_HOST:-192.168.1.156}"
+BUILD_REPO="${APPLIANCE_BUILD_REPO:-/home/zonsys/appliance-build/repos/appliance-code}"
+SUDO_PASSWORD_FILE="${APPLIANCE_SUDO_PASSWORD_FILE:-$HOME/.config/zon-appliance-automation/secrets/target-default.sudo}"
+TARGET_ARCH="${APPLIANCE_TARGET_ARCH:-amd64}"
+STATE_DIR="${APPLIANCE_AUTOMATION_STATE_DIR:-$HOME/.local/state/zon-appliance-automation}"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  appliance-run image-refresh --service SERVICE [options]
+
+Build and publish one allowlisted code-backed service on the build host, then
+roll it out by immutable digest to its Kubernetes deployment. All privileged
+target commands are streamed over SSH using the protected Hermes-host sudo
+password file; no helper is installed on the target.
+
+Allowlisted services currently include:
+  ui, controlplane, host-agent, channel-integration, identity, ordering,
+  workflow-controller, artifact-server, dns-server, inference-manager,
+  open-webui-gateway
+
+The old `ui-refresh` command remains an alias for `image-refresh --service ui`.
+
+Options:
+  --service NAMES    Comma-separated services to refresh (required)
+  --source-ref REF   Git ref fetched on the build host (default: main)
+  --build-host HOST  SSH destination (default: zonsys@192.168.1.151)
+  --target HOST      SSH destination (default: zonsys@192.168.1.155)
+  --registry HOST    Artifact registry host (default: 192.168.1.156)
+  --dry-run          Validate inputs and print the planned workflow only
+  -h, --help         Show this help
+
+Environment overrides:
+  APPLIANCE_BUILD_REPO, APPLIANCE_SUDO_PASSWORD_FILE,
+  APPLIANCE_TARGET_ARCH, APPLIANCE_AUTOMATION_STATE_DIR
+EOF
+}
+
+die() {
+  printf '%s: %s\n' "$SCRIPT_NAME" "$*" >&2
+  exit 1
+}
+
+shell_quote() {
+  printf '%q' "$1"
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+validate_host() {
+  [[ "$1" =~ ^[A-Za-z0-9._@:-]+$ ]] || die "invalid SSH host: $1"
+}
+
+validate_registry() {
+  [[ "$1" =~ ^[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || die "invalid registry host: $1"
+}
+
+validate_ref() {
+  [[ "$1" =~ ^[A-Za-z0-9._/@:+-]+$ ]] || die "invalid source ref: $1"
+}
+
+service_config() {
+  case "$1" in
+    ui|controlplane-ui)
+      SERVICE_KEY=ui
+      SERVICE_DIR=services/controlplane-ui
+      SERVICE_IMAGE_NAME=appliance-ui
+      RUNTIME_IMAGE_NAME=appliance-ui
+      DEPLOY_NAMESPACE=ace-apps
+      DEPLOYMENT_NAME=ui-server
+      CONTAINER_NAME=appliance-ui
+      ;;
+    controlplane)
+      SERVICE_KEY=controlplane
+      SERVICE_DIR=services/controlplane
+      SERVICE_IMAGE_NAME=appliance-control-plane
+      RUNTIME_IMAGE_NAME=appliance-control-plane
+      DEPLOY_NAMESPACE=ace-system
+      DEPLOYMENT_NAME=controlplane
+      CONTAINER_NAME=appliance-server
+      ;;
+    host-agent|hostagent)
+      SERVICE_KEY=host-agent
+      SERVICE_DIR=services/hostagent
+      SERVICE_IMAGE_NAME=appliance-host-agent
+      RUNTIME_IMAGE_NAME=appliance-host-agent
+      DEPLOY_NAMESPACE=ace-apps
+      DEPLOYMENT_NAME=host-agent
+      CONTAINER_NAME=appliance-host-agent
+      ;;
+    channel-integration)
+      SERVICE_KEY=channel-integration
+      SERVICE_DIR=services/channel-integration
+      SERVICE_IMAGE_NAME=appliance-channel-integration
+      RUNTIME_IMAGE_NAME=channel-integration
+      DEPLOY_NAMESPACE=ace-apps
+      DEPLOYMENT_NAME=channel-integration
+      CONTAINER_NAME=channel-integration
+      ;;
+    identity|application-identity)
+      SERVICE_KEY=identity
+      SERVICE_DIR=services/application-identity
+      SERVICE_IMAGE_NAME=appliance-application-identity
+      RUNTIME_IMAGE_NAME=application-identity
+      DEPLOY_NAMESPACE=ace-apps
+      DEPLOYMENT_NAME=identity
+      CONTAINER_NAME=identity
+      ;;
+    ordering)
+      SERVICE_KEY=ordering
+      SERVICE_DIR=services/ordering
+      SERVICE_IMAGE_NAME=appliance-ordering
+      RUNTIME_IMAGE_NAME=ordering
+      DEPLOY_NAMESPACE=ace-apps
+      DEPLOYMENT_NAME=ordering
+      CONTAINER_NAME=ordering
+      ;;
+    workflow-controller)
+      SERVICE_KEY=workflow-controller
+      SERVICE_DIR=services/workflow-controller
+      SERVICE_IMAGE_NAME=appliance-workflow-controller
+      RUNTIME_IMAGE_NAME=appliance-workflow-controller
+      DEPLOY_NAMESPACE=workflows
+      DEPLOYMENT_NAME=workflow-controller
+      CONTAINER_NAME=workflow-controller
+      ;;
+    artifact-server)
+      SERVICE_KEY=artifact-server
+      SERVICE_DIR=services/artifact-server
+      SERVICE_IMAGE_NAME=appliance-artifact-server
+      RUNTIME_IMAGE_NAME=artifact-server
+      DEPLOY_NAMESPACE=artifacts
+      DEPLOYMENT_NAME=artifact-server
+      CONTAINER_NAME=artifact-server
+      ;;
+    dns-server)
+      SERVICE_KEY=dns-server
+      SERVICE_DIR=services/dns-server
+      SERVICE_IMAGE_NAME=appliance-dns-server
+      RUNTIME_IMAGE_NAME=coredns
+      DEPLOY_NAMESPACE=dns
+      DEPLOYMENT_NAME=dns-server
+      CONTAINER_NAME=coredns
+      ;;
+    inference-manager)
+      SERVICE_KEY=inference-manager
+      SERVICE_DIR=services/inference-manager
+      SERVICE_IMAGE_NAME=appliance-inference-manager
+      RUNTIME_IMAGE_NAME=inference-manager
+      DEPLOY_NAMESPACE=inference
+      DEPLOYMENT_NAME=inference-gateway
+      CONTAINER_NAME=inference-manager
+      ;;
+    open-webui-gateway)
+      SERVICE_KEY=open-webui-gateway
+      SERVICE_DIR=services/open-webui-gateway
+      SERVICE_IMAGE_NAME=appliance-open-webui-gateway
+      RUNTIME_IMAGE_NAME=open-webui-gateway
+      DEPLOY_NAMESPACE=inference
+      DEPLOYMENT_NAME=inference-gateway-open-webui-gateway
+      CONTAINER_NAME=session-bridge
+      ;;
+    *)
+      die "unsupported service '$1'; run --help for the allowlisted service names"
+      ;;
+  esac
+}
+
+check_password_file() {
+  [[ -f "$SUDO_PASSWORD_FILE" ]] || die "sudo password file not found: $SUDO_PASSWORD_FILE"
+  [[ -r "$SUDO_PASSWORD_FILE" ]] || die "sudo password file is not readable: $SUDO_PASSWORD_FILE"
+  if command -v stat >/dev/null 2>&1; then
+    local mode owner
+    mode="$(stat -c '%a' "$SUDO_PASSWORD_FILE" 2>/dev/null || true)"
+    owner="$(stat -c '%U' "$SUDO_PASSWORD_FILE" 2>/dev/null || true)"
+    [[ -z "$mode" || "$mode" == "600" ]] || die "sudo password file must be mode 600: $SUDO_PASSWORD_FILE"
+    [[ -z "$owner" || "$owner" == "$(id -un)" ]] || die "sudo password file must be owned by $(id -un): $SUDO_PASSWORD_FILE"
+  fi
+  [[ -n "$(<"$SUDO_PASSWORD_FILE")" ]] || die "sudo password file is empty: $SUDO_PASSWORD_FILE"
+}
+
+parse_args() {
+  COMMAND="${1:-}"
+  [[ -n "$COMMAND" ]] || { usage; exit 2; }
+  shift || true
+  case "$COMMAND" in
+    ui-refresh)
+      SERVICE_KEY=ui
+      ;;
+    image-refresh)
+      SERVICE_KEY=""
+      ;;
+    *)
+      die "unknown workflow: $COMMAND"
+      ;;
+  esac
+
+  SOURCE_REF="main"
+  SERVICE_ARGUMENT=""
+  DRY_RUN=0
+  while (($#)); do
+    case "$1" in
+      --service)
+        (($# >= 2)) || die "--service needs a value"
+        SERVICE_ARGUMENT="$2"
+        shift 2
+        ;;
+      --source-ref)
+        (($# >= 2)) || die "--source-ref needs a value"
+        SOURCE_REF="$2"
+        shift 2
+        ;;
+      --build-host)
+        (($# >= 2)) || die "--build-host needs a value"
+        BUILD_HOST="$2"
+        shift 2
+        ;;
+      --target)
+        (($# >= 2)) || die "--target needs a value"
+        TARGET_HOST="$2"
+        shift 2
+        ;;
+      --registry)
+        (($# >= 2)) || die "--registry needs a value"
+        REGISTRY_HOST="$2"
+        shift 2
+        ;;
+      --dry-run)
+        DRY_RUN=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown option: $1"
+        ;;
+    esac
+  done
+  [[ -n "$SERVICE_ARGUMENT" ]] || die "image-refresh requires --service"
+  SERVICE_KEYS=()
+  local requested_service canonical_service
+  IFS=',' read -r -a requested_services <<< "$SERVICE_ARGUMENT"
+  for requested_service in "${requested_services[@]}"; do
+    requested_service="${requested_service//[[:space:]]/}"
+    [[ -n "$requested_service" ]] || die "--service contains an empty service name"
+    service_config "$requested_service"
+    canonical_service="$SERVICE_KEY"
+    case " ${SERVICE_KEYS[*]} " in
+      *" $canonical_service "*) ;;
+      *) SERVICE_KEYS+=("$canonical_service") ;;
+    esac
+  done
+}
+
+prepare_run() {
+  validate_host "$BUILD_HOST"
+  validate_host "$TARGET_HOST"
+  validate_registry "$REGISTRY_HOST"
+  validate_ref "$SOURCE_REF"
+  [[ "$TARGET_ARCH" == amd64 || "$TARGET_ARCH" == arm64 ]] || die "APPLIANCE_TARGET_ARCH must be amd64 or arm64"
+  [[ -d "$STATE_DIR" || -w "$(dirname "$STATE_DIR")" ]] || die "state directory parent is not writable: $STATE_DIR"
+  mkdir -p "$STATE_DIR/logs"
+  exec 9>"$STATE_DIR/run.lock"
+  if ! flock -n 9; then
+    die "another appliance workflow is already running"
+  fi
+  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  LOG_FILE="$STATE_DIR/logs/$RUN_ID.log"
+  exec > >(tee -a "$LOG_FILE") 2>&1
+  local services_csv
+  services_csv="$(IFS=,; printf '%s' "${SERVICE_KEYS[*]}")"
+  printf '%s: workflow=image-refresh services=%s source=%s build=%s target=%s registry=%s arch=%s\n' \
+    "$SCRIPT_NAME" "$services_csv" "$SOURCE_REF" "$BUILD_HOST" "$TARGET_HOST" "$REGISTRY_HOST" "$TARGET_ARCH"
+}
+
+build_payload() {
+  cat <<'EOF'
+set -Eeuo pipefail
+
+source_ref="$1"
+build_repo="$2"
+registry_host="$3"
+target_arch="$4"
+service_key="$5"
+service_dir="$6"
+service_image_name="$7"
+runtime_image_name="$8"
+auth_file="${HOME}/.config/containers/auth.json"
+
+[[ -d "$build_repo/.git" ]] || { echo "build repo not found: $build_repo" >&2; exit 1; }
+cd "$build_repo"
+[[ -z "$(git status --porcelain)" ]] || { echo "build repo has uncommitted changes; refusing to switch refs" >&2; exit 1; }
+
+git fetch --prune origin "$source_ref"
+git checkout --detach FETCH_HEAD
+commit="$(git rev-parse HEAD)"
+short_commit="$(git rev-parse --short=12 HEAD)"
+build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+image_tag="image-refresh-${service_key}-${short_commit}"
+local_image="localhost/${service_image_name}:${image_tag}"
+remote_image="${registry_host}/appliance-images/${runtime_image_name}:${image_tag}"
+
+if [[ -f "$auth_file" ]]; then
+  export REGISTRY_AUTH_FILE="$auth_file"
+fi
+
+echo "image-refresh: service=${service_key} building commit=${short_commit} tag=${image_tag}"
+make -C "$service_dir" image-local \
+  DEV_REGISTRY="$registry_host" \
+  DEV_REGISTRY_TLS_VERIFY=false \
+  SERVICE_IMAGE_NAME="localhost/${service_image_name}" \
+  SERVICE_IMAGE_TAG="$image_tag" \
+  VERSION="$image_tag" \
+  COMMIT="$short_commit" \
+  BUILD_TIME="$build_time" \
+  TARGET_ARCH="$target_arch" \
+  SERVICE_IMAGE_EXTRA_BUILD_ARGS="--arch ${target_arch}"
+
+digest_file="$(mktemp "/tmp/zon-image-refresh-${service_key}.XXXXXX")"
+cleanup() {
+  rm -f "$digest_file"
+  buildah rmi "$local_image" "$remote_image" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+buildah tag "$local_image" "$remote_image"
+buildah push --tls-verify=false --authfile "$auth_file" --digestfile "$digest_file" \
+  "$local_image" "docker://${remote_image}"
+digest="$(tr -d '[:space:]' < "$digest_file")"
+[[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "unexpected pushed digest: $digest" >&2; exit 1; }
+
+printf 'IMAGE_REF=%s@%s\n' "$registry_host/appliance-images/$runtime_image_name" "$digest"
+printf 'IMAGE_DIGEST=%s\n' "$digest"
+printf 'IMAGE_COMMIT=%s\n' "$commit"
+printf 'IMAGE_TAG=%s\n' "$image_tag"
+EOF
+}
+
+deploy_payload() {
+  cat <<'EOF'
+set -Eeuo pipefail
+
+image_ref="${IMAGE_REF:?IMAGE_REF is required}"
+if command -v k3s >/dev/null 2>&1; then
+  kubectl=(k3s kubectl)
+elif command -v kubectl >/dev/null 2>&1; then
+  kubectl=(kubectl)
+else
+  echo "neither k3s nor kubectl is available" >&2
+  exit 1
+fi
+
+namespace="${DEPLOY_NAMESPACE:?DEPLOY_NAMESPACE is required}"
+deployment="${DEPLOYMENT_NAME:?DEPLOYMENT_NAME is required}"
+container="${CONTAINER_NAME:?CONTAINER_NAME is required}"
+old_image="$("${kubectl[@]}" -n "$namespace" get deployment "$deployment" -o jsonpath="{.spec.template.spec.containers[?(@.name=='$container')].image}")"
+[[ -n "$old_image" ]] || { echo "could not read current image for $container" >&2; exit 1; }
+old_pull_policy="$("${kubectl[@]}" -n "$namespace" get deployment "$deployment" -o jsonpath="{.spec.template.spec.containers[?(@.name=='$container')].imagePullPolicy}")"
+[[ -n "$old_pull_policy" ]] || old_pull_policy=IfNotPresent
+echo "image-refresh: current image=${old_image}"
+
+# Normal signed bundles preload images and deliberately use Never.  A targeted
+# registry refresh must allow this digest to be pulled once; the image pull
+# secret is already part of the appliance deployment.
+pull_policy_patch="$(printf '{"spec":{"template":{"spec":{"containers":[{"name":"%s","imagePullPolicy":"IfNotPresent"}]}}}}' "$container")"
+"${kubectl[@]}" -n "$namespace" patch deployment "$deployment" --type=strategic -p "$pull_policy_patch"
+"${kubectl[@]}" -n "$namespace" set image "deployment/${deployment}" "$container=$image_ref"
+if ! "${kubectl[@]}" -n "$namespace" rollout status "deployment/${deployment}" --timeout=180s; then
+  echo "image-refresh: rollout failed; restoring previous image" >&2
+  "${kubectl[@]}" -n "$namespace" set image "deployment/${deployment}" "$container=$old_image" || true
+  "${kubectl[@]}" -n "$namespace" patch deployment "$deployment" --type=strategic \
+    -p "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"$container\",\"imagePullPolicy\":\"$old_pull_policy\"}]}}}}" || true
+  "${kubectl[@]}" -n "$namespace" rollout status "deployment/${deployment}" --timeout=180s || true
+  exit 1
+fi
+
+new_image="$("${kubectl[@]}" -n "$namespace" get deployment "$deployment" -o jsonpath="{.spec.template.spec.containers[?(@.name=='$container')].image}")"
+echo "image-refresh: rollout complete image=${new_image}"
+"${kubectl[@]}" -n "$namespace" get pods -l "app.kubernetes.io/name=${deployment}" -o wide
+EOF
+}
+
+run_build() {
+  local payload build_log quoted_ref quoted_repo quoted_registry quoted_arch quoted_service_key quoted_service_dir quoted_image_name quoted_runtime_image_name
+  payload="$(build_payload)"
+  build_log="$STATE_DIR/logs/$RUN_ID-build.log"
+  printf -v quoted_ref '%q' "$SOURCE_REF"
+  printf -v quoted_repo '%q' "$BUILD_REPO"
+  printf -v quoted_registry '%q' "$REGISTRY_HOST"
+  printf -v quoted_arch '%q' "$TARGET_ARCH"
+  printf -v quoted_service_key '%q' "$SERVICE_KEY"
+  printf -v quoted_service_dir '%q' "$SERVICE_DIR"
+  printf -v quoted_image_name '%q' "$SERVICE_IMAGE_NAME"
+  printf -v quoted_runtime_image_name '%q' "$RUNTIME_IMAGE_NAME"
+  echo "image-refresh: service=$SERVICE_KEY starting build on $BUILD_HOST"
+  if ! ssh -T -o BatchMode=yes "$BUILD_HOST" \
+      "bash -s -- $quoted_ref $quoted_repo $quoted_registry $quoted_arch $quoted_service_key $quoted_service_dir $quoted_image_name $quoted_runtime_image_name" <<<"$payload" | tee "$build_log"; then
+    die "remote $SERVICE_KEY build failed; log: $build_log"
+  fi
+  IMAGE_REF="$(sed -n 's/^IMAGE_REF=//p' "$build_log" | tail -n 1)"
+  IMAGE_DIGEST="$(sed -n 's/^IMAGE_DIGEST=//p' "$build_log" | tail -n 1)"
+  [[ "$IMAGE_REF" =~ ^${REGISTRY_HOST//./\.}/appliance-images/${RUNTIME_IMAGE_NAME}@sha256:[0-9a-f]{64}$ ]] || die "build did not return a valid image reference"
+  [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || die "build did not return a valid image digest"
+}
+
+run_deploy() {
+  local payload quoted_image password
+  payload="$(deploy_payload)"
+  printf -v quoted_image '%q' "$IMAGE_REF"
+  password="$(<"$SUDO_PASSWORD_FILE")"
+  echo "image-refresh: service=$SERVICE_KEY deploying immutable digest on $TARGET_HOST"
+  if ! {
+    printf '%s\n' "$password"
+    printf 'export IMAGE_REF=%s\n' "$quoted_image"
+    printf 'export DEPLOY_NAMESPACE=%q\n' "$DEPLOY_NAMESPACE"
+    printf 'export DEPLOYMENT_NAME=%q\n' "$DEPLOYMENT_NAME"
+    printf 'export CONTAINER_NAME=%q\n' "$CONTAINER_NAME"
+    printf '%s\n' "$payload"
+  } | ssh -T -o BatchMode=yes "$TARGET_HOST" "sudo -S -p '' bash -s"; then
+    die "remote UI deployment failed"
+  fi
+}
+
+main() {
+  if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    usage
+    exit 0
+  fi
+  parse_args "$@"
+  require_command ssh
+  require_command tee
+  require_command flock
+  prepare_run
+  if ((DRY_RUN)); then
+    check_password_file
+    for SERVICE_KEY in "${SERVICE_KEYS[@]}"; do
+      service_config "$SERVICE_KEY"
+      echo "image-refresh: service=$SERVICE_KEY dry-run only; no remote commands executed"
+    done
+    exit 0
+  fi
+  check_password_file
+  for SERVICE_KEY in "${SERVICE_KEYS[@]}"; do
+    service_config "$SERVICE_KEY"
+    run_build
+    run_deploy
+    echo "image-refresh: service=$SERVICE_KEY completed successfully"
+  done
+  echo "image-refresh: log=$LOG_FILE"
+}
+
+main "$@"
