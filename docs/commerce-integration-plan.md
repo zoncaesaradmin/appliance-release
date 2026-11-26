@@ -59,6 +59,9 @@ ace-infra
   blob-storage
   message-broker
 
+ace-app-core
+  shared application prerequisites (for example, the authentication service)
+
 ace-apps
   ui-server
   action-runtime
@@ -66,6 +69,11 @@ ace-apps
   ordering
   application-identity
 ```
+
+Fresh installation applies these slices in dependency order: `ace-infra`, the
+control-plane slice in `ace-system`, `ace-app-core`, then `ace-apps`. The
+application-core namespace is intentionally separate so shared application
+prerequisites can become ready before application-facing workloads start.
 
 Ordering is an application service. It is not merged into the appliance
 `controlplane` process. Its idempotent schema bootstrap runs at service startup
