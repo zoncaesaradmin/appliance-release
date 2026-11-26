@@ -114,6 +114,36 @@ signed `auth-service` runtime image are carried in the mandatory foundation
 pack, while the service is deployed into the `ace-app-core` namespace before
 the application workloads.
 
+`application-identity` is an onboarding/domain service, not an OTP provider.
+Its compatibility auth routes and principal lookups use the
+`APPLICATION_IDENTITY_AUTH_SERVICE_URL` value rendered into its deployment via
+the `application-auth-endpoint` ConfigMap. The default is the in-cluster
+`auth-service.ace-app-core.svc.cluster.local` endpoint; a deployment may set a
+private external Auth Service URL instead. Remote deployments must also allow
+the Auth Service's private CIDR in the identity egress policy. The current
+shared schema requires Auth Service and Identity to use the same durable
+PostgreSQL auth/domain database so user IDs and onboarding state remain one
+source of truth. A separate remote database needs a future replicated
+user-store contract and is not implied by the URL override.
+
+The endpoint is a deployment value, not a product-code constant. A single-node
+profile keeps the default in-cluster URL. If Auth Service is hosted privately in
+another cluster, override the chart values at deployment time and allow only
+that private network from Identity:
+
+```yaml
+applicationServices:
+  identity:
+    authServiceURL: https://auth.internal.example
+    authServiceEgressCIDRs:
+      - 10.20.0.0/24
+```
+
+The chart always renders the selected URL into the `application-auth-endpoint`
+ConfigMap in `ace-apps`; Identity reads that value at startup and fails closed
+if it is absent or invalid. No Auth Service address is embedded in a signed
+image or release artifact.
+
 ## Database and secret contract
 
 Retain the appliance-owned `platform-postgres` pod for both local and EC2
