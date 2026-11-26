@@ -108,6 +108,11 @@ The capability is included in the app-stack delivery pack and is activated only
 by `application-core`. Do not reuse the existing `applications` capability;
 that capability means host-agent-backed application management.
 
+The `application-auth` capability is separate from `application-identity` and
+is enabled by the same `application-core` profile. Its capability metadata is
+carried in the mandatory foundation pack for now; the signed auth-service
+runtime artifact will be added when that implementation is introduced.
+
 ## Database and secret contract
 
 Retain the appliance-owned `platform-postgres` pod for both local and EC2

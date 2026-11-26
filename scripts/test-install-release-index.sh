@@ -27,13 +27,14 @@ architecture: amd64
 packs:
   - id: foundation
     filename: appliance-0.1.0-foundation-amd64.tar.gz
-    capabilities: [base, actions, lan-discovery, files, video]
+    capabilities: [base, actions, lan-discovery, files, video, application-auth]
 capabilityPacks:
   base: foundation
   actions: foundation
   lan-discovery: foundation
   files: foundation
   video: foundation
+  application-auth: foundation
   workflows: dev-platform
   build: dev-platform
   artifact: dev-platform
@@ -55,7 +56,7 @@ profiles:
   future-profile:
     capabilities: [base, actions, lan-discovery, future]
   application-core:
-    capabilities: [base, channel-integrations, commerce]
+    capabilities: [base, channel-integrations, commerce, application-auth]
 EOF
 
 cat >"${TMP}/all-packs.yaml" <<'EOF'
@@ -64,7 +65,7 @@ architecture: amd64
 packs:
   - id: foundation
     filename: appliance-0.1.0-foundation-amd64.tar.gz
-    capabilities: [base, actions, lan-discovery, files, video]
+    capabilities: [base, actions, lan-discovery, files, video, application-auth]
   - id: app-stack
     filename: appliance-0.1.0-app-stack-amd64.tar.gz
     capabilities: [channel-integrations, commerce, application-identity]
@@ -93,6 +94,7 @@ capabilityPacks:
   channel-integrations: app-stack
   commerce: app-stack
   application-identity: app-stack
+  application-auth: foundation
 profiles:
   core:
     capabilities: [base, actions, lan-discovery, files, applications]
@@ -105,7 +107,7 @@ profiles:
   lanllm:
     capabilities: [base, actions, lan-discovery, inference, applications]
   application-core:
-    capabilities: [base, channel-integrations, commerce, application-identity]
+    capabilities: [base, channel-integrations, commerce, application-identity, application-auth]
 EOF
 
 got="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"
