@@ -47,6 +47,10 @@ are copied or passed during finalization by the cluster coordinator. The target
 uses the coordinator-patched helper only to stage the bootstrap server; it
 never performs a standalone public install.
 
+Optional install.auth_service_otp_delivery_mode selects Auth Service OTP
+delivery: event is the production default; local is for development/test and
+keeps codes in the Auth Service pod inbox.
+
 With devhost_scp, the run-scoped target work directory replaces
 install.bundle_download_dir so the copied, downloaded, and extracted files
 are removed together after finalization.
@@ -143,6 +147,11 @@ CHANNEL_INTEGRATION_ORIGIN="$(config_get_optional "${INSTALL_CONFIG}" "install.c
 CHANNEL_INTEGRATION_ORIGIN="$(printf '%s' "${CHANNEL_INTEGRATION_ORIGIN}" | tr -d '[:space:]')"
 TLS_TERMINATION="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_termination" || true)"
 TLS_TERMINATION="$(printf '%s' "${TLS_TERMINATION}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+AUTH_SERVICE_OTP_DELIVERY_MODE="$(config_get_optional "${INSTALL_CONFIG}" "install.auth_service_otp_delivery_mode" || true)"
+AUTH_SERVICE_OTP_DELIVERY_MODE="$(printf '%s' "${AUTH_SERVICE_OTP_DELIVERY_MODE}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+if [[ -n "${AUTH_SERVICE_OTP_DELIVERY_MODE}" && "${AUTH_SERVICE_OTP_DELIVERY_MODE}" != "local" && "${AUTH_SERVICE_OTP_DELIVERY_MODE}" != "event" ]]; then
+  fail "install.auth_service_otp_delivery_mode must be local or event"
+fi
 if [[ -n "${PUBLIC_ORIGIN}" && ! "${PUBLIC_ORIGIN}" =~ ^https://[A-Za-z0-9][A-Za-z0-9.-]*$ ]]; then
   fail "install.public_origin must be an HTTPS origin without a port or path"
 fi
@@ -244,6 +253,9 @@ fi
 if [[ -n "${EXTRA_TLS_SANS}" ]]; then
   log "extra-tls-sans=${EXTRA_TLS_SANS}"
 fi
+if [[ -n "${AUTH_SERVICE_OTP_DELIVERY_MODE}" ]]; then
+  log "auth-service-otp-delivery-mode=${AUTH_SERVICE_OTP_DELIVERY_MODE}"
+fi
 
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 quoted_sudo_password="$(shell_quote "${target_sudo_password}")"
@@ -313,6 +325,7 @@ image_pull_registry=$(shell_quote "${IMAGE_PULL_REGISTRY}")
 image_pull_username_env=$(shell_quote "${IMAGE_PULL_USERNAME_ENV}")
 image_pull_token_env=$(shell_quote "${IMAGE_PULL_TOKEN_ENV}")
 image_pull_tls_verify_env=$(shell_quote "${IMAGE_PULL_TLS_VERIFY_ENV}")
+auth_service_otp_delivery_mode=$(shell_quote "${AUTH_SERVICE_OTP_DELIVERY_MODE}")
 embedded_etcd_operation=$(shell_quote "${EMBEDDED_ETCD_OPERATION}")
 cluster_inventory_file=$(shell_quote "${CLUSTER_INVENTORY_REMOTE}")
 ${image_pull_exports}
@@ -332,7 +345,7 @@ fi
 
 chmod +x \"\${script_path}\"
 
-python3 - \"\${script_path}\" \"\${base_url}\" \"\${bearer}\" \"\${tls_insecure}\" \"\${version}\" \"\${prefix}\" \"\${dns_zone}\" \"\${extra_tls_sans}\" \"\${out_dir}\" \"\${image_pull_registry}\" \"\${image_pull_username_env}\" \"\${image_pull_token_env}\" \"\${image_pull_tls_verify_env}\" \"\${node_name}\" \"\${cluster_init}\" \"\${force_adopt}\" \"\${embedded_etcd_operation}\" \"\${cluster_inventory_file}\" <<'PY'
+python3 - \"\${script_path}\" \"\${base_url}\" \"\${bearer}\" \"\${tls_insecure}\" \"\${version}\" \"\${prefix}\" \"\${dns_zone}\" \"\${extra_tls_sans}\" \"\${out_dir}\" \"\${image_pull_registry}\" \"\${image_pull_username_env}\" \"\${image_pull_token_env}\" \"\${image_pull_tls_verify_env}\" \"\${node_name}\" \"\${cluster_init}\" \"\${force_adopt}\" \"\${auth_service_otp_delivery_mode}\" \"\${embedded_etcd_operation}\" \"\${cluster_inventory_file}\" <<'PY'
 from pathlib import Path
 import json
 import re
@@ -355,9 +368,10 @@ import sys
     node_name,
     cluster_init,
     force_adopt,
+    auth_service_otp_delivery_mode,
     embedded_etcd_operation,
     cluster_inventory_file,
-) = sys.argv[1:21]
+) = sys.argv[1:22]
 text = Path(path).read_text(encoding=\"utf-8\")
 
 def set_assign(text, name, value):
@@ -385,6 +399,7 @@ text = set_assign(text, \"IMAGE_PULL_TLS_VERIFY_ENV\", image_pull_tls_verify_env
 text = set_assign(text, \"NODE_NAME\", node_name)
 text = set_assign(text, \"CLUSTER_INIT\", cluster_init)
 text = set_assign(text, \"FORCE_ADOPT\", force_adopt)
+text = set_assign(text, \"AUTH_SERVICE_OTP_DELIVERY_MODE\", auth_service_otp_delivery_mode)
 text = set_assign(text, \"EMBEDDED_ETCD_OPERATION\", embedded_etcd_operation)
 text = set_assign(text, \"CLUSTER_INVENTORY_FILE\", cluster_inventory_file)
 Path(path).write_text(text, encoding=\"utf-8\")

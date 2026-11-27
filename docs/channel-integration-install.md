@@ -44,6 +44,29 @@ configured authentication template through the existing Meta client. Identity
 does not import Meta or select a provider. Local/test mode keeps the internal
 OTP inbox and does not require messaging or a WhatsApp template.
 
+The install runner selects event delivery by default. For development or
+local testing, set this optional install setting:
+
+```yaml
+install:
+  auth_service_otp_delivery_mode: local
+```
+
+The only valid values are `event` and `local`. `event` is the production path:
+the Auth Service publishes the OTP request for channel integrations. `local`
+does not send WhatsApp; retrieve a pending code from the Auth Service pod's
+private socket instead:
+
+```sh
+SOCKET=$(sudo kubectl -n ace-app-core exec deploy/auth-service -- \
+  sh -c 'find /var/run/zon-auth -name inbox.sock -print -quit')
+sudo kubectl -n ace-app-core exec deploy/auth-service -- \
+  /auth-service take-code --socket "$SOCKET" --phone +919876543210
+```
+
+Do not use `local` for a production deployment. Omitting the setting always
+selects `event` when the application-auth capability is enabled.
+
 For a customer message, the identity response includes a short-lived discovery
 link bound to that channel sender. The adapter replies with that link so the
 person can open `/app/discover`, share browser location, see up to five public

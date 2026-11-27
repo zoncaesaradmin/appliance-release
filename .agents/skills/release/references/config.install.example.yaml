@@ -72,6 +72,12 @@ install:
   # credentials and must be mode 0600 (or otherwise not group/world readable).
   # channel_integration_runtime_file: /Users/me/secrets/whatsapp-runtime.json
 
+  # Auth Service OTP delivery defaults to event (the production path). Set
+  # local only for development/test installs while the WhatsApp template or
+  # provider is unavailable; retrieve the code from the Auth Service pod's
+  # private inbox socket. Valid values: event, local.
+  # auth_service_otp_delivery_mode: local
+
   # Optional local-LAN Cloudflare Tunnel token. This is also a protected
   # devhost path, copied temporarily to the target. Omit for EC2/cloud installs.
   # The Cloudflare tunnel route should target http://127.0.0.1:80 on the local

@@ -35,6 +35,10 @@ Optional:
                                defaults to PUBLIC_ORIGIN.
   TLS_TERMINATION              Public edge for channel integrations: traefik
                                or cloudflare (cloudflare uses Traefik HTTP).
+  AUTH_SERVICE_OTP_DELIVERY_MODE
+                               Optional Auth Service OTP delivery mode:
+                               event (production default) or local
+                               (development/test only).
   TLS_CERT_FILE                Protected public TLS certificate PEM for direct
                                Traefik TLS (cloud installs).
   TLS_KEY_FILE                 Protected public TLS private key PEM for direct
@@ -90,6 +94,7 @@ IMAGE_PULL_TOKEN_ENV="${IMAGE_PULL_TOKEN_ENV:-}"
 IMAGE_PULL_TLS_VERIFY_ENV="${IMAGE_PULL_TLS_VERIFY_ENV:-}"
 CHANNEL_INTEGRATION_RUNTIME_FILE="${CHANNEL_INTEGRATION_RUNTIME_FILE:-}"
 CHANNEL_INTEGRATION_ORIGIN="${CHANNEL_INTEGRATION_ORIGIN:-}"
+AUTH_SERVICE_OTP_DELIVERY_MODE="${AUTH_SERVICE_OTP_DELIVERY_MODE:-}"
 CLOUDFLARE_TUNNEL_TOKEN_FILE="${CLOUDFLARE_TUNNEL_TOKEN_FILE:-}"
 PUBLIC_ORIGIN="${PUBLIC_ORIGIN:-}"
 TLS_TERMINATION="${TLS_TERMINATION:-}"
@@ -282,6 +287,11 @@ if [[ -n "${CHANNEL_INTEGRATION_RUNTIME_FILE}" && ! -f "${CHANNEL_INTEGRATION_RU
   echo "install-release: channel integration runtime descriptor is not a file: ${CHANNEL_INTEGRATION_RUNTIME_FILE}" >&2
   exit 2
 fi
+AUTH_SERVICE_OTP_DELIVERY_MODE="$(printf '%s' "${AUTH_SERVICE_OTP_DELIVERY_MODE}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+if [[ -n "${AUTH_SERVICE_OTP_DELIVERY_MODE}" && "${AUTH_SERVICE_OTP_DELIVERY_MODE}" != "local" && "${AUTH_SERVICE_OTP_DELIVERY_MODE}" != "event" ]]; then
+  echo "install-release: AUTH_SERVICE_OTP_DELIVERY_MODE must be local or event" >&2
+  exit 2
+fi
 if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" && ! -f "${CLOUDFLARE_TUNNEL_TOKEN_FILE}" ]]; then
   echo "install-release: Cloudflare Tunnel token file is not a file: ${CLOUDFLARE_TUNNEL_TOKEN_FILE}" >&2
   exit 2
@@ -316,6 +326,7 @@ echo "  tls-insecure:      ${TLS_INSECURE}"
 echo "  tls-cacert:        ${TLS_CACERT:-empty}"
 echo "  image-pull-registry: ${IMAGE_PULL_REGISTRY:-disabled}"
 echo "  extra-tls-sans:    ${EXTRA_TLS_SANS:-none}"
+echo "  auth-otp-delivery: ${AUTH_SERVICE_OTP_DELIVERY_MODE:-event (default)}"
 echo "  node-name:         ${NODE_NAME:-host-hostname}"
 
 mkdir -p "${OUT_DIR}"
@@ -718,6 +729,9 @@ if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
 fi
 if [[ -n "${CHANNEL_INTEGRATION_RUNTIME_FILE}" ]]; then
   lifecycle_args+=(--channel-integration-runtime-file "${CHANNEL_INTEGRATION_RUNTIME_FILE}")
+fi
+if [[ -n "${AUTH_SERVICE_OTP_DELIVERY_MODE}" ]]; then
+  lifecycle_args+=(--auth-service-otp-delivery-mode "${AUTH_SERVICE_OTP_DELIVERY_MODE}")
 fi
 if [[ -n "${PUBLIC_ORIGIN}" ]]; then
   lifecycle_args+=(--public-origin "${PUBLIC_ORIGIN}")
