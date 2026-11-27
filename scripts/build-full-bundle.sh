@@ -532,6 +532,7 @@ GENERATED_DIR="${WORKSPACE}/generated"
 CONFIG_OUT="${GENERATED_DIR}/product-bundle.env"
 BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-foundation"
 APP_STACK_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-app-stack"
+GEO_STACK_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-geo-stack"
 STORAGE_NETWORK_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-storage-network"
 DEVICEUSER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 CPU_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-std-llm"
@@ -539,6 +540,7 @@ ACC_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-acc-llm"
 OPEN_WEBUI_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-open-webui"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" foundation)"
 APP_STACK_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" app-stack)"
+GEO_STACK_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" geo-stack)"
 STORAGE_NETWORK_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" storage-network)"
 DEVICEUSER_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" deviceuser)"
 CPU_LLM_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" std-llm)"
@@ -2861,6 +2863,10 @@ if appliance_pack_wanted app-stack; then
   create_gzip_tarball "${APP_STACK_ARCHIVE}" "$(dirname "${APP_STACK_BUNDLE_DIR}")" "$(basename "${APP_STACK_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${APP_STACK_ARCHIVE}")
 fi
+if appliance_pack_wanted geo-stack; then
+  create_gzip_tarball "${GEO_STACK_ARCHIVE}" "$(dirname "${GEO_STACK_BUNDLE_DIR}")" "$(basename "${GEO_STACK_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${GEO_STACK_ARCHIVE}")
+fi
 if appliance_pack_wanted storage-network; then
   create_gzip_tarball "${STORAGE_NETWORK_ARCHIVE}" "$(dirname "${STORAGE_NETWORK_BUNDLE_DIR}")" "$(basename "${STORAGE_NETWORK_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${STORAGE_NETWORK_ARCHIVE}")
@@ -2890,6 +2896,7 @@ python3 "${SCRIPT_DIR}/write-release-index.py" "${RELEASE_INDEX}" "${PRODUCT_VER
   ${APPLIANCE_PACKS_RESOLVED} \
   "$(basename "${BUNDLE_ARCHIVE}")" \
   "$(basename "${APP_STACK_ARCHIVE}")" \
+  "$(basename "${GEO_STACK_ARCHIVE}")" \
   "$(basename "${STORAGE_NETWORK_ARCHIVE}")" \
   "$(basename "${DEVICEUSER_ARCHIVE}")" \
   "$(basename "${CPU_LLM_ARCHIVE}")" \

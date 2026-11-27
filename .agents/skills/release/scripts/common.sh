@@ -1205,7 +1205,7 @@ reject_removed_build_publish_packaging_keys() {
     fail "build_flow Zot/DNS pin keys were removed from build-publish config; product scripts/build-full-bundle.sh owns those defaults"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "build_flow.appliance_packs_env" || true)" ]]; then
-    fail "build_flow.appliance_packs_env was removed; set build_flow.appliance_packs to a literal value (all|foundation|foundation,app-stack|foundation,app-stack,storage-network|foundation,deviceuser|foundation,std-llm|foundation,std-llm,open-webui|foundation,acc-llm)"
+    fail "build_flow.appliance_packs_env was removed; set build_flow.appliance_packs to a literal value (all|foundation|foundation,app-stack|foundation,geo-stack|foundation,app-stack,geo-stack,storage-network,deviceuser|foundation,std-llm|foundation,std-llm,open-webui|foundation,acc-llm)"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "install.appliance_profile" || true)" ]]; then
     fail "verification.* and install.* belong on the install-role config, not build-publish"

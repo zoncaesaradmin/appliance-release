@@ -81,7 +81,7 @@ def main():
     args = sys.argv[7:]
     if len(args) < 8:
         raise ValueError("expected selected package IDs followed by package filenames")
-    filename_names = ("foundation", "app-stack", "storage-network", "deviceuser", "std-llm", "acc-llm", "open-webui")
+    filename_names = ("foundation", "app-stack", "geo-stack", "storage-network", "deviceuser", "std-llm", "acc-llm", "open-webui")
     filenames = dict(zip(filename_names, args[-len(filename_names):]))
     profiles = yaml.safe_load(Path(profiles_path).read_text())["profiles"]
     capabilities = yaml.safe_load(Path(capabilities_path).read_text())["capabilities"]

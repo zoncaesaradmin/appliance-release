@@ -37,6 +37,11 @@ assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation storage-network" "foundation
 appliance_pack_wanted storage-network || fail "storage-network should be wanted"
 appliance_pack_wanted std-llm && fail "std-llm should not be wanted"
 
+APPLIANCE_PACKS="geo-stack"
+appliance_packs_resolve
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation geo-stack" "geo-stack auto-includes foundation"
+appliance_pack_wanted geo-stack || fail "geo-stack should be wanted"
+
 APPLIANCE_PACKS="app-stack"
 appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation app-stack" "app-stack auto-includes foundation"

@@ -65,6 +65,9 @@ packs:
   - id: app-stack
     filename: appliance-0.1.0-app-stack-amd64.tar.gz
     capabilities: [channel-integrations, commerce, application-identity]
+  - id: geo-stack
+    filename: appliance-0.1.0-geo-stack-amd64.tar.gz
+    capabilities: [geo-spatial-store, geo-data-api, geo-basemap, geo-zone-editor]
   - id: storage-network
     filename: appliance-0.1.0-storage-network-amd64.tar.gz
     capabilities: [artifact]
@@ -89,6 +92,10 @@ capabilityPacks:
   commerce: app-stack
   application-identity: app-stack
   application-auth: foundation
+  geo-spatial-store: geo-stack
+  geo-data-api: geo-stack
+  geo-basemap: geo-stack
+  geo-zone-editor: geo-stack
 profiles:
   core:
     capabilities: [base, actions, lan-discovery, files, applications]
@@ -100,13 +107,15 @@ profiles:
     capabilities: [base, actions, lan-discovery, inference, applications]
   application-core:
     capabilities: [base, channel-integrations, commerce, application-identity, application-auth]
+  geo-zone:
+    capabilities: [base, application-auth, geo-spatial-store, geo-data-api, geo-basemap, geo-zone-editor]
 EOF
 
 got="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"
 [[ "${got}" == "foundation" ]] || fail "foundation-only index: got '${got}'"
 
 got="$(published_pack_ids_from_index "${TMP}/all-packs.yaml")"
-[[ "${got}" == "foundation app-stack storage-network deviceuser std-llm" ]] || fail "all-packs index: got '${got}'"
+[[ "${got}" == "foundation app-stack geo-stack storage-network deviceuser std-llm" ]] || fail "all-packs index: got '${got}'"
 
 pack_id_is_published foundation "${got}" || fail "foundation should be published"
 pack_id_is_published storage-network "${got}" || fail "storage-network should be published"
@@ -115,6 +124,9 @@ pack_id_is_published std-llm "foundation" && fail "std-llm must not be published
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "application-core" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
 [[ "${req}" == "app-stack" ]] || fail "application-core packs: '${req}'"
+
+req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "geo-zone" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+[[ "${req}" == "geo-stack" ]] || fail "geo-zone packs: '${req}'"
 
 archive="$(pack_filename_from_index "${TMP}/all-packs.yaml" "storage-network")"
 [[ "${archive}" == "appliance-0.1.0-storage-network-amd64.tar.gz" ]] || fail "storage-network archive: '${archive}'"

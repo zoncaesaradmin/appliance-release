@@ -84,6 +84,7 @@ RELEASE_INPUT_DIR="${WORKDIR}/release-input"
 BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-foundation"
 APP_STACK_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-app-stack"
 STORAGE_NETWORK_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-storage-network"
+GEO_STACK_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-geo-stack"
 DEVICEUSER_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 CPU_LLM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-std-llm"
 ACC_LLM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-acc-llm"
@@ -568,6 +569,7 @@ assemble_all_packs() {
     case "${pack_id}" in
       foundation) bundle_dir="${BUNDLE_DIR}" ;;
       app-stack) bundle_dir="${APP_STACK_BUNDLE_DIR}" ;;
+      geo-stack) bundle_dir="${GEO_STACK_BUNDLE_DIR}" ;;
       storage-network) bundle_dir="${STORAGE_NETWORK_BUNDLE_DIR}" ;;
       deviceuser) bundle_dir="${DEVICEUSER_BUNDLE_DIR}" ;;
       std-llm) bundle_dir="${CPU_LLM_BUNDLE_DIR}" ;;
@@ -622,7 +624,7 @@ if [[ -n "${VALUES_FILE:-}" ]]; then
   cp "${VALUES_FILE}" "${STAGING_DIR}/values-minimal.yaml"
 fi
 
-rm -rf "${BUNDLE_DIR}" "${APP_STACK_BUNDLE_DIR}" "${STORAGE_NETWORK_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}" "${ACC_LLM_BUNDLE_DIR}" "${OPEN_WEBUI_BUNDLE_DIR}"
+rm -rf "${BUNDLE_DIR}" "${APP_STACK_BUNDLE_DIR}" "${GEO_STACK_BUNDLE_DIR}" "${STORAGE_NETWORK_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}" "${ACC_LLM_BUNDLE_DIR}" "${OPEN_WEBUI_BUNDLE_DIR}"
 
 assemble_all_packs
 
@@ -632,6 +634,9 @@ if appliance_pack_wanted foundation; then
 fi
 if appliance_pack_wanted app-stack; then
   echo "  app-stack: ${APP_STACK_BUNDLE_DIR}"
+fi
+if appliance_pack_wanted geo-stack; then
+  echo "  geo-stack: ${GEO_STACK_BUNDLE_DIR}"
 fi
 if appliance_pack_wanted storage-network; then
   echo "  storage-network: ${STORAGE_NETWORK_BUNDLE_DIR}"

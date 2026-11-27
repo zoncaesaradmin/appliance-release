@@ -63,7 +63,7 @@
 #     ONLINE_REGISTRY_USER, ONLINE_REGISTRY_TOKEN, ONLINE_REGISTRY_TLS_VERIFY
 #   Plus APPLIANCE_BUILD_SUDO_PASSWORD.
 #   Pack selection is a config literal (not an env):
-#     build_flow.appliance_packs: all|foundation|foundation,app-stack|foundation,app-stack,storage-network|foundation,deviceuser|foundation,std-llm
+#     build_flow.appliance_packs: all|foundation|foundation,app-stack|foundation,geo-stack|foundation,app-stack,geo-stack,storage-network,deviceuser|foundation,deviceuser|foundation,std-llm
 #     build_flow.target_arch: amd64|arm64 (REQUIRED; one build = one arch; no default)
 #     (omit or all → every available pack; partial releases support only profiles
 #     whose capability packages are included)
@@ -111,6 +111,7 @@ build_flow:
   #   appliance_packs: foundation,app-stack  # application-core services
   #   appliance_packs: foundation,storage-network,deviceuser
   #   appliance_packs: foundation,app-stack,storage-network,deviceuser
+  #   appliance_packs: foundation,geo-stack  # Geo-Zone profile (requires signed Geo-Zone runtime artifacts)
   #   appliance_packs: foundation,storage-network,deviceuser,std-llm
   #   appliance_packs: foundation,std-llm               # inference-only (API)
   #   appliance_packs: foundation,std-llm,open-webui    # inference + chat showcase

@@ -501,6 +501,7 @@ product_version = str(config.get("bundleVersion", "0.0.0"))
 pack_specs = (
     ("foundation", f"appliance-{product_version}-foundation", "foundation"),
     ("app-stack", f"appliance-{product_version}-app-stack", "app-stack"),
+    ("geo-stack", f"appliance-{product_version}-geo-stack", "geo-stack"),
     ("storage-network", f"appliance-{product_version}-storage-network", "storage-network"),
     ("deviceuser", f"appliance-{product_version}-deviceuser", "deviceuser"),
     ("std-llm", f"appliance-{product_version}-std-llm", "std-llm"),
@@ -527,6 +528,7 @@ This workspace is the handoff point between the two repos:
 4. \`appliance-release\` assembles signed packs using:
    \`${WORKDIR}/bundle-assembly.foundation.json\`
    \`${WORKDIR}/bundle-assembly.app-stack.json\`
+   \`${WORKDIR}/bundle-assembly.geo-stack.json\`
    \`${WORKDIR}/bundle-assembly.storage-network.json\`
    \`${WORKDIR}/bundle-assembly.deviceuser.json\`
    \`${WORKDIR}/bundle-assembly.std-llm.json\`

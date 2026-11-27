@@ -967,7 +967,7 @@ def main() -> int:
     parser.add_argument("--companion-bundle-root", action="append", default=[], help="Additional signed delivery pack roots used to locate supplemental OCI images; every image reference remains required and checked.")
     parser.add_argument(
         "--pack",
-        choices=("foundation", "storage-network", "deviceuser", *INFERENCE_PACKAGES, "open-webui", "video"),
+        choices=("foundation", "storage-network", "deviceuser", "geo-stack", *INFERENCE_PACKAGES, "open-webui", "video"),
         default="foundation",
         help=(
             "Which signed pack archive is under --bundle-root. "
@@ -1161,6 +1161,12 @@ def main() -> int:
                 ),
             }
         )
+    elif pack == "geo-stack":
+        # Geo-Zone runtime artifacts are intentionally added in a follow-up
+        # producer/consumer change. The pack still participates in signed
+        # release-index/profile gating now, and generic manifest checks above
+        # remain fail-closed for malformed entries.
+        checked["geo"] = {"status": "metadata-only"}
     elif pack in INFERENCE_PACKAGES:
         runtime = (bundle_manifest.get("runtimes") or {}).get("inference")
         if not isinstance(runtime, dict) or runtime.get("package") != pack:

@@ -456,6 +456,15 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
       >"${RUN_DIR}/logs/release-artifact-validation-deviceuser.json"
   fi
 
+  if materialize_pack_root "geo-stack" "${RUN_DIR}/artifacts/geo-stack-bundle"; then
+    log "validating release-input against geo-stack pack"
+    python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
+      --pack geo-stack \
+      --release-input-root "${RUN_DIR}/artifacts/release-input" \
+      --bundle-root "${RUN_DIR}/artifacts/geo-stack-bundle" \
+      >"${RUN_DIR}/logs/release-artifact-validation-geo-stack.json"
+  fi
+
   if materialize_pack_root "std-llm" "${RUN_DIR}/artifacts/std-llm-bundle"; then
     log "validating release-input against std-llm pack"
     python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
