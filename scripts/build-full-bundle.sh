@@ -110,6 +110,8 @@ source "${SCRIPT_DIR}/lib/appliance-packs.sh"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/target-arch.sh"
 # shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/ui-npm-deps.sh"
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/fs-link.sh"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/third-party-freeze.sh"
@@ -1757,6 +1759,9 @@ mkdir -p "${REPOS_DIR}" "${ARTIFACTS_DIR}" "${INPUTS_DIR}" "${GENERATED_DIR}" "$
 clone_repo "${CODE_REPO_SOURCE}" "${code_git_ref}" "${CODE_REPO_DIR}"
 clone_repo "${CTL_REPO_SOURCE}" "${ctl_git_ref}" "${CTL_REPO_DIR}"
 
+UI_NPM_SOURCE_DIR="${CODE_REPO_DIR}/services/controlplane-ui"
+UI_WEB_DEPS_CACHE_TAG="$(ui_npm_deps_cache_tag "${UI_NPM_SOURCE_DIR}" "${HOST_ARCH}")"
+
 # Catalog SSOT: selected packs → capabilities → artifacts.required.
 eval "$(python3 "${SCRIPT_DIR}/lib/resolve-pack-artifacts.py" \
   --packages "${CODE_REPO_DIR}/metadata-bundle/base/packages/catalog.yaml" \
@@ -1879,7 +1884,7 @@ if offline_build_enabled; then
   UI_NODE_IMAGE="$(lan_cache_ref node "22-alpine-${HOST_ARCH}")"
   UI_GO_IMAGE="$(lan_cache_ref golang "1.26-${HOST_ARCH}")"
   UI_RUNTIME_IMAGE="$(lan_cache_ref alpine-3.24.1-runtime "3.24.1-${TARGET_ARCH}")"
-  UI_WEB_DEPS_IMAGE="$(lan_cache_ref controlplane-ui-web-deps "lockfile-${HOST_ARCH}")"
+  UI_WEB_DEPS_IMAGE="$(lan_cache_ref controlplane-ui-web-deps "${UI_WEB_DEPS_CACHE_TAG}")"
   ARTIFACT_RUNTIME_SOURCE_IMAGE="$(lan_cache_ref debian-bookworm-slim-runtime "bookworm-slim-${TARGET_ARCH}")"
   OPEN_WEBUI_NODE_IMAGE="$(lan_cache_ref open-webui-node "22-alpine3.20-${HOST_ARCH}")"
   OPEN_WEBUI_PYTHON_IMAGE="$(lan_cache_ref open-webui-python "3.11-slim-bookworm-${TARGET_ARCH}")"

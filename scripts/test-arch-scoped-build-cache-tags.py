@@ -36,7 +36,6 @@ REQUIRED_SERVICE_BUILD_BASES = (
     "GOLANG_CACHE_TAG_BASE",
     "NODE_CACHE_TAG_BASE",
     "ALPINE_CACHE_TAG_BASE",
-    "UI_DEPS_CACHE_TAG_BASE",
 )
 
 REQUIRED_ARTIFACT_DEBIAN = "DEBIAN_CACHE_TAG_BASE"
@@ -55,7 +54,7 @@ REQUIRED_LAN_CACHE_SNIPPETS = [
     'lan_cache_ref open-webui-node "22-alpine3.20-${HOST_ARCH}"',
     'lan_cache_ref open-webui-python "3.11-slim-bookworm-${TARGET_ARCH}"',
     'lan_cache_ref open-webui-uv "0.12.10-${TARGET_ARCH}"',
-    'lan_cache_ref controlplane-ui-web-deps "lockfile-${HOST_ARCH}"',
+    'lan_cache_ref controlplane-ui-web-deps "${UI_WEB_DEPS_CACHE_TAG}"',
     'lan_cache_ref debian-bookworm-slim-runtime "bookworm-slim-${TARGET_ARCH}"',
     'lan_cache_ref "zot-linux-${TARGET_ARCH}"',
 ]
@@ -79,6 +78,11 @@ def main() -> None:
     for key in REQUIRED_SERVICE_BUILD_BASES:
         if f"{key}=" not in sbb:
             fail(f"service-build-bases/pins.env: missing {key}=")
+
+    for script_name in ("build.sh", "push.sh"):
+        script = (DEPS / "service-build-bases" / "scripts" / script_name).read_text(encoding="utf-8")
+        if 'ui_npm_deps_cache_tag "${UI_NPM_SOURCE_DIR}" "${TARGET_ARCH}"' not in script:
+            fail(f"service-build-bases/scripts/{script_name}: UI deps cache tag must be lockfile-content-addressed")
 
     asb = (DEPS / "artifact-server-bases" / "pins.env").read_text(encoding="utf-8")
     if f"{REQUIRED_ARTIFACT_DEBIAN}=" not in asb:
@@ -108,6 +112,11 @@ def main() -> None:
             fail("Jellyfin release pin and appliance-code application catalog reference must match")
 
     bundle = BUNDLE.read_text(encoding="utf-8")
+    if 'ui_npm_deps_cache_tag "${UI_NPM_SOURCE_DIR}" "${HOST_ARCH}"' not in bundle:
+        fail("build-full-bundle.sh must derive the UI deps cache tag from the synchronized appliance-code lockfile")
+    tooling = (ROOT / "scripts" / "run-in-dev-build.sh").read_text(encoding="utf-8")
+    if 'UI_NPM_SOURCE_DIR=/workspace/.ui-npm-source' not in tooling:
+        fail("run-in-dev-build.sh must mount an explicit UI npm source for the nested service-build-bases seed")
     for snippet in REQUIRED_LAN_CACHE_SNIPPETS:
         if snippet not in bundle:
             fail(f"build-full-bundle.sh missing offline remap: {snippet}")

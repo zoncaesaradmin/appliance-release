@@ -85,7 +85,7 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | `open-webui` | files API `build-deps/open-webui/<locked-commit>/open-webui-source.tar.gz`; OCI `build-cache/open-webui-node:22-alpine3.20-${HOST_ARCH}` (frontend/BUILDPLATFORM), `build-cache/open-webui-python:3.11-slim-bookworm-${TARGET_ARCH}`, and `build-cache/open-webui-uv:0.12.10-${TARGET_ARCH}` | Verified upstream source + Dockerfile bases for the optional `open-webui` pack (requires `std-llm` or `acc-llm`); never foundation or bare LLM packs. Cross-arch freezes require both arch seeds. |
 | `blob-storage` | `build-cache/minio:…-${TARGET_ARCH}` built from the pinned GitHub MinIO binary | foundation blob-storage wrap |
 | `jellyfin` | `build-cache/jellyfin:10.10.7-amd64-3b38dae4c3dd` | reviewed Jellyfin runtime; source-digest-scoped to reject stale cache content (**amd64 only**; skipped when `TARGET_ARCH=arm64`) |
-| `service-build-bases` | `golang`/`node`/`alpine-3.24.1-runtime`/`controlplane-ui-web-deps` with `-${TARGET_ARCH}` (or host-arch for compile) | CP/UI/hostagent |
+| `service-build-bases` | `golang`/`node`/`alpine-3.24.1-runtime` with `-${TARGET_ARCH}`; `controlplane-ui-web-deps:lockfile-<package-lock-sha12>-${TARGET_ARCH}` (or host-arch for compile) | CP/UI/hostagent |
 | `host-packages` | files `host-packages/ubuntu-…/${TARGET_ARCH}/…` | host-packages unpack |
 | `platform-inputs` | files `k3s/${TARGET_ARCH}/…`, `helm/…-linux-${TARGET_ARCH}` | K3s + Helm |
 | `cloudflared` | files `cloudflared/2026.11.1/${TARGET_ARCH}/cloudflared` | pinned host-native local Cloudflare Tunnel connector; bundled in foundation, enabled only with a local token |
@@ -292,9 +292,10 @@ archive `index.json` digest so a stale sidecar cannot disagree with the tar
 
 ## Updating UI npm deps
 
-When `appliance-code/services/controlplane-ui/package-lock.json` changes, copy
-`package.json` and `package-lock.json` into
-`deps/service-build-bases/ui-npm/` and run:
+`controlplane-ui-web-deps` is content-addressed by the synchronized
+`appliance-code/services/controlplane-ui/package-lock.json`. From the release
+checkout with its sibling appliance-code checkout available (or with
+`UI_NPM_SOURCE_DIR` set), run:
 
 ```bash
 TARGET_ARCH=amd64 make -C deps/service-build-bases release

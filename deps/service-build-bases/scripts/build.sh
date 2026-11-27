@@ -4,19 +4,26 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$(cd "$(dirname "$0")/../../.." && pwd)/scripts/deps-common.sh"
 source "${ROOT}/pins.env"
 source "$(cd "$(dirname "$0")/../../.." && pwd)/scripts/lib/target-arch.sh"
+source "$(cd "$(dirname "$0")/../../.." && pwd)/scripts/lib/ui-npm-deps.sh"
 target_arch_resolve
 deps_require_build_arch_runnable "${TARGET_ARCH}"
 
 GOLANG_CACHE_TAG="${GOLANG_CACHE_TAG_BASE}-${TARGET_ARCH}"
 NODE_CACHE_TAG="${NODE_CACHE_TAG_BASE}-${TARGET_ARCH}"
 ALPINE_CACHE_TAG="${ALPINE_CACHE_TAG_BASE}-${TARGET_ARCH}"
-UI_DEPS_CACHE_TAG="${UI_DEPS_CACHE_TAG_BASE}-${TARGET_ARCH}"
+UI_NPM_SOURCE_DIR="$(ui_npm_deps_source_dir "$(cd "${ROOT}/../.." && pwd)")"
+UI_DEPS_CACHE_TAG="$(ui_npm_deps_cache_tag "${UI_NPM_SOURCE_DIR}" "${TARGET_ARCH}")"
 GOLANG_LOCAL="localhost/build-cache/${GOLANG_CACHE_NAME}:${GOLANG_CACHE_TAG}"
 NODE_LOCAL="localhost/build-cache/${NODE_CACHE_NAME}:${NODE_CACHE_TAG}"
 ALPINE_LOCAL="localhost/build-cache/${ALPINE_CACHE_NAME}:${ALPINE_CACHE_TAG}"
 UI_DEPS_LOCAL="localhost/build-cache/${UI_DEPS_CACHE_NAME}:${UI_DEPS_CACHE_TAG}"
 
 mkdir -p "${ROOT}/.staging"
+UI_DEPS_CONTEXT="$(mktemp -d "${ROOT}/.staging/ui-npm.XXXXXX")"
+trap 'rm -rf "${UI_DEPS_CONTEXT}"' EXIT
+cp "${ROOT}/Containerfile.ui-npm-deps" "${UI_DEPS_CONTEXT}/Containerfile"
+mkdir -p "${UI_DEPS_CONTEXT}/ui-npm"
+cp "${UI_NPM_SOURCE_DIR}/package.json" "${UI_NPM_SOURCE_DIR}/package-lock.json" "${UI_DEPS_CONTEXT}/ui-npm/"
 BUILD_CMD="$(deps_default_build_cmd)"
 ALPINE_SRC_LOCAL="localhost/build-cache/alpine:3.24.1-${TARGET_ARCH}"
 
@@ -28,7 +35,7 @@ ${BUILD_CMD} --pull=never --build-arg "BASE_IMAGE=${ALPINE_SRC_LOCAL}" \
   -f "${ROOT}/Containerfile.alpine-runtime" -t "${ALPINE_LOCAL}" "${ROOT}"
 # shellcheck disable=SC2086
 ${BUILD_CMD} --pull=never --build-arg "BASE_IMAGE=${NODE_LOCAL}" \
-  -f "${ROOT}/Containerfile.ui-npm-deps" -t "${UI_DEPS_LOCAL}" "${ROOT}"
+  -f "${UI_DEPS_CONTEXT}/Containerfile" -t "${UI_DEPS_LOCAL}" "${UI_DEPS_CONTEXT}"
 printf '%s\n' "${GOLANG_LOCAL}" > "${ROOT}/.staging/golang-ref"
 printf '%s\n' "${NODE_LOCAL}" > "${ROOT}/.staging/node-ref"
 printf '%s\n' "${ALPINE_LOCAL}" > "${ROOT}/.staging/alpine-ref"

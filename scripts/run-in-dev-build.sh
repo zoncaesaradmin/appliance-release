@@ -96,6 +96,16 @@ forward_env=(
   -e STORAGE_DRIVER=overlay
 )
 
+ui_npm_source_mount=()
+if [[ -n "${UI_NPM_SOURCE_DIR:-}" ]]; then
+  if [[ ! -f "${UI_NPM_SOURCE_DIR}/package.json" || ! -f "${UI_NPM_SOURCE_DIR}/package-lock.json" ]]; then
+    echo "run-in-dev-build: UI_NPM_SOURCE_DIR must contain package.json and package-lock.json: ${UI_NPM_SOURCE_DIR}" >&2
+    exit 2
+  fi
+  forward_env+=( -e UI_NPM_SOURCE_DIR=/workspace/.ui-npm-source )
+  ui_npm_source_mount=( -v "${UI_NPM_SOURCE_DIR}:/workspace/.ui-npm-source:ro,Z" )
+fi
+
 echo "run-in-dev-build: ${TOOLING_IMAGE} --arch ${TARGET_ARCH} -- $*"
 if [[ -n "${DEV_REGISTRY:-}" ]]; then
   if [[ -z "${DEV_REGISTRY_USER:-}" || -z "${DEV_REGISTRY_TOKEN:-}" ]]; then
@@ -117,6 +127,7 @@ exec podman run --rm --privileged --device /dev/fuse \
   "${tls_run[@]+"${tls_run[@]}"}" \
   "${forward_env[@]}" \
   -v "${REPO_ROOT}:/workspace:Z" \
+  "${ui_npm_source_mount[@]}" \
   -v "${SYSTEM_STORAGE}:/var/lib/containers:Z" \
   -w /workspace \
   "${TOOLING_IMAGE}" \
