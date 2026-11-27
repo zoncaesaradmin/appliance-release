@@ -320,6 +320,30 @@ def test_join_script_exists() -> None:
     assert 'done <<<"${TARGET_MEMBER_ALIASES:-}"' not in text
 
 
+def test_finalize_forwards_auth_otp_delivery_mode() -> None:
+    import re
+
+    script = Path(__file__).resolve().parent / "join-cluster-nodes-from-devhost.sh"
+    text = script.read_text(encoding="utf-8")
+    assert '"install.auth_service_otp_delivery_mode"' in text
+    assert 'install.auth_service_otp_delivery_mode must be local or event' in text
+    assignment = next(line.strip() for line in text.splitlines()
+                      if line.strip().startswith('helper_env="$(append_env_assignments')
+                      and 'BASE_URL ' in line)
+    names = set(re.findall(r'\$\{([A-Z][A-Z0-9_]*)\}', assignment))
+    initialize = "\n".join(f'{name}=""' for name in names)
+    for mode in ("local", "event", ""):
+        result = _bash(
+            f'source "{COMMON_SH}"; {initialize}; helper_env=""; '
+            f'AUTH_SERVICE_OTP_DELIVERY_MODE="{mode}"; {assignment}; '
+            'eval "set -- ${helper_env}"; '
+            'for arg in "$@"; do [[ "$arg" == AUTH_SERVICE_OTP_DELIVERY_MODE=* ]] && printf "%s\\n" "$arg"; done; true'
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == (f"AUTH_SERVICE_OTP_DELIVERY_MODE={mode}" if mode else "")
+    assert text.index(assignment) < text.index('EMBEDDED_ETCD_OPERATION finalize')
+
+
 def test_release_runner_cannot_select_a_legacy_target_shape() -> None:
     runner = Path(__file__).resolve().parent / "run-release-from-devhost.sh"
     text = runner.read_text(encoding="utf-8")
@@ -352,6 +376,7 @@ def main() -> None:
     test_run_ssh_captured_does_not_consume_stdin()
     test_verify_target_probes_every_server_ip()
     test_join_script_exists()
+    test_finalize_forwards_auth_otp_delivery_mode()
     test_release_runner_cannot_select_a_legacy_target_shape()
     print("target host cluster tests passed")
 

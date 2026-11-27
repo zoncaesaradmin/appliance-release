@@ -204,9 +204,9 @@ sudo zonctl factory-reset \
   --output text
 ```
 
-Add `--force-data-loss` when intentionally proceeding without a verified
-backup, and use the documented data-wipe options when appliance data must also
-be removed.
+Use `--force-data-loss` instead of `--backup-id` when intentionally proceeding
+without a verified backup. The retired `--wipe-workspaces` option is no longer
+accepted by the new `zonctl`; legacy `/data/zon/workspaces` data is left in place.
 
 ## Verification
 

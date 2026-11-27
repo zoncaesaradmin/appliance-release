@@ -100,6 +100,11 @@ CHANNEL_INTEGRATION_ORIGIN="$(config_get_optional "${INSTALL_CONFIG}" "install.c
 CHANNEL_INTEGRATION_ORIGIN="$(printf '%s' "${CHANNEL_INTEGRATION_ORIGIN}" | tr -d '[:space:]')"
 TLS_TERMINATION="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_termination" || true)"
 TLS_TERMINATION="$(printf '%s' "${TLS_TERMINATION}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+AUTH_SERVICE_OTP_DELIVERY_MODE="$(config_get_optional "${INSTALL_CONFIG}" "install.auth_service_otp_delivery_mode" || true)"
+AUTH_SERVICE_OTP_DELIVERY_MODE="$(printf '%s' "${AUTH_SERVICE_OTP_DELIVERY_MODE}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+if [[ -n "${AUTH_SERVICE_OTP_DELIVERY_MODE}" && "${AUTH_SERVICE_OTP_DELIVERY_MODE}" != local && "${AUTH_SERVICE_OTP_DELIVERY_MODE}" != event ]]; then
+  fail "install.auth_service_otp_delivery_mode must be local or event"
+fi
 TLS_CERT_FILE="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_cert_file" || true)"
 TLS_KEY_FILE="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_key_file" || true)"
 TLS_SECRET_NAME="$(config_get_optional "${INSTALL_CONFIG}" "install.tls_secret_name" || true)"
@@ -259,7 +264,7 @@ run_embedded_etcd_flow() {
   fi
 
   helper_env=""
-	helper_env="$(append_env_assignments "${helper_env}" BASE_URL "${BASE_URL}" BEARER_TOKEN "${BEARER_TOKEN}" TLS_INSECURE "${TLS_INSECURE}" PRODUCT_VERSION "${RELEASE_VERSION}" PATH_PREFIX "${PATH_PREFIX}" DNS_ZONE "${DNS_ZONE}" PUBLIC_ORIGIN "${PUBLIC_ORIGIN}" CHANNEL_INTEGRATION_ORIGIN "${CHANNEL_INTEGRATION_ORIGIN}" TLS_TERMINATION "${TLS_TERMINATION}" TLS_SECRET_NAME "${TLS_SECRET_NAME}" EXTRA_TLS_SANS "${EXTRA_TLS_SANS}" OUT_DIR "${OUT_DIR}" IMAGE_PULL_REGISTRY "${IMAGE_PULL_REGISTRY}" IMAGE_PULL_USERNAME_ENV "${IMAGE_PULL_USERNAME_ENV}" IMAGE_PULL_TOKEN_ENV "${IMAGE_PULL_TOKEN_ENV}" IMAGE_PULL_TLS_VERIFY_ENV "${IMAGE_PULL_TLS_VERIFY_ENV}")"
+	helper_env="$(append_env_assignments "${helper_env}" BASE_URL "${BASE_URL}" BEARER_TOKEN "${BEARER_TOKEN}" TLS_INSECURE "${TLS_INSECURE}" PRODUCT_VERSION "${RELEASE_VERSION}" PATH_PREFIX "${PATH_PREFIX}" DNS_ZONE "${DNS_ZONE}" PUBLIC_ORIGIN "${PUBLIC_ORIGIN}" CHANNEL_INTEGRATION_ORIGIN "${CHANNEL_INTEGRATION_ORIGIN}" TLS_TERMINATION "${TLS_TERMINATION}" TLS_SECRET_NAME "${TLS_SECRET_NAME}" AUTH_SERVICE_OTP_DELIVERY_MODE "${AUTH_SERVICE_OTP_DELIVERY_MODE}" EXTRA_TLS_SANS "${EXTRA_TLS_SANS}" OUT_DIR "${OUT_DIR}" IMAGE_PULL_REGISTRY "${IMAGE_PULL_REGISTRY}" IMAGE_PULL_USERNAME_ENV "${IMAGE_PULL_USERNAME_ENV}" IMAGE_PULL_TOKEN_ENV "${IMAGE_PULL_TOKEN_ENV}" IMAGE_PULL_TLS_VERIFY_ENV "${IMAGE_PULL_TLS_VERIFY_ENV}")"
   if [[ -n "${IMAGE_PULL_REGISTRY}" ]]; then
     helper_env="$(append_env_assignments "${helper_env}" "${IMAGE_PULL_USERNAME_ENV}" "${IMAGE_PULL_USERNAME}" "${IMAGE_PULL_TOKEN_ENV}" "${IMAGE_PULL_TOKEN}" "${IMAGE_PULL_TLS_VERIFY_ENV}" "${IMAGE_PULL_TLS_VERIFY}")"
   fi
