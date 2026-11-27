@@ -1,5 +1,9 @@
 # Zon Platform Installer Invariants
 
+## Issue Resolution Preference
+
+- When investigating a user-reported issue, fix confirmed in-scope defects and verify the fix without asking for permission to proceed. Continue to respect the real setup guardrail and other explicit scope and safety constraints below.
+
 These rules apply to all code, scripts, tests, workflows, and documentation in this repository. The CLI is `zonctl`.
 
 ## Installation Model
