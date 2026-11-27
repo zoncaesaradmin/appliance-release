@@ -29,7 +29,10 @@ build-and-publish:
 #   - same-arch host → inside arch-matched dev-build (run-in-dev-build.sh)
 #   - cross-arch host → host podman build --arch + binfmt
 #     (nested podman under qemu-emulated tooling fails: reexec ENOENT)
-DEPS := $(sort $(notdir $(wildcard deps/*)))
+# A seed package is a dependency directory with its own Makefile.  Empty
+# script-only remnants (for example git-runtime-container and workflows) must
+# not enter the build/clean loops as if they were seed packages.
+DEPS := $(sort $(patsubst deps/%/Makefile,%,$(wildcard deps/*/Makefile)))
 SEED_IN_TOOLING_DEPS := artifact-server-bases service-build-bases
 
 .PHONY: list-deps seed-build-deps seed-build-deps-build seed-build-deps-push seed-build-deps-login freeze-third-party
