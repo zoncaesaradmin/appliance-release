@@ -3,7 +3,36 @@
 
 ui_npm_deps_source_dir() {
   local release_repo_dir="$1"
-  printf '%s\n' "${UI_NPM_SOURCE_DIR:-$(cd "${release_repo_dir}/.." && pwd)/appliance-code/services/controlplane-ui}"
+  local parent grandparent candidate
+  if [[ -n "${UI_NPM_SOURCE_DIR:-}" ]]; then
+    ui_npm_deps_require_source "${UI_NPM_SOURCE_DIR}" || return 1
+    printf '%s\n' "${UI_NPM_SOURCE_DIR}"
+    return 0
+  fi
+  if [[ -n "${APPLIANCE_CODE_DIR:-}" ]]; then
+    candidate="${APPLIANCE_CODE_DIR}/services/controlplane-ui"
+    ui_npm_deps_require_source "${candidate}" || return 1
+    printf '%s\n' "${candidate}"
+    return 0
+  fi
+  if [[ -n "${RELEASE_WORK_ROOT:-}" ]]; then
+    candidate="${RELEASE_WORK_ROOT}/repos/appliance-code/services/controlplane-ui"
+    ui_npm_deps_require_source "${candidate}" || return 1
+    printf '%s\n' "${candidate}"
+    return 0
+  fi
+  parent="$(dirname "${release_repo_dir}")"
+  grandparent="$(dirname "${parent}")"
+  for candidate in "${parent}/appliance-code/services/controlplane-ui" \
+    "${parent}/appliance-build/repos/appliance-code/services/controlplane-ui" \
+    "${grandparent}/appliance-build/repos/appliance-code/services/controlplane-ui"; do
+    if [[ -f "${candidate}/package.json" && -f "${candidate}/package-lock.json" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  echo "UI npm dependency source not found; set APPLIANCE_CODE_DIR to the appliance-code checkout used for the release" >&2
+  return 1
 }
 
 ui_npm_deps_require_source() {

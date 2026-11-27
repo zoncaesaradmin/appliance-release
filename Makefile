@@ -58,7 +58,7 @@ seed-build-deps-build:
 			*" $$d "*) \
 				if [ "$$host_arch" = "$(TARGET_ARCH)" ]; then \
 					echo "==> build deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [in dev-build]"; \
-					if [ "$$d" = "service-build-bases" ]; then UI_NPM_SOURCE_DIR="$${UI_NPM_SOURCE_DIR:-$(CURDIR)/../appliance-code/services/controlplane-ui}"; export UI_NPM_SOURCE_DIR; fi; \
+					if [ "$$d" = "service-build-bases" ]; then UI_NPM_SOURCE_DIR="$$(bash -c 'source ./scripts/lib/ui-npm-deps.sh; ui_npm_deps_source_dir "$$1"' _ "$(CURDIR)")"; export UI_NPM_SOURCE_DIR; fi; \
 					bash ./scripts/run-in-dev-build.sh make -C deps/$$d build TARGET_ARCH=$(TARGET_ARCH); \
 				else \
 					echo "==> build deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [host+qemu; nested build under foreign-arch tooling unsupported]"; \
@@ -87,7 +87,7 @@ seed-build-deps-push:
 			*" $$d "*) \
 				if [ "$$host_arch" = "$(TARGET_ARCH)" ]; then \
 					echo "==> push deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [in dev-build]"; \
-					if [ "$$d" = "service-build-bases" ]; then UI_NPM_SOURCE_DIR="$${UI_NPM_SOURCE_DIR:-$(CURDIR)/../appliance-code/services/controlplane-ui}"; export UI_NPM_SOURCE_DIR; fi; \
+					if [ "$$d" = "service-build-bases" ]; then UI_NPM_SOURCE_DIR="$$(bash -c 'source ./scripts/lib/ui-npm-deps.sh; ui_npm_deps_source_dir "$$1"' _ "$(CURDIR)")"; export UI_NPM_SOURCE_DIR; fi; \
 					bash ./scripts/run-in-dev-build.sh make -C deps/$$d push TARGET_ARCH=$(TARGET_ARCH); \
 				else \
 					echo "==> push deps/$$d (TARGET_ARCH=$(TARGET_ARCH)) [host]"; \

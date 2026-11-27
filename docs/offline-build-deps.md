@@ -293,17 +293,15 @@ archive `index.json` digest so a stale sidecar cannot disagree with the tar
 ## Updating UI npm deps
 
 `controlplane-ui-web-deps` is content-addressed by the synchronized
-`appliance-code/services/controlplane-ui/package-lock.json`. From the release
-checkout with its sibling appliance-code checkout available (or with
-`UI_NPM_SOURCE_DIR` set), run:
+`appliance-code/services/controlplane-ui/package-lock.json`. The seed discovers
+the standard appliance-code checkout as for host-packages. Run:
 
 ```bash
 TARGET_ARCH=amd64 make -C deps/service-build-bases release
 ```
 
-The full `make seed-build-deps` also accepts `UI_NPM_SOURCE_DIR`; point it to
-`services/controlplane-ui` in the appliance-code checkout used for the build
-when that checkout is not a sibling of appliance-release.
+For a nonstandard layout, set `APPLIANCE_CODE_DIR` to the appliance-code
+checkout used for the release.
 
 ## `fetch-k3s-inputs.sh`
 

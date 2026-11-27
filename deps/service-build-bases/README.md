@@ -20,9 +20,8 @@ TARGET_ARCH=arm64 make -C deps/service-build-bases release
 
 The image tag is derived from the synchronized
 `appliance-code/services/controlplane-ui/package-lock.json`, so each lockfile
-gets an immutable cache entry. By default the seed reads the sibling
-`../appliance-code` checkout; set `UI_NPM_SOURCE_DIR` for a different synced
-checkout. Re-run `make release` whenever that lockfile changes.
-For `make seed-build-deps`, export `UI_NPM_SOURCE_DIR` if appliance-code is
-not a sibling of appliance-release. It must point to the UI directory in the
-same appliance-code revision used by the release build.
+gets a lockfile-specific cache entry. The seed discovers appliance-code using
+`APPLIANCE_CODE_DIR`, `RELEASE_WORK_ROOT/repos/appliance-code`, a sibling
+checkout, or the standard `appliance-build/repos/appliance-code` layout.
+Set `APPLIANCE_CODE_DIR` for another layout. The selected checkout must match
+the release input. Re-run `make release` when the lockfile changes.

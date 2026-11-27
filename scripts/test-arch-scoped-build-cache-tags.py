@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import re
 import sys
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +69,24 @@ def fail(msg: str) -> None:
 
 
 def main() -> None:
+    # Exercise the standard build-host layout and an explicit missing root.
+    with tempfile.TemporaryDirectory() as temp:
+        base = Path(temp)
+        release = base / "ws" / "appliance-release"
+        release.mkdir(parents=True)
+        ui = base / "appliance-build" / "repos" / "appliance-code" / "services" / "controlplane-ui"
+        ui.mkdir(parents=True)
+        for name in ("package.json", "package-lock.json"):
+            (ui / name).write_text("{}", encoding="utf-8")
+        env = {k: v for k, v in os.environ.items() if k not in ("UI_NPM_SOURCE_DIR", "APPLIANCE_CODE_DIR", "RELEASE_WORK_ROOT")}
+        command = ['bash', '-c', 'source "$1"; ui_npm_deps_source_dir "$2"', '_', str(ROOT / 'scripts/lib/ui-npm-deps.sh'), str(release)]
+        result = subprocess.run(command, env=env, capture_output=True, text=True)
+        if result.returncode or Path(result.stdout.strip()) != ui:
+            fail(f"UI source discovery failed for the standard build-host layout: {result.stderr}")
+        env['RELEASE_WORK_ROOT'] = str(base / 'missing')
+        if subprocess.run(command, env=env, capture_output=True).returncode == 0:
+            fail("UI source discovery must reject a missing explicitly configured build root")
+
     for pkg, key in REQUIRED_CACHE_TAG_BASE.items():
         pins = DEPS / pkg / "pins.env"
         text = pins.read_text(encoding="utf-8")
