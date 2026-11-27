@@ -23,3 +23,6 @@ The image tag is derived from the synchronized
 gets an immutable cache entry. By default the seed reads the sibling
 `../appliance-code` checkout; set `UI_NPM_SOURCE_DIR` for a different synced
 checkout. Re-run `make release` whenever that lockfile changes.
+For `make seed-build-deps`, export `UI_NPM_SOURCE_DIR` if appliance-code is
+not a sibling of appliance-release. It must point to the UI directory in the
+same appliance-code revision used by the release build.

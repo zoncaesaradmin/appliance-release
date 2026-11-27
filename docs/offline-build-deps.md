@@ -301,6 +301,10 @@ checkout with its sibling appliance-code checkout available (or with
 TARGET_ARCH=amd64 make -C deps/service-build-bases release
 ```
 
+The full `make seed-build-deps` also accepts `UI_NPM_SOURCE_DIR`; point it to
+`services/controlplane-ui` in the appliance-code checkout used for the build
+when that checkout is not a sibling of appliance-release.
+
 ## `fetch-k3s-inputs.sh`
 
 Legacy entrypoint; forwards to `deps/platform-inputs`. Prefer `make -C deps/platform-inputs release`.
