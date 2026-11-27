@@ -94,11 +94,12 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
     same-arch via `scripts/run-in-dev-build.sh`; cross-arch via host
     `podman build --arch` + binfmt (nested podman under qemu is unsupported)
 - **`dev-build` is not a product runtime image.** It is not packaged into the
-  foundation, dev-platform, deviceuser, or std-llm packs. Operator build catalogs must use
+  foundation, storage-network, build-workflows, deviceuser, or std-llm packs. Operator build catalogs must use
   explicit digest-pinned builder images they supply on the appliance.
 - Each platform release publishes the signed delivery packs selected for its
-  supported appliance profiles: foundation is mandatory; dev-platform (registry
-  + LAN DNS, workflow engine, and workspace provisioner), deviceuser, and
+  supported appliance profiles: foundation is mandatory; storage-network
+  (registry), build-workflows (workflow engine and workspace provisioner),
+  deviceuser (including LAN DNS), and
   std-llm are optional. Installation selects the required packs from
   metadata-derived profile capabilities. Packs do not enable capabilities.
 - `TARGET_ARCH=amd64 make seed-build-deps` publishes `dev-build:…-amd64` to the

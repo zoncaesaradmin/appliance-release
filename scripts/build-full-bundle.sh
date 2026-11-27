@@ -75,7 +75,7 @@ Optional overrides:
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
   # Host packages: always export-host-packages for mdns + wifi-client + wifi-ap under OS_VERSION
   # (ubuntu/<version>/amd64/*.deb). Install stages debs; enablement is day-2 only.
-  # BUILD_COMPLETE_PRODUCT=false  # dev-platform slim path only; default true requires workflows
+  # BUILD_COMPLETE_PRODUCT=false  # build-workflows slim path only; default true requires workflows
   # COMPONENT_CACHE_DIR=/var/cache/appliance-build/components  # optional dirty-only rebuild cache
   # THIRD_PARTY_FREEZE_ROOT=/var/cache/zon-third-party  # durable third-party OCI/host-packages freeze
   # THIRD_PARTY_FREEZE_MODE=ignore|auto|require          # default ignore; see docs/offline-build-deps.md
@@ -430,25 +430,25 @@ if [[ -z "${USER_ARTIFACT_SERVER_SOURCE_IMAGE}" ]]; then
   ARTIFACT_SERVER_SOURCE_IMAGE="ghcr.io/project-zot/zot-linux-${TARGET_ARCH}:v${ARTIFACT_SERVER_VERSION}"
 fi
 
-# Pack selection (default all = foundation + app-stack + dev-platform + deviceuser + std-llm;
+# Pack selection (default all = foundation + app-stack + storage-network + build-workflows + deviceuser + std-llm;
 # open-webui stays opt-in even for all).
 APPLIANCE_PACKS="${USER_APPLIANCE_PACKS:-${APPLIANCE_PACKS:-all}}"
 appliance_packs_resolve
 echo "build-full-bundle: APPLIANCE_PACKS=${APPLIANCE_PACKS} → ${APPLIANCE_PACKS_RESOLVED}"
 
 # The workflows engine is a mandatory component of the complete product
-# super-set (ADR 0011) when the dev-platform pack is selected. BUILD_COMPLETE_PRODUCT
+# super-set (ADR 0011) when the build-workflows pack is selected. BUILD_COMPLETE_PRODUCT
 # defaults true and forces WORKFLOWS_ENABLED for that pack. Pack-selective builds
-# that omit dev-platform skip workflows packaging.
+# that omit build-workflows skip workflows packaging.
 BUILD_COMPLETE_PRODUCT="${BUILD_COMPLETE_PRODUCT:-true}"
-if appliance_pack_wanted dev-platform; then
+if appliance_pack_wanted build-workflows; then
   if [[ -z "${WORKFLOWS_ENABLED}" ]]; then
     WORKFLOWS_ENABLED="true"
   fi
 else
   case "$(printf '%s' "${USER_WORKFLOWS_ENABLED:-}" | tr '[:upper:]' '[:lower:]')" in
     1|true|yes|on)
-      echo "build-full-bundle: WORKFLOWS_ENABLED=true ignored because dev-platform pack is not in APPLIANCE_PACKS (${APPLIANCE_PACKS_RESOLVED})" >&2
+      echo "build-full-bundle: WORKFLOWS_ENABLED=true ignored because build-workflows pack is not in APPLIANCE_PACKS (${APPLIANCE_PACKS_RESOLVED})" >&2
       ;;
   esac
   WORKFLOWS_ENABLED="false"
@@ -584,14 +584,16 @@ GENERATED_DIR="${WORKSPACE}/generated"
 CONFIG_OUT="${GENERATED_DIR}/product-bundle.env"
 BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-foundation"
 APP_STACK_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-app-stack"
-DEV_PLATFORM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-dev-platform"
+STORAGE_NETWORK_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-storage-network"
+BUILD_WORKFLOWS_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-build-workflows"
 DEVICEUSER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 CPU_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-std-llm"
 ACC_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-acc-llm"
 OPEN_WEBUI_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-open-webui"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" foundation)"
 APP_STACK_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" app-stack)"
-DEV_PLATFORM_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" dev-platform)"
+STORAGE_NETWORK_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" storage-network)"
+BUILD_WORKFLOWS_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" build-workflows)"
 DEVICEUSER_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" deviceuser)"
 CPU_LLM_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" std-llm)"
 ACC_LLM_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" acc-llm)"
@@ -615,8 +617,8 @@ bool_true() {
   esac
 }
 
-if bool_true "${BUILD_COMPLETE_PRODUCT}" && appliance_pack_wanted dev-platform && ! bool_true "${WORKFLOWS_ENABLED}"; then
-  echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires WORKFLOWS_ENABLED=true when dev-platform pack is selected (dev-platform slim builds: BUILD_COMPLETE_PRODUCT=false)" >&2
+if bool_true "${BUILD_COMPLETE_PRODUCT}" && appliance_pack_wanted build-workflows && ! bool_true "${WORKFLOWS_ENABLED}"; then
+  echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires WORKFLOWS_ENABLED=true when build-workflows pack is selected (build-workflows slim builds: BUILD_COMPLETE_PRODUCT=false)" >&2
   exit 2
 fi
 # Always resolve the build-host tooling image from DEV_*. This image builds
@@ -1832,7 +1834,7 @@ warn_if_local_repo_source "${CTL_REPO_SOURCE}" "CTL_REPO"
 if [[ -n "${VALUES_FILE_SOURCE}" ]]; then
   require_file "${VALUES_FILE_SOURCE}" "values file"
 fi
-if appliance_pack_wanted dev-platform; then
+if appliance_pack_wanted storage-network; then
   if [[ -z "${ARTIFACT_SERVER_VERSION}" || "${ARTIFACT_SERVER_VERSION}" == *latest* ]]; then
     echo "build-full-bundle: ARTIFACT_SERVER_VERSION must be an exact non-latest version" >&2
     exit 2
@@ -1841,6 +1843,8 @@ if appliance_pack_wanted dev-platform; then
     echo "build-full-bundle: ARTIFACT_SERVER_SOURCE_IMAGE must be a version-pinned upstream image ref" >&2
     exit 2
   fi
+fi
+if appliance_pack_wanted deviceuser; then
   if [[ -z "${DNS_VERSION}" || "${DNS_VERSION}" == *latest* ]]; then
     echo "build-full-bundle: DNS_VERSION must be an exact non-latest version" >&2
     exit 2
@@ -1877,7 +1881,7 @@ if appliance_pack_wanted acc-llm; then
     fi
   fi
 fi
-if appliance_pack_wanted dev-platform; then
+if appliance_pack_wanted build-workflows; then
   if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner || "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner@sha256:* ]]; then
     echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be an upstream or LAN build-cache pull ref (default docker.io/alpine/git:2.49.0); got ${WORKSPACE_PROVISIONER_IMAGE_REF}" >&2
     exit 2
@@ -2005,7 +2009,7 @@ if offline_build_enabled; then
   if appliance_pack_wanted deviceuser; then
     require_seed_package jellyfin
   fi
-  if appliance_pack_wanted dev-platform; then
+  if appliance_pack_wanted build-workflows; then
     WORKSPACE_PROVISIONER_IMAGE_REF="$(lan_cache_ref alpine-git "${ALPINE_GIT_CACHE_TAG_BASE}-${TARGET_ARCH}")"
   fi
   if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]]; then
@@ -2179,7 +2183,7 @@ if bool_true "${WORKFLOWS_ENABLED}"; then
 fi
 
 # Bundled supplemental images for release-input (--extra-oci-image flags):
-# workspace-provisioner when the dev-platform pack is selected, plus
+# workspace-provisioner when the build-workflows pack is selected, plus
 # application-owned service images selected by the metadata catalog.
 BUNDLED_IMAGE_ARCHIVES=()
 BUNDLED_IMAGE_REFS=()
@@ -3118,9 +3122,13 @@ if appliance_pack_wanted app-stack; then
   create_gzip_tarball "${APP_STACK_ARCHIVE}" "$(dirname "${APP_STACK_BUNDLE_DIR}")" "$(basename "${APP_STACK_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${APP_STACK_ARCHIVE}")
 fi
-if appliance_pack_wanted dev-platform; then
-  create_gzip_tarball "${DEV_PLATFORM_ARCHIVE}" "$(dirname "${DEV_PLATFORM_BUNDLE_DIR}")" "$(basename "${DEV_PLATFORM_BUNDLE_DIR}")"
-  EXPORTED_ARCHIVES+=("${DEV_PLATFORM_ARCHIVE}")
+if appliance_pack_wanted storage-network; then
+  create_gzip_tarball "${STORAGE_NETWORK_ARCHIVE}" "$(dirname "${STORAGE_NETWORK_BUNDLE_DIR}")" "$(basename "${STORAGE_NETWORK_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${STORAGE_NETWORK_ARCHIVE}")
+fi
+if appliance_pack_wanted build-workflows; then
+  create_gzip_tarball "${BUILD_WORKFLOWS_ARCHIVE}" "$(dirname "${BUILD_WORKFLOWS_BUNDLE_DIR}")" "$(basename "${BUILD_WORKFLOWS_BUNDLE_DIR}")"
+  EXPORTED_ARCHIVES+=("${BUILD_WORKFLOWS_ARCHIVE}")
 fi
 if appliance_pack_wanted deviceuser; then
   create_gzip_tarball "${DEVICEUSER_ARCHIVE}" "$(dirname "${DEVICEUSER_BUNDLE_DIR}")" "$(basename "${DEVICEUSER_BUNDLE_DIR}")"
@@ -3147,7 +3155,8 @@ python3 "${SCRIPT_DIR}/write-release-index.py" "${RELEASE_INDEX}" "${PRODUCT_VER
   ${APPLIANCE_PACKS_RESOLVED} \
   "$(basename "${BUNDLE_ARCHIVE}")" \
   "$(basename "${APP_STACK_ARCHIVE}")" \
-  "$(basename "${DEV_PLATFORM_ARCHIVE}")" \
+  "$(basename "${STORAGE_NETWORK_ARCHIVE}")" \
+  "$(basename "${BUILD_WORKFLOWS_ARCHIVE}")" \
   "$(basename "${DEVICEUSER_ARCHIVE}")" \
   "$(basename "${CPU_LLM_ARCHIVE}")" \
   "$(basename "${ACC_LLM_ARCHIVE}")" \
@@ -3178,8 +3187,11 @@ fi
 if appliance_pack_wanted app-stack; then
   echo "  ${APP_STACK_BUNDLE_DIR}"
 fi
-if appliance_pack_wanted dev-platform; then
-  echo "  ${DEV_PLATFORM_BUNDLE_DIR}"
+if appliance_pack_wanted storage-network; then
+  echo "  ${STORAGE_NETWORK_BUNDLE_DIR}"
+fi
+if appliance_pack_wanted build-workflows; then
+  echo "  ${BUILD_WORKFLOWS_BUNDLE_DIR}"
 fi
 if appliance_pack_wanted deviceuser; then
   echo "  ${DEVICEUSER_BUNDLE_DIR}"

@@ -37,7 +37,7 @@ class ResolvePackArtifactsTest(unittest.TestCase):
             text=True,
         )
 
-    def test_foundation_skips_dev_platform_artifacts(self):
+    def test_foundation_skips_optional_platform_artifacts(self):
         out = self._shell("foundation")
         self.assertIn("NEED_ARTIFACT_SERVER_IMAGE=0", out)
         self.assertIn("NEED_DNS_IMAGE=0", out)

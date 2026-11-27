@@ -86,7 +86,8 @@ STAGING_DIR="${WORKDIR}/staging"
 RELEASE_INPUT_DIR="${WORKDIR}/release-input"
 BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-foundation"
 APP_STACK_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-app-stack"
-DEV_PLATFORM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-dev-platform"
+STORAGE_NETWORK_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-storage-network"
+BUILD_WORKFLOWS_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-build-workflows"
 DEVICEUSER_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 CPU_LLM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-std-llm"
 ACC_LLM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-acc-llm"
@@ -640,7 +641,8 @@ assemble_all_packs() {
     case "${pack_id}" in
       foundation) bundle_dir="${BUNDLE_DIR}" ;;
       app-stack) bundle_dir="${APP_STACK_BUNDLE_DIR}" ;;
-      dev-platform) bundle_dir="${DEV_PLATFORM_BUNDLE_DIR}" ;;
+      storage-network) bundle_dir="${STORAGE_NETWORK_BUNDLE_DIR}" ;;
+      build-workflows) bundle_dir="${BUILD_WORKFLOWS_BUNDLE_DIR}" ;;
       deviceuser) bundle_dir="${DEVICEUSER_BUNDLE_DIR}" ;;
       std-llm) bundle_dir="${CPU_LLM_BUNDLE_DIR}" ;;
       acc-llm) bundle_dir="${ACC_LLM_BUNDLE_DIR}" ;;
@@ -694,7 +696,7 @@ if [[ -n "${VALUES_FILE:-}" ]]; then
   cp "${VALUES_FILE}" "${STAGING_DIR}/values-minimal.yaml"
 fi
 
-rm -rf "${BUNDLE_DIR}" "${APP_STACK_BUNDLE_DIR}" "${DEV_PLATFORM_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}" "${ACC_LLM_BUNDLE_DIR}" "${OPEN_WEBUI_BUNDLE_DIR}"
+rm -rf "${BUNDLE_DIR}" "${APP_STACK_BUNDLE_DIR}" "${STORAGE_NETWORK_BUNDLE_DIR}" "${BUILD_WORKFLOWS_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}" "${ACC_LLM_BUNDLE_DIR}" "${OPEN_WEBUI_BUNDLE_DIR}"
 
 assemble_all_packs
 
@@ -705,8 +707,11 @@ fi
 if appliance_pack_wanted app-stack; then
   echo "  app-stack: ${APP_STACK_BUNDLE_DIR}"
 fi
-if appliance_pack_wanted dev-platform; then
-  echo "  dev-platform: ${DEV_PLATFORM_BUNDLE_DIR}"
+if appliance_pack_wanted storage-network; then
+  echo "  storage-network: ${STORAGE_NETWORK_BUNDLE_DIR}"
+fi
+if appliance_pack_wanted build-workflows; then
+  echo "  build-workflows: ${BUILD_WORKFLOWS_BUNDLE_DIR}"
 fi
 if appliance_pack_wanted deviceuser; then
   echo "  deviceuser: ${DEVICEUSER_BUNDLE_DIR}"

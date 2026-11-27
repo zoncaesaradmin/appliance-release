@@ -35,10 +35,10 @@ capabilityPacks:
   files: foundation
   video: foundation
   application-auth: foundation
-  workflows: dev-platform
-  build: dev-platform
-  artifact: dev-platform
-  dns: dev-platform
+  workflows: build-workflows
+  build: build-workflows
+  artifact: storage-network
+  dns: deviceuser
   host: deviceuser
   applications: deviceuser
   future: future-package
@@ -69,12 +69,15 @@ packs:
   - id: app-stack
     filename: appliance-0.1.0-app-stack-amd64.tar.gz
     capabilities: [channel-integrations, commerce, application-identity]
-  - id: dev-platform
-    filename: appliance-0.1.0-dev-platform-amd64.tar.gz
-    capabilities: [artifact, dns, workflows, build]
+  - id: storage-network
+    filename: appliance-0.1.0-storage-network-amd64.tar.gz
+    capabilities: [artifact]
+  - id: build-workflows
+    filename: appliance-0.1.0-build-workflows-amd64.tar.gz
+    capabilities: [workflows, build]
   - id: deviceuser
     filename: appliance-0.1.0-deviceuser-amd64.tar.gz
-    capabilities: [host]
+    capabilities: [host, dns]
   - id: std-llm
     filename: appliance-0.1.0-std-llm-amd64.tar.gz
     capabilities: [inference]
@@ -84,10 +87,10 @@ capabilityPacks:
   lan-discovery: foundation
   files: foundation
   video: foundation
-  workflows: dev-platform
-  build: dev-platform
-  artifact: dev-platform
-  dns: dev-platform
+  workflows: build-workflows
+  build: build-workflows
+  artifact: storage-network
+  dns: deviceuser
   host: deviceuser
   applications: deviceuser
   inference: std-llm
@@ -114,18 +117,19 @@ got="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"
 [[ "${got}" == "foundation" ]] || fail "foundation-only index: got '${got}'"
 
 got="$(published_pack_ids_from_index "${TMP}/all-packs.yaml")"
-[[ "${got}" == "foundation app-stack dev-platform deviceuser std-llm" ]] || fail "all-packs index: got '${got}'"
+[[ "${got}" == "foundation app-stack storage-network build-workflows deviceuser std-llm" ]] || fail "all-packs index: got '${got}'"
 
 pack_id_is_published foundation "${got}" || fail "foundation should be published"
-pack_id_is_published dev-platform "${got}" || fail "dev-platform should be published"
+pack_id_is_published storage-network "${got}" || fail "storage-network should be published"
+pack_id_is_published build-workflows "${got}" || fail "build-workflows should be published"
 pack_id_is_published deviceuser "${got}" || fail "deviceuser should be published"
 pack_id_is_published std-llm "foundation" && fail "std-llm must not be published in foundation-only set"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "application-core" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
 [[ "${req}" == "app-stack" ]] || fail "application-core packs: '${req}'"
 
-archive="$(pack_filename_from_index "${TMP}/all-packs.yaml" "dev-platform")"
-[[ "${archive}" == "appliance-0.1.0-dev-platform-amd64.tar.gz" ]] || fail "dev-platform archive: '${archive}'"
+archive="$(pack_filename_from_index "${TMP}/all-packs.yaml" "storage-network")"
+[[ "${archive}" == "appliance-0.1.0-storage-network-amd64.tar.gz" ]] || fail "storage-network archive: '${archive}'"
 mkdir -p "${TMP}/generic-pack"
 touch "${TMP}/generic-pack/manifest.json"
 tar -C "${TMP}" -czf "${TMP}/generic-pack.tar.gz" generic-pack
@@ -133,7 +137,7 @@ dirname="$(pack_bundle_dirname_from_archive "${TMP}/generic-pack.tar.gz")"
 [[ "${dirname}" == "generic-pack" ]] || fail "generic pack directory: '${dirname}'"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "builder-lanllm-storage-landns" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-[[ "${req}" == "dev-platform deviceuser std-llm" ]] || fail "builder-lanllm-storage-landns packs: '${req}'"
+[[ "${req}" == "build-workflows deviceuser std-llm storage-network" ]] || fail "builder-lanllm-storage-landns packs: '${req}'"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "training" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
 [[ -z "${req}" ]] || fail "training packs should be empty (foundation only), got '${req}'"
@@ -148,7 +152,7 @@ req="$(required_packs_for_profile_from_index "${TMP}/foundation-only.yaml" "futu
 [[ "${req}" == "future-package" ]] || fail "future profile package: '${req}'"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "storage-landns" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-[[ "${req}" == "dev-platform" ]] || fail "storage-landns packs: '${req}'"
+[[ "${req}" == "deviceuser storage-network" ]] || fail "storage-landns packs: '${req}'"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "lanllm" | tr '\n' ' ' | sed 's/[[:space:]]*$//' )"
 [[ "${req}" == "deviceuser std-llm" ]] || fail "lanllm packs: '${req}'"
@@ -156,17 +160,17 @@ req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "lanllm" | 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "core" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
 [[ "${req}" == "deviceuser" ]] || fail "core packs: '${req}'"
 
-# Simulate the install gate: profile needs dev-platform, index is foundation-only.
+# Simulate the install gate: profile needs optional packs, index is foundation-only.
 published="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"
-if pack_id_is_published "dev-platform" "${published}"; then
-  fail "foundation-only index must not claim dev-platform"
+if pack_id_is_published "storage-network" "${published}"; then
+  fail "foundation-only index must not claim storage-network"
 fi
 
-# storage-landns against foundation-only requires dev-platform; packs unpublished.
+# storage-landns against foundation-only requires storage-network and deviceuser; packs unpublished.
 req="$(required_packs_for_profile_from_index "${TMP}/foundation-only.yaml" "storage-landns" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-[[ "${req}" == "dev-platform" ]] || fail "storage-landns on foundation-only still derives packs: '${req}'"
+[[ "${req}" == "deviceuser storage-network" ]] || fail "storage-landns on foundation-only still derives packs: '${req}'"
 published="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"
-pack_id_is_published "dev-platform" "${published}" && fail "dev-platform must not be published"
+pack_id_is_published "storage-network" "${published}" && fail "storage-network must not be published"
 pack_id_is_published "deviceuser" "${published}" && fail "deviceuser must not be published"
 
 echo "test-install-release-index: ok"

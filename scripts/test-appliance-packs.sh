@@ -21,20 +21,20 @@ assert_eq() {
 APPLIANCE_PACKS=""
 appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS}" "all" "empty defaults to all token"
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation app-stack dev-platform deviceuser std-llm" "empty → all packs"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation app-stack storage-network build-workflows deviceuser std-llm" "empty → all packs"
 
 APPLIANCE_PACKS="all"
 appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation app-stack dev-platform deviceuser std-llm" "all"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation app-stack storage-network build-workflows deviceuser std-llm" "all"
 
 APPLIANCE_PACKS="foundation"
 appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation" "foundation only"
 
-APPLIANCE_PACKS="foundation,dev-platform"
+APPLIANCE_PACKS="foundation,storage-network"
 appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform" "foundation+dev-platform"
-appliance_pack_wanted dev-platform || fail "dev-platform should be wanted"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation storage-network" "foundation+storage-network"
+appliance_pack_wanted storage-network || fail "storage-network should be wanted"
 appliance_pack_wanted std-llm && fail "std-llm should not be wanted"
 
 APPLIANCE_PACKS="app-stack"
@@ -96,6 +96,6 @@ for unsupported in inference; do
 done
 
 echo "test-appliance-packs: ok"
-APPLIANCE_PACKS=dev-platform
+APPLIANCE_PACKS=build-workflows
 appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation dev-platform" "dev platform only"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation build-workflows" "build workflows only"

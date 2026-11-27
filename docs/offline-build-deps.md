@@ -77,7 +77,7 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | Package | LAN artifact | Consumed by |
 |---|---|---|
 | `development-container` | `$DEV_REGISTRY/$DEV_IMAGE_REPO/dev-build:<tag>` | **Build-host tooling only** (online GHCR + offline LAN); also `appliance-code` local service builds. Not packaged into appliance packs. |
-| `git-runtime-container` | `build-cache/alpine-git:2.49.0-${TARGET_ARCH}` | workspace-provisioner (dev-platform pack) |
+| `git-runtime-container` | `build-cache/alpine-git:2.49.0-${TARGET_ARCH}` | workspace-provisioner (build-workflows pack) |
 | `workflows` | `build-cache/argoexec:v…-${TARGET_ARCH}` / `workflow-controller:v…-${TARGET_ARCH}`; files `argo-workflows/…` | executor + CRDs |
 | `message-broker` | `build-cache/nats:2.10.26-alpine-${TARGET_ARCH}` | NATS JetStream broker image |
 | `postgresql` | `build-cache/postgres:16.15-alpine3.24-${TARGET_ARCH}` | PostgreSQL control-plane database image |

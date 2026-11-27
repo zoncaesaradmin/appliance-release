@@ -565,7 +565,8 @@ product_version = str(config.get("bundleVersion", "0.0.0"))
 pack_specs = (
     ("foundation", f"appliance-{product_version}-foundation", "foundation"),
     ("app-stack", f"appliance-{product_version}-app-stack", "app-stack"),
-    ("dev-platform", f"appliance-{product_version}-dev-platform", "dev-platform"),
+    ("storage-network", f"appliance-{product_version}-storage-network", "storage-network"),
+    ("build-workflows", f"appliance-{product_version}-build-workflows", "build-workflows"),
     ("deviceuser", f"appliance-{product_version}-deviceuser", "deviceuser"),
     ("std-llm", f"appliance-{product_version}-std-llm", "std-llm"),
     ("acc-llm", f"appliance-{product_version}-acc-llm", "acc-llm"),
@@ -591,7 +592,8 @@ This workspace is the handoff point between the two repos:
 4. \`appliance-release\` assembles signed packs using:
    \`${WORKDIR}/bundle-assembly.foundation.json\`
    \`${WORKDIR}/bundle-assembly.app-stack.json\`
-   \`${WORKDIR}/bundle-assembly.dev-platform.json\`
+   \`${WORKDIR}/bundle-assembly.storage-network.json\`
+   \`${WORKDIR}/bundle-assembly.build-workflows.json\`
    \`${WORKDIR}/bundle-assembly.deviceuser.json\`
    \`${WORKDIR}/bundle-assembly.std-llm.json\`
    \`${WORKDIR}/bundle-assembly.acc-llm.json\`
@@ -634,7 +636,8 @@ echo "  config: ${CONFIG_PATH}"
 echo "  pack configs:"
 echo "    ${WORKDIR}/bundle-assembly.foundation.json"
 echo "    ${WORKDIR}/bundle-assembly.app-stack.json"
-echo "    ${WORKDIR}/bundle-assembly.dev-platform.json"
+echo "    ${WORKDIR}/bundle-assembly.storage-network.json"
+echo "    ${WORKDIR}/bundle-assembly.build-workflows.json"
 echo "    ${WORKDIR}/bundle-assembly.deviceuser.json"
 echo "    ${WORKDIR}/bundle-assembly.std-llm.json"
 echo "    ${WORKDIR}/bundle-assembly.acc-llm.json"

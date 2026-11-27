@@ -224,7 +224,7 @@ else:
             packs.append(line.split("filename:", 1)[1].strip())
 if architecture not in {"amd64", "arm64"}:
     raise SystemExit("publish-release: release index must declare architecture amd64|arm64")
-known = {"foundation", "app-stack", "dev-platform", "deviceuser", "std-llm", "acc-llm", "open-webui"}
+known = {"foundation", "app-stack", "storage-network", "build-workflows", "deviceuser", "std-llm", "acc-llm", "open-webui"}
 if not pack_ids or "foundation" not in pack_ids:
     raise SystemExit("publish-release: release index must include the mandatory foundation pack")
 if any(pack not in known for pack in pack_ids) or len(pack_ids) != len(set(pack_ids)):

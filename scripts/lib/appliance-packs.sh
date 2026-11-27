@@ -3,13 +3,13 @@
 #
 # Env:
 #   APPLIANCE_PACKS   CSV or single token. Default: all
-#                     Values: all | foundation | app-stack | dev-platform | deviceuser | std-llm | acc-llm | open-webui
-#                     Examples: all ; foundation ; foundation,app-stack ; foundation,app-stack,dev-platform
+#                     Values: all | foundation | app-stack | storage-network | build-workflows | deviceuser | std-llm | acc-llm | open-webui
+#                     Examples: all ; foundation ; foundation,app-stack ; foundation,storage-network,deviceuser
 #                     Chat showcase: foundation,std-llm,open-webui
 #
 # After appliance_packs_resolve:
 #   APPLIANCE_PACKS_RESOLVED   space-separated, stable order:
-#     foundation [app-stack] [dev-platform] [deviceuser] [std-llm|acc-llm] [open-webui]
+#     foundation [app-stack] [storage-network] [build-workflows] [deviceuser] [std-llm|acc-llm] [open-webui]
 #   appliance_pack_wanted ID   returns 0 when ID is selected
 #
 # foundation is always included (required deliverable). Unknown ids fail closed.
@@ -24,7 +24,8 @@ appliance_packs_resolve() {
   local want_all=0
   local want_foundation=0
   local want_app_stack=0
-  local want_dev_platform=0
+  local want_storage_network=0
+  local want_build_workflows=0
   local want_deviceuser=0
   local want_std_llm=0
   local want_acc_llm=0
@@ -51,8 +52,11 @@ appliance_packs_resolve() {
       app-stack)
         want_app_stack=1
         ;;
-      dev-platform)
-        want_dev_platform=1
+      storage-network)
+        want_storage_network=1
+        ;;
+      build-workflows)
+        want_build_workflows=1
         ;;
       deviceuser)
         want_deviceuser=1
@@ -79,7 +83,7 @@ appliance_packs_resolve() {
         return 2
         ;;
       *)
-        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|app-stack|dev-platform|deviceuser|std-llm|acc-llm|open-webui)" >&2
+        echo "appliance-packs: unknown pack id '${token}' (want all|foundation|app-stack|storage-network|build-workflows|deviceuser|std-llm|acc-llm|open-webui)" >&2
         return 2
         ;;
     esac
@@ -88,7 +92,8 @@ appliance_packs_resolve() {
   if [[ "${want_all}" -eq 1 ]]; then
     want_foundation=1
     want_app_stack=1
-    want_dev_platform=1
+    want_storage_network=1
+    want_build_workflows=1
     want_deviceuser=1
     want_std_llm=1
     # open-webui stays opt-in even for "all": integrated SKUs are inference-capable
@@ -114,8 +119,11 @@ appliance_packs_resolve() {
   if [[ "${want_app_stack}" -eq 1 ]]; then
     APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} app-stack"
   fi
-  if [[ "${want_dev_platform}" -eq 1 ]]; then
-    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} dev-platform"
+  if [[ "${want_storage_network}" -eq 1 ]]; then
+    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} storage-network"
+  fi
+  if [[ "${want_build_workflows}" -eq 1 ]]; then
+    APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} build-workflows"
   fi
   if [[ "${want_deviceuser}" -eq 1 ]]; then
     APPLIANCE_PACKS_RESOLVED="${APPLIANCE_PACKS_RESOLVED} deviceuser"

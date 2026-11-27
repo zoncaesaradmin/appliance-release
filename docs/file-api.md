@@ -122,7 +122,8 @@ Suggested layout:
 ```text
 api/v1/files/appliance/<version>/
   appliance-<version>-foundation-<arch>.tar.gz
-  appliance-<version>-dev-platform-<arch>.tar.gz
+  appliance-<version>-storage-network-<arch>.tar.gz
+  appliance-<version>-build-workflows-<arch>.tar.gz
   appliance-<version>-std-llm-<arch>.tar.gz   # when built
   appliance-<version>-acc-llm-<arch>.tar.gz   # when built
   release-index.yaml   # architecture: + per-pack filename
