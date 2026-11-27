@@ -28,9 +28,7 @@ REQUIRED_CACHE_TAG_BASE = {
     "dns": "CACHE_TAG_BASE",
     "message-broker": "CACHE_TAG_BASE",
 	"postgresql": "CACHE_TAG_BASE",
-    "git-runtime-container": "CACHE_TAG_BASE",
     "blob-storage": "CACHE_TAG_BASE",
-    "workflows": "CACHE_TAG_BASE",
     "inference": "CACHE_TAG_BASE",  # ollama; vLLM tags already encode arch
 }
 
@@ -46,13 +44,10 @@ REQUIRED_ARTIFACT_DEBIAN = "DEBIAN_CACHE_TAG_BASE"
 # Offline remaps in build-full-bundle.sh must include ${TARGET_ARCH} or
 # ${HOST_ARCH}, or already embed arch in the name/tag literal.
 REQUIRED_LAN_CACHE_SNIPPETS = [
-    'lan_cache_ref alpine-git "${ALPINE_GIT_CACHE_TAG_BASE}-${TARGET_ARCH}"',
     'lan_cache_ref nats "2.10.26-alpine-${TARGET_ARCH}"',
     'lan_cache_ref coredns "v${DNS_VERSION}-${TARGET_ARCH}"',
     'lan_cache_ref "${BLOB_STORAGE_CACHE_NAME}" "${BLOB_STORAGE_CACHE_TAG_BASE}-${TARGET_ARCH}"',
     'lan_cache_ref ollama "${INFERENCE_VERSION}-${TARGET_ARCH}"',
-    'lan_cache_ref argoexec "${WORKFLOWS_VERSION}-${TARGET_ARCH}"',
-    'lan_cache_ref workflow-controller "${WORKFLOWS_VERSION}-${TARGET_ARCH}"',
     'lan_cache_ref "${JELLYFIN_CACHE_NAME}" "${JELLYFIN_CACHE_TAG}"',
     'lan_cache_ref golang "1.26-${HOST_ARCH}"',
     'lan_cache_ref alpine-3.24.1-runtime "3.24.1-${TARGET_ARCH}"',
@@ -123,8 +118,6 @@ def main() -> None:
         'lan_cache_ref coredns "v${DNS_VERSION}"',
         'lan_cache_ref nats "2.10.26-alpine"',
         'lan_cache_ref ollama "${INFERENCE_VERSION}"',
-        'lan_cache_ref argoexec "${WORKFLOWS_VERSION}"',
-        'lan_cache_ref workflow-controller "${WORKFLOWS_VERSION}"',
         'lan_cache_ref debian-bookworm-slim-runtime bookworm-slim',
         'lan_cache_ref golang 1.26)',
         'lan_cache_ref golang "1.26"',

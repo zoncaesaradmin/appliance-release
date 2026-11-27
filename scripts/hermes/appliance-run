@@ -26,7 +26,7 @@ password file; no helper is installed on the target.
 
 Allowlisted services currently include:
   ui, controlplane, host-agent, channel-integration, identity, ordering,
-  workflow-controller, artifact-server, dns-server, inference-manager,
+  artifact-server, dns-server, inference-manager,
   open-webui-gateway
 
 The old `ui-refresh` command remains an alias for `image-refresh --service ui`.
@@ -126,15 +126,6 @@ service_config() {
       DEPLOY_NAMESPACE=ace-apps
       DEPLOYMENT_NAME=ordering
       CONTAINER_NAME=ordering
-      ;;
-    workflow-controller)
-      SERVICE_KEY=workflow-controller
-      SERVICE_DIR=services/workflow-controller
-      SERVICE_IMAGE_NAME=appliance-workflow-controller
-      RUNTIME_IMAGE_NAME=appliance-workflow-controller
-      DEPLOY_NAMESPACE=workflows
-      DEPLOYMENT_NAME=workflow-controller
-      CONTAINER_NAME=workflow-controller
       ;;
     artifact-server)
       SERVICE_KEY=artifact-server

@@ -165,12 +165,8 @@ SESSION_REQUEST_FILE="${RUN_DIR}/logs/client-session-request.json"
 USERS_BODY_FILE="${RUN_DIR}/logs/client-users-body.json"
 USERS_META_FILE="${RUN_DIR}/logs/client-users-meta.txt"
 USERS_REQUEST_FILE="${RUN_DIR}/logs/client-users-request.json"
-BUILDER_ENABLED="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.enabled" || true)"
-BUILDER_EXPECT_DISABLED="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.expect_disabled" || true)"
-if [[ -n "$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.workflow" || true)" ]] \
-  || [[ -n "$(config_get_optional "${INSTALL_CONFIG}" "client_verification.builder.workflow.enabled" || true)" ]]; then
-  fail "client_verification.builder.workflow was removed; client verify only checks builder profile routes/MCP tools (no catalog upload or build smoke). Remove client_verification.builder.workflow from the install config."
-fi
+BUILDER_ENABLED="false"
+BUILDER_EXPECT_DISABLED="false"
 ARTIFACT_ENABLED="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.artifact.enabled" || true)"
 ARTIFACT_EXPECT_DENIED_SCOPE="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.artifact.expect_denied_scope" || true)"
 ARTIFACT_OCI_SMOKE_CMD="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.artifact.oci_smoke_command" || true)"
@@ -180,13 +176,6 @@ if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="$(config_get_optional "${INSTALL_CONFIG}" "install.appliance_profile" || true)"
 fi
 APPLIANCE_PROFILE="$(require_appliance_profile "${INSTALL_CONFIG}" "${APPLIANCE_PROFILE}")"
-if [[ -z "${BUILDER_ENABLED}" ]]; then
-  if profile_supports_builder "${APPLIANCE_PROFILE}"; then
-    BUILDER_ENABLED="true"
-  else
-    BUILDER_ENABLED="false"
-  fi
-fi
 if [[ -z "${ARTIFACT_ENABLED}" ]]; then
   if profile_supports_artifacts "${APPLIANCE_PROFILE}"; then
     ARTIFACT_ENABLED="true"
@@ -203,13 +192,6 @@ if [[ -z "${ARTIFACT_EXPECT_DENIED_SCOPE}" ]]; then
     ARTIFACT_EXPECT_DENIED_SCOPE="false"
   else
     ARTIFACT_EXPECT_DENIED_SCOPE="true"
-  fi
-fi
-if [[ -z "${BUILDER_EXPECT_DISABLED}" ]]; then
-  if bool_true "${BUILDER_ENABLED}"; then
-    BUILDER_EXPECT_DISABLED="false"
-  else
-    BUILDER_EXPECT_DISABLED="true"
   fi
 fi
 BUILDER_PROFILES_BODY_FILE="${RUN_DIR}/logs/client-builder-work-profiles-body.json"

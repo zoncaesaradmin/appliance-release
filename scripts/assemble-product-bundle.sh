@@ -73,9 +73,6 @@ RELEASE_INPUT_SOURCE="${RELEASE_INPUT_SOURCE:-}"
 RELEASE_INPUT_VERSION="${RELEASE_INPUT_VERSION:-}"
 RELEASE_INPUT_FETCH_TEMPLATE="${RELEASE_INPUT_FETCH_TEMPLATE:-}"
 CONTROL_PLANE_IMAGE="${CONTROL_PLANE_IMAGE:-}"
-WORKFLOWS_VERSION="${WORKFLOWS_VERSION:-}"
-WORKFLOW_CONTROLLER_IMAGE_REF="${WORKFLOW_CONTROLLER_IMAGE_REF:-}"
-WORKFLOW_EXECUTOR_IMAGE_REF="${WORKFLOW_EXECUTOR_IMAGE_REF:-}"
 K3S_BINARY="${K3S_BINARY:-${INPUTS_DIR}/k3s}"
 K3S_AIRGAP_IMAGES="${K3S_AIRGAP_IMAGES:-${INPUTS_DIR}/k3s-airgap-images-${TARGET_ARCH}.tar.zst}"
 HELM_BINARY="${HELM_BINARY:-}"
@@ -87,7 +84,6 @@ RELEASE_INPUT_DIR="${WORKDIR}/release-input"
 BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-foundation"
 APP_STACK_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-app-stack"
 STORAGE_NETWORK_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-storage-network"
-BUILD_WORKFLOWS_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-build-workflows"
 DEVICEUSER_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 CPU_LLM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-std-llm"
 ACC_LLM_BUNDLE_DIR="${WORKDIR}/out/appliance-${PRODUCT_VERSION}-acc-llm"
@@ -103,7 +99,7 @@ create_sample_release_input() {
     CONTROL_PLANE_IMAGE_REF="internal/control-plane-api:${PRODUCT_VERSION}"
   fi
 
-  python3 - "${sample_root}" "${archive_path}" "${PRODUCT_VERSION}" "${CHART_VERSION}" "${K3S_VERSION}" "${CONTROL_PLANE_IMAGE_REF}" "${WORKFLOWS_VERSION}" "${WORKFLOW_CONTROLLER_IMAGE_REF}" "${WORKFLOW_EXECUTOR_IMAGE_REF}" <<'PY'
+  python3 - "${sample_root}" "${archive_path}" "${PRODUCT_VERSION}" "${CHART_VERSION}" "${K3S_VERSION}" "${CONTROL_PLANE_IMAGE_REF}" <<'PY'
 import hashlib
 import json
 import shutil
@@ -117,9 +113,6 @@ product_version = sys.argv[3]
 chart_version = sys.argv[4]
 k3s_version = sys.argv[5]
 control_plane_image_ref = sys.argv[6]
-workflows_version = sys.argv[7]
-workflow_controller_image_ref = sys.argv[8]
-workflow_executor_image_ref = sys.argv[9]
 ui_image_ref = f"internal/appliance-ui:{product_version}"
 
 if sample_root.exists():
@@ -138,9 +131,6 @@ compatibility = {
     "chartVersion": chart_version,
     "supportedUpgradeSources": [],
 }
-if workflows_version:
-    compatibility["workflowsVersion"] = workflows_version
-
 control_plane_bytes = b"control-plane-image\n"
 ui_bytes = b"appliance-ui-image\n"
 blob_storage_name = "blob-storage.oci.tar.zst"
@@ -201,55 +191,6 @@ with tarfile.open(sample_root / chart_name, "w:gz") as tf:
     tf.add(chart_src, arcname="appliance")
 shutil.rmtree(sample_root / "chart")
 
-workflows_chart_name = ""
-workflow_controller_name = ""
-workflow_executor_name = ""
-workflows_crds_name = ""
-if workflows_version:
-    workflows_chart_name = f"workflows-chart-{workflows_version}.tgz"
-    workflows_chart_src = sample_root / "chart" / "appliance-workflows"
-    workflows_chart_src.mkdir(parents=True, exist_ok=True)
-    (workflows_chart_src / "Chart.yaml").write_text(
-        "\n".join(
-            [
-                "apiVersion: v2",
-                "name: appliance-workflows",
-                f"version: {workflows_version}",
-                f"appVersion: {workflows_version}",
-                "type: application",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    (workflows_chart_src / "values.yaml").write_text("controller:\n  enabled: true\n", encoding="utf-8")
-    with tarfile.open(sample_root / workflows_chart_name, "w:gz") as tf:
-        tf.add(workflows_chart_src, arcname="workflows-chart")
-    shutil.rmtree(sample_root / "chart")
-
-    workflows_crds_name = "workflows-crds"
-    workflows_crds_dir = sample_root / workflows_crds_name
-    workflows_crds_dir.mkdir(parents=True, exist_ok=True)
-    (workflows_crds_dir / "workflows.argoproj.io.yaml").write_text(
-        "\n".join(
-            [
-                "apiVersion: apiextensions.k8s.io/v1",
-                "kind: CustomResourceDefinition",
-                "metadata:",
-                "  name: workflows.argoproj.io",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    if workflow_controller_image_ref:
-        workflow_controller_name = f"workflow-controller-{workflows_version}.oci.tar.zst"
-        (sample_root / workflow_controller_name).write_bytes(b"sample workflow-controller image\n")
-    if workflow_executor_image_ref:
-        workflow_executor_name = f"workflow-executor-{workflows_version}.oci.tar.zst"
-        (sample_root / workflow_executor_name).write_bytes(b"sample workflow-executor image\n")
-
 def file_digest(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -291,20 +232,6 @@ release_input = {
 release_input["artifacts"]["controlPlaneImage"]["imageReference"] = control_plane_image_ref
 release_input["artifacts"]["uiImage"]["imageReference"] = ui_image_ref
 release_input["artifacts"]["blobStorageImage"]["imageReference"] = "registry.local/blob-storage@sha256:" + "ab" * 32
-
-if workflows_chart_name:
-    release_input["artifacts"]["workflowsChart"] = file_artifact(workflows_chart_name)
-if workflows_crds_name:
-    release_input["artifacts"]["workflowsCRDs"] = {
-        "path": workflows_crds_name,
-        "manifestDigest": dir_manifest_digest(sample_root / workflows_crds_name),
-    }
-if workflow_controller_name:
-    release_input["artifacts"]["workflowControllerImage"] = file_artifact(workflow_controller_name)
-    release_input["artifacts"]["workflowControllerImage"]["imageReference"] = workflow_controller_image_ref
-if workflow_executor_name:
-    release_input["artifacts"]["workflowExecutorImage"] = file_artifact(workflow_executor_name)
-    release_input["artifacts"]["workflowExecutorImage"]["imageReference"] = workflow_executor_image_ref
 
 (sample_root / "release-input.json").write_text(json.dumps(release_input, indent=2) + "\n", encoding="utf-8")
 
@@ -642,7 +569,6 @@ assemble_all_packs() {
       foundation) bundle_dir="${BUNDLE_DIR}" ;;
       app-stack) bundle_dir="${APP_STACK_BUNDLE_DIR}" ;;
       storage-network) bundle_dir="${STORAGE_NETWORK_BUNDLE_DIR}" ;;
-      build-workflows) bundle_dir="${BUILD_WORKFLOWS_BUNDLE_DIR}" ;;
       deviceuser) bundle_dir="${DEVICEUSER_BUNDLE_DIR}" ;;
       std-llm) bundle_dir="${CPU_LLM_BUNDLE_DIR}" ;;
       acc-llm) bundle_dir="${ACC_LLM_BUNDLE_DIR}" ;;
@@ -696,7 +622,7 @@ if [[ -n "${VALUES_FILE:-}" ]]; then
   cp "${VALUES_FILE}" "${STAGING_DIR}/values-minimal.yaml"
 fi
 
-rm -rf "${BUNDLE_DIR}" "${APP_STACK_BUNDLE_DIR}" "${STORAGE_NETWORK_BUNDLE_DIR}" "${BUILD_WORKFLOWS_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}" "${ACC_LLM_BUNDLE_DIR}" "${OPEN_WEBUI_BUNDLE_DIR}"
+rm -rf "${BUNDLE_DIR}" "${APP_STACK_BUNDLE_DIR}" "${STORAGE_NETWORK_BUNDLE_DIR}" "${DEVICEUSER_BUNDLE_DIR}" "${CPU_LLM_BUNDLE_DIR}" "${ACC_LLM_BUNDLE_DIR}" "${OPEN_WEBUI_BUNDLE_DIR}"
 
 assemble_all_packs
 
@@ -709,9 +635,6 @@ if appliance_pack_wanted app-stack; then
 fi
 if appliance_pack_wanted storage-network; then
   echo "  storage-network: ${STORAGE_NETWORK_BUNDLE_DIR}"
-fi
-if appliance_pack_wanted build-workflows; then
-  echo "  build-workflows: ${BUILD_WORKFLOWS_BUNDLE_DIR}"
 fi
 if appliance_pack_wanted deviceuser; then
   echo "  deviceuser: ${DEVICEUSER_BUNDLE_DIR}"

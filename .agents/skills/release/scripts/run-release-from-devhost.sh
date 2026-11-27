@@ -91,7 +91,6 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
   INSTALL_CONFIG="$(require_config_path "${INSTALL_CONFIG}")"
   # Fail closed before install if operator still supplies product-fixed keys.
   reject_removed_install_control_plane_identity_keys "${INSTALL_CONFIG}"
-  reject_removed_verification_argo_keys "${INSTALL_CONFIG}"
   reject_removed_install_image_pull_literal_registry "${INSTALL_CONFIG}"
 
   # An install request is always the signed embedded-etcd product. Do this

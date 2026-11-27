@@ -77,8 +77,6 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | Package | LAN artifact | Consumed by |
 |---|---|---|
 | `development-container` | `$DEV_REGISTRY/$DEV_IMAGE_REPO/dev-build:<tag>` | **Build-host tooling only** (online GHCR + offline LAN); also `appliance-code` local service builds. Not packaged into appliance packs. |
-| `git-runtime-container` | `build-cache/alpine-git:2.49.0-${TARGET_ARCH}` | workspace-provisioner (build-workflows pack) |
-| `workflows` | `build-cache/argoexec:v…-${TARGET_ARCH}` / `workflow-controller:v…-${TARGET_ARCH}`; files `argo-workflows/…` | executor + CRDs |
 | `message-broker` | `build-cache/nats:2.10.26-alpine-${TARGET_ARCH}` | NATS JetStream broker image |
 | `postgresql` | `build-cache/postgres:16.15-alpine3.24-${TARGET_ARCH}` | PostgreSQL control-plane database image |
 | `artifact-server-bases` | `build-cache/zot-linux-${TARGET_ARCH}:…`, `debian-bookworm-slim-runtime:bookworm-slim-${TARGET_ARCH}` | artifact-server wrap |
@@ -205,7 +203,7 @@ make list-deps
 ### Online (`OFFLINE_BUILD=0`)
 
 1. Tooling image from unified `DEV_*` (skill mapped from `ONLINE_*`).
-2. K3s from GitHub releases; Helm from `get.helm.sh`; Argo CRDs from GitHub.
+2. K3s from GitHub releases and Helm from `get.helm.sh`.
 3. No LAN build-cache probe, no files API packaging pulls.
 
 ### Offline (`OFFLINE_BUILD=1`)
@@ -275,8 +273,7 @@ third_party_freeze:
 - `require`: restore on hit; fail closed on miss (run `make freeze-third-party`)
 
 Frozen today (final `.run/` archives / trees): inference-runtime, dns-server,
-workspace-provisioner / jellyfin / workflow-executor (bundled/plain OCI helpers),
-workflow-controller wrap, host-packages, blob-storage, message-broker.
+jellyfin (bundled OCI helper), host-packages, blob-storage, message-broker.
 On a fingerprint hit, packaging restores into `.run/` and **skips** the
 skopeo/buildah export for that artifact.
 Product-owned images (artifact-server, inference-manager, control-plane, UI,

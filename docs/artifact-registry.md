@@ -4,8 +4,7 @@ This document captures the external-machine flow for using the appliance
 artifact registry.
 
 These examples assume the appliance is installed with the `storage`,
-`builder`, `storage-landns`, `builder-landns`, or
-`builder-storage-landns` profile and that the artifact capability is enabled.
+`storage-landns` profile and that the artifact capability is enabled.
 
 For OCI tools, use the appliance's canonical advertised registry host (the
 derived FQDN `<appliance_name>.<dns_zone>`, or a TLS SAN you configured).
@@ -172,8 +171,7 @@ curl -ksS \
 ## Notes
 
 - `core` should not expose this registry path at all
-- `storage`, `builder`, `storage-landns`, `builder-landns`, and
-  `builder-storage-landns` should expose it
+- `storage` and `storage-landns` should expose it
 - use the appliance username plus API token for registry clients
 - do not use the appliance API access token directly for `podman login` or
   `oras login`

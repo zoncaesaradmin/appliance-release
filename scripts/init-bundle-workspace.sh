@@ -147,47 +147,16 @@ if isinstance(value, str):
 PY
 }
 
-json_compatibility_string() {
-  local manifest_path="$1"
-  local field="$2"
-  python3 - "${manifest_path}" "${field}" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], "r", encoding="utf-8") as handle:
-    data = json.load(handle)
-
-compatibility = data.get("compatibility", {})
-value = compatibility.get(sys.argv[2], "")
-if isinstance(value, str):
-    print(value)
-PY
-}
-
 RELEASE_INPUT_MANIFEST="${RELEASE_INPUT_DIR}/release-input.json"
 CODE_VERSION=""
 CONTROL_PLANE_ARCHIVE_NAME=""
 UI_IMAGE_REF=""
 CHART_ARCHIVE_NAME=""
-WORKFLOWS_VERSION=""
-WORKFLOWS_CHART_ARCHIVE_NAME=""
-WORKFLOWS_CRDS_REL_PATH=""
-WORKFLOW_CONTROLLER_ARCHIVE_NAME=""
-WORKFLOW_CONTROLLER_IMAGE_REF=""
-WORKFLOW_EXECUTOR_ARCHIVE_NAME=""
-WORKFLOW_EXECUTOR_IMAGE_REF=""
 if [[ -f "${RELEASE_INPUT_MANIFEST}" ]]; then
   CODE_VERSION="$(json_string "${RELEASE_INPUT_MANIFEST}" codeVersion)"
   CONTROL_PLANE_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" controlPlaneImage)"
   UI_IMAGE_REF="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" uiImage imageReference)"
   CHART_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" applianceChart)"
-  WORKFLOWS_VERSION="$(json_compatibility_string "${RELEASE_INPUT_MANIFEST}" workflowsVersion)"
-  WORKFLOWS_CHART_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" workflowsChart)"
-  WORKFLOWS_CRDS_REL_PATH="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" workflowsCRDs path)"
-  WORKFLOW_CONTROLLER_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" workflowControllerImage)"
-  WORKFLOW_CONTROLLER_IMAGE_REF="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" workflowControllerImage imageReference)"
-  WORKFLOW_EXECUTOR_ARCHIVE_NAME="$(json_artifact_basename "${RELEASE_INPUT_MANIFEST}" workflowExecutorImage)"
-  WORKFLOW_EXECUTOR_IMAGE_REF="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" workflowExecutorImage imageReference)"
   if [[ -z "${CONTROL_PLANE_IMAGE_REF}" ]]; then
     CONTROL_PLANE_IMAGE_REF="$(json_artifact_string "${RELEASE_INPUT_MANIFEST}" controlPlaneImage imageReference)"
   fi
@@ -375,14 +344,6 @@ The \`release-input\` directory is produced by \`appliance-code\` and must conta
 - \`notices/\`
 - \`tests/\`
 
-If the product handoff includes the workflows engine for Phase 1 bring-up, this
-workspace also auto-packages the optional release-input artifacts when present:
-
-- \`${WORKFLOWS_CHART_ARCHIVE_NAME:-workflows-chart-<version>.tgz}\`
-- \`${WORKFLOWS_CRDS_REL_PATH:-workflows-crds/}\`
-- \`${WORKFLOW_CONTROLLER_ARCHIVE_NAME:-workflow-controller.oci.tar.zst}\`
-- \`${WORKFLOW_EXECUTOR_ARCHIVE_NAME:-workflow-executor.oci.tar.zst}\`
-
 Build-machine helper requirement:
 
 - a Helm binary, passed to this script as \`--helm-binary\`, so the final
@@ -524,37 +485,12 @@ def add_extra_oci_images():
         append_file_entry(source_path, f"oci-images/{source_path.name}", "oci-images", image.get("imageReference"))
 
 
-def add_crd_artifacts():
-    artifact = artifacts.get("workflowsCRDs")
-    if not isinstance(artifact, dict):
-        return
-    rel_path = artifact.get("path")
-    if not isinstance(rel_path, str) or not rel_path:
-        return
-    source_root = release_input_dir / rel_path
-    if source_root.is_file():
-        append_file_entry(source_root, f"kubernetes/crds/{source_root.name}", "kubernetes-crds")
-        return
-    if not source_root.is_dir():
-        raise SystemExit(f"init-bundle-workspace: release-input artifact is missing: {source_root}")
-    files = sorted(path for path in source_root.rglob("*") if path.is_file())
-    if not files:
-        raise SystemExit(f"init-bundle-workspace: workflow CRD directory is empty: {source_root}")
-    for path in files:
-        rel_file = path.relative_to(source_root).as_posix()
-        append_file_entry(path, f"kubernetes/crds/{rel_path.rstrip('/')}/{rel_file}", "kubernetes-crds")
-
-
-add_artifact_file("workflowsChart", "charts", "chart")
 add_artifact_file("uiImage", "oci-images", "oci-images", image_reference_field=True)
 add_artifact_file("hostAgentImage", "oci-images", "oci-images", image_reference_field=True)
 add_artifact_file("blobStorageImage", "oci-images", "oci-images", image_reference_field=True)
 add_artifact_file("hostAgentBinary", "bin", "appliance")
 add_artifact_file("cloudflaredBinary", "bin", "appliance")
-add_artifact_file("workflowControllerImage", "oci-images", "oci-images", image_reference_field=True)
-add_artifact_file("workflowExecutorImage", "oci-images", "oci-images", image_reference_field=True)
 add_extra_oci_images()
-add_crd_artifacts()
 
 config["entries"] = entries
 config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
@@ -566,7 +502,6 @@ pack_specs = (
     ("foundation", f"appliance-{product_version}-foundation", "foundation"),
     ("app-stack", f"appliance-{product_version}-app-stack", "app-stack"),
     ("storage-network", f"appliance-{product_version}-storage-network", "storage-network"),
-    ("build-workflows", f"appliance-{product_version}-build-workflows", "build-workflows"),
     ("deviceuser", f"appliance-{product_version}-deviceuser", "deviceuser"),
     ("std-llm", f"appliance-{product_version}-std-llm", "std-llm"),
     ("acc-llm", f"appliance-{product_version}-acc-llm", "acc-llm"),
@@ -593,22 +528,11 @@ This workspace is the handoff point between the two repos:
    \`${WORKDIR}/bundle-assembly.foundation.json\`
    \`${WORKDIR}/bundle-assembly.app-stack.json\`
    \`${WORKDIR}/bundle-assembly.storage-network.json\`
-   \`${WORKDIR}/bundle-assembly.build-workflows.json\`
    \`${WORKDIR}/bundle-assembly.deviceuser.json\`
    \`${WORKDIR}/bundle-assembly.std-llm.json\`
    \`${WORKDIR}/bundle-assembly.acc-llm.json\`
    \`${WORKDIR}/bundle-assembly.open-webui.json\`
    (legacy full-bundle config remains at \`${CONFIG_PATH}\`; TARGET_ARCH=${TARGET_ARCH})
-
-If the release-input includes optional workflows engine Phase 1 artifacts, this
-workspace auto-detects them and adds them to the bundle config under:
-
-- \`charts/\` for the workflows chart
-- \`oci-images/\` for the controller, executor, and extra capability image archives
-- \`kubernetes/crds/\` for the CRD YAML files
-
-That prepares the release bundle contract for installer-side workflows engine
-bring-up without introducing any target-specific values at build time.
 
 Suggested flow:
 
@@ -637,7 +561,6 @@ echo "  pack configs:"
 echo "    ${WORKDIR}/bundle-assembly.foundation.json"
 echo "    ${WORKDIR}/bundle-assembly.app-stack.json"
 echo "    ${WORKDIR}/bundle-assembly.storage-network.json"
-echo "    ${WORKDIR}/bundle-assembly.build-workflows.json"
 echo "    ${WORKDIR}/bundle-assembly.deviceuser.json"
 echo "    ${WORKDIR}/bundle-assembly.std-llm.json"
 echo "    ${WORKDIR}/bundle-assembly.acc-llm.json"
@@ -647,6 +570,3 @@ echo "  release-input dir: ${RELEASE_INPUT_DIR}"
 echo "  staging dir: ${STAGING_DIR}"
 echo "  bundle output dir: ${BUNDLE_DIR}"
 echo "  public key: ${PUBLIC_KEY_PATH}"
-if [[ -n "${WORKFLOWS_VERSION}" ]]; then
-  echo "  detected optional workflows version: ${WORKFLOWS_VERSION}"
-fi

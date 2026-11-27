@@ -21,11 +21,11 @@ assert_eq() {
 APPLIANCE_PACKS=""
 appliance_packs_resolve
 assert_eq "${APPLIANCE_PACKS}" "all" "empty defaults to all token"
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation app-stack storage-network build-workflows deviceuser std-llm" "empty → all packs"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation app-stack storage-network deviceuser std-llm" "empty → all packs"
 
 APPLIANCE_PACKS="all"
 appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation app-stack storage-network build-workflows deviceuser std-llm" "all"
+assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation app-stack storage-network deviceuser std-llm" "all"
 
 APPLIANCE_PACKS="foundation"
 appliance_packs_resolve
@@ -96,6 +96,3 @@ for unsupported in inference; do
 done
 
 echo "test-appliance-packs: ok"
-APPLIANCE_PACKS=build-workflows
-appliance_packs_resolve
-assert_eq "${APPLIANCE_PACKS_RESOLVED}" "foundation build-workflows" "build workflows only"

@@ -35,8 +35,6 @@ capabilityPacks:
   files: foundation
   video: foundation
   application-auth: foundation
-  workflows: build-workflows
-  build: build-workflows
   artifact: storage-network
   dns: deviceuser
   host: deviceuser
@@ -49,8 +47,6 @@ profiles:
     capabilities: [base, actions, lan-discovery, files, video]
   storage-landns:
     capabilities: [base, actions, lan-discovery, files, artifact, dns]
-  builder-lanllm-storage-landns:
-    capabilities: [base, actions, lan-discovery, host, files, workflows, build, artifact, dns, inference, applications]
   lanllm:
     capabilities: [base, actions, lan-discovery, inference, applications]
   future-profile:
@@ -72,9 +68,6 @@ packs:
   - id: storage-network
     filename: appliance-0.1.0-storage-network-amd64.tar.gz
     capabilities: [artifact]
-  - id: build-workflows
-    filename: appliance-0.1.0-build-workflows-amd64.tar.gz
-    capabilities: [workflows, build]
   - id: deviceuser
     filename: appliance-0.1.0-deviceuser-amd64.tar.gz
     capabilities: [host, dns]
@@ -87,8 +80,6 @@ capabilityPacks:
   lan-discovery: foundation
   files: foundation
   video: foundation
-  workflows: build-workflows
-  build: build-workflows
   artifact: storage-network
   dns: deviceuser
   host: deviceuser
@@ -105,8 +96,6 @@ profiles:
     capabilities: [base, actions, lan-discovery, files, video]
   storage-landns:
     capabilities: [base, actions, lan-discovery, files, artifact, dns]
-  builder-lanllm-storage-landns:
-    capabilities: [base, actions, lan-discovery, host, files, workflows, build, artifact, dns, inference, applications]
   lanllm:
     capabilities: [base, actions, lan-discovery, inference, applications]
   application-core:
@@ -117,11 +106,10 @@ got="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"
 [[ "${got}" == "foundation" ]] || fail "foundation-only index: got '${got}'"
 
 got="$(published_pack_ids_from_index "${TMP}/all-packs.yaml")"
-[[ "${got}" == "foundation app-stack storage-network build-workflows deviceuser std-llm" ]] || fail "all-packs index: got '${got}'"
+[[ "${got}" == "foundation app-stack storage-network deviceuser std-llm" ]] || fail "all-packs index: got '${got}'"
 
 pack_id_is_published foundation "${got}" || fail "foundation should be published"
 pack_id_is_published storage-network "${got}" || fail "storage-network should be published"
-pack_id_is_published build-workflows "${got}" || fail "build-workflows should be published"
 pack_id_is_published deviceuser "${got}" || fail "deviceuser should be published"
 pack_id_is_published std-llm "foundation" && fail "std-llm must not be published in foundation-only set"
 
@@ -135,9 +123,6 @@ touch "${TMP}/generic-pack/manifest.json"
 tar -C "${TMP}" -czf "${TMP}/generic-pack.tar.gz" generic-pack
 dirname="$(pack_bundle_dirname_from_archive "${TMP}/generic-pack.tar.gz")"
 [[ "${dirname}" == "generic-pack" ]] || fail "generic pack directory: '${dirname}'"
-
-req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "builder-lanllm-storage-landns" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-[[ "${req}" == "build-workflows deviceuser std-llm storage-network" ]] || fail "builder-lanllm-storage-landns packs: '${req}'"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "training" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
 [[ -z "${req}" ]] || fail "training packs should be empty (foundation only), got '${req}'"

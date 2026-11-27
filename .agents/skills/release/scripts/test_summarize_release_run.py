@@ -26,7 +26,7 @@ def test_complete_report() -> None:
                 "configPath": "/tmp/config.yaml",
                 "runDir": str(run_dir),
                 "releaseVersion": "0.1.0",
-                "applianceProfile": "builder",
+                "applianceProfile": "core",
                 "status": "passed",
                 "exitCode": 0,
                 "steps": {
@@ -50,8 +50,8 @@ def test_complete_report() -> None:
                 "releaseVersion": "0.1.0",
                 "remoteReleaseCommit": "abc123",
                 "artifactChecksums": [{"path": "bundle.tar.gz", "digest": "sha256:x"}],
-                "releaseInputArtifacts": {"workflowExecutorImage": {"digest": "sha256:y"}},
-                "bundleEntries": [{"path": "oci-images/executor.tar", "digest": "sha256:z"}],
+                "releaseInputArtifacts": {},
+                "bundleEntries": [],
                 "logs": {"releaseArtifactValidation": str(run_dir / "logs" / "release-artifact-validation.json")},
             },
         )
@@ -60,7 +60,7 @@ def test_complete_report() -> None:
             {
                 "targetHost": "target",
                 "releaseVersion": "0.1.0",
-                "applianceProfile": "builder",
+                "applianceProfile": "core",
                 "bundleDir": "/tmp/appliance",
                 "installMode": "upgrade",
                 "log": str(run_dir / "logs" / "install.log"),
@@ -99,22 +99,6 @@ def test_complete_report() -> None:
                         "revokedCredentialStatusCode": 401,
                         "revokedTokenChecked": True,
                     },
-                    "builder": {
-                        "workProfiles": {"statusCode": 200},
-                        "mcpToolsList": {
-                            "summary": {
-                                "toolNames": ["list_work_profiles", "submit_build"],
-                            }
-                        },
-                    },
-                    "disabledBuildRoutes": {
-                        "workProfiles": {"statusCode": 404},
-                        "mcpToolsList": {"unexpectedToolNames": []},
-                        "mcpDirectToolCall": {
-                            "statusCode": 200,
-                            "expectedJSONRPCError": {"code": -32601, "message": "Tool not found"},
-                        },
-                    },
                 },
             },
         )
@@ -135,20 +119,11 @@ def test_complete_report() -> None:
             raise AssertionError(report)
         if report["steps"]["targetVerify"]["warningCount"] != 1:
             raise AssertionError(report)
-        if "submit_build" not in report["steps"]["clientVerify"]["builderToolsPresent"]:
-            raise AssertionError(report)
-        if report["steps"]["clientVerify"]["builderWorkProfilesStatusCode"] != 200:
-            raise AssertionError(report)
         if report["steps"]["targetVerify"]["artifact"]["readinessExitCode"] != 0:
             raise AssertionError(report)
         if report["steps"]["clientVerify"]["artifact"]["tokenIssuanceStatusCode"] != 200:
             raise AssertionError(report)
         if report["steps"]["clientVerify"]["artifact"]["deniedScopeEnforced"] is not False:
-            raise AssertionError(report)
-        if report["steps"]["clientVerify"]["disabledBuildWorkProfilesStatusCode"] != 404:
-            raise AssertionError(report)
-        direct = report["steps"]["clientVerify"]["disabledBuildDirectToolCall"]
-        if direct["expectedJSONRPCError"]["message"] != "Tool not found":
             raise AssertionError(report)
         if not (run_dir / "release-report.md").is_file():
             raise AssertionError("missing markdown report")

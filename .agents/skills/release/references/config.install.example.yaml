@@ -21,8 +21,6 @@
 # - target_host is in the Mac config (SSH from the Mac).
 # - Secrets never live here.
 # - verification.*.enabled must match capabilities of install.appliance_profile.
-#   Skill fails closed if e.g. verification.workflows.enabled=true on lanllm
-#   (lanllm has inference only — not workflows/builder/artifact/dns).
 #
 # Runtime secrets (export on the Mac before running):
 #   APPLIANCE_TARGET_SUDO_PASSWORD
@@ -36,11 +34,10 @@
 install:
   # Lab reinstall factory-resets then fresh-installs (the orchestrator performs
   # this explicit data-loss operation; it also removes an orphaned local
-  # PostgreSQL directory if an older reset removed zonctl first; builder
-  # workspaces are preserved).
+  # PostgreSQL directory if an older reset removed zonctl first.
   # Normal `zonctl uninstall` remains data-preserving; do not use the lab
   # release runner when configuration must be retained. Restore a verified
-  # recovery set with the dedicated zonctl workflow instead. There is no
+  # recovery set with the dedicated zonctl command instead. There is no
   # in-place public upgrade.
   bootstrap_admin: true
   enable_default_license: true
@@ -49,10 +46,8 @@ install:
   appliance_name: test-device-1
   dns_zone: appliance.internal
   # Profiles:
-  #   core | application-core | builder | storage | landns | storage-landns |
-  #   builder-landns | builder-storage-landns | lanllm | builder-lanllm |
-  #   builder-lanllm-storage-landns
-  # This file's default is builder-landns (artifact+dns+workflows). For an
+  #   core | application-core | storage | landns | storage-landns | lanllm
+  # This file's default is storage-landns (artifact+dns). For an
   # inference-only host, copy the lanllm block at the bottom into install +
   # verification (+ client_verification) instead of flipping only the profile.
   appliance_profile: storage-landns
@@ -144,14 +139,6 @@ verification:
   allow_ingress_warning: true
   allow_verify_schema_bug: false
   ui_home_command: 'body="$(curl -kfsS https://192.168.1.151/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html" && printf "%s" "$body" | grep -Eiq "Appliance Control Plane UI|appliance-controlplane-ui|Zon Appliance|Sign in to continue|Appliance status|Create first administrator"'
-  workflows:
-    enabled: false
-    namespaces_command: sudo kubectl get namespace workflows appliance-builds
-    crds_command: sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io
-    controller_command: sudo kubectl -n workflows wait --for=condition=Available deployment/workflow-controller --timeout=120s
-  builder:
-    enabled: false
-    api_command: 'code="$(curl -ksS -o /dev/null -w ''%{http_code}'' https://192.168.1.151/api/v1/work-profiles)" && [ "$code" != "404" ]'
   artifact:
     enabled: false
     readiness_command: sudo kubectl -n artifacts wait --for=condition=Available deployment/artifact-server --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data
@@ -169,9 +156,6 @@ client_verification:
   # Optional override: connect_ip: 192.168.1.151
   base_url: https://192.168.1.151
   username: admin
-  builder:
-    enabled: false
-    expect_disabled: false
   artifact:
     enabled: true
     expect_denied_scope: false
@@ -182,7 +166,6 @@ client_verification:
 #
 # Publish packs must include std-llm (build_flow.appliance_packs:
 # foundation,std-llm or all). lanllm enables base+inference only —
-# do not leave workflows/builder/artifact/dns verification enabled.
 #
 # install:
 #   appliance_name: lanllm-1
@@ -204,10 +187,6 @@ client_verification:
 #   allow_ingress_warning: true
 #   allow_verify_schema_bug: false
 #   ui_home_command: 'body="$(curl -kfsS https://127.0.0.1/)" && printf "%s" "$body" | grep -Eiq "<!doctype html|<html"'
-#   workflows:
-#     enabled: false
-#   builder:
-#     enabled: false
 #   artifact:
 #     enabled: false
 #   dns:
@@ -219,13 +198,8 @@ client_verification:
 # client_verification:
 #   base_url: https://192.168.1.151   # or product FQDN when landns is also enabled
 #   username: admin
-#   builder:
-#     enabled: false
 #     expect_disabled: true
 #   artifact:
 #     enabled: false
 #     expect_denied_scope: true
 #
-# Related profiles (verification must track capabilities):
-#   builder-lanllm → workflows+builder+artifact on; dns off; needs storage-network+build-workflows+std-llm packs
-#   builder-lanllm-storage-landns → workflows+builder+artifact+dns on; needs all packs

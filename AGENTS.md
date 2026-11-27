@@ -41,17 +41,16 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 
 - Run K3s rootful for the initial appliance baseline, but require appliance application containers to run as non-root.
 - Assign fixed numeric UID/GID values for every component and keep them stable across releases; never rely only on Linux usernames in charts, manifests, diagnostics, or docs.
-- Use pod-level `runAsUser`, `runAsGroup`, `runAsNonRoot`, `fsGroup`, and `fsGroupChangePolicy: OnRootMismatch` for application and workflow pods.
-- Use distinct per-component UIDs/GIDs and a separate shared filesystem GID for writable storage shared across components or workflow pods. The shared GID must not be the same number as a service UID.
+- Use pod-level `runAsUser`, `runAsGroup`, `runAsNonRoot`, `fsGroup`, and `fsGroupChangePolicy: OnRootMismatch` for application pods.
+- Use distinct per-component UIDs/GIDs and a separate shared filesystem GID for writable storage shared across components. The shared GID must not be the same number as a service UID.
 - Use setgid directories and group-writable modes such as `2770` for shared writable storage; never use `chmod 777` as the normal solution.
 - Give each service its own PVC unless the storage is genuinely shared. Treat every writable host mount or `hostPath` as a security-sensitive product interface that must be documented, ownership-checked, and preserved or wiped only by explicit lifecycle policy.
-- Builder workspace source trees live under `/data/zon/workspaces` and must survive factory reset by default; wipe them only when an explicit workspace-wipe lifecycle option such as `zonctl factory-reset --wipe-workspaces` is implemented, documented, and invoked.
 - Runtime service logs live under the appliance data path `/data/zon/logs/<service>/`, not under the system log tree.
 - Runtime service log directories are an operator-facing inspection interface: keep them service-owner writable, but host-user readable/traversable, normally mode `2755`. Do not treat them like private shared writable workspace storage.
 - Keep application container root filesystems read-only and mount only explicit writable paths.
 - Use root init containers only as documented, narrow ownership-preparation or migration mechanisms.
 - Validate normal workloads against Pod Security Admission, preferably the Restricted profile. Any required exception, such as a documented host-visible workspace or host log path, must be explicit.
-- Installer, verification, reports, and diagnostics must include storage ownership and writeability checks for appliance-owned writable paths, including service log directories and builder workspace storage.
+- Installer, verification, reports, and diagnostics must include storage ownership and writeability checks for appliance-owned writable paths, including service log directories.
 - Test fresh install, upgrade, rollback, backup restore, and machine migration paths when changing UID/GID, storage, PVC, hostPath, or ownership behavior.
 
 ## Packaging Code Reuse (Online And Offline)
@@ -60,7 +59,7 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
 - There are exactly **two** build-host modes — not a mix per dependency:
   - **Online:** every third-party / tooling input is fetched from the public internet (or the configured public registry path such as GHCR). No LAN Artifact Server seed is required; do not probe LAN build-cache and fall back upstream per image.
   - **Offline:** every such input is fetched only from the LAN Artifact Server (`DEV_REGISTRY` OCI + files API) after `TARGET_ARCH=amd64 make seed-build-deps` (or equivalent). Misses fail closed; no public upstream fallback.
-- One flag / mode selects the policy for **all** dependencies together (dev-build, git-runtime, Argo, zot, CoreDNS, Ollama/inference-runtime, build bases, Helm, K3s, CRDs, host-packages, …). Do not keep separate “this one from GHCR, that one from LAN, that one from Docker Hub with cache” paths.
+- One flag / mode selects the policy for **all** dependencies together (dev-build, zot, CoreDNS, Ollama/inference-runtime, build bases, Helm, K3s, CRDs, host-packages, …). Do not keep separate “this one from GHCR, that one from LAN, that one from Docker Hub with cache” paths.
 - Unify early: config may expose `ONLINE_*` (online tooling) and `DEV_*` (LAN).
   After mode selection, map the active pull into one fixed `DEV_*` identity for
   bootstrap/build. Offline pull already *is* `DEV_*` — do not invent a parallel
@@ -94,11 +93,11 @@ These rules apply to all code, scripts, tests, workflows, and documentation in t
     same-arch via `scripts/run-in-dev-build.sh`; cross-arch via host
     `podman build --arch` + binfmt (nested podman under qemu is unsupported)
 - **`dev-build` is not a product runtime image.** It is not packaged into the
-  foundation, storage-network, build-workflows, deviceuser, or std-llm packs. Operator build catalogs must use
+  foundation, storage-network, deviceuser, or std-llm packs. Operator build catalogs must use
   explicit digest-pinned builder images they supply on the appliance.
 - Each platform release publishes the signed delivery packs selected for its
   supported appliance profiles: foundation is mandatory; storage-network
-  (registry), build-workflows (workflow engine and workspace provisioner),
+  (registry), deviceuser (including LAN DNS),
   deviceuser (including LAN DNS), and
   std-llm are optional. Installation selects the required packs from
   metadata-derived profile capabilities. Packs do not enable capabilities.

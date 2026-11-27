@@ -384,37 +384,23 @@ config_require_bool() {
   esac
 }
 
-profile_supports_builder() {
-  case "${1:-}" in
-    builder|builder-landns|builder-storage-landns|builder-lanllm|builder-lanllm-storage-landns) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
 profile_supports_artifacts() {
   case "${1:-}" in
-    storage|builder|storage-landns|builder-landns|builder-storage-landns|builder-lanllm|builder-lanllm-storage-landns) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-profile_supports_workflows() {
-  case "${1:-}" in
-    core|builder|builder-landns|builder-storage-landns|builder-lanllm|builder-lanllm-storage-landns) return 0 ;;
+    storage|storage-landns) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 profile_supports_inference() {
   case "${1:-}" in
-    lanllm|builder-lanllm|builder-lanllm-storage-landns) return 0 ;;
+    lanllm) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 profile_supports_dns() {
   case "${1:-}" in
-    landns|storage-landns|builder-landns|builder-storage-landns|builder-lanllm-storage-landns) return 0 ;;
+    landns|storage-landns) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -665,15 +651,6 @@ append_cluster_alias_tls_sans() {
   done <<<"${TARGET_HOST_ALIASES:-}"
 }
 
-require_profile_supports_workflows() {
-  local enabled_value="${1:-}"
-  local profile="${2:-}"
-  local setting_name="${3:-verification.workflows.enabled}"
-  if bool_true "${enabled_value}" && ! profile_supports_workflows "${profile}"; then
-    fail "${setting_name}=true but install.appliance_profile=${profile} does not enable workflows; set ${setting_name}=false in config"
-  fi
-}
-
 append_env_assignment() {
   local current="$1"
   local name="$2"
@@ -854,17 +831,6 @@ reject_removed_install_control_plane_identity_keys() {
   fi
   if ((${#removed[@]} > 0)); then
     fail "removed install identity keys: ${removed[*]}. Control-plane namespace is product-fixed (${PRODUCT_CONTROL_PLANE_NAMESPACE}; zonctl defaultChartNamespace) and deployment is product-fixed (${PRODUCT_CONTROL_PLANE_DEPLOYMENT}; chart appliance-control-plane fullname). Remove them from install config."
-  fi
-}
-
-# Hard-cut rename: verification.argo.* → verification.workflows.*
-reject_removed_verification_argo_keys() {
-  local config_path="$1"
-  if [[ -n "$(config_get_optional "${config_path}" "verification.argo.enabled" || true)" \
-    || -n "$(config_get_optional "${config_path}" "verification.argo.namespaces_command" || true)" \
-    || -n "$(config_get_optional "${config_path}" "verification.argo.crds_command" || true)" \
-    || -n "$(config_get_optional "${config_path}" "verification.argo.controller_command" || true)" ]]; then
-    fail "verification.argo.* was renamed to verification.workflows.* (Argo → generic workflows). Rename verification.argo to verification.workflows in the install config (see .agents/skills/release/references/config.install.example.yaml)."
   fi
 }
 
@@ -1169,7 +1135,7 @@ reject_removed_build_publish_path_keys() {
 }
 
 # Fail closed on knobs the skill no longer forwards. Product scripts own
-# workflows engine/Artifact Server/DNS/provisioner defaults; install-role owns verification.*.
+# Artifact Server/DNS defaults; install-role owns verification.*.
 reject_removed_build_publish_packaging_keys() {
   local config_path="$1"
 
@@ -1216,13 +1182,9 @@ reject_removed_build_publish_packaging_keys() {
     fail "build_flow.*.image_tag literal was removed; use image_tag_env (ONLINE_IMAGE_TAG or DEV_IMAGE_TAG)"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "build_flow.host_packages_dir_source" || true)" \
-    || -n "$(config_get_optional "${config_path}" "build_flow.argo.crds_dir_source" || true)" \
-    || -n "$(config_get_optional "${config_path}" "build_flow.argo.controller_image_archive_source" || true)" \
-    || -n "$(config_get_optional "${config_path}" "build_flow.argo.executor_image_archive_source" || true)" \
-    || -n "$(config_get_optional "${config_path}" "build_flow.workspace_provisioner_image_archive_source" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.zot.image_archive_source" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.dns.image_archive_source" || true)" ]]; then
-    fail "offline/local archive path inputs under build_flow were removed; package always pulls from the network. Remove host_packages_dir_source, legacy build_flow.argo.* archive/crds sources, and zot/dns/workspace_provisioner image_archive_source keys"
+    fail "offline/local archive path inputs under build_flow were removed; package always pulls from the network. Remove host_packages_dir_source, zot/dns image_archive_source keys"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "build_flow.product_publish.registry" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.product_publish.image_repo" || true)" \
@@ -1236,23 +1198,16 @@ reject_removed_build_publish_packaging_keys() {
     fail "build_flow.product_publish.* was removed (destination fields were unused). Publish uses bundle_store / DEV_* (LAN Artifact Server); remove the product_publish block from config"
   fi
   # Packaging pins / install-role keys must not appear on build-publish YAML.
-  if [[ -n "$(config_get_optional "${config_path}" "build_flow.argo.enabled" || true)" \
-    || -n "$(config_get_optional "${config_path}" "build_flow.argo.required" || true)" \
-    || -n "$(config_get_optional "${config_path}" "build_flow.argo.version" || true)" \
-    || -n "$(config_get_optional "${config_path}" "build_flow.argo.controller_image_ref" || true)" \
-    || -n "$(config_get_optional "${config_path}" "build_flow.argo.executor_image_ref" || true)" \
-    || -n "$(config_get_optional "${config_path}" "build_flow.workspace_provisioner_image_ref" || true)" \
-    || -n "$(config_get_optional "${config_path}" "build_flow.zot.version" || true)" \
+  if [[ -n "$(config_get_optional "${config_path}" "build_flow.zot.version" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.zot.image_pull_ref" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.dns.version" || true)" \
     || -n "$(config_get_optional "${config_path}" "build_flow.dns.image_pull_ref" || true)" ]]; then
-    fail "build_flow workflows engine/Zot/DNS/provisioner pin keys were removed from build-publish config; product scripts/build-full-bundle.sh owns those defaults"
+    fail "build_flow Zot/DNS pin keys were removed from build-publish config; product scripts/build-full-bundle.sh owns those defaults"
   fi
   if [[ -n "$(config_get_optional "${config_path}" "build_flow.appliance_packs_env" || true)" ]]; then
-    fail "build_flow.appliance_packs_env was removed; set build_flow.appliance_packs to a literal value (all|foundation|foundation,app-stack|foundation,app-stack,storage-network,build-workflows,deviceuser|foundation,std-llm|foundation,std-llm,open-webui|foundation,acc-llm)"
+    fail "build_flow.appliance_packs_env was removed; set build_flow.appliance_packs to a literal value (all|foundation|foundation,app-stack|foundation,app-stack,storage-network|foundation,deviceuser|foundation,std-llm|foundation,std-llm,open-webui|foundation,acc-llm)"
   fi
-  if [[ -n "$(config_get_optional "${config_path}" "verification.workflows.enabled" || true)" \
-    || -n "$(config_get_optional "${config_path}" "install.appliance_profile" || true)" ]]; then
+  if [[ -n "$(config_get_optional "${config_path}" "install.appliance_profile" || true)" ]]; then
     fail "verification.* and install.* belong on the install-role config, not build-publish"
   fi
 }

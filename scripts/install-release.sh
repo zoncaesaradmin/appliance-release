@@ -22,9 +22,8 @@ Required:
 
 Optional:
   --appliance-profile NAME     Install profile (default: core). Valid v1 values
-                               include core, application-core, builder, storage, landns,
-                               storage-landns, builder-landns,
-                               builder-storage-landns.
+                               include core, application-core, storage, landns,
+                               storage-landns.
   CHANNEL_INTEGRATION_RUNTIME_FILE
                                Protected JSON descriptor for the
                                channel-integrations capability. The release

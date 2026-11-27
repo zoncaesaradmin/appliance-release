@@ -7,8 +7,7 @@ It combines install, upgrade, backup, recovery, verification, troubleshooting,
 and host-baseline guidance in one place.
 
 All lifecycle commands below should be run with `sudo`, because the appliance
-state directory is `/var/lib/zon/state` and the installer owns K3s on the
-host. Builder workspace data is separate and defaults to `/data/zon/workspaces`.
+state directory is `/var/lib/zon/state` and the installer owns K3s on the host.
 
 The Control Plane always provisions an `apps` namespace for Application
 Management, even when no application is installed. It is separate from
@@ -74,9 +73,9 @@ and images are all verified before use; there is no public fallback or
 unverified substitution. First-admin creation and offline-license acceptance
 remain post-install control-plane actions and are not part of K3s bootstrap.
 
-The supported profiles remain `core`, `builder`, `storage`, `landns`,
-`storage-landns`, `builder-landns`, and `builder-storage-landns`. Profile
-selection changes enabled product capability, not the embedded-etcd topology.
+The supported profiles remain `core`, `storage`, `landns`, and
+`storage-landns`. Profile selection changes enabled product capability, not the
+embedded-etcd topology.
 
 ## Supported topology: one or three active K3s servers
 
@@ -206,8 +205,8 @@ sudo zonctl factory-reset \
 ```
 
 Add `--force-data-loss` when intentionally proceeding without a verified
-backup, and add `--wipe-workspaces` when builder workspace source trees under
-`/data/zon/workspaces` must also be removed.
+backup, and use the documented data-wipe options when appliance data must also
+be removed.
 
 ## Verification
 
@@ -248,7 +247,6 @@ Common service log directories:
 ```text
 /data/zon/logs/api-server/
 /data/zon/logs/ui/
-/data/zon/logs/workflow-controller/
 /data/zon/logs/artifactserver/
 /data/zon/logs/dns/
 ```
@@ -258,8 +256,6 @@ Kubernetes-native access remains important:
 ```bash
 sudo kubectl -n ace-system logs deploy/controlplane
 sudo kubectl -n ace-system logs deploy/ui-server
-sudo kubectl -n workflows logs deploy/workflow-controller
-sudo kubectl -n appliance-builds logs <pod-name>
 sudo journalctl -u k3s -f
 ```
 
@@ -284,7 +280,7 @@ see [lan-dns.md](lan-dns.md).
 
 Notes for DNS-bearing profiles:
 
-- `landns`, `storage-landns`, `builder-landns`, and `builder-storage-landns`
+- `landns` and `storage-landns`
   install the appliance-owned CoreDNS release
 - the local zone is `appliance.internal` by default, or `install.dns_zone`
   when set

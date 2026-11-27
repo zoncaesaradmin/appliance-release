@@ -64,7 +64,6 @@ The same command supports the currently deployed code-backed services:
 /home/zonsys/.local/bin/appliance-run image-refresh --service channel-integration
 /home/zonsys/.local/bin/appliance-run image-refresh --service identity
 /home/zonsys/.local/bin/appliance-run image-refresh --service ordering
-/home/zonsys/.local/bin/appliance-run image-refresh --service workflow-controller
 /home/zonsys/.local/bin/appliance-run image-refresh --service artifact-server
 /home/zonsys/.local/bin/appliance-run image-refresh --service dns-server
 /home/zonsys/.local/bin/appliance-run image-refresh --service inference-manager

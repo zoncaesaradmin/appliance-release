@@ -36,7 +36,7 @@
 #      static_http bootstrap directory
 #
 # Offline seed coverage (TARGET_ARCH=amd64 make seed-build-deps → every deps/* package), including:
-#   development-container, git-runtime-container, workflows, artifact-server-bases,
+#   development-container, artifact-server-bases,
 #   dns (coredns), inference (ollama), service-build-bases, host-packages,
 #   platform-inputs (k3s/helm). TARGET_ARCH is required when seeding (no default):
 #   TARGET_ARCH=amd64 make seed-build-deps
@@ -63,7 +63,7 @@
 #     ONLINE_REGISTRY_USER, ONLINE_REGISTRY_TOKEN, ONLINE_REGISTRY_TLS_VERIFY
 #   Plus APPLIANCE_BUILD_SUDO_PASSWORD.
 #   Pack selection is a config literal (not an env):
-#     build_flow.appliance_packs: all|foundation|foundation,app-stack|foundation,app-stack,storage-network,build-workflows,deviceuser|foundation,std-llm
+#     build_flow.appliance_packs: all|foundation|foundation,app-stack|foundation,app-stack,storage-network|foundation,deviceuser|foundation,std-llm
 #     build_flow.target_arch: amd64|arm64 (REQUIRED; one build = one arch; no default)
 #     (omit or all → every available pack; partial releases support only profiles
 #     whose capability packages are included)
@@ -109,14 +109,14 @@ build_flow:
   #   appliance_packs: all
   #   appliance_packs: foundation
   #   appliance_packs: foundation,app-stack  # application-core services
-  #   appliance_packs: foundation,storage-network,build-workflows,deviceuser
-  #   appliance_packs: foundation,app-stack,storage-network,build-workflows,deviceuser
-  #   appliance_packs: foundation,storage-network,build-workflows,deviceuser,std-llm  # builder+lanllm (API only)
+  #   appliance_packs: foundation,storage-network,deviceuser
+  #   appliance_packs: foundation,app-stack,storage-network,deviceuser
+  #   appliance_packs: foundation,storage-network,deviceuser,std-llm
   #   appliance_packs: foundation,std-llm               # inference-only (API)
   #   appliance_packs: foundation,std-llm,open-webui    # inference + chat showcase
   #   appliance_packs: foundation,acc-llm               # vLLM (TARGET_ARCH)
   #   appliance_packs: foundation,acc-llm,open-webui    # vLLM + chat showcase
-  appliance_packs: foundation,app-stack,storage-network,build-workflows,deviceuser
+  appliance_packs: foundation,app-stack,storage-network,deviceuser
 
   # REQUIRED product architecture (amd64|arm64). Empty/omitted fails closed —
   # there is no amd64 default. One build = one TARGET_ARCH.

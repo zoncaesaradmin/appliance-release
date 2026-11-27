@@ -65,8 +65,6 @@ tokens before any host mutation happens.
 - `factory-reset` requires:
   `--confirm <token>`, `--acknowledge-data-loss`, and either a verified
   `--backup-id` or `--force-data-loss`
-- `--wipe-workspaces` is separately required when builder workspace source
-  trees under `/data/zon/workspaces` must also be removed
 
 ## Offline Operation
 

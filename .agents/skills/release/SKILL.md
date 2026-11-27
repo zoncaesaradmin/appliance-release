@@ -135,7 +135,7 @@ Important rules:
 - do not store passwords in the config
 - appliance state dir is product-fixed `/var/lib/zon/state` (not YAML)
 - Production packaging requires `build_flow.appliance_packs: all`: foundation,
-  storage-network, build-workflows, deviceuser, and std-llm (architecture via
+  storage-network, deviceuser, and std-llm (architecture via
   `build_flow.target_arch`, required; no default). Select the appliance
   profile at install time; do not omit delivery packs from a production release.
 

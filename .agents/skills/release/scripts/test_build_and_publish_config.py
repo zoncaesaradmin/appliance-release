@@ -401,13 +401,13 @@ def test_rejects_packaging_pin_keys() -> None:
             config,
             MINIMAL_VALID_CONFIG.replace(
                 "build_flow:",
-                "build_flow:\n  argo:\n    enabled: true\n",
+                "build_flow:\n  zot:\n    version: 2.0.0\n",
             ),
         )
         result = run_build_publish_config(config, run_dir)
         if result.returncode == 0:
-            raise AssertionError("build_flow.argo pin keys were accepted")
-        if "workflows engine/Zot/DNS/provisioner pin keys were removed" not in result.stdout:
+            raise AssertionError("build_flow.zot pin keys were accepted")
+        if "Zot/DNS pin keys were removed" not in result.stdout:
             raise AssertionError(result.stdout)
 
 
@@ -502,10 +502,10 @@ def test_resolve_appliance_packs_from_config() -> None:
             resolve(
                 MINIMAL_VALID_CONFIG.replace(
                     "build_flow:\n  mode: online\n",
-                    "build_flow:\n  mode: online\n  appliance_packs: foundation,build-workflows\n",
+                    "build_flow:\n  mode: online\n  appliance_packs: foundation,storage-network\n",
                 )
             )
-            == "foundation,build-workflows"
+            == "foundation,storage-network"
         )
 
 

@@ -75,8 +75,6 @@ CONFIG_PATH="$(require_config_path "${CONFIG_PATH}")"
 readonly BOOTSTRAP_CMD="bash scripts/bootstrap-build-host.sh"
 readonly BUILD_CMD="bash scripts/build-full-bundle.sh"
 readonly PUBLISH_CMD="bash scripts/publish-release.sh"
-readonly BUILDER_LOCAL_REF="registry.local/dev-build"
-readonly WORKSPACE_PROVISIONER_LOCAL_REF="registry.local/workspace-provisioner"
 
 if [[ -z "${RUN_DIR}" ]]; then
   prune_appliance_release_run_root "$(default_release_run_root)" "" "fresh build/publish"
@@ -447,24 +445,6 @@ if [[ -d "${RUN_DIR}/artifacts/release-input" && -d "${RUN_DIR}/artifacts/bundle
       --release-input-root "${RUN_DIR}/artifacts/release-input" \
       --bundle-root "${RUN_DIR}/artifacts/storage-network-bundle" \
       >"${RUN_DIR}/logs/release-artifact-validation-storage-network.json"
-  fi
-
-  companion_args=()
-  for companion_pack in foundation storage-network deviceuser std-llm; do
-    companion_root="${RUN_DIR}/artifacts/companions/${companion_pack}"
-    if materialize_pack_root "${companion_pack}" "${companion_root}"; then
-      companion_args+=(--companion-bundle-root "${companion_root}")
-    fi
-  done
-  if materialize_pack_root "build-workflows" "${RUN_DIR}/artifacts/build-workflows-bundle"; then
-    log "validating release-input against build-workflows pack"
-    python3 "${SCRIPT_DIR}/validate-release-artifacts.py" \
-      --pack build-workflows \
-      "${companion_args[@]}" \
-      --release-input-root "${RUN_DIR}/artifacts/release-input" \
-      --bundle-root "${RUN_DIR}/artifacts/build-workflows-bundle" \
-      --expected-extra-oci-image-refs "${WORKSPACE_PROVISIONER_LOCAL_REF}" \
-      >"${RUN_DIR}/logs/release-artifact-validation-build-workflows.json"
   fi
 
   if materialize_pack_root "deviceuser" "${RUN_DIR}/artifacts/deviceuser-bundle"; then

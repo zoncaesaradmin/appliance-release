@@ -109,17 +109,6 @@ class FakeApplianceHandler(BaseHTTPRequestHandler):
         if self.path == "/api/v1/users":
             self._write_json(200, {"users": [{"username": "admin"}]})
             return
-        if self.path == "/api/v1/work-profiles":
-            self._write_json(
-                404,
-                {
-                    "type": "https://appliance.local/problems/not-found",
-                    "title": "Not found",
-                    "status": 404,
-                    "code": "not_found",
-                },
-            )
-            return
         self._write_json(404, {"code": "not_found"})
 
     def do_POST(self) -> None:
@@ -169,67 +158,6 @@ class FakeApplianceHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         self._write_json(404, {"code": "not_found"})
-
-
-def test_disabled_build_direct_mcp_call_is_verified() -> None:
-    with tempfile.TemporaryDirectory(prefix="verify-client-access-") as tmp_dir:
-        tmp = Path(tmp_dir)
-        server = ThreadingHTTPServer(("127.0.0.1", 0), FakeApplianceHandler)
-        server.artifact_enabled = False
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        try:
-            base_url = f"http://127.0.0.1:{server.server_port}"
-            config_path = tmp / "config.json"
-            run_dir = tmp / "run"
-            config_path.write_text(
-                json.dumps(
-                    {
-                        "client_verification": {
-                            "base_url": base_url,
-                            "username": "admin",
-                            "builder": {"enabled": False, "expect_disabled": True},
-                        }
-                    }
-                ),
-                encoding="utf-8",
-            )
-            env = os.environ.copy()
-            env["APPLIANCE_FIRST_ADMIN_PASSWORD"] = "fake-password"
-            result = subprocess.run(
-                [
-                    "bash",
-                    str(SCRIPT),
-                    "--config",
-                    str(config_path),
-                    "--run-dir",
-                    str(run_dir),
-                    "--appliance-profile",
-                    "core",
-                    "--final-ok",
-                ],
-                cwd=ROOT,
-                env=env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-            )
-        finally:
-            server.shutdown()
-            server.server_close()
-
-        if result.returncode != 0:
-            raise AssertionError(result.stdout)
-
-        metadata = json.loads((run_dir / "metadata" / "client-verify.json").read_text(encoding="utf-8"))
-        direct = metadata["checks"]["disabledBuildRoutes"]["mcpDirectToolCall"]
-        if direct["statusCode"] != 200:
-            raise AssertionError(direct)
-        if direct["expectedJSONRPCError"] != {"code": -32601, "message": "Tool not found"}:
-            raise AssertionError(direct)
-        body = json.loads(Path(direct["bodyLog"]).read_text(encoding="utf-8"))
-        if body.get("error", {}).get("message") != "Tool not found":
-            raise AssertionError(body)
 
 
 def test_positive_artifact_access_is_verified() -> None:
@@ -421,7 +349,6 @@ def test_verify_client_access_defaults_admin_denied_scope_to_informational() -> 
                         "client_verification": {
                             "base_url": base_url,
                             "username": "admin",
-                            "builder": {"enabled": False, "expect_disabled": True},
                             "artifact": {"enabled": True},
                         }
                     }
@@ -504,7 +431,6 @@ def test_artifact_access_fails_when_denied_scope_is_enforced() -> None:
 
 
 if __name__ == "__main__":
-    test_disabled_build_direct_mcp_call_is_verified()
     test_positive_artifact_access_is_verified()
     test_artifact_access_reports_html_v2_misroute()
     test_disabled_artifact_access_rejects_ui_catchall_html()

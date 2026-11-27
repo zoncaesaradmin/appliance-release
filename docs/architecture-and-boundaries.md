@@ -56,9 +56,9 @@ The release pipeline may reject a product input but cannot patch it.
 
 ## Release Shape
 
-Production packaging always assembles the **complete product super-set** (all
-first-class OCI images, the workflows engine, host packages for mdns + wifi-client + wifi-ap, workspace
-provisioner + builder `dev-build`). Profile and host-service flags are
+Production packaging assembles the selected product pack set (first-class OCI
+images, host packages for mdns + wifi-client + wifi-ap, and build-host tooling).
+Profile and host-service flags are
 install-time only. Component inventory and named stages:
 [component-catalog.md](component-catalog.md).
 

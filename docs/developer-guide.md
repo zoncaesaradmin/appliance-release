@@ -18,7 +18,7 @@ If you need to change the `zonctl` source, work in `appliance-ctl`, not here.
 ## Repo Boundary
 
 - `appliance-code` owns product artifacts such as the control-plane
-  chart, schema, optional workflows engine artifacts, and signed `release-input`
+  chart, schema, and signed `release-input`
 - `appliance-ctl` owns the `zonctl` source, tests, and binary
 - `appliance-release` owns packaging automation, bundle assembly
   workspace setup, signing material generation, and final bundle
@@ -160,7 +160,6 @@ deliverables under `RELEASE_WORK_ROOT/export/` according to `APPLIANCE_PACKS`
 
 - `appliance-${PRODUCT_VERSION}-foundation-${TARGET_ARCH}.tar.gz` (foundation; always included)
 - `appliance-${PRODUCT_VERSION}-storage-network-${TARGET_ARCH}.tar.gz` (when selected)
-- `appliance-${PRODUCT_VERSION}-build-workflows-${TARGET_ARCH}.tar.gz` (when selected)
 - `appliance-${PRODUCT_VERSION}-deviceuser-${TARGET_ARCH}.tar.gz` (when selected)
 - `appliance-${PRODUCT_VERSION}-std-llm-${TARGET_ARCH}.tar.gz` (when selected)
 - `appliance-${PRODUCT_VERSION}-acc-llm-${TARGET_ARCH}.tar.gz` (when selected instead of std-llm)
@@ -184,7 +183,6 @@ Delivery packs describe available software, not enabled functionality:
 |---|---|
 | `foundation` | Core appliance services, including file storage |
 | `storage-network` | Artifact Server/registry |
-| `build-workflows` | Workflow controller/executor, CRDs, and workspace provisioner |
 | `deviceuser` | Host-agent, device-user components, and LAN DNS |
 | `std-llm` | Standard inference (Ollama); architecture from `TARGET_ARCH` |
 | `acc-llm` | Accelerated inference (vLLM, GPU required); architecture from `TARGET_ARCH` |
@@ -212,7 +210,6 @@ Outputs:
 - `${RELEASE_WORK_ROOT}/workspace/out/appliance-${PRODUCT_VERSION}-app-stack` (application services pack dir)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-foundation-${TARGET_ARCH}.tar.gz`
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-storage-network-${TARGET_ARCH}.tar.gz` (when storage-network pack selected)
-- `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-build-workflows-${TARGET_ARCH}.tar.gz` (when build-workflows pack selected)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-deviceuser-${TARGET_ARCH}.tar.gz` (when deviceuser pack selected)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-std-llm-${TARGET_ARCH}.tar.gz` (when std-llm pack selected)
 - `${RELEASE_WORK_ROOT}/export/appliance-${PRODUCT_VERSION}-acc-llm-${TARGET_ARCH}.tar.gz` (when acc-llm pack selected)
@@ -354,10 +351,8 @@ package (`std-llm` or `acc-llm`). Product architecture is `TARGET_ARCH` /
 assembly config is `bundle-assembly.std-llm.json`, and the archive is
 `appliance-${PRODUCT_VERSION}-std-llm-${TARGET_ARCH}.tar.gz`. Regenerate old
 assembly configs and publish the matching signed metadata and release index
-with the renamed packs. The existing `builder-lanllm-storage-landns` profile
-keeps its ID and resolves to `inference`, requiring foundation, storage-network,
-build-workflows,
-deviceuser, and std-llm.
+with the renamed packs. Profiles resolve capabilities through the signed
+metadata catalog.
 
 The runtime Service, API, and image-reference contract retain their inference
 names. Model weights are acquired separately after installation and are not

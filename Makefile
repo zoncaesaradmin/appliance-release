@@ -7,8 +7,6 @@ VERIFY_LOG_DIR := $(CURDIR)/.run/logs
 VERIFY_SHELL_LOG := $(VERIFY_LOG_DIR)/verify-shell.log
 VERIFY_HELP_LOG := $(VERIFY_LOG_DIR)/verify-help.log
 VERIFY_JSON_LOG := $(VERIFY_LOG_DIR)/verify-json.log
-VERIFY_CLIENT_CONFIG_LOG := $(VERIFY_LOG_DIR)/verify-client-config.log
-VERIFY_CLIENT_CONFIG_CASE_LOG := $(VERIFY_LOG_DIR)/verify-client-config-case.log
 VERIFY_RELEASE_ARTIFACTS_LOG := $(VERIFY_LOG_DIR)/verify-release-artifacts.log
 RELEASE_SKILL_SCRIPT_DIR := .agents/skills/release/scripts
 
@@ -150,30 +148,6 @@ verify-help:
 verify-json:
 	@python3 -c 'import json; from pathlib import Path; [json.load(path.open("r", encoding="utf-8")) for path in sorted(Path("docs").rglob("*.json"))]'
 
-.PHONY: verify-client-config
-verify-client-config:
-	@mkdir -p "$(VERIFY_LOG_DIR)"
-	@config_file="$(VERIFY_LOG_DIR)/client-removed-workflow.yaml"; \
-	run_dir="$(VERIFY_LOG_DIR)/client-removed-workflow-run"; \
-	printf '%s\n' \
-		'install:' \
-		'  appliance_profile: core' \
-		'client_verification:' \
-		'  builder:' \
-		'    enabled: true' \
-		'    workflow:' \
-		'      enabled: true' \
-		> "$$config_file"; \
-	set +e; \
-	APPLIANCE_FIRST_ADMIN_PASSWORD=test bash "$(RELEASE_SKILL_SCRIPT_DIR)/verify-client-access.sh" --config "$$config_file" --run-dir "$$run_dir" --appliance-profile builder >"$(VERIFY_CLIENT_CONFIG_CASE_LOG)" 2>&1; \
-	status="$$?"; \
-	set -e; \
-	if [ "$$status" -eq 0 ]; then \
-		echo "verify-client-config: removed builder.workflow block was accepted"; \
-		exit 1; \
-	fi; \
-	grep -q 'client_verification.builder.workflow was removed' "$(VERIFY_CLIENT_CONFIG_CASE_LOG)"
-
 .PHONY: verify-release-artifacts
 verify-release-artifacts:
 	@python3 scripts/test-runtime-packages.py
@@ -216,12 +190,6 @@ verify:
 		exit 1; \
 	fi; \
 	echo "verify stage: JSON examples passed"; \
-	echo "verify stage: client config validation"; \
-	if ! $(MAKE) --no-print-directory verify-client-config >"$(VERIFY_CLIENT_CONFIG_LOG)" 2>&1; then \
-		echo "verify: client config validation failed; inspect $(VERIFY_CLIENT_CONFIG_LOG)"; \
-		exit 1; \
-	fi; \
-	echo "verify stage: client config validation passed"; \
 	echo "verify stage: release artifact validation"; \
 	if ! $(MAKE) --no-print-directory verify-release-artifacts >"$(VERIFY_RELEASE_ARTIFACTS_LOG)" 2>&1; then \
 		echo "verify: release artifact validation failed; inspect $(VERIFY_RELEASE_ARTIFACTS_LOG)"; \

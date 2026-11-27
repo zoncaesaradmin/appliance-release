@@ -119,9 +119,9 @@ def test_rewrite_command_url_path_to_base() -> None:
             (
                 f'source "{COMMON_SH}"; '
                 "rewrite_command_url_path_to_base "
-                "'code=\"$(curl -ksS https://192.168.1.101/api/v1/work-profiles)\"' "
+                "'code=\"$(curl -ksS https://192.168.1.101/api/v1/auth/session)\"' "
                 "'https://192.168.1.151' "
-                "'/api/v1/work-profiles'"
+                "'/api/v1/auth/session'"
             ),
         ],
         check=False,
@@ -129,7 +129,7 @@ def test_rewrite_command_url_path_to_base() -> None:
         capture_output=True,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout == 'code="$(curl -ksS https://192.168.1.151/api/v1/work-profiles)"'
+    assert result.stdout == 'code="$(curl -ksS https://192.168.1.151/api/v1/auth/session)"'
 
 
 def test_expand_legacy_ui_home_command_for_spa() -> None:
@@ -195,22 +195,12 @@ def test_profile_capability_helpers() -> None:
             "-lc",
             (
                 f'source "{COMMON_SH}"; '
-                'profile_supports_builder builder && '
-                '! profile_supports_builder storage && '
-                'profile_supports_builder builder-lanllm && '
-                '! profile_supports_builder lanllm && '
                 'profile_supports_artifacts storage-landns && '
                 '! profile_supports_artifacts core && '
-                'profile_supports_artifacts builder-lanllm && '
                 '! profile_supports_artifacts lanllm && '
-                'profile_supports_workflows core && '
-                '! profile_supports_workflows storage && '
-                'profile_supports_workflows builder-lanllm && '
-                '! profile_supports_workflows lanllm && '
                 'profile_supports_inference lanllm && '
-                'profile_supports_inference builder-lanllm-storage-landns && '
-                '! profile_supports_inference builder && '
-                'profile_supports_dns builder-landns && '
+                '! profile_supports_inference core && '
+                'profile_supports_dns storage-landns && '
                 '! profile_supports_dns lanllm'
             ),
         ],
@@ -222,7 +212,7 @@ def test_profile_capability_helpers() -> None:
 
 
 
-def test_csv_items_trimmed_and_workflow_guard_helpers() -> None:
+def test_csv_items_trimmed() -> None:
     result = subprocess.run(
         [
             "bash",
@@ -230,8 +220,7 @@ def test_csv_items_trimmed_and_workflow_guard_helpers() -> None:
             (
                 f'source "{COMMON_SH}"; '
                 'joined="$(csv_items_trimmed \' one.example , two.example,, three.example \' | tr \'\\n\' \',\')"; '
-                '[[ "${joined}" == "one.example,two.example,three.example," ]]; '
-                'require_profile_supports_workflows true core verification.workflows.enabled'
+                '[[ "${joined}" == "one.example,two.example,three.example," ]]'
             ),
         ],
         check=False,
@@ -239,42 +228,6 @@ def test_csv_items_trimmed_and_workflow_guard_helpers() -> None:
         capture_output=True,
     )
     assert result.returncode == 0, result.stderr
-
-    fail_lanllm = subprocess.run(
-        [
-            "bash",
-            "-lc",
-            (
-                f'source "{COMMON_SH}"; '
-                'require_profile_supports_workflows true lanllm verification.workflows.enabled'
-            ),
-        ],
-        check=False,
-        text=True,
-        capture_output=True,
-    )
-    assert fail_lanllm.returncode != 0
-    assert (
-        "verification.workflows.enabled=true but install.appliance_profile=lanllm does not enable workflows"
-        in fail_lanllm.stderr
-    )
-
-    fail_result = subprocess.run(
-        [
-            "bash",
-            "-lc",
-            (
-                f'source "{COMMON_SH}"; '
-                'require_profile_supports_workflows true storage verification.workflows.enabled'
-            ),
-        ],
-        check=False,
-        text=True,
-        capture_output=True,
-    )
-    assert fail_result.returncode != 0
-    assert "verification.workflows.enabled=true but install.appliance_profile=storage does not enable workflows" in fail_result.stderr
-
 
 def test_inject_env_path_after_sudo_helper() -> None:
     result = subprocess.run(
@@ -457,7 +410,7 @@ def test_prune_appliance_release_run_root() -> None:
 def test_require_appliance_profile_helper() -> None:
     with tempfile.TemporaryDirectory(prefix="appliance-profile-helper-") as tmp:
         config = Path(tmp) / "appliance-release.config.yaml"
-        config.write_text("install:\n  appliance_profile: builder\n", encoding="utf-8")
+        config.write_text("install:\n  appliance_profile: core\n", encoding="utf-8")
         pass_result = subprocess.run(
             [
                 "bash",
@@ -466,7 +419,7 @@ def test_require_appliance_profile_helper() -> None:
                     f'source "{COMMON_SH}"; '
                     f'from_config="$(require_appliance_profile "{config}" "")"; '
                     f'override="$(require_appliance_profile "{config}" core)"; '
-                    '[[ "${from_config}" == "builder" && "${override}" == "core" ]]'
+                    '[[ "${from_config}" == "core" && "${override}" == "core" ]]'
                 ),
             ],
             check=False,
@@ -559,7 +512,7 @@ def main() -> None:
     test_rewrite_command_url_path_to_base()
     test_derive_mdns_tls_san_from_hostname()
     test_profile_capability_helpers()
-    test_csv_items_trimmed_and_workflow_guard_helpers()
+    test_csv_items_trimmed()
     test_inject_env_path_after_sudo_helper()
     test_require_config_path_helper()
     test_release_run_dir_helpers()

@@ -1,5 +1,5 @@
 ---
-description: Cross-repo appliance E2E dependency map and fix gate (builder path)
+description: Cross-repo appliance E2E dependency map and fix gate
 alwaysApply: true
 ---
 
@@ -20,8 +20,7 @@ Install:             ctr import (gets :bundled or import-DATE) → ctr image tag
 Runtime:             config.*ImageDigest == digest pin → workflow pod image (IfNotPresent)
 ```
 
-Names today (product packs): `workspace-provisioner` (build-workflows pack),
-first-class `artifact-server` / `coredns` (base), first-class `inference-runtime`
+Names today (product packs): first-class `artifact-server` / `coredns` (base), first-class `inference-runtime`
 (std-llm-amd64 pack). `dev-build` is build-host tooling only and is **not** packaged.
 Artifact-server archives use `registry.local/artifact-server:bundled` plus
 `registry.local/artifact-server@sha256:<platform-digest>`; CoreDNS uses
@@ -46,14 +45,8 @@ Never trust `skopeo inspect` alone for pins (multi-arch index ≠ platform manif
    - `ValidateOCIArchiveReference` (digest match; `:bundled` annotation OK)
    - `ctr import --digests` then `ensureImageReference` / `ctr image tag` to digest pin
 5. **Values** (`appliance-ctl` `productconfig.PrepareValuesFile`)
-   - Injects `config.workspaceProvisionerImageDigest` + `config.builderImageDigest`
-6. **Control-plane** (`appliance-code` config + `devflows.NewService`)
-   - Env from chart ConfigMap; fail-closed if digests missing/invalid
-7. **Workspace create** → workflow `workspace-prepare` (`engine.workflowContainerSpec`)
-   - Pod `image:` = provisioner digest pin
-8. **Build submit** → workflow build pod
-   - `ResolveBuilderImage` → explicit catalog `@sha256` (operator-supplied builder image)
-9. **Artifact service** (`appliance-ctl` registry release + `appliance-code` chart/control-plane)
+   - Injects product image digests and storage configuration
+6. **Artifact service** (`appliance-ctl` registry release + `appliance-code` chart/control-plane)
    - `artifacts.artifactServerImage` + `artifacts.artifactServerChart` + `compatibility.artifactServerVersion`
    - preload/tag `registry.local/artifact-server` before Helm; install registry only for `artifact` capability
    - registry chart/PVC/public verification key → internal artifact-server URL → Traefik `/v2`
@@ -81,11 +74,9 @@ Online pulls happen **only on the build host** during bundle assembly. Target in
 
 - **Annotation scheme** → ctl `ValidateOCIArchiveReference` + preload tag tests; release finalize + `validate-release-artifacts.py`; config.example docs
 - **Digest derivation** → finalize (archive wins); never reintroduce inspect-first pins
-- **Bundled image refs/order** → path/token validator; workspace-provisioner in build-workflows pack
-- **Builder image name** → `source.go`, `catalog.go` DefaultBuilderImageRef, chart schema, examples, tests
+- **Bundled image refs/order** → path/token validator
 - **Tag/import algorithm** → `preload.go` / tests; install+upgrade fake-ctr tests
 - **PrepareValuesFile keys** → chart `configmap.yaml` env names; config Load; chart_test
-- **Workflow image / pullPolicy** → offline contract; preload completeness
 - **Artifact-server version/image/chart** → archive-first platform digest, `:bundled` annotation, first-class release-input fields, bundle compatibility, registry chart install, validator fixtures
 - **Artifact profile behavior** → storage/builder positive artifact-server pod/PVC + token/catalog/OCI/ORAS evidence; core negative artifact routes; storage negative build routes
 - **Git clone / credential mount** → `buildergit` secret shape (`host`/`username`/`token`); `engine.gitAuthPreamble` + workspace-prepare tests; UI git-access form; docs/developer-workflows-v1.md

@@ -37,7 +37,7 @@ Notes:
   keys must appear in their role file (fixed lab values are fine in YAML).
 - `build_flow.mode` must be `online` or `offline` (exactly one source policy).
 - Production delivery: use `build_flow.appliance_packs: all`. The complete set is
-  foundation, app-stack, storage-network, build-workflows, deviceuser, and std-llm
+  foundation, app-stack, storage-network, deviceuser, and std-llm
   (architecture is `build_flow.target_arch`, required; no default). Open WebUI
   is a separate opt-in pack (`open-webui`; requires `std-llm` or `acc-llm`) and
   is not part of `all`. Add it for chat-showcase SKUs.
@@ -70,8 +70,8 @@ Notes:
   the UI. Install never requires a license file or online entitlement checks.
 - Set `install.appliance_profile` in the config, or omit it to default to `core`.
   Profile is **install-time only**: it selects which modules are activated on
-  the target. Packaging always produces the complete product super-set (workflows engine,
-  Artifact Server, DNS, host-packages for mdns+wifi-ap, workspace-provisioner, dev-build).
+  the target. Packaging produces the selected product pack set (Artifact Server,
+  DNS, host-packages for mdns+wifi-ap, and build-host tooling).
 - Day-to-day entry is `run-release-from-devhost.sh` with only
   `--config`, `--build-publish-config`, and `--install-config`. Stage selection
   is by which paths you pass (no `build_flow.skip` / `install.skip`). After
@@ -134,20 +134,11 @@ Notes:
   and `install.tls_key_file` paths (plus optional `install.tls_secret_name`);
   the SAN setting does not modify that public certificate or provide its key,
   so it is not a substitute for those fields.
-- For builder* profiles (`builder`, `builder-landns`, `builder-storage-landns`),
-  the build catalog is **runtime state**: upload it after install via
-  `PUT /api/v1/builder/catalog` (Builder Settings in the UI) using an
-  appliance-native document (see `build-catalog.example.yaml`). Never put
-  private keys or tokens in it.
-- If the build catalog references a workspace provisioner image, ensure
-  `build_flow.mode` + the matching image-pull block are configured so
-  `registry.local/dev-build` is bundled and preloaded on the target.
 - The bundle flow always packages the complete offline host package super-set
   (`mdns` + `wifi-ap` capabilities) by exporting debs on the build host for the
   selected OS baseline (`ubuntu/24.04/amd64/*.deb`, etc.). The signed tree is
   `host-packages/`; zonctl stages packages at install; enable mDNS / Wi-Fi AP
   day-2 via Admin UI/API.
-- Builder workflow repo URLs must use HTTPS.
 
 ## 1. Full Flow
 
@@ -205,8 +196,6 @@ Cluster-wide upgrade and recovery are not yet qualified for this topology.
 One config file today; stages are ordered so build/publish and install/verify
 can later use separate configs without rewriting the orchestrator.
 
-- for the `builder` profile, verify builder REST route registration from the
-  target and authenticated builder REST/MCP tool availability from the Mac
 - write a final aggregate report to
   `.run/appliance-release/<timestamp>/metadata/release-report.json` and
   `.run/appliance-release/<timestamp>/release-report.md`
@@ -271,8 +260,8 @@ scripts → collect/validate artifacts. It does not SSH and does not own
 packaging pin defaults (those live in `scripts/build-full-bundle.sh`).
 
 After copied release-input and bundle metadata are available, the worker
-validates required product artifacts, workflows engine release artifacts, and
-`extraOCIImages[]` entries against the final bundle manifest. Required runtime
+validates required product artifacts and `extraOCIImages[]` entries against the
+final bundle manifest. Required runtime
 checks include the control-plane image, the separate appliance UI image, and
 the appliance Helm chart. For runtime OCI images, the copied release-input
 `imageReference` must also match the final bundle manifest `imageReference`,
@@ -343,23 +332,6 @@ This script checks:
 - the browser UI home route returning the expected appliance UI shell when `client_verification.base_url` or `verification.ui_home_command` is configured
 - support bundle collection on failure
 
-For workflow-capable profiles (`builder`, `builder-landns`,
-`builder-storage-landns`, `builder-lanllm`, `builder-lanllm-storage-landns`, and
-`core` for the skill's workflows checks), set `verification.workflows.enabled=true`
-and supply the namespaces/CRD/controller commands. For profiles without workflows
-(`storage`, `landns`, `lanllm`, …), set `verification.workflows.enabled=false` —
-the skill fails closed if you leave it true (see `config.install.example.yaml`
-lanllm alternate block).
-
-If `install.appliance_profile` is a build-capable profile (`builder`,
-`builder-landns`, `builder-storage-landns`, `builder-lanllm`,
-`builder-lanllm-storage-landns`), it also checks that
-`/api/v1/work-profiles` is not a 404 from the target. When
-`client_verification.base_url` is set, a stale host in
-`verification.builder.api_command` is rewritten to that base URL (same idea as
-the localhost smoke-test rewrite). Override `verification.builder.enabled` or
-`verification.builder.api_command` only when you need custom reachability
-behavior.
 
 ## 5. Verify Client/API Only
 
@@ -383,18 +355,6 @@ This script checks:
 - `POST /api/v1/auth/login`
 - `GET /api/v1/auth/session`
 - `GET /api/v1/users`
-- for the `builder` profile, authenticated `GET /api/v1/work-profiles`
-  (may return an empty list until an operator uploads a runtime catalog)
-- for the `builder` profile, authenticated MCP `initialize` and `tools/list`
-  with builder workflow tool names present
-- for non-builder profiles, authenticated `GET /api/v1/work-profiles` returns
-  `404` by default, proving build routes are not registered when the build
-  capability is disabled
-- for non-builder profiles, authenticated MCP `initialize` and `tools/list`
-  succeed but the builder workflow tool names are absent by default
-- for non-builder profiles, direct authenticated MCP `tools/call` for
-  `submit_build` returns JSON-RPC tool-not-found, proving disabled build tools
-  cannot be invoked by name
 - writes a clear request log for each API call with method, full URL, sanitized headers, and sanitized POST body fields
 - keeps the response body and response headers in separate log files
 

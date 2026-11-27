@@ -24,12 +24,8 @@ Optional:
   --smoke-test-cmd CMD           Override verification.smoke_test_command.
   --ui-home-cmd CMD              Override verification.ui_home_command.
   --appliance-profile NAME       Effective installed appliance profile.
-  --builder-api-cmd CMD          Override verification.builder.api_command.
   --artifact-readiness-cmd CMD   Override verification.artifact.readiness_command.
   --failure-log-cmd CMD          Override verification.failure_log_command.
-  --workflows-namespaces-cmd CMD Override verification.workflows.namespaces_command.
-  --workflows-crds-cmd CMD       Override verification.workflows.crds_command.
-  --workflow-controller-cmd CMD  Override verification.workflows.controller_command.
   --final-ok                     Print ok when all checks pass.
   --run-dir DIR                  Local run directory.
 EOF
@@ -45,13 +41,9 @@ APP_VERSION_CMD=""
 SMOKE_TEST_CMD=""
 UI_HOME_CMD=""
 APPLIANCE_PROFILE=""
-BUILDER_API_CMD=""
 ARTIFACT_READINESS_CMD=""
 DNS_ZONE=""
 FAILURE_LOG_CMD=""
-WORKFLOWS_NAMESPACES_CMD=""
-WORKFLOWS_CRDS_CMD=""
-WORKFLOW_CONTROLLER_CMD=""
 FINAL_OK="false"
 RUN_DIR=""
 while [[ $# -gt 0 ]]; do
@@ -96,28 +88,12 @@ while [[ $# -gt 0 ]]; do
       APPLIANCE_PROFILE="${2:-}"
       shift 2
       ;;
-    --builder-api-cmd)
-      BUILDER_API_CMD="${2:-}"
-      shift 2
-      ;;
     --artifact-readiness-cmd)
       ARTIFACT_READINESS_CMD="${2:-}"
       shift 2
       ;;
     --failure-log-cmd)
       FAILURE_LOG_CMD="${2:-}"
-      shift 2
-      ;;
-    --workflows-namespaces-cmd)
-      WORKFLOWS_NAMESPACES_CMD="${2:-}"
-      shift 2
-      ;;
-    --workflows-crds-cmd)
-      WORKFLOWS_CRDS_CMD="${2:-}"
-      shift 2
-      ;;
-    --workflow-controller-cmd)
-      WORKFLOW_CONTROLLER_CMD="${2:-}"
       shift 2
       ;;
     --final-ok)
@@ -143,7 +119,6 @@ done
 DEVHOST_CONFIG="$(require_config_path "${DEVHOST_CONFIG}")"
 INSTALL_CONFIG="$(require_config_path "${INSTALL_CONFIG}")"
 reject_removed_install_control_plane_identity_keys "${INSTALL_CONFIG}"
-reject_removed_verification_argo_keys "${INSTALL_CONFIG}"
 if [[ -n "${BUILD_PUBLISH_CONFIG}" ]]; then
   BUILD_PUBLISH_CONFIG="$(require_config_path "${BUILD_PUBLISH_CONFIG}")"
 fi
@@ -163,8 +138,8 @@ SERVICE_HEALTH_CMD="${SERVICE_HEALTH_CMD:-$(config_get_optional "${INSTALL_CONFI
 APP_VERSION_CMD="${APP_VERSION_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.app_version_command" || true)}"
 SMOKE_TEST_CMD="${SMOKE_TEST_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.smoke_test_command" || true)}"
 UI_HOME_CMD="${UI_HOME_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.ui_home_command" || true)}"
-BUILDER_ENABLED="$(config_get_optional "${INSTALL_CONFIG}" "verification.builder.enabled" || true)"
-BUILDER_API_CMD="${BUILDER_API_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.builder.api_command" || true)}"
+BUILDER_ENABLED="false"
+BUILDER_API_CMD=""
 ARTIFACT_ENABLED="$(config_get_optional "${INSTALL_CONFIG}" "verification.artifact.enabled" || true)"
 ARTIFACT_READINESS_CMD="${ARTIFACT_READINESS_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.artifact.readiness_command" || true)}"
 DNS_ENABLED="$(config_get_optional "${INSTALL_CONFIG}" "verification.dns.enabled" || true)"
@@ -172,10 +147,6 @@ DNS_READINESS_CMD="${DNS_READINESS_CMD:-$(config_get_optional "${INSTALL_CONFIG}
 FAILURE_LOG_CMD="${FAILURE_LOG_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.failure_log_command" || true)}"
 SMOKE_TEST_RETRIES="${SMOKE_TEST_RETRIES:-$(config_get_optional "${INSTALL_CONFIG}" "verification.smoke_test_retries" || true)}"
 SMOKE_TEST_RETRY_DELAY_SECONDS="${SMOKE_TEST_RETRY_DELAY_SECONDS:-$(config_get_optional "${INSTALL_CONFIG}" "verification.smoke_test_retry_delay_seconds" || true)}"
-WORKFLOWS_ENABLED="$(config_get_optional "${INSTALL_CONFIG}" "verification.workflows.enabled" || true)"
-WORKFLOWS_NAMESPACES_CMD="${WORKFLOWS_NAMESPACES_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.workflows.namespaces_command" || true)}"
-WORKFLOWS_CRDS_CMD="${WORKFLOWS_CRDS_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.workflows.crds_command" || true)}"
-WORKFLOW_CONTROLLER_CMD="${WORKFLOW_CONTROLLER_CMD:-$(config_get_optional "${INSTALL_CONFIG}" "verification.workflows.controller_command" || true)}"
 ALLOW_INGRESS_WARNING="$(config_get_optional "${INSTALL_CONFIG}" "verification.allow_ingress_warning" || true)"
 ALLOW_VERIFY_SCHEMA_BUG="$(config_get_optional "${INSTALL_CONFIG}" "verification.allow_verify_schema_bug" || true)"
 CLIENT_BASE_URL="$(config_get_optional "${INSTALL_CONFIG}" "client_verification.base_url" || true)"
@@ -192,8 +163,6 @@ APPLIANCE_PROFILE="$(require_appliance_profile "${INSTALL_CONFIG}" "${APPLIANCE_
 [[ -n "${ALLOW_VERIFY_SCHEMA_BUG}" ]] || fail "verification.allow_verify_schema_bug is required in config (true|false)"
 [[ -n "${SMOKE_TEST_CMD}" ]] || fail "verification.smoke_test_command is required in config"
 
-[[ -n "${WORKFLOWS_ENABLED}" ]] || fail "verification.workflows.enabled is required in config (true|false)"
-[[ -n "${BUILDER_ENABLED}" ]] || fail "verification.builder.enabled is required in config (true|false)"
 [[ -n "${ARTIFACT_ENABLED}" ]] || fail "verification.artifact.enabled is required in config (true|false)"
 [[ -n "${DNS_ENABLED}" ]] || fail "verification.dns.enabled is required in config (true|false)"
 if bool_true "${ARTIFACT_ENABLED}"; then
@@ -206,15 +175,6 @@ if bool_true "${DNS_ENABLED}"; then
   [[ -n "${DNS_ZONE}" ]] || fail "install.dns_zone is required in config when verification.dns.enabled=true"
   [[ -n "${DNS_READINESS_CMD}" ]] || fail "verification.dns.readiness_command is required when verification.dns.enabled=true"
 fi
-require_profile_supports_workflows "${WORKFLOWS_ENABLED}" "${APPLIANCE_PROFILE}" "verification.workflows.enabled"
-if bool_true "${WORKFLOWS_ENABLED}"; then
-  [[ -n "${WORKFLOWS_NAMESPACES_CMD}" ]] || fail "verification.workflows.namespaces_command is required when verification.workflows.enabled=true"
-  [[ -n "${WORKFLOWS_CRDS_CMD}" ]] || fail "verification.workflows.crds_command is required when verification.workflows.enabled=true"
-  [[ -n "${WORKFLOW_CONTROLLER_CMD}" ]] || fail "verification.workflows.controller_command is required when verification.workflows.enabled=true"
-fi
-if bool_true "${BUILDER_ENABLED}"; then
-  [[ -n "${BUILDER_API_CMD}" ]] || fail "verification.builder.api_command is required when verification.builder.enabled=true"
-fi
 
 if [[ -n "${CLIENT_BASE_URL}" ]]; then
   rewritten_smoke_test="${SMOKE_TEST_CMD//https:\/\/127.0.0.1\/api\/v1\/auth\/session/${CLIENT_BASE_URL}\/api\/v1\/auth\/session}"
@@ -222,13 +182,6 @@ if [[ -n "${CLIENT_BASE_URL}" ]]; then
   if [[ "${rewritten_smoke_test}" != "${SMOKE_TEST_CMD}" ]]; then
     SMOKE_TEST_CMD="${rewritten_smoke_test}"
     log "rewrote localhost smoke test to use client_verification.base_url: ${CLIENT_BASE_URL}"
-  fi
-  if [[ -n "${BUILDER_API_CMD}" ]]; then
-    rewritten_builder_api="$(rewrite_command_url_path_to_base "${BUILDER_API_CMD}" "${CLIENT_BASE_URL}" "/api/v1/work-profiles")"
-    if [[ "${rewritten_builder_api}" != "${BUILDER_API_CMD}" ]]; then
-      BUILDER_API_CMD="${rewritten_builder_api}"
-      log "rewrote builder API check to use client_verification.base_url: ${CLIENT_BASE_URL}"
-    fi
   fi
   [[ -n "${UI_HOME_CMD}" ]] || fail "verification.ui_home_command is required in config when client_verification.base_url is set"
   rewritten_ui_home="$(rewrite_command_url_path_to_base "${UI_HOME_CMD}" "${CLIENT_BASE_URL}" "/")"
@@ -326,9 +279,6 @@ SERVICE_HEALTH_CMD="$(rewrite_default_command_with_bundle_path "${SERVICE_HEALTH
 if [[ -n "${BUNDLE_BIN_DIR}" && "${FAILURE_LOG_CMD}" == "sudo zonctl support-bundle --output json" ]]; then
   FAILURE_LOG_CMD="sudo env PATH=${BUNDLE_BIN_DIR}:${DEFAULT_TARGET_PATH} zonctl support-bundle --state-dir $(shell_quote "${TARGET_STATE_DIR}") --output json"
 fi
-WORKFLOWS_NAMESPACES_CMD="$(rewrite_default_command_with_bundle_path "${WORKFLOWS_NAMESPACES_CMD}" "sudo kubectl get namespace workflows appliance-builds")"
-WORKFLOWS_CRDS_CMD="$(rewrite_default_command_with_bundle_path "${WORKFLOWS_CRDS_CMD}" "sudo kubectl get crd workflows.argoproj.io workflowtemplates.argoproj.io cronworkflows.argoproj.io")"
-WORKFLOW_CONTROLLER_CMD="$(rewrite_default_command_with_bundle_path "${WORKFLOW_CONTROLLER_CMD}" "sudo kubectl -n workflows wait --for=condition=Available deployment --all --timeout=120s && sudo kubectl -n workflows get deploy,pods")"
 ARTIFACT_READINESS_CMD="$(rewrite_default_command_with_bundle_path "${ARTIFACT_READINESS_CMD}" "sudo kubectl -n artifacts wait --for=condition=Available deployment/artifact-server --timeout=120s && sudo kubectl -n artifacts get pvc appliance-registry-data")"
 
 status_code="0"
@@ -341,9 +291,6 @@ builder_api_code=""
 artifact_readiness_code=""
 dns_readiness_code=""
 failure_log_code=""
-workflows_namespaces_code=""
-workflows_crds_code=""
-workflow_controller_code=""
 
 wrap_command_for_target() {
   local command="$1"
@@ -512,13 +459,6 @@ if [[ -n "${UI_HOME_CMD}" ]]; then
   fi
 fi
 
-if bool_true "${BUILDER_ENABLED}" && [[ -n "${BUILDER_API_CMD}" ]]; then
-  if run_check "builder-api" "${BUILDER_API_CMD}"; then
-    builder_api_code="0"
-  else
-    builder_api_code="$?"
-  fi
-fi
 
 if bool_true "${ARTIFACT_ENABLED}" && [[ -n "${ARTIFACT_READINESS_CMD}" ]]; then
   if run_check "artifact-readiness" "${ARTIFACT_READINESS_CMD}"; then
@@ -533,24 +473,6 @@ if bool_true "${DNS_ENABLED}" && [[ -n "${DNS_READINESS_CMD}" ]]; then
     dns_readiness_code="0"
   else
     dns_readiness_code="$?"
-  fi
-fi
-
-if bool_true "${WORKFLOWS_ENABLED}"; then
-  if run_check "workflows-namespaces" "${WORKFLOWS_NAMESPACES_CMD}"; then
-    workflows_namespaces_code="0"
-  else
-    workflows_namespaces_code="$?"
-  fi
-  if run_check "workflows-crds" "${WORKFLOWS_CRDS_CMD}"; then
-    workflows_crds_code="0"
-  else
-    workflows_crds_code="$?"
-  fi
-  if run_check "workflow-controller" "${WORKFLOW_CONTROLLER_CMD}"; then
-    workflow_controller_code="0"
-  else
-    workflow_controller_code="$?"
   fi
 fi
 
@@ -765,13 +687,7 @@ fi
 if [[ -n "${dns_readiness_code}" && "${dns_readiness_code}" != "0" ]]; then
   overall_failed="true"
 fi
-for code in "${workflows_namespaces_code}" "${workflows_crds_code}" "${workflow_controller_code}"; do
-  if [[ -n "${code}" && "${code}" != "0" ]]; then
-    overall_failed="true"
-  fi
-done
-
-final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${INSTALL_CONFIG}" "${DEVHOST_CONFIG}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${UI_HOME_CMD}" "${BUILDER_ENABLED}" "${BUILDER_API_CMD}" "${FAILURE_LOG_CMD}" "${WORKFLOWS_ENABLED}" "${WORKFLOWS_NAMESPACES_CMD}" "${WORKFLOWS_CRDS_CMD}" "${WORKFLOW_CONTROLLER_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${ui_home_code}" "${builder_api_code}" "${failure_log_code}" "${workflows_namespaces_code}" "${workflows_crds_code}" "${workflow_controller_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
+final_failed="$(python3 - "${RUN_DIR}/metadata/verify.json" "${INSTALL_CONFIG}" "${DEVHOST_CONFIG}" "${TARGET_HOST}" "${STATUS_CMD}" "${VERIFY_CMD}" "${SERVICE_HEALTH_CMD}" "${APP_VERSION_CMD}" "${SMOKE_TEST_CMD}" "${UI_HOME_CMD}" "${BUILDER_ENABLED}" "${BUILDER_API_CMD}" "${FAILURE_LOG_CMD}" "${status_code}" "${verify_code}" "${service_health_code}" "${app_version_code}" "${smoke_test_code}" "${ui_home_code}" "${builder_api_code}" "${failure_log_code}" "${overall_failed}" "${RUN_DIR}" "${ALLOW_INGRESS_WARNING}" "${ALLOW_VERIFY_SCHEMA_BUG}" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -790,10 +706,6 @@ import sys
     builder_enabled,
     builder_api_cmd,
     failure_log_cmd,
-    workflows_enabled,
-    workflows_namespaces_cmd,
-    workflows_crds_cmd,
-    workflow_controller_cmd,
     status_code,
     verify_code,
     service_health_code,
@@ -802,9 +714,6 @@ import sys
     ui_home_code,
     builder_api_code,
     failure_log_code,
-    workflows_namespaces_code,
-    workflows_crds_code,
-    workflow_controller_code,
     overall_failed,
     run_dir,
     allow_ingress_warning,
@@ -883,11 +792,6 @@ if smoke_test_code and int(smoke_test_code) != 0:
     final_failed = True
 if builder_enabled == "true" and builder_api_cmd and builder_api_code and int(builder_api_code) != 0:
     final_failed = True
-if workflows_enabled == "true":
-    for code in (workflows_namespaces_code, workflows_crds_code, workflow_controller_code):
-        if code and int(code) != 0:
-            final_failed = True
-
 payload = {
     "installConfigPath": install_config_path,
     "devhostConfigPath": devhost_config_path,
@@ -944,29 +848,6 @@ if builder_enabled == "true":
             "log": str(run_dir_path / "logs" / "builder-api.log"),
         },
     }
-
-payload["checks"]["workflows"] = {
-    "enabled": workflows_enabled == "true",
-}
-
-if workflows_enabled == "true":
-    payload["checks"]["workflows"].update({
-        "namespaces": {
-            "command": workflows_namespaces_cmd,
-            "exitCode": int(workflows_namespaces_code or 0),
-            "log": str(run_dir_path / "logs" / "workflows-namespaces.log"),
-        },
-        "crds": {
-            "command": workflows_crds_cmd,
-            "exitCode": int(workflows_crds_code or 0),
-            "log": str(run_dir_path / "logs" / "workflows-crds.log"),
-        },
-        "controller": {
-            "command": workflow_controller_cmd,
-            "exitCode": int(workflow_controller_code or 0),
-            "log": str(run_dir_path / "logs" / "workflow-controller.log"),
-        },
-    })
 
 if failure_log_cmd:
     payload["failureLogs"] = {

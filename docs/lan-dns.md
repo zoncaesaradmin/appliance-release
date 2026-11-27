@@ -17,7 +17,7 @@ appliance mDNS name.
 
 | Item | Value |
 | --- | --- |
-| Profiles that run the DNS server | `landns`, `storage-landns`, `builder-landns`, `builder-storage-landns` |
+| Profiles that run the DNS server | `landns`, `storage-landns` |
 | Zone | `appliance.internal` by default |
 | Resolver listen | DNS appliance LAN IP, UDP/TCP `53` |
 | Record shape | single left-hand label to A record |

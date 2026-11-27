@@ -33,7 +33,6 @@ Use this index to find the one canonical document for your task.
 ## Specialized / Internal
 
 - Action Runtime architecture and metadata contract:
-  [internal/generic-workflow-engine-plan.md](internal/generic-workflow-engine-plan.md)
 - PostgreSQL control-plane migration and deployment-profile implementation:
   [internal/postgresql-deployment-profile-plan.md](internal/postgresql-deployment-profile-plan.md)
 - Configuration archive, PostgreSQL recovery, and install bootstrap plan:

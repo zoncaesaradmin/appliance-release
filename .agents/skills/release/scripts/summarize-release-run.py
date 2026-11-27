@@ -108,38 +108,12 @@ def summarize_client_verify(client: Optional[dict], skipped: bool) -> dict:
     if not client:
         return out
     checks = client.get("checks") if isinstance(client.get("checks"), dict) else {}
-    builder = checks.get("builder") if isinstance(checks.get("builder"), dict) else None
-    disabled = checks.get("disabledBuildRoutes") if isinstance(checks.get("disabledBuildRoutes"), dict) else None
     artifact = checks.get("artifact") if isinstance(checks.get("artifact"), dict) else {}
     out.update(
         {
             "baseUrl": client.get("baseUrl"),
             "username": client.get("username"),
             "loginStatusCode": (checks.get("login") or {}).get("statusCode") if isinstance(checks.get("login"), dict) else None,
-            "builderWorkProfilesStatusCode": ((builder or {}).get("workProfiles") or {}).get("statusCode")
-            if builder
-            else None,
-            "builderToolsPresent": sorted(
-                ((builder or {}).get("mcpToolsList") or {}).get("summary", {}).get("toolNames", [])
-            )
-            if builder
-            else [],
-            "disabledBuildWorkProfilesStatusCode": ((disabled or {}).get("workProfiles") or {}).get("statusCode")
-            if disabled
-            else None,
-            "disabledBuildUnexpectedTools": ((disabled or {}).get("mcpToolsList") or {}).get(
-                "unexpectedToolNames", []
-            )
-            if disabled
-            else [],
-            "disabledBuildDirectToolCall": {
-                "statusCode": ((disabled or {}).get("mcpDirectToolCall") or {}).get("statusCode"),
-                "expectedJSONRPCError": ((disabled or {}).get("mcpDirectToolCall") or {}).get(
-                    "expectedJSONRPCError"
-                ),
-            }
-            if disabled
-            else None,
             "artifact": {
                 "enabled": artifact.get("enabled"),
                 "catalogStatusCode": artifact.get("catalogStatusCode"),

@@ -57,15 +57,6 @@ K3S_VERSION comes from configs/product-bundle.ci.env (or K3S_VERSION_OVERRIDE).
 
 See docs/offline-build-deps.md.
 
-The workflows engine is on by default (it is a mandatory component of the
-complete v1 appliance per ADR 0011) and needs no configuration: its
-version and controller/executor image references are derived
-automatically from appliance-code's own
-deploy/charts/appliance-workflows/Chart.yaml (the chart's pinned appVersion),
-and its CRDs are fetched automatically from the matching upstream Argo
-Workflows GitHub release unless you provide a local copy. You never need
-to set a workflows version yourself.
-
 Optional overrides:
   PRODUCT_VERSION=0.1.0         # overrides configs/default-product-version
   RELEASE_WORK_ROOT=${TMPDIR:-/tmp}/appliance-build
@@ -75,20 +66,12 @@ Optional overrides:
   VALUES_FILE_SOURCE=/ci/inputs/values-minimal.yaml
   # Host packages: always export-host-packages for mdns + wifi-client + wifi-ap under OS_VERSION
   # (ubuntu/<version>/amd64/*.deb). Install stages debs; enablement is day-2 only.
-  # BUILD_COMPLETE_PRODUCT=false  # build-workflows slim path only; default true requires workflows
   # COMPONENT_CACHE_DIR=/var/cache/appliance-build/components  # optional dirty-only rebuild cache
   # THIRD_PARTY_FREEZE_ROOT=/var/cache/zon-third-party  # durable third-party OCI/host-packages freeze
   # THIRD_PARTY_FREEZE_MODE=ignore|auto|require          # default ignore; see docs/offline-build-deps.md
   # FREEZE_THIRD_PARTY_ONLY=1                            # package+store third-party only (make freeze-third-party)
   # ARCHIVE_RELEASE_INPUT_WRITE_TARBALL=1                # also write multi-GB release-input-*.tar.gz (default: dir only)
   # PACK_GZIP_LEVEL=1                                    # pigz/gzip level for pack .tar.gz (default 1=fast)
-  WORKFLOWS_ENABLED=true                 # complete product always packages the workflows engine (set BUILD_COMPLETE_PRODUCT=false to allow opt-out)
-  WORKFLOWS_VERSION=v3.5.10              # pin a different workflows engine version than the chart's appVersion
-  WORKFLOW_CONTROLLER_IMAGE_REF=localhost/appliance-workflow-controller:v3.5.10
-  WORKFLOW_EXECUTOR_IMAGE_REF=quay.io/argoproj/argoexec:v3.5.10
-  # Offline: Workflow CRDs/images from LAN build-cache (seeded by make seed-build-deps).
-  # Online: public upstreams (GitHub / Quay / Docker Hub / GHCR public).
-  WORKSPACE_PROVISIONER_IMAGE_REF=docker.io/alpine/git:2.49.0
   # DEV_* tooling image (dev-build) builds product images on the build host only.
   # It is NOT packaged into the appliance bundle; operators supply builder images.
   ARTIFACT_SERVER_VERSION=2.1.8
@@ -147,12 +130,6 @@ USER_RELEASE_WORK_ROOT="${RELEASE_WORK_ROOT-}"
 USER_OS_VERSION="${OS_VERSION-}"
 USER_K3S_VERSION_OVERRIDE="${K3S_VERSION_OVERRIDE-}"
 USER_DEPLOYMENT_TOPOLOGY="${DEPLOYMENT_TOPOLOGY-}"
-USER_WORKFLOWS_ENABLED="${WORKFLOWS_ENABLED-}"
-USER_WORKFLOWS_REQUIRED="${WORKFLOWS_REQUIRED-}"
-USER_WORKFLOWS_VERSION="${WORKFLOWS_VERSION-}"
-USER_WORKFLOW_CONTROLLER_IMAGE_REF="${WORKFLOW_CONTROLLER_IMAGE_REF-}"
-USER_WORKFLOW_EXECUTOR_IMAGE_REF="${WORKFLOW_EXECUTOR_IMAGE_REF-}"
-USER_WORKSPACE_PROVISIONER_IMAGE_REF="${WORKSPACE_PROVISIONER_IMAGE_REF-}"
 USER_ARTIFACT_SERVER_VERSION="${ARTIFACT_SERVER_VERSION-}"
 USER_ARTIFACT_SERVER_SOURCE_IMAGE="${ARTIFACT_SERVER_SOURCE_IMAGE-}"
 USER_DNS_VERSION="${DNS_VERSION-}"
@@ -179,10 +156,6 @@ set +a
 
 # Reject removed offline/local archive path knobs.
 _removed_offline_build_inputs=(
-  WORKFLOWS_CRDS_DIR_SOURCE
-  WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_SOURCE
-  WORKFLOW_EXECUTOR_IMAGE_ARCHIVE_SOURCE
-  WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_SOURCE
   ARTIFACT_SERVER_IMAGE_ARCHIVE_SOURCE
   DNS_IMAGE_ARCHIVE_SOURCE
   HOST_PACKAGES_DIR_SOURCE
@@ -213,7 +186,6 @@ LAN_BUILD_CACHE_TIMEOUT_SECONDS="15"
 OFFLINE_BUILD="${OFFLINE_BUILD:-0}"
 export OFFLINE_BUILD
 HOST_PACKAGES_FINGERPRINT="${HOST_PACKAGES_FINGERPRINT:-mdns-wifi-client-wifi-ap-v1}"
-ALPINE_GIT_CACHE_TAG_BASE="${ALPINE_GIT_CACHE_TAG_BASE:-2.49.0}"
 
 offline_build_enabled() {
   case "$(printf '%s' "${OFFLINE_BUILD}" | tr '[:upper:]' '[:lower:]')" in
@@ -321,12 +293,6 @@ if [[ "${DEPLOYMENT_TOPOLOGY}" != "embedded-etcd-v1" ]]; then
   echo "build-full-bundle: DEPLOYMENT_TOPOLOGY must be embedded-etcd-v1" >&2
   exit 2
 fi
-WORKFLOWS_ENABLED="${USER_WORKFLOWS_ENABLED:-${WORKFLOWS_ENABLED:-}}"
-WORKFLOWS_REQUIRED="${USER_WORKFLOWS_REQUIRED:-${WORKFLOWS_REQUIRED:-}}"
-WORKFLOWS_VERSION="${USER_WORKFLOWS_VERSION:-${WORKFLOWS_VERSION:-}}"
-WORKFLOW_CONTROLLER_IMAGE_REF="${USER_WORKFLOW_CONTROLLER_IMAGE_REF:-${WORKFLOW_CONTROLLER_IMAGE_REF:-}}"
-WORKFLOW_EXECUTOR_IMAGE_REF="${USER_WORKFLOW_EXECUTOR_IMAGE_REF:-${WORKFLOW_EXECUTOR_IMAGE_REF:-}}"
-WORKSPACE_PROVISIONER_IMAGE_REF="${USER_WORKSPACE_PROVISIONER_IMAGE_REF:-${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:2.49.0}}"
 # compatibility.artifactServerVersion is unprefixed (2.1.8). Chart appVersion
 # and GHCR tags use a leading v (v2.1.8). Normalize before constructing the
 # pull ref.
@@ -430,29 +396,11 @@ if [[ -z "${USER_ARTIFACT_SERVER_SOURCE_IMAGE}" ]]; then
   ARTIFACT_SERVER_SOURCE_IMAGE="ghcr.io/project-zot/zot-linux-${TARGET_ARCH}:v${ARTIFACT_SERVER_VERSION}"
 fi
 
-# Pack selection (default all = foundation + app-stack + storage-network + build-workflows + deviceuser + std-llm;
+# Pack selection (default all = foundation + app-stack + storage-network + deviceuser + std-llm;
 # open-webui stays opt-in even for all).
 APPLIANCE_PACKS="${USER_APPLIANCE_PACKS:-${APPLIANCE_PACKS:-all}}"
 appliance_packs_resolve
 echo "build-full-bundle: APPLIANCE_PACKS=${APPLIANCE_PACKS} → ${APPLIANCE_PACKS_RESOLVED}"
-
-# The workflows engine is a mandatory component of the complete product
-# super-set (ADR 0011) when the build-workflows pack is selected. BUILD_COMPLETE_PRODUCT
-# defaults true and forces WORKFLOWS_ENABLED for that pack. Pack-selective builds
-# that omit build-workflows skip workflows packaging.
-BUILD_COMPLETE_PRODUCT="${BUILD_COMPLETE_PRODUCT:-true}"
-if appliance_pack_wanted build-workflows; then
-  if [[ -z "${WORKFLOWS_ENABLED}" ]]; then
-    WORKFLOWS_ENABLED="true"
-  fi
-else
-  case "$(printf '%s' "${USER_WORKFLOWS_ENABLED:-}" | tr '[:upper:]' '[:lower:]')" in
-    1|true|yes|on)
-      echo "build-full-bundle: WORKFLOWS_ENABLED=true ignored because build-workflows pack is not in APPLIANCE_PACKS (${APPLIANCE_PACKS_RESOLVED})" >&2
-      ;;
-  esac
-  WORKFLOWS_ENABLED="false"
-fi
 
 # Unified tooling identity.
 # Skill already maps ONLINE_* → DEV_* before invoke. For hand-run online with both
@@ -585,7 +533,6 @@ CONFIG_OUT="${GENERATED_DIR}/product-bundle.env"
 BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-foundation"
 APP_STACK_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-app-stack"
 STORAGE_NETWORK_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-storage-network"
-BUILD_WORKFLOWS_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-build-workflows"
 DEVICEUSER_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-deviceuser"
 CPU_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-std-llm"
 ACC_LLM_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-acc-llm"
@@ -593,7 +540,6 @@ OPEN_WEBUI_BUNDLE_DIR="${WORKSPACE}/out/appliance-${PRODUCT_VERSION}-open-webui"
 BUNDLE_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" foundation)"
 APP_STACK_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" app-stack)"
 STORAGE_NETWORK_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" storage-network)"
-BUILD_WORKFLOWS_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" build-workflows)"
 DEVICEUSER_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" deviceuser)"
 CPU_LLM_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" std-llm)"
 ACC_LLM_ARCHIVE="${EXPORT_DIR}/$(appliance_pack_archive_name "${PRODUCT_VERSION}" acc-llm)"
@@ -617,10 +563,6 @@ bool_true() {
   esac
 }
 
-if bool_true "${BUILD_COMPLETE_PRODUCT}" && appliance_pack_wanted build-workflows && ! bool_true "${WORKFLOWS_ENABLED}"; then
-  echo "build-full-bundle: BUILD_COMPLETE_PRODUCT requires WORKFLOWS_ENABLED=true when build-workflows pack is selected (build-workflows slim builds: BUILD_COMPLETE_PRODUCT=false)" >&2
-  exit 2
-fi
 # Always resolve the build-host tooling image from DEV_*. This image builds
 # control-plane/UI/etc. on the packaging host and is never exported into the
 # signed appliance bundle (operator-supplied builder images at runtime).
@@ -1293,7 +1235,7 @@ skopeo_try_copy() {
   esac
 }
 
-# Host-network podman pull/save — same path used successfully for workflows OCI.
+# Host-network podman pull/save for OCI exports.
 # Used as upstream fallback when skopeo copy fails so LAN mirror work does not
 # regress plain internet pulls.
 podman_export_oci_archive() {
@@ -1420,7 +1362,7 @@ EOF
   fi
 
   # Upstream: show skopeo errors (do not swallow 2>&1). Optional podman
-  # fallback matches export_container_image_archive (workflows path) — host network.
+  # fallback matches export_container_image_archive — host network.
   if ! skopeo_try_copy "${source_ref}" "${dest_spec}" "0" "${upstream_tls}" "true" "false"; then
     echo "build-full-bundle: skopeo upstream copy failed for ${source_ref}; trying sudo podman pull/save fallback" >&2
     if ! podman_export_oci_archive "${source_ref}" "${output_path}"; then
@@ -1600,86 +1542,6 @@ export_bundled_oci_archive() {
   TPF_FP_INPUTS=("${pull_ref}" "${local_name}" "${local_or_expected_ref}" "${TARGET_ARCH}" "${BUNDLE_IMAGE_OS:-linux}")
   tpf_store_oci "${artifact_id}" "${output_path}" || true
   printf '%s' "${bundle_ref}"
-}
-
-# derive_workflows_version_from_code_repo reads the pinned workflows engine
-# version out of appliance-code's own
-# deploy/charts/appliance-workflows/Chart.yaml (its appVersion field), the
-# single source of truth for which upstream Argo Workflows release this
-# chart is built against. This is what lets an operator build a complete
-# appliance without ever having to know or set a workflows version
-# themselves: it's the same version the chart itself is pinned to,
-# already reviewed and committed in that repo.
-derive_workflows_version_from_code_repo() {
-  local chart_yaml="${CODE_REPO_DIR}/deploy/charts/appliance-workflows/Chart.yaml"
-  local version
-
-  if [[ ! -f "${chart_yaml}" ]]; then
-    echo "build-full-bundle: WORKFLOWS_ENABLED is true but ${chart_yaml} was not found; cannot derive the workflows version" >&2
-    exit 1
-  fi
-  version="$(sed -n 's/^appVersion: *"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "${chart_yaml}")"
-  if [[ -z "${version}" ]]; then
-    echo "build-full-bundle: could not parse appVersion from ${chart_yaml}" >&2
-    exit 1
-  fi
-  printf '%s' "${version}"
-}
-
-fetch_workflows_crds_from_release() {
-  local workflows_version="$1"
-  local output_dir="$2"
-  local tmp_manifest
-  local files_ok=0
-
-  tmp_manifest="$(mktemp)"
-  trap 'rm -f "${tmp_manifest}"' RETURN
-
-  if files_api_download "argo-workflows/${workflows_version}/namespace-install.yaml" "${tmp_manifest}"; then
-    echo "build-full-bundle: fetched Argo CRDs from files API argo-workflows/${workflows_version}/" >&2
-    files_ok=1
-  elif offline_build_enabled; then
-    echo "build-full-bundle: OFFLINE_BUILD=1 and files API miss for argo-workflows/${workflows_version}/namespace-install.yaml" >&2
-    echo "build-full-bundle: seed deps/workflows (make -C deps/workflows release)" >&2
-    exit 1
-  else
-    local manifest_url="https://github.com/argoproj/argo-workflows/releases/download/${workflows_version}/namespace-install.yaml"
-    curl -fsSL "${manifest_url}" -o "${tmp_manifest}"
-  fi
-  # silence unused when files path taken
-  : "${files_ok}"
-
-  rm -rf "${output_dir}"
-  mkdir -p "${output_dir}"
-  python3 - "${tmp_manifest}" "${output_dir}" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-manifest_path = Path(sys.argv[1])
-output_dir = Path(sys.argv[2])
-text = manifest_path.read_text(encoding="utf-8")
-docs = re.split(r"^---\s*$", text, flags=re.MULTILINE)
-written = 0
-
-for raw_doc in docs:
-    doc = raw_doc.strip()
-    if not doc:
-        continue
-    if not re.search(r"^kind:\s*CustomResourceDefinition\s*$", doc, flags=re.MULTILINE):
-        continue
-    match = re.search(r"^\s*name:\s*([A-Za-z0-9._-]+)\s*$", doc, flags=re.MULTILINE)
-    if not match:
-        raise SystemExit("build-full-bundle: could not determine workflow CRD filename from downloaded manifest")
-    out_path = output_dir / f"{match.group(1)}.yaml"
-    out_path.write_text(doc + "\n", encoding="utf-8")
-    written += 1
-
-if written == 0:
-    raise SystemExit("build-full-bundle: downloaded workflow manifest did not contain any CRDs")
-PY
-  rm -f "${tmp_manifest}"
-  trap - RETURN
 }
 
 set_env_var() {
@@ -1881,13 +1743,6 @@ if appliance_pack_wanted acc-llm; then
     fi
   fi
 fi
-if appliance_pack_wanted build-workflows; then
-  if [[ "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner || "${WORKSPACE_PROVISIONER_IMAGE_REF}" == registry.local/workspace-provisioner@sha256:* ]]; then
-    echo "build-full-bundle: WORKSPACE_PROVISIONER_IMAGE_REF must be an upstream or LAN build-cache pull ref (default docker.io/alpine/git:2.49.0); got ${WORKSPACE_PROVISIONER_IMAGE_REF}" >&2
-    exit 2
-  fi
-fi
-
 rm -rf "${ARTIFACTS_DIR}" "${WORKSPACE}"
 if is_within_dir "${EXPORT_DIR}" "${RELEASE_WORK_ROOT}"; then
   rm -rf "${EXPORT_DIR}"
@@ -1980,22 +1835,6 @@ fi
 
 require_appliance_code_bootstrap
 
-if bool_true "${WORKFLOWS_ENABLED}"; then
-  if [[ -z "${WORKFLOWS_VERSION}" ]]; then
-    WORKFLOWS_VERSION="$(derive_workflows_version_from_code_repo)"
-  fi
-  if [[ -z "${WORKFLOW_CONTROLLER_IMAGE_REF}" ]]; then
-    WORKFLOW_CONTROLLER_IMAGE_REF="localhost/appliance-workflow-controller:${WORKFLOWS_VERSION}"
-  fi
-  if [[ -z "${WORKFLOW_EXECUTOR_IMAGE_REF}" ]]; then
-    WORKFLOW_EXECUTOR_IMAGE_REF="quay.io/argoproj/argoexec:${WORKFLOWS_VERSION}"
-  fi
-  # Default upstream base; offline remap below may replace with LAN build-cache.
-  WORKFLOW_CONTROLLER_BASE_IMAGE="${WORKFLOW_CONTROLLER_BASE_IMAGE:-quay.io/argoproj/workflow-controller:${WORKFLOWS_VERSION}}"
-else
-  WORKFLOW_CONTROLLER_BASE_IMAGE="${WORKFLOW_CONTROLLER_BASE_IMAGE:-}"
-fi
-
 # When offline (or when DEV_REGISTRY is available and refs still point at
 # public upstreams), prefer LAN build-cache (deps/*) names.
 if offline_build_enabled; then
@@ -2008,9 +1847,6 @@ if offline_build_enabled; then
   fi
   if appliance_pack_wanted deviceuser; then
     require_seed_package jellyfin
-  fi
-  if appliance_pack_wanted build-workflows; then
-    WORKSPACE_PROVISIONER_IMAGE_REF="$(lan_cache_ref alpine-git "${ALPINE_GIT_CACHE_TAG_BASE}-${TARGET_ARCH}")"
   fi
   if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]]; then
     ARTIFACT_SERVER_SOURCE_IMAGE="$(lan_cache_ref "zot-linux-${TARGET_ARCH}" "v${ARTIFACT_SERVER_VERSION}")"
@@ -2036,10 +1872,6 @@ if offline_build_enabled; then
       VLLM_IMAGE_PULL_REF="$(lan_cache_ref vllm-openai-cpu "${VLLM_VERSION}-x86_64")"
     fi
   fi
-  if bool_true "${WORKFLOWS_ENABLED}"; then
-    WORKFLOW_EXECUTOR_IMAGE_REF="$(lan_cache_ref argoexec "${WORKFLOWS_VERSION}-${TARGET_ARCH}")"
-    WORKFLOW_CONTROLLER_BASE_IMAGE="$(lan_cache_ref workflow-controller "${WORKFLOWS_VERSION}-${TARGET_ARCH}")"
-  fi
   CP_GO_IMAGE="$(lan_cache_ref golang "1.26-${HOST_ARCH}")"
   CP_RUNTIME_IMAGE="$(lan_cache_ref alpine-3.24.1-runtime "3.24.1-${TARGET_ARCH}")"
   UI_NODE_IMAGE="$(lan_cache_ref node "22-alpine-${HOST_ARCH}")"
@@ -2064,7 +1896,7 @@ if offline_build_enabled; then
   echo "build-full-bundle: OFFLINE_BUILD=1 using LAN build-cache refs on ${DEV_REGISTRY}" >&2
   echo "build-full-bundle: service build bases compile=${HOST_ARCH} runtime=${TARGET_ARCH} (BUILDPLATFORM native cross-compile)" >&2
 else
-  # Online defaults (workflows base already set above when WORKFLOWS_ENABLED).
+  # Online defaults.
   # MinIO has no public image for this pin; packaging builds it from the
   # GitHub release binary checked in deps/blob-storage/pins.env.
   case "${TARGET_ARCH}" in
@@ -2080,7 +1912,6 @@ else
   OPEN_WEBUI_NODE_IMAGE="${OPEN_WEBUI_NODE_IMAGE:-docker.io/library/node:22-alpine3.20}"
   OPEN_WEBUI_PYTHON_IMAGE="${OPEN_WEBUI_PYTHON_IMAGE:-docker.io/library/python:3.11-slim-bookworm}"
   OPEN_WEBUI_UV_IMAGE="${OPEN_WEBUI_UV_IMAGE:-ghcr.io/astral-sh/uv:0.12.10}"
-  WORKFLOW_CONTROLLER_BASE_IMAGE="${WORKFLOW_CONTROLLER_BASE_IMAGE:-quay.io/argoproj/workflow-controller:${WORKFLOWS_VERSION:-v3.5.10}}"
   CP_GO_IMAGE="${CP_GO_IMAGE:-}"
   CP_RUNTIME_IMAGE="${CP_RUNTIME_IMAGE:-}"
   UI_NODE_IMAGE="${UI_NODE_IMAGE:-}"
@@ -2116,9 +1947,6 @@ fi
 printf '%s  %s\n' "${CLOUDFLARED_SHA256}" "${CLOUDFLARED_BINARY_PATH}" | sha256sum -c -
 chmod 0755 "${CLOUDFLARED_BINARY_PATH}"
 
-WORKFLOWS_CRDS_DIR_FOR_DEV=""
-WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
-WORKFLOW_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV=""
 rm -rf "${CODE_REPO_DIR}/.run/host-packages"
 # Complete product super-set always packages both host capability closures by
 # export on the build host (no external host-packages tree override).
@@ -2170,20 +1998,7 @@ if [[ "${host_packages_restored}" != "1" ]]; then
   tpf_store_dir "host-packages" "${CODE_REPO_DIR}/.run/host-packages" || true
 fi
 
-if bool_true "${WORKFLOWS_ENABLED}"; then
-  # Always fetch CRDs and pull/package images (no local archive path inputs).
-  if bool_true "${WORKFLOWS_REQUIRED:-true}"; then
-    WORKFLOWS_CRDS_DIR_FOR_DEV="/workspace/.run/workflows-crds"
-    fetch_workflows_crds_from_release "${WORKFLOWS_VERSION}" "${CODE_REPO_DIR}/.run/workflows-crds"
-  fi
-  # Controller image is wrapped inside the code-repo dev-run (buildah).
-  WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=""
-  WORKFLOW_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workflow-executor-image.tar"
-  export_container_image_archive "${WORKFLOW_EXECUTOR_IMAGE_REF}" "${CODE_REPO_DIR}/.run/workflow-executor-image.tar"
-fi
-
 # Bundled supplemental images for release-input (--extra-oci-image flags):
-# workspace-provisioner when the build-workflows pack is selected, plus
 # application-owned service images selected by the metadata catalog.
 BUNDLED_IMAGE_ARCHIVES=()
 BUNDLED_IMAGE_REFS=()
@@ -2219,14 +2034,6 @@ APPLICATION_IDENTITY_IMAGE_REF=""
 AUTH_SERVICE_IMAGE_OUT="/workspace/.run/auth-service-image.tar"
 AUTH_SERVICE_IMAGE_REF_FILE="/workspace/.run/auth-service-image.reference"
 AUTH_SERVICE_IMAGE_REF=""
-
-if [[ "${NEED_WORKSPACE_PROVISIONER_IMAGE:-0}" == "1" ]]; then
-  WORKSPACE_PROVISIONER_PULL_REF="${WORKSPACE_PROVISIONER_IMAGE_REF:-docker.io/alpine/git:2.49.0}"
-  WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/workspace-provisioner-image.tar"
-  WORKSPACE_PROVISIONER_IMAGE_REF="$(export_bundled_oci_archive "${WORKSPACE_PROVISIONER_PULL_REF}" "registry.local/workspace-provisioner" "${CODE_REPO_DIR}/.run/workspace-provisioner-image.tar")"
-  BUNDLED_IMAGE_ARCHIVES+=("${WORKSPACE_PROVISIONER_IMAGE_ARCHIVE_FOR_DEV}")
-  BUNDLED_IMAGE_REFS+=("${WORKSPACE_PROVISIONER_IMAGE_REF}")
-fi
 
 if [[ "${NEED_JELLYFIN_IMAGE:-0}" == "1" ]]; then
   JELLYFIN_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/jellyfin-image.tar"
@@ -2579,43 +2386,6 @@ ART_EOF
   ARTIFACT_SERVER_ARCHIVE_ARG_LINES+="  --artifact-server-image-reference \"\${ARTIFACT_SERVER_IMAGE_REF}\" \\"$'\n'
 fi
 
-# Argo workflow-controller wrap is third-party (upstream base + thin appliance
-# wrap). Freeze produces the final OCI archive; product builds restore+skip.
-WORKFLOW_CONTROLLER_FREEZE_HIT=0
-WORKFLOW_CONTROLLER_PACKAGE_LINES=""
-if bool_true "${WORKFLOWS_ENABLED}"; then
-  TPF_FP_INPUTS=(
-    "${WORKFLOW_CONTROLLER_BASE_IMAGE}"
-    "${WORKFLOWS_VERSION}"
-    "${TARGET_ARCH}"
-    "${CP_RUNTIME_IMAGE:-}"
-    "${RUNTIME_PACKAGES_INSTALLED:-0}"
-  )
-  set +e
-  tpf_try_restore_oci "workflow-controller" "${CODE_REPO_DIR}/.run/workflow-controller-image.tar"
-  _tpf_wfc_rc=$?
-  set -e
-  if [[ "${_tpf_wfc_rc}" -eq 0 ]]; then
-    WORKFLOW_CONTROLLER_FREEZE_HIT=1
-    WORKFLOW_CONTROLLER_PACKAGE_LINES="# third-party-freeze hit: workflow-controller
-echo \"third-party-freeze: reusing workflow-controller OCI archive\" >&2
-WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/workflow-controller-image.tar\"
-"
-  elif [[ "${_tpf_wfc_rc}" -eq 2 ]]; then
-    exit 2
-  else
-    WORKFLOW_CONTROLLER_PACKAGE_LINES="# Wrap upstream Argo workflow-controller (third-party; freeze stores final tar).
-make package-workflow-controller-image-archive \\
-  OUT_FILE=\"/workspace/.run/workflow-controller-image.tar\" \\
-  WORKFLOWS_VERSION=$(shell_quote "${WORKFLOWS_VERSION}") \\
-  WORKFLOW_CONTROLLER_BASE_IMAGE=$(shell_quote "${WORKFLOW_CONTROLLER_BASE_IMAGE}") \\
-  RUNTIME_IMAGE=$(shell_quote "${CP_RUNTIME_IMAGE}") \\
-  RUNTIME_PREBAKED=$(shell_quote "${RUNTIME_PACKAGES_INSTALLED}")
-WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV=\"/workspace/.run/workflow-controller-image.tar\"
-"
-  fi
-fi
-
 # Foundation third-party OCI archives: restore from freeze before packaging so
 # product rebuilds skip skopeo pull/export when fingerprints match.
 BLOB_STORAGE_FREEZE_HIT=0
@@ -2815,21 +2585,6 @@ if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
   ARCHIVE_RELEASE_INPUT_LINES=$(cat <<ARCHIVE_EOF
 METADATA_BUNDLE_ARCHIVE_FOR_DEV="\$(bash ./scripts/package/generate-metadata-bundle.sh --software-version "\${CODE_VERSION}" --out-dir "/workspace/.run/metadata-bundle")"
 
-if bool_true $(shell_quote "${WORKFLOWS_ENABLED}"); then
-  WORKFLOWS_ARGS+=(--workflows-version $(shell_quote "${WORKFLOWS_VERSION}"))
-
-  if [[ -n $(shell_quote "${WORKFLOWS_CRDS_DIR_FOR_DEV}") ]]; then
-    WORKFLOWS_ARGS+=(--workflows-crds-dir $(shell_quote "${WORKFLOWS_CRDS_DIR_FOR_DEV}"))
-  fi
-
-  # Controller archive is produced earlier (freeze restore or package).
-  WORKFLOWS_ARGS+=(--workflow-controller-image "\${WORKFLOW_CONTROLLER_IMAGE_ARCHIVE_FOR_DEV}")
-  WORKFLOWS_ARGS+=(--workflow-controller-image-reference $(shell_quote "${WORKFLOW_CONTROLLER_IMAGE_REF}"))
-
-  WORKFLOWS_ARGS+=(--workflow-executor-image $(shell_quote "${WORKFLOW_EXECUTOR_IMAGE_ARCHIVE_FOR_DEV}"))
-  WORKFLOWS_ARGS+=(--workflow-executor-image-reference $(shell_quote "${WORKFLOW_EXECUTOR_IMAGE_REF}"))
-fi
-
 ${BUNDLED_IMAGE_ARG_LINES}
 ${CHANNEL_INTEGRATION_ARCHIVE_ARG_LINES}
 ${ORDERING_ARCHIVE_ARG_LINES}
@@ -2855,7 +2610,6 @@ ${HOST_AGENT_IMAGE_ARCHIVE_ARG_LINES}  --blob-storage-image "\${BLOB_STORAGE_IMA
   --deployment-topology $(shell_quote "${DEPLOYMENT_TOPOLOGY}") \\
   --cloudflared-binary "/workspace/.run/cloudflared" \\
 ${ARTIFACT_SERVER_ARCHIVE_ARG_LINES}${DNS_ARCHIVE_ARG_LINES}${INFERENCE_ARCHIVE_ARG_LINES}${OPEN_WEBUI_ARCHIVE_ARG_LINES}  --metadata-bundle "\${METADATA_BUNDLE_ARCHIVE_FOR_DEV}" \\
-  "\${WORKFLOWS_ARGS[@]}" \\
   "\${BUNDLED_IMAGE_ARGS[@]}"
 ARCHIVE_EOF
 )
@@ -2899,7 +2653,6 @@ AUTH_SERVICE_IMAGE_REF_FILE="/workspace/.run/auth-service-image.reference"
 AUTH_SERVICE_IMAGE_REF=""
 OPEN_WEBUI_IMAGE_ARCHIVE="/workspace/.run/open-webui-image.tar"
 OPEN_WEBUI_GATEWAY_IMAGE_ARCHIVE="/workspace/.run/open-webui-gateway-image.tar"
-WORKFLOWS_ARGS=()
 BUNDLED_IMAGE_ARGS=()
 # Prefer the release/product version for image tags and the control-plane
 # /version payload. Commit SHA stays in the separate Commit build field.
@@ -2919,7 +2672,6 @@ echo "package-release-input: TARGET_ARCH=\${TARGET_ARCH} freeze_only=$(shell_quo
 
 ${DNS_PACKAGE_LINES}
 
-${WORKFLOW_CONTROLLER_PACKAGE_LINES}
 ${PRODUCT_PACKAGE_LINES}
 ${BLOB_STORAGE_PACKAGE_LINES}BLOB_STORAGE_IMAGE_REF="\$(tr -d '\r\n' < "\${BLOB_STORAGE_IMAGE_REF_FILE}")"
 ${MESSAGE_BROKER_PACKAGE_LINES}MESSAGE_BROKER_IMAGE_REF="\$(tr -d '\r\n' < "\${MESSAGE_BROKER_IMAGE_REF_FILE}")"
@@ -3020,19 +2772,6 @@ if tpf_active; then
       "registry.local/open-webui" >/dev/null || true
     tpf_store_oci "open-webui" "${CODE_REPO_DIR}/.run/open-webui-image.tar" || true
   fi
-  if bool_true "${WORKFLOWS_ENABLED:-false}" \
-    && [[ "${WORKFLOW_CONTROLLER_FREEZE_HIT:-0}" != "1" ]] \
-    && [[ -n "${WORKFLOW_CONTROLLER_BASE_IMAGE:-}" ]] \
-    && [[ -f "${CODE_REPO_DIR}/.run/workflow-controller-image.tar" ]]; then
-    TPF_FP_INPUTS=(
-      "${WORKFLOW_CONTROLLER_BASE_IMAGE}"
-      "${WORKFLOWS_VERSION}"
-      "${TARGET_ARCH}"
-      "${CP_RUNTIME_IMAGE:-}"
-      "${RUNTIME_PACKAGES_INSTALLED:-0}"
-    )
-    tpf_store_oci "workflow-controller" "${CODE_REPO_DIR}/.run/workflow-controller-image.tar" || true
-  fi
   tpf_refresh_manifest || true
 fi
 
@@ -3126,10 +2865,6 @@ if appliance_pack_wanted storage-network; then
   create_gzip_tarball "${STORAGE_NETWORK_ARCHIVE}" "$(dirname "${STORAGE_NETWORK_BUNDLE_DIR}")" "$(basename "${STORAGE_NETWORK_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${STORAGE_NETWORK_ARCHIVE}")
 fi
-if appliance_pack_wanted build-workflows; then
-  create_gzip_tarball "${BUILD_WORKFLOWS_ARCHIVE}" "$(dirname "${BUILD_WORKFLOWS_BUNDLE_DIR}")" "$(basename "${BUILD_WORKFLOWS_BUNDLE_DIR}")"
-  EXPORTED_ARCHIVES+=("${BUILD_WORKFLOWS_ARCHIVE}")
-fi
 if appliance_pack_wanted deviceuser; then
   create_gzip_tarball "${DEVICEUSER_ARCHIVE}" "$(dirname "${DEVICEUSER_BUNDLE_DIR}")" "$(basename "${DEVICEUSER_BUNDLE_DIR}")"
   EXPORTED_ARCHIVES+=("${DEVICEUSER_ARCHIVE}")
@@ -3156,7 +2891,6 @@ python3 "${SCRIPT_DIR}/write-release-index.py" "${RELEASE_INDEX}" "${PRODUCT_VER
   "$(basename "${BUNDLE_ARCHIVE}")" \
   "$(basename "${APP_STACK_ARCHIVE}")" \
   "$(basename "${STORAGE_NETWORK_ARCHIVE}")" \
-  "$(basename "${BUILD_WORKFLOWS_ARCHIVE}")" \
   "$(basename "${DEVICEUSER_ARCHIVE}")" \
   "$(basename "${CPU_LLM_ARCHIVE}")" \
   "$(basename "${ACC_LLM_ARCHIVE}")" \
@@ -3189,9 +2923,6 @@ if appliance_pack_wanted app-stack; then
 fi
 if appliance_pack_wanted storage-network; then
   echo "  ${STORAGE_NETWORK_BUNDLE_DIR}"
-fi
-if appliance_pack_wanted build-workflows; then
-  echo "  ${BUILD_WORKFLOWS_BUNDLE_DIR}"
 fi
 if appliance_pack_wanted deviceuser; then
   echo "  ${DEVICEUSER_BUNDLE_DIR}"

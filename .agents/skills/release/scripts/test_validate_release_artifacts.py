@@ -53,10 +53,6 @@ def populate_positive_case(tmp: Path, *, include_host_packages: bool = True) -> 
     write(tmp / "release-input" / "provenance" / "appliance.provenance.json", "{}")
     write(tmp / "release-input" / "notices" / "THIRD-PARTY-NOTICES.txt", "notice")
     write(tmp / "release-input" / "tests" / "conformance.txt", "tests")
-    write(tmp / "release-input" / "chart" / "argo-workflows-1.0.0.tgz", "chart")
-    write(tmp / "release-input" / "crds" / "workflows.yaml", "crd")
-    write(tmp / "release-input" / "images" / "workflow-controller.tar", "controller")
-    write(tmp / "release-input" / "images" / "workflow-executor.tar", "executor")
     write(tmp / "release-input" / "images" / "buildah.tar", "buildah")
     write(tmp / "release-input" / "chart" / "appliance-registry-2.1.11.tgz", "artifact server chart")
     write_mismatched_oci_archive(
@@ -136,10 +132,6 @@ ingress:
     "provenance": {"path": "provenance", "manifestDigest": "sha256:provenance"},
     "notices": {"path": "notices", "manifestDigest": "sha256:notices"},
     "tests": {"path": "tests", "manifestDigest": "sha256:tests"},
-    "workflowsChart": {"path": "chart/argo-workflows-1.0.0.tgz", "digest": "sha256:chart", "sizeBytes": 5},
-    "workflowsCRDs": {"path": "crds", "manifestDigest": "sha256:crds"},
-    "workflowControllerImage": {"path": "images/workflow-controller.tar", "digest": "sha256:controller", "sizeBytes": 10, "imageReference": "quay.io/argoproj/workflow-controller:v3.5.10"},
-    "workflowExecutorImage": {"path": "images/workflow-executor.tar", "digest": "sha256:executor", "sizeBytes": 8, "imageReference": "quay.io/argoproj/argoexec:v3.5.10"},
     "extraOCIImages": [
       {"path": "images/buildah.tar", "digest": "sha256:buildah", "sizeBytes": 6, "imageReference": "registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
     ]
@@ -177,10 +169,6 @@ ingress:
     {"targetPath": "charts/appliance-inference-0.6.5.tgz", "digest": "sha256:inference-chart", "sizeBytes": 15},
     {"targetPath": "artifacts/appliance-metadata-bundle-1.0.0.0.tar.zst", "digest": "sha256:policy", "sizeBytes": 6},
     {"targetPath": "configuration/values.yaml", "digest": "sha256:values", "sizeBytes": 200},
-    {"targetPath": "charts/argo-workflows-1.0.0.tgz", "digest": "sha256:chart", "sizeBytes": 5},
-    {"targetPath": "kubernetes/crds/crds/workflows.yaml", "digest": "sha256:crd", "sizeBytes": 3},
-    {"targetPath": "oci-images/workflow-controller.tar", "digest": "sha256:controller", "sizeBytes": 10, "imageReference": "quay.io/argoproj/workflow-controller:v3.5.10"},
-    {"targetPath": "oci-images/workflow-executor.tar", "digest": "sha256:executor", "sizeBytes": 8, "imageReference": "quay.io/argoproj/argoexec:v3.5.10"},
     {"targetPath": "oci-images/buildah.tar", "digest": "sha256:buildah", "sizeBytes": 6, "imageReference": "registry.local/buildah@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
   ]
 }
@@ -212,7 +200,7 @@ def test_positive_case() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp)
-        result = run_validator(tmp, "--require-workflows")
+        result = run_validator(tmp)
         if result.returncode != 0:
             raise AssertionError(result.stderr)
 
@@ -248,7 +236,7 @@ def test_rejects_missing_host_packages_when_flags_false() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp, include_host_packages=False)
-        result = run_validator(tmp, "--require-workflows")
+        result = run_validator(tmp)
         if result.returncode == 0:
             raise AssertionError("missing host-packages were accepted when install flags are false")
         if "hostPackages" not in result.stderr and "host-packages" not in result.stderr.lower():
@@ -296,10 +284,6 @@ def test_foundation_pack_allows_catalog_optional_artifacts_absent_from_release_i
             "inferenceRuntimeImage",
             "inferenceManagerImage",
             "inferenceChart",
-            "workflowsChart",
-            "workflowsCRDs",
-            "workflowControllerImage",
-            "workflowExecutorImage",
             "extraOCIImages",
         ):
             release_input["artifacts"].pop(key, None)
@@ -335,8 +319,6 @@ def test_foundation_pack_allows_catalog_optional_artifacts_absent_from_release_i
                     "coredns",
                     "appliance-dns",
                     "inference",
-                    "argo-workflows",
-                    "workflow-",
                     "buildah",
                 )
             )
@@ -351,7 +333,7 @@ def test_positive_case_with_nested_bundle_root() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case_with_nested_bundle(tmp)
-        result = run_validator(tmp, "--require-workflows")
+        result = run_validator(tmp)
         if result.returncode != 0:
             raise AssertionError(result.stderr)
 
@@ -365,7 +347,7 @@ def test_allows_empty_directory_artifacts() -> None:
             for child in list(directory.rglob("*")):
                 if child.is_file():
                     child.unlink()
-            result = run_validator(tmp, "--require-workflows")
+            result = run_validator(tmp)
         if result.returncode != 0:
             raise AssertionError(result.stderr)
 
@@ -469,7 +451,7 @@ def test_accepts_host_packages_when_install_host_flags_false() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp, include_host_packages=True)
-        result = run_validator(tmp, "--require-workflows")
+        result = run_validator(tmp)
         if result.returncode != 0:
             raise AssertionError(result.stderr)
 
@@ -506,35 +488,6 @@ def test_rejects_mismatched_ui_values_image_reference() -> None:
         if result.returncode == 0:
             raise AssertionError("mismatched UI values image reference was accepted")
         if "bundle values ui.image imageReference mismatch" not in result.stderr:
-            raise AssertionError(result.stderr)
-
-
-def test_rejects_workspace_provisioner_path_ref_mismatch() -> None:
-    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
-        tmp = Path(tmp_dir)
-        populate_positive_case(tmp)
-        old_path = tmp / "release-input" / "images" / "buildah.tar"
-        new_path = tmp / "release-input" / "images" / "workspace-provisioner-image.tar"
-        old_path.rename(new_path)
-        release_input_path = tmp / "release-input" / "release-input.json"
-        release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
-        release_input["artifacts"]["extraOCIImages"][0]["path"] = "images/workspace-provisioner-image.tar"
-        # Keep the wrong dev-build-style ref to simulate the pairing bug.
-        release_input["artifacts"]["extraOCIImages"][0]["imageReference"] = (
-            "registry.local/dev-build@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        )
-        release_input_path.write_text(json.dumps(release_input), encoding="utf-8")
-        manifest_path = tmp / "bundle" / "release-manifest.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        for entry in manifest["entries"]:
-            if entry.get("targetPath") == "oci-images/buildah.tar":
-                entry["targetPath"] = "oci-images/workspace-provisioner-image.tar"
-                entry["imageReference"] = release_input["artifacts"]["extraOCIImages"][0]["imageReference"]
-        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        result = run_validator(tmp)
-        if result.returncode == 0:
-            raise AssertionError("workspace-provisioner path/ref mismatch was accepted")
-        if "implies imageReference containing 'workspace-provisioner'" not in result.stderr:
             raise AssertionError(result.stderr)
 
 
@@ -587,51 +540,6 @@ def test_accepts_dot_slash_prefixed_dns_oci_archive() -> None:
         result = run_validator(tmp)
         if result.returncode != 0:
             raise AssertionError(result.stderr or result.stdout)
-
-
-def test_rejects_oci_archive_annotation_digest_mismatch() -> None:
-    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
-        tmp = Path(tmp_dir)
-        populate_positive_case(tmp)
-        content_digest = "sha256:5e1543841d987081a1e0e37305039b2bb9908592a4cddad95b4c4c49d07653a3"
-        annotated_ref = (
-            "registry.local/workspace-provisioner@"
-            "sha256:77418e6e7c7f434c4a98eaff04ef16840cf03649c881c03948e3e213923e3136"
-        )
-        archive_path = tmp / "release-input" / "images" / "workspace-provisioner-image.tar"
-        write_mismatched_oci_archive(archive_path, annotated_ref, content_digest)
-        release_input_path = tmp / "release-input" / "release-input.json"
-        release_input = json.loads(release_input_path.read_text(encoding="utf-8"))
-        release_input["artifacts"]["extraOCIImages"] = [
-            {
-                "path": "images/workspace-provisioner-image.tar",
-                "digest": "sha256:workspace-provisioner",
-                "sizeBytes": archive_path.stat().st_size,
-                "imageReference": annotated_ref,
-            }
-        ]
-        release_input_path.write_text(json.dumps(release_input), encoding="utf-8")
-        manifest_path = tmp / "bundle" / "release-manifest.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest["entries"] = [
-            entry
-            for entry in manifest["entries"]
-            if entry.get("targetPath") != "oci-images/buildah.tar"
-        ]
-        manifest["entries"].append(
-            {
-                "targetPath": "oci-images/workspace-provisioner-image.tar",
-                "digest": "sha256:workspace-provisioner",
-                "sizeBytes": archive_path.stat().st_size,
-                "imageReference": annotated_ref,
-            }
-        )
-        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        result = run_validator(tmp)
-        if result.returncode == 0:
-            raise AssertionError("OCI archive annotation/content digest mismatch was accepted")
-        if "does not match imageReference digest" not in result.stderr and "annotation digest" not in result.stderr:
-            raise AssertionError(result.stderr)
 
 
 def test_rejects_artifact_server_annotation_and_version_mismatch() -> None:
@@ -755,73 +663,6 @@ def test_allows_omitted_inference_without_require_flag() -> None:
             raise AssertionError("missing inference accepted with --require-inference")
 
 
-def test_foundation_pack_allows_build_workflows_extra_oci_absent_from_bundle() -> None:
-    """Multi-pack builds put build-workflows extras in release-input but not foundation."""
-    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
-        tmp = Path(tmp_dir)
-        populate_positive_case(tmp)
-        manifest_path = tmp / "bundle" / "release-manifest.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest["entries"] = [
-            entry
-            for entry in manifest["entries"]
-            if "buildah" not in str(entry.get("targetPath") or "")
-        ]
-        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        result = run_validator(tmp, "--pack", "foundation")
-        if result.returncode != 0:
-            raise AssertionError(result.stderr)
-        result = run_validator(
-            tmp,
-            "--pack",
-            "build-workflows",
-            "--expected-extra-oci-image-refs",
-            "registry.local/buildah",
-        )
-        if result.returncode == 0:
-            raise AssertionError("build-workflows pack accepted without extraOCIImages in bundle")
-        if "extraOCIImages[0]" not in result.stderr and "missing" not in result.stderr.lower():
-            raise AssertionError(result.stderr)
-
-
-def test_build_workflows_pack_skips_foundation_values_file() -> None:
-    """Build-workflows archives do not ship configuration/values.yaml."""
-    with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
-        tmp = Path(tmp_dir)
-        populate_positive_case(tmp)
-        manifest_path = tmp / "bundle" / "release-manifest.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        # Keep only build-workflows-relevant entries (no values.yaml).
-        keep_prefixes = (
-            "charts/argo-workflows",
-            "kubernetes/crds/",
-            "oci-images/workflow-",
-            "oci-images/buildah",
-            "oci-images/artifact-server",
-            "charts/appliance-registry",
-            "oci-images/coredns",
-            "charts/appliance-dns",
-        )
-        manifest["entries"] = [
-            entry
-            for entry in manifest["entries"]
-            if any(str(entry.get("targetPath") or "").startswith(p) for p in keep_prefixes)
-        ]
-        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        values_path = tmp / "bundle" / "configuration" / "values.yaml"
-        if values_path.exists():
-            values_path.unlink()
-        result = run_validator(
-            tmp,
-            "--pack",
-            "build-workflows",
-            "--expected-extra-oci-image-refs",
-            "registry.local/buildah",
-        )
-        if result.returncode != 0:
-            raise AssertionError(result.stderr)
-
-
 def test_rejects_inference_annotation_and_version_mismatch() -> None:
     with tempfile.TemporaryDirectory(prefix="release-artifact-validator-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -890,7 +731,7 @@ def test_rejects_unidentified_artifact_server_image_path() -> None:
             raise AssertionError(result.stderr or "unidentified Artifact Server path accepted")
 
 
-def test_storage_network_pack_is_independent_of_workflows() -> None:
+def test_storage_network_pack_is_independent_of_optional_packs() -> None:
     with tempfile.TemporaryDirectory(prefix="release-storage-pack-") as tmp_dir:
         tmp = Path(tmp_dir)
         populate_positive_case(tmp)
@@ -915,36 +756,8 @@ def test_storage_network_pack_is_independent_of_workflows() -> None:
             raise AssertionError("storage-network accepted missing CoreDNS")
 
 
-def test_companion_extra_image_reference_is_still_checked() -> None:
-    with tempfile.TemporaryDirectory(prefix="release-companion-pack-") as tmp_dir:
-        tmp = Path(tmp_dir)
-        populate_positive_case(tmp)
-        manifest_path = tmp / "bundle" / "release-manifest.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        moved = [entry for entry in manifest["entries"]
-                 if "buildah" in str(entry.get("targetPath") or "")]
-        assert moved
-        manifest["entries"] = [entry for entry in manifest["entries"] if entry not in moved]
-        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        companion = tmp / "companion"
-        companion.mkdir()
-        companion_manifest = companion / "release-manifest.json"
-        companion_manifest.write_text(json.dumps({"entries": moved}), encoding="utf-8")
-        result = run_validator(tmp, "--pack", "build-workflows",
-                               "--companion-bundle-root", str(companion))
-        if result.returncode != 0:
-            raise AssertionError(result.stderr)
-        moved[0]["imageReference"] = "registry.local/wrong@sha256:" + "a" * 64
-        companion_manifest.write_text(json.dumps({"entries": moved}), encoding="utf-8")
-        result = run_validator(tmp, "--pack", "build-workflows",
-                               "--companion-bundle-root", str(companion))
-        if result.returncode == 0:
-            raise AssertionError("mismatched companion image reference accepted")
-
-
 def main() -> None:
-    test_storage_network_pack_is_independent_of_workflows()
-    test_companion_extra_image_reference_is_still_checked()
+    test_storage_network_pack_is_independent_of_optional_packs()
     test_positive_case()
     test_rejects_deployment_topology_mismatch()
     test_rejects_missing_host_packages_when_flags_false()
@@ -956,16 +769,12 @@ def main() -> None:
     test_rejects_placeholder_extra_oci_image_digest()
     test_rejects_missing_expected_extra_oci_image_ref()
     test_allows_expected_extra_oci_image_ref_with_stale_advisory_digest()
-    test_rejects_workspace_provisioner_path_ref_mismatch()
-    test_rejects_oci_archive_annotation_digest_mismatch()
     test_accepts_dot_slash_prefixed_dns_oci_archive()
     test_rejects_artifact_server_annotation_and_version_mismatch()
     test_rejects_dns_annotation_and_version_mismatch()
     test_cpu_llm_pack_requires_verified_runtime()
     test_inference_runtime_contract()
     test_allows_omitted_inference_without_require_flag()
-    test_foundation_pack_allows_build_workflows_extra_oci_absent_from_bundle()
-    test_build_workflows_pack_skips_foundation_values_file()
     test_rejects_inference_annotation_and_version_mismatch()
     test_rejects_legacy_zot_image_path_name()
     test_rejects_unidentified_artifact_server_image_path()

@@ -339,37 +339,6 @@ def validate_runtime_values(artifacts: dict, bundle_values: dict) -> list:
     return checked
 
 
-def validate_workflows(artifacts: dict, release_input_dir: Path, entries_by_path: dict) -> list:
-    checked = []
-    chart = require_artifact(artifacts, "workflowsChart")
-    chart_path = require_existing_release_path(release_input_dir, chart["path"], "workflowsChart")
-    require_bundle_entry(entries_by_path, f"charts/{chart_path.name}", "workflows chart")
-    checked.append("workflowsChart")
-
-    crds = require_artifact(artifacts, "workflowsCRDs")
-    crds_path = require_existing_release_path(release_input_dir, crds["path"], "workflowsCRDs")
-    if crds_path.is_file():
-        require_bundle_entry(entries_by_path, f"kubernetes/crds/{crds_path.name}", "workflows CRDs")
-    else:
-        prefix = f"kubernetes/crds/{str(crds['path']).rstrip('/')}/"
-        matches = [path for path in entries_by_path if path.startswith(prefix)]
-        if not matches:
-            raise ValueError(f"bundle manifest is missing workflow CRD entries under {prefix}")
-        for path in matches:
-            require_bundle_entry(entries_by_path, path, "workflow CRD")
-    checked.append("workflowsCRDs")
-
-    for key in ("workflowControllerImage", "workflowExecutorImage"):
-        artifact = require_artifact(artifacts, key)
-        image_path = require_existing_release_path(release_input_dir, artifact["path"], key)
-        image_ref = require_image_reference(artifact, key)
-        bundle_path = f"oci-images/{image_path.name}"
-        entry = require_bundle_entry(entries_by_path, bundle_path, key)
-        require_matching_bundle_image_reference(entry, image_ref, bundle_path, key)
-        checked.append(key)
-    return checked
-
-
 def validate_artifact_server(
     release_input: dict,
     bundle_manifest: dict,
@@ -963,16 +932,6 @@ def validate_extra_oci_images(
         require_oci_archive_reference_matches_content(
             image_path, image_ref, f"extraOCIImages[{idx}]"
         )
-        # Catch archive/reference pairing bugs for known appliance-owned images.
-        # Example failure mode: workspace-provisioner.tar labeled as dev-build.
-        path_name = image_path.name.lower()
-        ref_lower = image_ref.lower()
-        for token in ("workspace-provisioner",):
-            if token in path_name and token not in ref_lower:
-                raise ValueError(
-                    f"release-input artifacts.extraOCIImages[{idx}] path {rel_path!r} "
-                    f"implies imageReference containing {token!r}, got {image_ref!r}"
-                )
         if require_in_bundle:
             bundle_path = f"oci-images/{image_path.name}"
             entry = require_bundle_entry(entries_by_path, bundle_path, f"extraOCIImages[{idx}]")
@@ -1001,28 +960,26 @@ def validate_extra_oci_images(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate release-input workflows engine/extra OCI artifacts in a final bundle manifest."
+        description="Validate release-input and extra OCI artifacts in a final bundle manifest."
     )
     parser.add_argument("--release-input-root", required=True)
     parser.add_argument("--bundle-root", required=True)
     parser.add_argument("--companion-bundle-root", action="append", default=[], help="Additional signed delivery pack roots used to locate supplemental OCI images; every image reference remains required and checked.")
     parser.add_argument(
         "--pack",
-        choices=("foundation", "storage-network", "build-workflows", "deviceuser", *INFERENCE_PACKAGES, "open-webui", "video"),
+        choices=("foundation", "storage-network", "deviceuser", *INFERENCE_PACKAGES, "open-webui", "video"),
         default="foundation",
         help=(
             "Which signed pack archive is under --bundle-root. "
             "foundation: base product checks plus host-agent daemon and host packages; "
-            "build-workflows/deviceuser extras are release-input-only. "
+            "deviceuser extras are release-input-only. "
             "storage-network: artifact-server and dns images/charts. "
-            "build-workflows: workflows and supplemental OCI images (including companion delivery packs). "
             "deviceuser: host-agent OCI image must be present in this pack. "
             "inference package: inference chart/image/version must be present in this pack. "
             "open-webui: Open WebUI + gateway images must be present in this pack. "
             "video: video chart/image/version must be present in this pack."
         ),
     )
-    parser.add_argument("--require-workflows", action="store_true")
     parser.add_argument("--require-postgres", action="store_true")
     parser.add_argument(
         "--require-inference",
@@ -1037,12 +994,11 @@ def main() -> int:
     parser.add_argument(
         "--expected-extra-oci-image-refs",
         default="",
-        help="Comma-separated digest-pinned extra OCI image references expected in release-input (and in-bundle when --pack=build-workflows).",
+        help="Comma-separated digest-pinned extra OCI image references expected in release-input.",
     )
     args = parser.parse_args()
     expected_extra_refs = parse_csv(args.expected_extra_oci_image_refs)
     pack = args.pack
-    require_workflows = args.require_workflows or pack == "build-workflows"
     require_inference = args.require_inference or pack in INFERENCE_PACKAGES
     require_video = args.require_video or pack == "video"
 
@@ -1157,12 +1113,6 @@ def main() -> int:
                 ),
             }
         )
-        if require_workflows:
-            checked["workflows"] = validate_workflows(
-                artifacts, release_input_path.parent, entries_by_path
-            )
-        else:
-            checked["workflows"] = []
         if require_inference:
             checked["inference"] = validate_inference(
                 release_input,
@@ -1192,27 +1142,6 @@ def main() -> int:
             "dns": validate_dns(
                 release_input, bundle_manifest, artifacts,
                 release_input_path.parent, entries_by_path, require_in_bundle=True,
-            ),
-        })
-    elif pack == "build-workflows":
-        supplemental_entries = dict(entries_by_path)
-        for companion_root in args.companion_bundle_root:
-            companion_manifest = first_named(Path(companion_root), "release-manifest.json")
-            if companion_manifest is None:
-                raise ValueError("companion delivery pack is missing release-manifest.json")
-            companion = json.loads(companion_manifest.read_text(encoding="utf-8"))
-            for entry in companion.get("entries", []):
-                path = entry.get("targetPath") or entry.get("path")
-                if path in supplemental_entries and supplemental_entries[path] != entry:
-                    raise ValueError(f"conflicting delivery pack entry: {path}")
-                supplemental_entries[path] = entry
-        checked.update({
-            "workflows": validate_workflows(
-                artifacts, release_input_path.parent, entries_by_path,
-            ),
-            "extraOCIImages": validate_extra_oci_images(
-                artifacts, release_input_path.parent, supplemental_entries,
-                expected_extra_refs, require_in_bundle=True,
             ),
         })
     elif pack == "deviceuser":
