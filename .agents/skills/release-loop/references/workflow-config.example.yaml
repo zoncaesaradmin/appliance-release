@@ -44,4 +44,6 @@ retry:
   max_attempts: 3
 
 # Base directory for logs. A UTC timestamp subdirectory is created per run.
-run_root: /Users/zoncaesar/ws/appliance-release/.run/release-loop
+# Keep this outside release_root/.run: the three-repo commit helper runs make
+# clean, and appliance-release's clean target removes its .run directory.
+run_root: ~/.run/appliance-release-loop

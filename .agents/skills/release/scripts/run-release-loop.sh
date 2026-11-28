@@ -217,8 +217,13 @@ MAX_ATTEMPTS=$(cfg_optional retry.max_attempts)
 [[ "$MAX_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] || die "retry.max_attempts must be a positive integer"
 ((MAX_ATTEMPTS <= 20)) || die "retry.max_attempts must not exceed 20"
 
-RUN_ROOT=$(resolve_path "$(cfg_optional run_root)" "$RELEASE_ROOT/.run/release-loop")
-[[ -n "$RUN_ROOT" ]] || RUN_ROOT="$RELEASE_ROOT/.run/release-loop"
+RUN_ROOT=$(resolve_path "$(cfg_optional run_root)" "$HOME/.run/appliance-release-loop")
+[[ -n "$RUN_ROOT" ]] || RUN_ROOT="$HOME/.run/appliance-release-loop"
+case "$RUN_ROOT/" in
+  "$RELEASE_ROOT/.run/"*)
+    die "run_root must not be under release_root/.run because the three-repo commit helper cleans that directory"
+    ;;
+esac
 RUN_ID=$(date -u +%Y%m%dT%H%M%SZ)
 RUN_DIR="$RUN_ROOT/$RUN_ID"
 mkdir -p "$RUN_DIR"
