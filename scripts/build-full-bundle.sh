@@ -2466,6 +2466,7 @@ else
 fi
 
 POSTGIS_PACKAGE_LINES=""
+POSTGIS_REQUIRED="${NEED_POSTGIS_IMAGE:-0}"
 if [[ "${NEED_POSTGIS_IMAGE:-0}" == "1" ]]; then
   TPF_FP_INPUTS=("${POSTGIS_SOURCE_IMAGE}" "${TARGET_ARCH}")
   set +e
@@ -2706,7 +2707,7 @@ ${BLOB_STORAGE_PACKAGE_LINES}BLOB_STORAGE_IMAGE_REF="\$(tr -d '\r\n' < "\${BLOB_
 ${MESSAGE_BROKER_PACKAGE_LINES}MESSAGE_BROKER_IMAGE_REF="\$(tr -d '\r\n' < "\${MESSAGE_BROKER_IMAGE_REF_FILE}")"
 ${POSTGRES_PACKAGE_LINES}POSTGRES_IMAGE_REF="\$(tr -d '\r\n' < "\${POSTGRES_IMAGE_REF_FILE}")"
 POSTGIS_IMAGE_REF=""
-if [[ "\${NEED_POSTGIS_IMAGE:-0}" == "1" ]]; then
+if [[ "$(shell_quote "${POSTGIS_REQUIRED}")" == "1" ]]; then
 ${POSTGIS_PACKAGE_LINES}
   if [[ ! -s "\${POSTGIS_IMAGE_OUT}" ]]; then
     make package-postgis-image-archive \\
