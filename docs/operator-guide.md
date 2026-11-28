@@ -9,12 +9,9 @@ and host-baseline guidance in one place.
 All lifecycle commands below should be run with `sudo`, because the appliance
 state directory is `/var/lib/zon/state` and the installer owns K3s on the host.
 
-The Control Plane always provisions an `apps` namespace for Application
-Management, even when no application is installed. It is separate from
-`ace-apps`, which is reserved for co-packaged UI, host-agent, and Automation
+The `ace-apps` namespace contains co-packaged UI, host-agent, and Automation
 Runtime components. Shared application prerequisites are isolated in
-`ace-app-core` and are installed before `ace-apps`. Application Management does
-not modify Action Runtime.
+`ace-app-core` and are installed before `ace-apps`.
 
 ## Qualified Host Baseline
 

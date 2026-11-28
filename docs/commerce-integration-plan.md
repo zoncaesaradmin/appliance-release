@@ -105,8 +105,8 @@ control-plane chart so the release path remains one chart and one installer
 contract.
 
 The capability is included in the app-stack delivery pack and is activated only
-by `application-core`. Do not reuse the existing `applications` capability;
-that capability means host-agent-backed application management.
+by `application-core`. Keep commerce independent from host management and
+other application-facing capabilities.
 
 The `application-auth` capability is separate from `application-identity` and
 is enabled by the same `application-core` profile. Its capability metadata and

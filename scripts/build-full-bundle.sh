@@ -350,18 +350,6 @@ POSTGRES_CACHE_NAME="${CACHE_NAME}"
 POSTGRES_CACHE_TAG_BASE="${CACHE_TAG_BASE}"
 unset UPSTREAM_IMAGE CACHE_NAME CACHE_TAG_BASE POSTGRES_VERSION
 
-JELLYFIN_PINS_FILE="${RELEASE_REPO_DIR}/deps/jellyfin/pins.env"
-if [[ ! -f "${JELLYFIN_PINS_FILE}" ]]; then
-  echo "build-full-bundle: missing jellyfin seed pin: ${JELLYFIN_PINS_FILE}" >&2
-  exit 1
-fi
-# shellcheck disable=SC1090
-source "${JELLYFIN_PINS_FILE}"
-JELLYFIN_SOURCE_IMAGE="${UPSTREAM_IMAGE}"
-JELLYFIN_CACHE_NAME="${CACHE_NAME}"
-JELLYFIN_CACHE_TAG="${CACHE_TAG}"
-JELLYFIN_RUNTIME_REFERENCE="${RUNTIME_REFERENCE}"
-
 # One build = one TARGET_ARCH (product-level; pack IDs stay arch-agnostic).
 # Required — no amd64 default; fail closed when unset so arch misses surface early.
 TARGET_ARCH="${USER_TARGET_ARCH:-${TARGET_ARCH-}}"
@@ -1852,9 +1840,6 @@ if offline_build_enabled; then
   if appliance_pack_wanted std-llm || appliance_pack_wanted acc-llm; then
     require_seed_package inference
   fi
-  if appliance_pack_wanted deviceuser; then
-    require_seed_package jellyfin
-  fi
   if [[ "${NEED_ARTIFACT_SERVER_IMAGE:-0}" == "1" ]]; then
     ARTIFACT_SERVER_SOURCE_IMAGE="$(lan_cache_ref "zot-linux-${TARGET_ARCH}" "v${ARTIFACT_SERVER_VERSION}")"
   fi
@@ -1866,9 +1851,6 @@ if offline_build_enabled; then
   POSTGRES_SOURCE_IMAGE="$(lan_cache_ref "${POSTGRES_CACHE_NAME}" "${POSTGRES_CACHE_TAG_BASE}-${TARGET_ARCH}")"
   BLOB_STORAGE_BINARY_URL=""
   BLOB_STORAGE_BINARY_SHA256=""
-  if appliance_pack_wanted deviceuser; then
-    JELLYFIN_SOURCE_IMAGE="$(lan_cache_ref "${JELLYFIN_CACHE_NAME}" "${JELLYFIN_CACHE_TAG}")"
-  fi
   if appliance_pack_wanted std-llm; then
     INFERENCE_IMAGE_PULL_REF="$(lan_cache_ref ollama "${INFERENCE_VERSION}-${TARGET_ARCH}")"
   fi
@@ -2041,17 +2023,6 @@ APPLICATION_IDENTITY_IMAGE_REF=""
 AUTH_SERVICE_IMAGE_OUT="/workspace/.run/auth-service-image.tar"
 AUTH_SERVICE_IMAGE_REF_FILE="/workspace/.run/auth-service-image.reference"
 AUTH_SERVICE_IMAGE_REF=""
-
-if [[ "${NEED_JELLYFIN_IMAGE:-0}" == "1" ]]; then
-  JELLYFIN_IMAGE_ARCHIVE_FOR_DEV="/workspace/.run/jellyfin-image.tar"
-  JELLYFIN_IMAGE_REF="$(export_bundled_oci_archive "${JELLYFIN_SOURCE_IMAGE}" "${JELLYFIN_RUNTIME_REFERENCE}" "${CODE_REPO_DIR}/.run/jellyfin-image.tar")"
-  if [[ "${JELLYFIN_IMAGE_REF}" != "${JELLYFIN_RUNTIME_REFERENCE}" ]]; then
-    echo "build-full-bundle: Jellyfin re-export ${JELLYFIN_IMAGE_REF} does not match catalog pin ${JELLYFIN_RUNTIME_REFERENCE}" >&2
-    exit 1
-  fi
-  BUNDLED_IMAGE_ARCHIVES+=("${JELLYFIN_IMAGE_ARCHIVE_FOR_DEV}")
-  BUNDLED_IMAGE_REFS+=("${JELLYFIN_IMAGE_REF}")
-fi
 
 # Note: registry.local/dev-build is intentionally NOT packaged. The DEV_* image
 # remains build-host tooling only; runtime builder images are operator-supplied.

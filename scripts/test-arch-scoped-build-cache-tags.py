@@ -23,8 +23,6 @@ BUNDLE = ROOT / "scripts" / "build-full-bundle.sh"
 # Packages that publish arch-specific OCI images into build-cache/.
 # Exceptions:
 #   - development-container: tags are already latest-<arch> / <ver>-<arch>
-#   - jellyfin: amd64-only product; tag includes architecture and the pinned
-#     upstream manifest digest prefix so stale mutable cache entries cannot win
 #   - host-packages / platform-inputs: files API paths include TARGET_ARCH
 #   - zot: arch is in the image *name* (zot-linux-${TARGET_ARCH})
 REQUIRED_CACHE_TAG_BASE = {
@@ -50,7 +48,6 @@ REQUIRED_LAN_CACHE_SNIPPETS = [
     'lan_cache_ref coredns "v${DNS_VERSION}-${TARGET_ARCH}"',
     'lan_cache_ref "${BLOB_STORAGE_CACHE_NAME}" "${BLOB_STORAGE_CACHE_TAG_BASE}-${TARGET_ARCH}"',
     'lan_cache_ref ollama "${INFERENCE_VERSION}-${TARGET_ARCH}"',
-    'lan_cache_ref "${JELLYFIN_CACHE_NAME}" "${JELLYFIN_CACHE_TAG}"',
     'lan_cache_ref golang "1.26-${HOST_ARCH}"',
     'lan_cache_ref alpine-3.24.1-runtime "3.24.1-${TARGET_ARCH}"',
     'lan_cache_ref node "22-alpine-${HOST_ARCH}"',
@@ -116,21 +113,6 @@ def main() -> None:
             text = script.read_text(encoding="utf-8")
             if 'CACHE_TAG="${CACHE_TAG_BASE}-${TARGET_ARCH}"' not in text:
                 fail(f"{script}: must set CACHE_TAG=\"${{CACHE_TAG_BASE}}-${{TARGET_ARCH}}\"")
-
-    jellyfin_pins = (DEPS / "jellyfin" / "pins.env").read_text(encoding="utf-8")
-    source_match = re.search(r"(?m)^UPSTREAM_IMAGE=.*@sha256:([0-9a-f]{64})$", jellyfin_pins)
-    tag_match = re.search(r"(?m)^CACHE_TAG=(.+)$", jellyfin_pins)
-    if source_match is None or tag_match is None:
-        fail("jellyfin/pins.env must declare digest-pinned UPSTREAM_IMAGE and CACHE_TAG")
-    if not tag_match.group(1).endswith("-" + source_match.group(1)[:12]):
-        fail("jellyfin/pins.env CACHE_TAG must end with the pinned upstream digest prefix")
-
-    catalog_path = ROOT.parent / "appliance-code" / "metadata-bundle" / "base" / "applications" / "catalog.yaml"
-    if catalog_path.is_file():
-        runtime_match = re.search(r"(?m)^RUNTIME_REFERENCE=(registry\.local/jellyfin@sha256:[0-9a-f]{64})$", jellyfin_pins)
-        catalog_match = re.search(r"(?m)^\s*reference:\s*(registry\.local/jellyfin@sha256:[0-9a-f]{64})$", catalog_path.read_text(encoding="utf-8"))
-        if runtime_match is None or catalog_match is None or runtime_match.group(1) != catalog_match.group(1):
-            fail("Jellyfin release pin and appliance-code application catalog reference must match")
 
     bundle = BUNDLE.read_text(encoding="utf-8")
     if 'ui_npm_deps_cache_tag "${UI_NPM_SOURCE_DIR}" "${HOST_ARCH}"' not in bundle:

@@ -85,7 +85,7 @@ and fresh-reinstall behavior.
    Provide a complete, tested legacy export path before the support cutover;
    today's PostgreSQL recovery set alone omits K3s state and is insufficient.
 3. **Application storage.** Decide the qualified HA provider for PostgreSQL,
-   blob/registry objects, workspaces, metadata, model files, video projection,
+   blob/registry objects, workspaces, metadata, model files, video library objects,
    and durable logs. Record persistence, ownership, backup, failure, and
    migration semantics for each. Do not treat an RWO PVC or hostPath as
    replicated merely because its pod can be rescheduled. A hosted VPS must
@@ -226,7 +226,7 @@ cluster lifecycle commands fail closed with recovery instructions.
   and migrate data with checksums and a reversible cutover. PostgreSQL needs
   a documented leader/failover and fencing policy; blob storage and the
   artifact registry need durable object consistency; workspaces, metadata,
-  video projection, inference models, and operator-visible service logs need
+  video library objects, inference models, and operator-visible service logs need
   explicit node failure behavior. Local-only caches may remain local when
   rebuildability is proven. No new runtime dependency may require public
   internet access.

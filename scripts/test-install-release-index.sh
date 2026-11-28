@@ -27,28 +27,30 @@ architecture: amd64
 packs:
   - id: foundation
     filename: appliance-0.1.0-foundation-amd64.tar.gz
-    capabilities: [base, actions, lan-discovery, files, video, application-auth]
+    capabilities: [base, actions, lan-discovery, files, video, guest-access, focus-content, plaintext-http, application-auth]
 capabilityPacks:
   base: foundation
   actions: foundation
   lan-discovery: foundation
   files: foundation
   video: foundation
+  guest-access: foundation
+  focus-content: foundation
+  plaintext-http: foundation
   application-auth: foundation
   artifact: storage-network
   dns: deviceuser
   host: deviceuser
-  applications: deviceuser
   future: future-package
 profiles:
   core:
-    capabilities: [base, actions, lan-discovery, files, applications]
+    capabilities: [base, actions, lan-discovery, files]
   training:
-    capabilities: [base, actions, lan-discovery, files, video]
+    capabilities: [base, actions, lan-discovery, files, video, guest-access, focus-content, plaintext-http]
   storage-landns:
     capabilities: [base, actions, lan-discovery, files, artifact, dns]
   lanllm:
-    capabilities: [base, actions, lan-discovery, inference, applications]
+    capabilities: [base, actions, lan-discovery, inference]
   future-profile:
     capabilities: [base, actions, lan-discovery, future]
   application-core:
@@ -61,7 +63,7 @@ architecture: amd64
 packs:
   - id: foundation
     filename: appliance-0.1.0-foundation-amd64.tar.gz
-    capabilities: [base, actions, lan-discovery, files, video, application-auth]
+    capabilities: [base, actions, lan-discovery, files, video, guest-access, focus-content, plaintext-http, application-auth]
   - id: app-stack
     filename: appliance-0.1.0-app-stack-amd64.tar.gz
     capabilities: [channel-integrations, commerce, application-identity]
@@ -83,10 +85,12 @@ capabilityPacks:
   lan-discovery: foundation
   files: foundation
   video: foundation
+  guest-access: foundation
+  focus-content: foundation
+  plaintext-http: foundation
   artifact: storage-network
   dns: deviceuser
   host: deviceuser
-  applications: deviceuser
   inference: std-llm
   channel-integrations: app-stack
   commerce: app-stack
@@ -98,13 +102,13 @@ capabilityPacks:
   geo-zone-editor: geo-stack
 profiles:
   core:
-    capabilities: [base, actions, lan-discovery, files, applications]
+    capabilities: [base, actions, lan-discovery, files]
   training:
-    capabilities: [base, actions, lan-discovery, files, video]
+    capabilities: [base, actions, lan-discovery, files, video, guest-access, focus-content, plaintext-http]
   storage-landns:
     capabilities: [base, actions, lan-discovery, files, artifact, dns]
   lanllm:
-    capabilities: [base, actions, lan-discovery, inference, applications]
+    capabilities: [base, actions, lan-discovery, inference]
   application-core:
     capabilities: [base, channel-integrations, commerce, application-identity, application-auth]
   geo-zone:
@@ -152,10 +156,10 @@ req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "storage-la
 [[ "${req}" == "deviceuser storage-network" ]] || fail "storage-landns packs: '${req}'"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "lanllm" | tr '\n' ' ' | sed 's/[[:space:]]*$//' )"
-[[ "${req}" == "deviceuser std-llm" ]] || fail "lanllm packs: '${req}'"
+[[ "${req}" == "std-llm" ]] || fail "lanllm packs: '${req}'"
 
 req="$(required_packs_for_profile_from_index "${TMP}/all-packs.yaml" "core" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-[[ "${req}" == "deviceuser" ]] || fail "core packs: '${req}'"
+[[ -z "${req}" ]] || fail "core packs: '${req}'"
 
 # Simulate the install gate: profile needs optional packs, index is foundation-only.
 published="$(published_pack_ids_from_index "${TMP}/foundation-only.yaml")"
