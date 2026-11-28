@@ -2667,6 +2667,7 @@ POSTGRES_IMAGE_OUT="/workspace/.run/postgres-image.tar"
 POSTGRES_IMAGE_REF_FILE="/workspace/.run/postgres-image.reference"
 POSTGIS_IMAGE_OUT="/workspace/.run/postgis-image.tar"
 POSTGIS_IMAGE_REF_FILE="/workspace/.run/postgis-image.reference"
+POSTGIS_SOURCE_IMAGE=$(shell_quote "${POSTGIS_SOURCE_IMAGE}")
 CHANNEL_INTEGRATION_IMAGE_OUT="/workspace/.run/channel-integration-image.tar"
 CHANNEL_INTEGRATION_IMAGE_REF_FILE="/workspace/.run/channel-integration-image.reference"
 CHANNEL_INTEGRATION_IMAGE_REF=""
@@ -2706,7 +2707,16 @@ ${MESSAGE_BROKER_PACKAGE_LINES}MESSAGE_BROKER_IMAGE_REF="\$(tr -d '\r\n' < "\${M
 ${POSTGRES_PACKAGE_LINES}POSTGRES_IMAGE_REF="\$(tr -d '\r\n' < "\${POSTGRES_IMAGE_REF_FILE}")"
 POSTGIS_IMAGE_REF=""
 if [[ "\${NEED_POSTGIS_IMAGE:-0}" == "1" ]]; then
-${POSTGIS_PACKAGE_LINES}POSTGIS_IMAGE_REF="\$(tr -d '\r\n' < "\${POSTGIS_IMAGE_REF_FILE}")"
+${POSTGIS_PACKAGE_LINES}
+  if [[ ! -s "\${POSTGIS_IMAGE_OUT}" ]]; then
+    make package-postgis-image-archive \\
+      OUT_FILE="\${POSTGIS_IMAGE_OUT}" \\
+      REFERENCE_OUT_FILE="\${POSTGIS_IMAGE_REF_FILE}" \\
+      POSTGIS_SOURCE_IMAGE="\${POSTGIS_SOURCE_IMAGE}"
+  fi
+  test -s "\${POSTGIS_IMAGE_OUT}"
+  test -s "\${POSTGIS_IMAGE_REF_FILE}"
+  POSTGIS_IMAGE_REF="\$(tr -d '\r\n' < "\${POSTGIS_IMAGE_REF_FILE}")"
 fi
 # Super-set: always pass host-packages (packages staged at install; services off).
 HOST_PACKAGES_ARGS=(
