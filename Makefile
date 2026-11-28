@@ -172,6 +172,7 @@ verify-release-artifacts:
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_shell_quote_env.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_install_public_helper_config.py"
 	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_target_host_cluster.py"
+	@python3 "$(RELEASE_SKILL_SCRIPT_DIR)/test_run_release_loop.py"
 
 .PHONY: verify
 verify:

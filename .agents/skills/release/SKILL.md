@@ -111,6 +111,19 @@ bash .agents/skills/release/scripts/run-release-from-devhost.sh \
   --install-config ~/lab-install.yaml
 ```
 
+For a bounded agent-assisted loop that also commits and pushes the three
+repositories and can seed offline dependencies, use the separate
+`appliance-release-loop` skill and its tracked wrapper:
+
+```bash
+bash .agents/skills/release/scripts/run-release-loop.sh \
+  --workflow-config ~/.config/zon/geo-ec2-release.yaml
+```
+
+That wrapper still calls this script for the product build/install path; its
+workflow config and repair-hook contract are documented in
+`.agents/skills/release-loop/`.
+
 CLI path presence selects stages (no `build_flow.skip` / `install.skip`):
 
 - `--build-publish-config` → build/publish on the build host

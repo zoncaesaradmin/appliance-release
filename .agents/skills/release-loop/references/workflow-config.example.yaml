@@ -1,0 +1,47 @@
+# One host-local config for appliance-release-loop.
+# Paths may be absolute or relative to this file. Do not put passwords, tokens,
+# private keys, or target-specific secrets in this file.
+
+# Parent directory containing appliance-release, appliance-ctl, appliance-code.
+repo_root: /Users/zoncaesar/ws
+# Optional; defaults to repo_root/appliance-release.
+release_root: /Users/zoncaesar/ws/appliance-release
+
+commit:
+  # The existing three-repo helper. On a host with the skill installed, the
+  # default is $HOME/.codex/skills/appliance-three-repo-commit/scripts/three-repo-commit.sh.
+  script: ~/.codex/skills/appliance-three-repo-commit/scripts/three-repo-commit.sh
+  message: "chore: run automated appliance release"
+  branch: main
+
+release:
+  # Existing product workflow entrypoint; do not replace with a second build path.
+  runner: /Users/zoncaesar/ws/appliance-release/.agents/skills/release/scripts/run-release-from-devhost.sh
+  devhost_config: ~/geo-ec2-devhost.yaml
+  build_publish_config: ~/geo-ec2-build-publish.yaml
+  install_config: ~/geo-ec2-install.yaml
+
+deps:
+  # Enable for an offline build that needs the LAN Artifact Server seed first.
+  enabled: false
+  # Example build host; omit host to run the command on the current machine.
+  host: zonsys@192.168.1.151
+  workdir: /home/zonsys/ws/appliance-release
+  command: TARGET_ARCH=amd64 make seed-build-deps
+  # Usually false: seed once before the first release attempt. Set true when
+  # the repair hook can modify dependency inputs.
+  before_each_attempt: false
+
+repair:
+  # Optional command run on the caller after a failed release. It receives:
+  # RELEASE_LOOP_ATTEMPT, RELEASE_LOOP_RUN_DIR, RELEASE_LOOP_RELEASE_LOG,
+  # RELEASE_LOOP_REPO_ROOT, and the three release-config paths. The command
+  # should inspect/fix local source only; commit/push happens afterward.
+  # command: /home/zonsys/bin/hermes-repair-appliance-release
+  workdir: /Users/zoncaesar/ws
+
+retry:
+  max_attempts: 3
+
+# Base directory for logs. A UTC timestamp subdirectory is created per run.
+run_root: /Users/zoncaesar/ws/appliance-release/.run/release-loop
