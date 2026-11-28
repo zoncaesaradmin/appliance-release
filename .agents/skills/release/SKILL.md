@@ -117,11 +117,13 @@ repositories and can seed offline dependencies, use the separate
 
 ```bash
 bash .agents/skills/release/scripts/run-release-loop.sh \
-  --workflow-config ~/.config/zon/geo-ec2-release.yaml
+  --config ~/lab-devhost.yaml \
+  --build-publish-config ~/lab-build-publish.yaml \
+  --install-config ~/lab-install.yaml
 ```
 
 That wrapper still calls this script for the product build/install path; its
-workflow config and repair-hook contract are documented in
+flags and repair-hook contract are documented in
 `.agents/skills/release-loop/`.
 
 CLI path presence selects stages (no `build_flow.skip` / `install.skip`):

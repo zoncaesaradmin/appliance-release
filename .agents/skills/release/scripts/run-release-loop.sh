@@ -8,12 +8,15 @@ set -Eeuo pipefail
 set +H
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_QUERY="${SCRIPT_DIR}/config_query.py"
 DEFAULT_RELEASE_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 
 usage() {
   cat <<'EOF'
-usage: run-release-loop.sh --workflow-config PATH [--message MESSAGE]
+usage: run-release-loop.sh \
+  --config PATH \
+  --build-publish-config PATH \
+  --install-config PATH \
+  [options]
 
 Run the configured workflow on the current devhost:
   1. commit and push aligned appliance-release/appliance-ctl/appliance-code
@@ -21,8 +24,23 @@ Run the configured workflow on the current devhost:
   3. run run-release-from-devhost.sh (build/publish/install/verify)
   4. on failure, invoke the configured repair hook and retry from step 1
 
-The workflow config is YAML or JSON.  See:
-  .agents/skills/release-loop/references/workflow-config.example.yaml
+The three required paths are the same role configs accepted by
+run-release-from-devhost.sh.  Optional controls:
+  --repo-root PATH                 parent of the three Git repositories
+  --release-root PATH              appliance-release checkout (default: local)
+  --runner PATH                    release runner override
+  --commit-script PATH             three-repo commit helper override
+  --message MESSAGE                commit message
+  --branch BRANCH                  commit/push branch (default: helper default)
+  --seed-deps                      run dependency seed before the first attempt
+  --deps-host SSH                  run the dependency command over SSH
+  --deps-workdir PATH              dependency checkout directory
+  --deps-command COMMAND            dependency seed command
+  --deps-before-each-attempt       seed dependencies before every attempt
+  --repair-command COMMAND         local repair hook after a failed attempt
+  --repair-workdir PATH             working directory for the repair hook
+  --max-attempts N                 bounded retry count (default: 3)
+  --run-root PATH                  log base directory
 
 This command never edits a remote host except through the configured release
 runner and optional dependency command.  The repair hook is intentionally
@@ -56,28 +74,6 @@ resolve_path() {
     value="$base/$value"
   fi
   printf '%s\n' "$value"
-}
-
-cfg_optional() {
-  python3 "$CONFIG_QUERY" "$WORKFLOW_CONFIG" "$1" 2>/dev/null || true
-}
-
-cfg_required() {
-  local key=$1 value
-  value=$(cfg_optional "$key")
-  [[ -n "$value" ]] || die "missing workflow config key: $key"
-  printf '%s\n' "$value"
-}
-
-cfg_bool() {
-  local key=$1 default=$2 value
-  value=$(cfg_optional "$key")
-  [[ -n "$value" ]] || value=$default
-  case "$value" in
-    true|TRUE|True|yes|YES|Yes|on|ON|On|1) printf 'true\n' ;;
-    false|FALSE|False|no|NO|No|off|OFF|Off|0) printf 'false\n' ;;
-    *) die "$key must be true or false (got '$value')" ;;
-  esac
 }
 
 run_logged() {
@@ -134,18 +130,112 @@ run_repair() {
       run_logged "$log_path" bash -lc "$payload"
 }
 
-WORKFLOW_CONFIG=""
-MESSAGE_OVERRIDE=""
+DEVHOST_CONFIG=""
+BUILD_PUBLISH_CONFIG=""
+INSTALL_CONFIG=""
+REPO_ROOT="${RELEASE_LOOP_REPO_ROOT:-}"
+RELEASE_ROOT="${RELEASE_LOOP_RELEASE_ROOT:-$DEFAULT_RELEASE_ROOT}"
+RELEASE_RUNNER="${RELEASE_LOOP_RUNNER:-}"
+COMMIT_SCRIPT="${RELEASE_LOOP_COMMIT_SCRIPT:-}"
+COMMIT_MESSAGE="${RELEASE_LOOP_COMMIT_MESSAGE:-chore: run automated appliance release}"
+COMMIT_BRANCH="${RELEASE_LOOP_COMMIT_BRANCH:-}"
+DEPS_ENABLED="${RELEASE_LOOP_SEED_DEPS:-false}"
+DEPS_HOST="${RELEASE_LOOP_DEPS_HOST:-}"
+DEPS_WORKDIR="${RELEASE_LOOP_DEPS_WORKDIR:-}"
+DEPS_COMMAND="${RELEASE_LOOP_DEPS_COMMAND:-TARGET_ARCH=amd64 make seed-build-deps}"
+DEPS_BEFORE_EACH="${RELEASE_LOOP_DEPS_BEFORE_EACH:-false}"
+REPAIR_COMMAND="${RELEASE_LOOP_REPAIR_COMMAND:-}"
+REPAIR_WORKDIR="${RELEASE_LOOP_REPAIR_WORKDIR:-}"
+MAX_ATTEMPTS="${RELEASE_LOOP_MAX_ATTEMPTS:-3}"
+RUN_ROOT="${RELEASE_LOOP_RUN_ROOT:-$HOME/.run/appliance-release-loop}"
 while (($#)); do
   case "$1" in
-    --workflow-config|--config)
+    --config)
       (($# >= 2)) || die "$1 requires a path"
-      WORKFLOW_CONFIG=$2
+      DEVHOST_CONFIG=$2
+      shift 2
+      ;;
+    --build-publish-config)
+      (($# >= 2)) || die "$1 requires a path"
+      BUILD_PUBLISH_CONFIG=$2
+      shift 2
+      ;;
+    --install-config)
+      (($# >= 2)) || die "$1 requires a path"
+      INSTALL_CONFIG=$2
+      shift 2
+      ;;
+    --repo-root)
+      (($# >= 2)) || die "$1 requires a path"
+      REPO_ROOT=$2
+      shift 2
+      ;;
+    --release-root)
+      (($# >= 2)) || die "$1 requires a path"
+      RELEASE_ROOT=$2
+      shift 2
+      ;;
+    --runner)
+      (($# >= 2)) || die "$1 requires a path"
+      RELEASE_RUNNER=$2
+      shift 2
+      ;;
+    --commit-script)
+      (($# >= 2)) || die "$1 requires a path"
+      COMMIT_SCRIPT=$2
       shift 2
       ;;
     --message|-m)
       (($# >= 2)) || die "$1 requires a message"
-      MESSAGE_OVERRIDE=$2
+      COMMIT_MESSAGE=$2
+      shift 2
+      ;;
+    --branch)
+      (($# >= 2)) || die "$1 requires a branch"
+      COMMIT_BRANCH=$2
+      shift 2
+      ;;
+    --seed-deps)
+      DEPS_ENABLED=true
+      shift
+      ;;
+    --deps-host)
+      (($# >= 2)) || die "$1 requires an SSH target"
+      DEPS_HOST=$2
+      shift 2
+      ;;
+    --deps-workdir)
+      (($# >= 2)) || die "$1 requires a path"
+      DEPS_WORKDIR=$2
+      shift 2
+      ;;
+    --deps-command)
+      (($# >= 2)) || die "$1 requires a command"
+      DEPS_COMMAND=$2
+      shift 2
+      ;;
+    --deps-before-each-attempt)
+      DEPS_BEFORE_EACH=true
+      shift
+      ;;
+    --repair-command)
+      (($# >= 2)) || die "$1 requires a command"
+      REPAIR_COMMAND=$2
+      shift 2
+      ;;
+    --repair-workdir)
+      (($# >= 2)) || die "$1 requires a path"
+      REPAIR_WORKDIR=$2
+      shift 2
+      ;;
+    --max-attempts)
+      (($# >= 2)) || die "$1 requires a number"
+      MAX_ATTEMPTS=$2
+      shift 2
+      ;;
+    --run-root)
+      (($# >= 2)) || die "$1 requires a path"
+      RUN_ROOT=$2
       shift 2
       ;;
     --help|-h)
@@ -158,67 +248,51 @@ while (($#)); do
   esac
 done
 
-[[ -n "$WORKFLOW_CONFIG" ]] || die "requires --workflow-config PATH"
-WORKFLOW_CONFIG=$(resolve_path "$WORKFLOW_CONFIG")
-[[ -f "$WORKFLOW_CONFIG" ]] || die "workflow config not found: $WORKFLOW_CONFIG"
-[[ -f "$CONFIG_QUERY" ]] || die "missing config reader: $CONFIG_QUERY"
-CONFIG_DIR=$(cd "$(dirname "$WORKFLOW_CONFIG")" && pwd)
-
-REPO_ROOT_VALUE=$(cfg_optional repo_root)
-if [[ -n "$REPO_ROOT_VALUE" ]]; then
-  REPO_ROOT=$(resolve_path "$REPO_ROOT_VALUE" "$CONFIG_DIR")
-else
-  REPO_ROOT=$(dirname "$DEFAULT_RELEASE_ROOT")
-fi
-[[ -d "$REPO_ROOT" ]] || die "repo_root does not exist: $REPO_ROOT"
-RELEASE_ROOT=$(resolve_path "$(cfg_optional release_root)" "$CONFIG_DIR")
-[[ -n "$RELEASE_ROOT" ]] || RELEASE_ROOT="$DEFAULT_RELEASE_ROOT"
-[[ -d "$RELEASE_ROOT" ]] || die "release_root does not exist: $RELEASE_ROOT"
-
-COMMIT_SCRIPT=$(resolve_path "$(cfg_optional commit.script)" "$CONFIG_DIR")
-if [[ -z "$COMMIT_SCRIPT" || ! -f "$COMMIT_SCRIPT" ]]; then
-  COMMIT_SCRIPT="$HOME/.codex/skills/appliance-three-repo-commit/scripts/three-repo-commit.sh"
-fi
-[[ -f "$COMMIT_SCRIPT" ]] || die "three-repo commit script not found; set commit.script"
-
-COMMIT_MESSAGE=${MESSAGE_OVERRIDE:-$(cfg_required commit.message)}
-[[ "$COMMIT_MESSAGE" != *$'\n'* && "$COMMIT_MESSAGE" != *$'\r'* ]] || die "commit message must be one line"
-COMMIT_BRANCH=$(cfg_optional commit.branch)
-
-RELEASE_RUNNER=$(resolve_path "$(cfg_optional release.runner)" "$RELEASE_ROOT")
-[[ -n "$RELEASE_RUNNER" ]] || RELEASE_RUNNER="$RELEASE_ROOT/.agents/skills/release/scripts/run-release-from-devhost.sh"
-[[ -f "$RELEASE_RUNNER" ]] || die "release runner not found: $RELEASE_RUNNER"
-
-DEVHOST_CONFIG=$(resolve_path "$(cfg_required release.devhost_config)" "$CONFIG_DIR")
-BUILD_PUBLISH_CONFIG=$(resolve_path "$(cfg_required release.build_publish_config)" "$CONFIG_DIR")
-INSTALL_CONFIG=$(resolve_path "$(cfg_required release.install_config)" "$CONFIG_DIR")
+[[ -n "$DEVHOST_CONFIG" ]] || die "requires --config PATH"
+[[ -n "$BUILD_PUBLISH_CONFIG" ]] || die "requires --build-publish-config PATH"
+[[ -n "$INSTALL_CONFIG" ]] || die "requires --install-config PATH"
+DEVHOST_CONFIG=$(resolve_path "$DEVHOST_CONFIG")
+BUILD_PUBLISH_CONFIG=$(resolve_path "$BUILD_PUBLISH_CONFIG")
+INSTALL_CONFIG=$(resolve_path "$INSTALL_CONFIG")
 for path in "$DEVHOST_CONFIG" "$BUILD_PUBLISH_CONFIG" "$INSTALL_CONFIG"; do
   [[ -f "$path" ]] || die "release config not found: $path"
 done
 
-DEPS_ENABLED=$(cfg_bool deps.enabled false)
-DEPS_HOST=$(cfg_optional deps.host)
-DEPS_WORKDIR=$(resolve_path "$(cfg_optional deps.workdir)" "$RELEASE_ROOT")
-[[ -n "$DEPS_WORKDIR" ]] || DEPS_WORKDIR="$RELEASE_ROOT"
-DEPS_COMMAND=$(cfg_optional deps.command)
-DEPS_BEFORE_EACH=$(cfg_bool deps.before_each_attempt false)
-if [[ "$DEPS_ENABLED" == true ]]; then
-  [[ -n "$DEPS_COMMAND" ]] || die "deps.command is required when deps.enabled=true"
+if [[ -z "$REPO_ROOT" ]]; then
+  REPO_ROOT=$(dirname "$DEFAULT_RELEASE_ROOT")
 fi
+REPO_ROOT=$(resolve_path "$REPO_ROOT")
+[[ -d "$REPO_ROOT" ]] || die "repo_root does not exist: $REPO_ROOT"
+RELEASE_ROOT=$(resolve_path "$RELEASE_ROOT")
+[[ -d "$RELEASE_ROOT" ]] || die "release_root does not exist: $RELEASE_ROOT"
 
-REPAIR_COMMAND=${REPAIR_COMMAND:-$(cfg_optional repair.command)}
-REPAIR_WORKDIR=$(resolve_path "$(cfg_optional repair.workdir)" "$REPO_ROOT")
-[[ -n "$REPAIR_WORKDIR" ]] || REPAIR_WORKDIR="$REPO_ROOT"
-[[ -n "$REPAIR_COMMAND" ]] || REPAIR_WORKDIR="$REPO_ROOT"
+if [[ -n "$COMMIT_SCRIPT" ]]; then
+  COMMIT_SCRIPT=$(resolve_path "$COMMIT_SCRIPT")
+fi
+if [[ -z "$COMMIT_SCRIPT" || ! -f "$COMMIT_SCRIPT" ]]; then
+  COMMIT_SCRIPT="$HOME/.codex/skills/appliance-three-repo-commit/scripts/three-repo-commit.sh"
+fi
+[[ -f "$COMMIT_SCRIPT" ]] || die "three-repo commit script not found; pass --commit-script PATH"
+
+[[ "$COMMIT_MESSAGE" != *$'\n'* && "$COMMIT_MESSAGE" != *$'\r'* ]] || die "commit message must be one line"
+
+if [[ -n "$RELEASE_RUNNER" ]]; then
+  RELEASE_RUNNER=$(resolve_path "$RELEASE_RUNNER")
+else
+  RELEASE_RUNNER="$RELEASE_ROOT/.agents/skills/release/scripts/run-release-from-devhost.sh"
+fi
+[[ -f "$RELEASE_RUNNER" ]] || die "release runner not found: $RELEASE_RUNNER"
+
+DEPS_WORKDIR=${DEPS_WORKDIR:-$RELEASE_ROOT}
+DEPS_WORKDIR=$(resolve_path "$DEPS_WORKDIR")
+REPAIR_WORKDIR=${REPAIR_WORKDIR:-$REPO_ROOT}
+REPAIR_WORKDIR=$(resolve_path "$REPAIR_WORKDIR")
 [[ -d "$REPAIR_WORKDIR" ]] || die "repair.workdir does not exist: $REPAIR_WORKDIR"
 
-MAX_ATTEMPTS=$(cfg_optional retry.max_attempts)
-[[ -n "$MAX_ATTEMPTS" ]] || MAX_ATTEMPTS=3
 [[ "$MAX_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] || die "retry.max_attempts must be a positive integer"
 ((MAX_ATTEMPTS <= 20)) || die "retry.max_attempts must not exceed 20"
 
-RUN_ROOT=$(resolve_path "$(cfg_optional run_root)" "$HOME/.run/appliance-release-loop")
-[[ -n "$RUN_ROOT" ]] || RUN_ROOT="$HOME/.run/appliance-release-loop"
+RUN_ROOT=$(resolve_path "$RUN_ROOT")
 case "$RUN_ROOT/" in
   "$RELEASE_ROOT/.run/"*)
     die "run_root must not be under release_root/.run because the three-repo commit helper cleans that directory"
@@ -228,13 +302,14 @@ RUN_ID=$(date -u +%Y%m%dT%H%M%SZ)
 RUN_DIR="$RUN_ROOT/$RUN_ID"
 mkdir -p "$RUN_DIR"
 
-log "workflow-config=$WORKFLOW_CONFIG"
+log "devhost-config=$DEVHOST_CONFIG"
+log "build-publish-config=$BUILD_PUBLISH_CONFIG"
+log "install-config=$INSTALL_CONFIG"
 log "run-dir=$RUN_DIR"
 log "repo-root=$REPO_ROOT"
 log "max-attempts=$MAX_ATTEMPTS deps-enabled=$DEPS_ENABLED repair-hook=$([[ -n "$REPAIR_COMMAND" ]] && echo enabled || echo disabled)"
 
-cat >"$RUN_DIR/workflow.env" <<EOF
-WORKFLOW_CONFIG=$(shell_quote "$WORKFLOW_CONFIG")
+cat >"$RUN_DIR/inputs.env" <<EOF
 REPO_ROOT=$(shell_quote "$REPO_ROOT")
 RELEASE_RUNNER=$(shell_quote "$RELEASE_RUNNER")
 DEVHOST_CONFIG=$(shell_quote "$DEVHOST_CONFIG")

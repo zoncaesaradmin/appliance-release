@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Smoke-test the release loop with local fake commit/release/repair commands."""
 
-import json
 import os
 import stat
 import subprocess
@@ -58,33 +57,40 @@ def run_case() -> None:
 
         for path in (root / "devhost.yaml", root / "build.yaml", root / "install.yaml"):
             path.write_text("placeholder: true\n", encoding="utf-8")
-        config = root / "workflow.json"
-        config.write_text(
-            json.dumps(
-                {
-                    "repo_root": str(repos),
-                    "release_root": str(repos / "appliance-release"),
-                    "commit": {"script": str(commit), "message": "test release"},
-                    "release": {
-                        "runner": str(runner),
-                        "devhost_config": str(root / "devhost.yaml"),
-                        "build_publish_config": str(root / "build.yaml"),
-                        "install_config": str(root / "install.yaml"),
-                    },
-                    "repair": {"command": str(repair), "workdir": str(root)},
-                    "retry": {"max_attempts": 2},
-                    "run_root": str(root / "runs"),
-                }
-            ),
-            encoding="utf-8",
-        )
         env = os.environ | {
             "COMMIT_LOG": str(commit_log),
             "RELEASE_COUNT": str(release_count),
             "REPAIR_LOG": str(repair_log),
         }
         result = subprocess.run(
-            ["bash", str(SCRIPT), "--workflow-config", str(config)],
+            [
+                "bash",
+                str(SCRIPT),
+                "--config",
+                str(root / "devhost.yaml"),
+                "--build-publish-config",
+                str(root / "build.yaml"),
+                "--install-config",
+                str(root / "install.yaml"),
+                "--repo-root",
+                str(repos),
+                "--release-root",
+                str(repos / "appliance-release"),
+                "--runner",
+                str(runner),
+                "--commit-script",
+                str(commit),
+                "--message",
+                "test release",
+                "--repair-command",
+                str(repair),
+                "--repair-workdir",
+                str(root),
+                "--max-attempts",
+                "2",
+                "--run-root",
+                str(root / "runs"),
+            ],
             text=True,
             capture_output=True,
             env=env,
