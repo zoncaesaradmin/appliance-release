@@ -1,10 +1,22 @@
 # appliance-release
 
-Public packaging and distribution tooling for the Zon platform.
+These three repositories form the Zon appliance platform:
 
-This repo assembles the final signed appliance bundle. `zonctl` source lives in
-the sibling `appliance-ctl` repo; product artifacts such as the chart and
-release-input handoff come from `appliance-code`.
+- **`appliance-code`** is the product source: backend services, shared UI, Geo
+  UI, Helm charts, metadata catalogs, image definitions, and component tests.
+- **`appliance-ctl`** contains `zonctl`, the installer and lifecycle
+  controller. It validates signed release inputs, manages K3s and Helm,
+  deploys services, handles secrets/storage, and performs health checks,
+  upgrades, rollback, and diagnostics.
+- **`appliance-release`** is the release orchestration and packaging layer. It
+  builds and publishes pinned artifacts, assembles the signed offline bundle,
+  and coordinates build/install verification.
+
+The normal flow is: `appliance-code` produces product artifacts →
+`appliance-release` packages and signs them → `appliance-ctl` installs and
+operates them. Cross-repository changes must keep the signed manifest, image
+digests, chart values, namespaces, service endpoints, installer behavior, and
+tests aligned.
 
 ## Main Commands
 
