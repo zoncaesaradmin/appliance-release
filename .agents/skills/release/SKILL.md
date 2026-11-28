@@ -123,7 +123,7 @@ bash .agents/skills/release/scripts/run-release-loop.sh \
 ```
 
 That wrapper still calls this script for the product build/install path; its
-flags and repair-hook contract are documented in
+automatic offline dependency-seed behavior is documented in
 `.agents/skills/release-loop/`.
 
 CLI path presence selects stages (no `build_flow.skip` / `install.skip`):
