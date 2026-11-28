@@ -15,9 +15,10 @@
 # The helper script itself always comes from the local release checkout so lab
 # wiring cannot silently lag a stale published copy.
 #
-# Lab policy: always factory-reset then fresh install (no in-place upgrade).
-# A data-preserving uninstall cannot be followed by a fresh PostgreSQL
-# bootstrap: the hostPath database directory would deliberately survive.
+# The target receipt selects fresh stage/resume or the coordinated upgrade
+# path; this helper never factory-resets an existing installation. A
+# data-preserving uninstall cannot be followed by a fresh PostgreSQL bootstrap
+# because the hostPath database directory would deliberately survive.
 # Target needs no permanent env. Sudo for zonctl is non-interactive: Mac
 # APPLIANCE_TARGET_SUDO_PASSWORD is injected for this SSH job only.
 set -euo pipefail
@@ -260,6 +261,27 @@ fi
 target_sudo_password="$(resolve_secret "APPLIANCE_TARGET_SUDO_PASSWORD" "Target host sudo password")"
 quoted_sudo_password="$(shell_quote "${target_sudo_password}")"
 
+# Read only the durable receipt to select the lifecycle path. The signed
+# zonctl bundle remains authoritative for ownership and compatibility checks.
+target_upgrade_probe_log="${RUN_DIR}/logs/target-upgrade-probe.log"
+target_upgrade_probe_cmd="set -euo pipefail
+printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' python3 -c 'import json, pathlib; p=pathlib.Path(\"$(default_appliance_state_dir)/installed-state.json\"); print(json.loads(p.read_text()).get(\"installedVersion\", \"\") if p.is_file() else \"\")'
+"
+if run_ssh_captured "${TARGET_HOST}" "${target_upgrade_probe_log}" "${target_upgrade_probe_cmd}"; then
+  target_installed_version="$(tr -d '[:space:]' <"${target_upgrade_probe_log}")"
+  if [[ -n "${target_installed_version}" && "${target_installed_version}" != "${RELEASE_VERSION}" ]]; then
+    EMBEDDED_ETCD_OPERATION="upgrade"
+    log "target has release ${target_installed_version}; selecting coordinated upgrade to ${RELEASE_VERSION}"
+  else
+    EMBEDDED_ETCD_OPERATION="stage"
+    if [[ -n "${target_installed_version}" ]]; then
+      log "target already has release ${target_installed_version}; resuming idempotent stage/finalize"
+    fi
+  fi
+else
+  EMBEDDED_ETCD_OPERATION="stage"
+fi
+
 bundle_staged="0"
 if [[ "${BUNDLE_TRANSPORT}" == "devhost_scp" ]]; then
   log "copying validated bundle export to ${TARGET_HOST}:${REMOTE_BUNDLE_ROOT}/"
@@ -334,10 +356,11 @@ ${image_pull_exports}
 # migration. A recorded bootstrap is the sole resumable state. The state
 # directory is mode 0750 and owned by root, so the SSH user cannot see that
 # receipt with a plain -f test; sudo is required or an installed zonctl looks
-# like an unrelated appliance. Every other existing zonctl must go through
-# its separately qualified migration/recovery workflow.
-if [[ \"\${embedded_etcd_operation}\" == \"stage\" ]] && printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' test -f \"$(default_appliance_state_dir)/cluster-bootstrap-state.json\"; then
-  echo \"resuming an existing embedded-etcd stage\"
+# like an unrelated appliance. Every other existing zonctl (without the
+# recorded embedded-etcd bootstrap receipt) must go through a separately
+# qualified migration/recovery workflow.
+if [[ \"\${embedded_etcd_operation}\" == \"stage\" || \"\${embedded_etcd_operation}\" == \"upgrade\" ]] && printf '%s\\n' ${quoted_sudo_password} | sudo -S -p '' test -f \"$(default_appliance_state_dir)/cluster-bootstrap-state.json\"; then
+  echo \"resuming an existing embedded-etcd lifecycle operation: \${embedded_etcd_operation}\"
 elif command -v zonctl >/dev/null 2>&1 || [[ -x /usr/local/bin/zonctl ]]; then
   echo \"target has an existing zonctl installation; this release will not factory-reset it. Use the qualified migration/recovery workflow.\" >&2
   exit 2
@@ -441,6 +464,7 @@ python3 - "${RUN_DIR}/metadata/install.json" \
   "${TLS_TERMINATION}" \
   "${IMAGE_PULL_REGISTRY}" \
   "${EXTRA_TLS_SANS}" \
+  "${EMBEDDED_ETCD_OPERATION}" \
   "${install_log}" <<'PY'
 import json
 import sys
@@ -466,8 +490,9 @@ from pathlib import Path
     tls_termination,
     image_pull_registry,
     extra_tls_sans,
+    install_operation,
     install_log,
-) = sys.argv[1:21]
+) = sys.argv[1:22]
 
 payload = {
     "configPath": config_path,
@@ -490,6 +515,7 @@ payload = {
     "imagePullRegistry": image_pull_registry or None,
     "extraTlsSans": extra_tls_sans or None,
     "installMode": "public-helper",
+    "operation": install_operation,
     "log": install_log,
     "status": "passed",
     "exitCode": 0,

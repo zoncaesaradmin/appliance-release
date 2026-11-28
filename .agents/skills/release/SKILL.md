@@ -129,14 +129,20 @@ automatic offline dependency-seed behavior is documented in
 CLI path presence selects stages (no `build_flow.skip` / `install.skip`):
 
 - `--build-publish-config` → build/publish on the build host
-- `--install-config` → explicit lab cleanup only when configured → signed
-  embedded-etcd stage/finalize → optional bootstrap → target/client verify →
+- `--install-config` → signed embedded-etcd stage/finalize, or a safe
+  coordinated same-K3s workload upgrade when a different release is already
+  installed → optional bootstrap on fresh installs → target/client verify →
   report
 
-**Reinstall policy (current):** no local-host in-place upgrade or uninstall
-path exists for the embedded-etcd product. The runner stages matching clean
-hosts and finalizes only after quorum gates pass. Config-preserving cluster
-upgrade is parked until the coordinated lifecycle is qualified.
+**Upgrade policy:** the runner reads the target's durable installed receipt.
+Missing state starts a fresh stage; the same release resumes idempotently; a
+different release invokes `zonctl upgrade` on the inventory bootstrap node.
+That coordinated path requires the signed K3s version to remain unchanged,
+validates every planned server and direct API endpoint, creates a verified
+PostgreSQL logical checkpoint when needed, and applies Helm releases with
+atomic wait/rollback semantics. It never deletes namespaces/PVCs, replaces
+K3s, or silently adopts an unrelated cluster. K3s-version changes, topology
+changes, and unknown ownership remain fail-closed.
 
 Secrets stay in the Mac shell as env vars **named** by config `*_env` keys
 (`DEV_*`, online `DOCKERHUB_USER` / `DOCKERHUB_TOKEN`,

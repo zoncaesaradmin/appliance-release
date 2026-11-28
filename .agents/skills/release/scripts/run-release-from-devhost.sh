@@ -151,19 +151,35 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
     --install-config "${INSTALL_CONFIG}" \
     --run-dir "${RUN_DIR}"
 
+  INSTALL_OPERATION="stage"
+  if [[ -f "${RUN_DIR}/metadata/install.json" ]]; then
+    INSTALL_OPERATION="$(python3 - "${RUN_DIR}/metadata/install.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(str(data.get("operation") or "stage"))
+PY
+)"
+  fi
+
   BOOTSTRAP_ADMIN="false"
   ENABLE_DEFAULT_LICENSE="false"
+  APPLIANCE_PROFILE="$(config_get_optional "${INSTALL_CONFIG}" "install.appliance_profile" || true)"
+  if [[ -z "${APPLIANCE_PROFILE}" ]]; then
+    APPLIANCE_PROFILE="core"
+  fi
+
+  if [[ "${INSTALL_OPERATION}" == "upgrade" ]]; then
+    log "── clusterStageFinalize: skipped (coordinated upgrade already completed on bootstrap)"
+  else
+
   if [[ -n "$(config_get_optional "${INSTALL_CONFIG}" "install.bootstrap_admin" || true)" ]]; then
     BOOTSTRAP_ADMIN="$(config_require_bool "${INSTALL_CONFIG}" "install.bootstrap_admin")"
   fi
   if [[ -n "$(config_get_optional "${INSTALL_CONFIG}" "install.enable_default_license" || true)" ]]; then
     ENABLE_DEFAULT_LICENSE="$(config_require_bool "${INSTALL_CONFIG}" "install.enable_default_license")"
   fi
-  APPLIANCE_PROFILE="$(config_get_optional "${INSTALL_CONFIG}" "install.appliance_profile" || true)"
-  if [[ -z "${APPLIANCE_PROFILE}" ]]; then
-    APPLIANCE_PROFILE="core"
-  fi
-
   # An embedded-etcd install is only an appliance after the peer stages and
   # bootstrap finalization have passed. Bootstrap product accounts/licenses
   # after that gate, never against the incomplete first server.
@@ -174,7 +190,9 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
     --install-config "${INSTALL_CONFIG}" \
     --run-dir "${RUN_DIR}"
 
-  if bool_true "${BOOTSTRAP_ADMIN}"; then
+  fi
+
+  if [[ "${INSTALL_OPERATION}" != "upgrade" ]] && bool_true "${BOOTSTRAP_ADMIN}"; then
     log "── bootstrapAdmin (install.bootstrap_admin=true)"
     bash "${SCRIPT_DIR}/bootstrap-admin-on-target.sh" \
       --config "${DEVHOST_CONFIG}" \
@@ -184,7 +202,7 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
     log "── bootstrapAdmin: skipped (install.bootstrap_admin not true)"
   fi
 
-  if bool_true "${ENABLE_DEFAULT_LICENSE}"; then
+  if [[ "${INSTALL_OPERATION}" != "upgrade" ]] && bool_true "${ENABLE_DEFAULT_LICENSE}"; then
     log "── bootstrapDefaultLicense (install.enable_default_license=true)"
     bash "${SCRIPT_DIR}/bootstrap-default-license-on-target.sh" \
       --config "${DEVHOST_CONFIG}" \
@@ -202,7 +220,7 @@ if [[ -n "${INSTALL_CONFIG}" ]]; then
     --run-dir "${RUN_DIR}" \
     --appliance-profile "${APPLIANCE_PROFILE}"
 
-  if bool_true "${BOOTSTRAP_ADMIN}"; then
+  if [[ "${INSTALL_OPERATION}" != "upgrade" ]] && bool_true "${BOOTSTRAP_ADMIN}"; then
     log "── clientVerify (install.bootstrap_admin=true)"
     bash "${SCRIPT_DIR}/verify-client-access.sh" \
       --install-config "${INSTALL_CONFIG}" \

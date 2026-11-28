@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # install-release.sh — target-host operation helper for the embedded-etcd runner.
 #
-# The release runner supplies an inventory-bound `stage` or `finalize`
-# operation. This helper intentionally has no standalone fresh-install,
-# upgrade, agent-join, or one-host fallback path.
+# The release runner supplies an inventory-bound `stage`, `upgrade`, or
+# `finalize` operation. This helper intentionally has no standalone fresh
+# install, agent-join, or one-host fallback path.
 set -euo pipefail
 
 usage() {
@@ -12,8 +12,9 @@ usage: install-release.sh --appliance-name NAME [options]
        install-release.sh --help
 
 This helper is run by the signed embedded-etcd release coordinator only. It
-requires an inventory-bound EMBEDDED_ETCD_OPERATION of `stage` or `finalize`.
-Do not run it as a standalone one-host installer or as an upgrade mechanism.
+requires an inventory-bound EMBEDDED_ETCD_OPERATION of `stage`, `upgrade`, or
+`finalize`. Upgrade preserves K3s and persistent data and is only admitted by
+zonctl when the signed K3s version is unchanged and the cluster is healthy.
 
 Required:
   --appliance-name NAME        Single DNS label for this appliance instance.
@@ -203,8 +204,8 @@ fi
 if [[ -z "${APPLIANCE_PROFILE}" ]]; then
   APPLIANCE_PROFILE="core"
 fi
-if [[ "${EMBEDDED_ETCD_OPERATION}" != "stage" && "${EMBEDDED_ETCD_OPERATION}" != "finalize" ]]; then
-  echo "install-release: this product requires EMBEDDED_ETCD_OPERATION=stage or finalize from the embedded-etcd release coordinator" >&2
+if [[ "${EMBEDDED_ETCD_OPERATION}" != "stage" && "${EMBEDDED_ETCD_OPERATION}" != "upgrade" && "${EMBEDDED_ETCD_OPERATION}" != "finalize" ]]; then
+  echo "install-release: this product requires EMBEDDED_ETCD_OPERATION=stage, upgrade, or finalize from the embedded-etcd release coordinator" >&2
   exit 2
 fi
 
@@ -804,8 +805,23 @@ case "${EMBEDDED_ETCD_OPERATION}" in
     rm -f "${install_stdout}" "${install_stderr}"
     exit 1
     ;;
+  upgrade)
+    require_nonempty "CLUSTER_INVENTORY_FILE" "${CLUSTER_INVENTORY_FILE}"
+    [[ -f "${CLUSTER_INVENTORY_FILE}" ]] || { echo "install-release: cluster inventory is not a file: ${CLUSTER_INVENTORY_FILE}" >&2; exit 2; }
+    upgrade_args=(upgrade "${lifecycle_args[@]}" --cluster-inventory "${CLUSTER_INVENTORY_FILE}")
+    echo "[5/5] Coordinating an in-place embedded-etcd workload upgrade (K3s and persistent data are preserved)."
+    if capture_zonctl_step "${install_stdout}" "${install_stderr}" "" "${zonctl_sudo[@]}" "${ZONCTL}" "${upgrade_args[@]}"; then
+      echo "[5/5] Embedded-etcd workload upgrade completed."
+      rm -f "${install_stdout}" "${install_stderr}"
+      announce_zonctl_ready
+      exit 0
+    fi
+    print_captured_failure "[5/5] Embedded-etcd workload upgrade failed." "${install_stdout}" "${install_stderr}"
+    rm -f "${install_stdout}" "${install_stderr}"
+    exit 1
+    ;;
   *)
-    echo "install-release: EMBEDDED_ETCD_OPERATION must be stage or finalize" >&2
+    echo "install-release: EMBEDDED_ETCD_OPERATION must be stage, upgrade, or finalize" >&2
     exit 2
     ;;
 esac

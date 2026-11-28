@@ -33,13 +33,11 @@
 # ============================================================================
 
 install:
-  # Lab reinstall factory-resets then fresh-installs (the orchestrator performs
-  # this explicit data-loss operation; it also removes an orphaned local
-  # PostgreSQL directory if an older reset removed zonctl first.
-  # Normal `zonctl uninstall` remains data-preserving; do not use the lab
-  # release runner when configuration must be retained. Restore a verified
-  # recovery set with the dedicated zonctl command instead. There is no
-  # in-place public upgrade.
+  # Existing targets are never factory-reset by the release runner. A missing
+  # receipt is staged/finalized; the same release resumes idempotently; a
+  # different release uses the coordinated same-K3s workload upgrade and
+  # preserves namespaces/PVCs. Unsupported K3s/topology/ownership changes
+  # fail closed and require a separately qualified migration.
   bootstrap_admin: true
   enable_default_license: true
 

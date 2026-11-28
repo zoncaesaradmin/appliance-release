@@ -169,13 +169,14 @@ def test_install_release_wires_image_pull_flags() -> None:
     assert "image-pull-registry:" in text
 
 
-def test_install_release_has_explicit_embedded_etcd_stage_and_finalize_modes() -> None:
+def test_install_release_has_explicit_embedded_etcd_lifecycle_modes() -> None:
     text = INSTALL_HELPER.read_text(encoding="utf-8")
     for want in (
         'EMBEDDED_ETCD_OPERATION="${EMBEDDED_ETCD_OPERATION:-}"',
         'CLUSTER_INVENTORY_FILE="${CLUSTER_INVENTORY_FILE:-}"',
         'CLUSTER_SIGNER_FINGERPRINT="${CLUSTER_SIGNER_FINGERPRINT:-}"',
         "cluster-server-stage",
+        'upgrade_args=(upgrade',
         "cluster-finalize",
         "SERVER_ENROLLMENT_FILE",
         "Embedded-etcd appliance finalization completed",
@@ -185,7 +186,7 @@ def test_install_release_has_explicit_embedded_etcd_stage_and_finalize_modes() -
 
 def test_install_release_has_no_legacy_single_host_or_join_path() -> None:
     text = INSTALL_HELPER.read_text(encoding="utf-8")
-    assert "requires EMBEDDED_ETCD_OPERATION=stage or finalize" in text
+    assert "requires EMBEDDED_ETCD_OPERATION=stage, upgrade, or finalize" in text
     for forbidden in (
         "JOIN_ENROLLMENT_FILE",
         "cluster-join",
@@ -202,7 +203,7 @@ def test_install_release_has_no_legacy_single_host_or_join_path() -> None:
         env=os.environ.copy(),
     )
     assert standalone.returncode == 2
-    assert "requires EMBEDDED_ETCD_OPERATION=stage or finalize" in standalone.stderr
+    assert "requires EMBEDDED_ETCD_OPERATION=stage, upgrade, or finalize" in standalone.stderr
 
 
 def test_run_install_patches_image_pull_and_dns() -> None:
@@ -224,10 +225,10 @@ def test_run_install_patches_image_pull_and_dns() -> None:
     assert 'set_assign(text, \\"DNS_ZONE\\"' in text
     assert 'set_assign(text, \\"EXTRA_TLS_SANS\\"' in text
     assert 'set_assign(text, \\"OUT_DIR\\"' in text
-    # The install metadata writer receives 20 values after the script path;
-    # slicing only through argv[19] drops the final install-log argument and
-    # fails after a successful embedded-etcd stage.
-    assert ") = sys.argv[1:21]" in text
+    # The install metadata writer receives 21 values after the script path;
+    # the operation is recorded so the outer driver can skip peer staging on
+    # a coordinated upgrade.
+    assert ") = sys.argv[1:22]" in text
 
 
 def test_existing_install_requires_qualified_migration() -> None:
@@ -245,11 +246,11 @@ def test_resume_gate_is_escaped_inside_generated_remote_command() -> None:
     """The remote command is an outer double-quoted shell string."""
     text = RUN_INSTALL.read_text(encoding="utf-8")
     assert (
-        r'if [[ \"\${embedded_etcd_operation}\" == \"stage\" ]] && printf '
+        r'if [[ \"\${embedded_etcd_operation}\" == \"stage\" || \"\${embedded_etcd_operation}\" == \"upgrade\" ]] && printf '
         r"'%s\\n' ${quoted_sudo_password} | sudo -S -p '' test -f "
         r'\"$(default_appliance_state_dir)/cluster-bootstrap-state.json\"; then'
     ) in text
-    assert r'echo \"resuming an existing embedded-etcd stage\"' in text
+    assert r'echo \"resuming an existing embedded-etcd lifecycle operation: \${embedded_etcd_operation}\"' in text
 
 
 def test_helper_patch_assign_roundtrip() -> None:
@@ -353,7 +354,7 @@ def main() -> None:
     test_partial_image_pull_registry_fails()
     test_resolve_install_extra_tls_sans()
     test_install_release_wires_image_pull_flags()
-    test_install_release_has_explicit_embedded_etcd_stage_and_finalize_modes()
+    test_install_release_has_explicit_embedded_etcd_lifecycle_modes()
     test_install_release_has_no_legacy_single_host_or_join_path()
     test_run_install_patches_image_pull_and_dns()
     test_existing_install_requires_qualified_migration()
