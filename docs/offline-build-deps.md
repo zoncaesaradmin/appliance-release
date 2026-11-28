@@ -79,6 +79,7 @@ Host tooling: **podman** is required on PATH. No skopeo/buildah fallback paths.
 | `development-container` | `$DEV_REGISTRY/$DEV_IMAGE_REPO/dev-build:<tag>` | **Build-host tooling only** (online GHCR + offline LAN); also `appliance-code` local service builds. Not packaged into appliance packs. |
 | `message-broker` | `build-cache/nats:2.10.26-alpine-${TARGET_ARCH}` | NATS JetStream broker image |
 | `postgresql` | `build-cache/postgres:16.15-alpine3.24-${TARGET_ARCH}` | PostgreSQL control-plane database image |
+| `postgis` | `build-cache/postgis:16-3.7-${TARGET_ARCH}` | Geo Zone PostGIS database and migration job |
 | `artifact-server-bases` | `build-cache/zot-linux-${TARGET_ARCH}:…`, `debian-bookworm-slim-runtime:bookworm-slim-${TARGET_ARCH}` | artifact-server wrap |
 | `dns` | `build-cache/coredns:v1.14.4-${TARGET_ARCH}` | dns wrap |
 | `inference` | `build-cache/ollama:…-${TARGET_ARCH}` plus arch-specific vLLM (`vllm-openai-cpu:…-x86_64` / `vllm-openai:…-arm64`) | `std-llm` / `acc-llm` |

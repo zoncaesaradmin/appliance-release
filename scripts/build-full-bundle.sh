@@ -350,6 +350,18 @@ POSTGRES_CACHE_NAME="${CACHE_NAME}"
 POSTGRES_CACHE_TAG_BASE="${CACHE_TAG_BASE}"
 unset UPSTREAM_IMAGE CACHE_NAME CACHE_TAG_BASE POSTGRES_VERSION
 
+POSTGIS_PINS_FILE="${RELEASE_REPO_DIR}/deps/postgis/pins.env"
+if [[ ! -f "${POSTGIS_PINS_FILE}" ]]; then
+  echo "build-full-bundle: missing PostGIS seed pin: ${POSTGIS_PINS_FILE}" >&2
+  exit 1
+fi
+# shellcheck disable=SC1090
+source "${POSTGIS_PINS_FILE}"
+POSTGIS_SOURCE_IMAGE="${USER_POSTGIS_SOURCE_IMAGE:-${POSTGIS_SOURCE_IMAGE:-${UPSTREAM_IMAGE}}}"
+POSTGIS_CACHE_NAME="${CACHE_NAME}"
+POSTGIS_CACHE_TAG_BASE="${CACHE_TAG_BASE}"
+unset UPSTREAM_IMAGE CACHE_NAME CACHE_TAG_BASE POSTGIS_VERSION
+
 # One build = one TARGET_ARCH (product-level; pack IDs stay arch-agnostic).
 # Required — no amd64 default; fail closed when unset so arch misses surface early.
 TARGET_ARCH="${USER_TARGET_ARCH:-${TARGET_ARCH-}}"
@@ -1837,6 +1849,10 @@ if offline_build_enabled; then
   require_seed_package message-broker
   require_seed_package blob-storage
   require_seed_package postgresql
+  if [[ "${NEED_POSTGIS_IMAGE:-0}" == "1" ]]; then
+    require_seed_package postgis
+    POSTGIS_SOURCE_IMAGE="$(lan_cache_ref "${POSTGIS_CACHE_NAME}" "${POSTGIS_CACHE_TAG_BASE}-${TARGET_ARCH}")"
+  fi
   if appliance_pack_wanted std-llm || appliance_pack_wanted acc-llm; then
     require_seed_package inference
   fi
@@ -2449,6 +2465,32 @@ else
 "
 fi
 
+POSTGIS_PACKAGE_LINES=""
+if [[ "${NEED_POSTGIS_IMAGE:-0}" == "1" ]]; then
+  TPF_FP_INPUTS=("${POSTGIS_SOURCE_IMAGE}" "${TARGET_ARCH}")
+  set +e
+  tpf_try_restore_oci "postgis" "${CODE_REPO_DIR}/.run/postgis-image.tar"
+  _tpf_postgis_rc=$?
+  set -e
+  if [[ "${_tpf_postgis_rc}" -eq 0 ]]; then
+    POSTGIS_FREEZE_HIT=1
+    sync_bundled_oci_reference_sidecar \
+      "${CODE_REPO_DIR}/.run/postgis-image.tar" \
+      "registry.local/postgis" >/dev/null
+    POSTGIS_PACKAGE_LINES="# third-party-freeze hit: postgis
+echo \"third-party-freeze: reusing PostGIS OCI archive\" >&2
+"
+  elif [[ "${_tpf_postgis_rc}" -eq 2 ]]; then
+    exit 2
+  else
+    POSTGIS_PACKAGE_LINES="make package-postgis-image-archive \\
+  OUT_FILE=\"\${POSTGIS_IMAGE_OUT}\" \\
+  REFERENCE_OUT_FILE=\"\${POSTGIS_IMAGE_REF_FILE}\" \\
+  POSTGIS_SOURCE_IMAGE=$(shell_quote "${POSTGIS_SOURCE_IMAGE}")
+"
+  fi
+fi
+
 if bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
   HOST_AGENTD_PACKAGE_LINES=""
   HOST_AGENT_IMAGE_PACKAGE_LINES=""
@@ -2552,6 +2594,11 @@ PRODUCT_EOF
 fi
 
 ARCHIVE_RELEASE_INPUT_LINES=""
+POSTGIS_ARCHIVE_ARG_LINES=""
+if [[ "${NEED_POSTGIS_IMAGE:-0}" == "1" ]]; then
+  POSTGIS_ARCHIVE_ARG_LINES="  --extra-oci-image \"\${POSTGIS_IMAGE_OUT}\" \\"
+  POSTGIS_ARCHIVE_ARG_LINES+=$'\n  --extra-oci-image-reference "${POSTGIS_IMAGE_REF}" \\'
+fi
 if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
   # Local assemble prefers the durable release-input directory (hardlinked OCI
   # archives). Skip the intermediate multi-GB release-input-*.tar.gz unless the
@@ -2583,6 +2630,7 @@ ${HOST_AGENT_IMAGE_ARCHIVE_ARG_LINES}  --blob-storage-image "\${BLOB_STORAGE_IMA
   --message-broker-image-reference "\${MESSAGE_BROKER_IMAGE_REF}" \\
   --postgres-image "\${POSTGRES_IMAGE_OUT}" \\
   --postgres-image-reference "\${POSTGRES_IMAGE_REF}" \\
+${POSTGIS_ARCHIVE_ARG_LINES}
   "\${HOST_PACKAGES_ARGS[@]}" \\
   --k3s-version $(shell_quote "${K3S_VERSION}") \\
   --deployment-topology $(shell_quote "${DEPLOYMENT_TOPOLOGY}") \\
@@ -2617,6 +2665,8 @@ MESSAGE_BROKER_IMAGE_OUT="/workspace/.run/message-broker-image.tar"
 MESSAGE_BROKER_IMAGE_REF_FILE="/workspace/.run/message-broker-image.reference"
 POSTGRES_IMAGE_OUT="/workspace/.run/postgres-image.tar"
 POSTGRES_IMAGE_REF_FILE="/workspace/.run/postgres-image.reference"
+POSTGIS_IMAGE_OUT="/workspace/.run/postgis-image.tar"
+POSTGIS_IMAGE_REF_FILE="/workspace/.run/postgis-image.reference"
 CHANNEL_INTEGRATION_IMAGE_OUT="/workspace/.run/channel-integration-image.tar"
 CHANNEL_INTEGRATION_IMAGE_REF_FILE="/workspace/.run/channel-integration-image.reference"
 CHANNEL_INTEGRATION_IMAGE_REF=""
@@ -2654,6 +2704,10 @@ ${PRODUCT_PACKAGE_LINES}
 ${BLOB_STORAGE_PACKAGE_LINES}BLOB_STORAGE_IMAGE_REF="\$(tr -d '\r\n' < "\${BLOB_STORAGE_IMAGE_REF_FILE}")"
 ${MESSAGE_BROKER_PACKAGE_LINES}MESSAGE_BROKER_IMAGE_REF="\$(tr -d '\r\n' < "\${MESSAGE_BROKER_IMAGE_REF_FILE}")"
 ${POSTGRES_PACKAGE_LINES}POSTGRES_IMAGE_REF="\$(tr -d '\r\n' < "\${POSTGRES_IMAGE_REF_FILE}")"
+POSTGIS_IMAGE_REF=""
+if [[ "\${NEED_POSTGIS_IMAGE:-0}" == "1" ]]; then
+${POSTGIS_PACKAGE_LINES}POSTGIS_IMAGE_REF="\$(tr -d '\r\n' < "\${POSTGIS_IMAGE_REF_FILE}")"
+fi
 # Super-set: always pass host-packages (packages staged at install; services off).
 HOST_PACKAGES_ARGS=(
   --host-packages-dir "\${HOST_PACKAGES_DIR_FOR_DEV}"
@@ -2728,6 +2782,13 @@ if tpf_active; then
       "${CODE_REPO_DIR}/.run/postgres-image.tar" \
       "registry.local/postgres" >/dev/null || true
     tpf_store_oci "postgres" "${CODE_REPO_DIR}/.run/postgres-image.tar" || true
+  fi
+  if [[ "${NEED_POSTGIS_IMAGE:-0}" == "1" && "${POSTGIS_FREEZE_HIT:-0}" != "1" && -f "${CODE_REPO_DIR}/.run/postgis-image.tar" ]]; then
+    TPF_FP_INPUTS=("${POSTGIS_SOURCE_IMAGE}" "${TARGET_ARCH}")
+    sync_bundled_oci_reference_sidecar \
+      "${CODE_REPO_DIR}/.run/postgis-image.tar" \
+      "registry.local/postgis" >/dev/null || true
+    tpf_store_oci "postgis" "${CODE_REPO_DIR}/.run/postgis-image.tar" || true
   fi
   if [[ "${NEED_OPEN_WEBUI_IMAGE:-0}" == "1" \
     && "${OPEN_WEBUI_FREEZE_HIT:-0}" != "1" \
