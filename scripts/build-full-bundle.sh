@@ -2598,7 +2598,7 @@ ARCHIVE_RELEASE_INPUT_LINES=""
 POSTGIS_ARCHIVE_ARG_LINES=""
 if [[ "${NEED_POSTGIS_IMAGE:-0}" == "1" ]]; then
   POSTGIS_ARCHIVE_ARG_LINES="  --extra-oci-image \"\${POSTGIS_IMAGE_OUT}\" \\"
-  POSTGIS_ARCHIVE_ARG_LINES+=$'\n  --extra-oci-image-reference "${POSTGIS_IMAGE_REF}" \\'
+  POSTGIS_ARCHIVE_ARG_LINES+=$'\n  --extra-oci-image-reference "\${POSTGIS_IMAGE_REF}" \\'
 fi
 if ! bool_true "${FREEZE_THIRD_PARTY_ONLY}"; then
   # Local assemble prefers the durable release-input directory (hardlinked OCI

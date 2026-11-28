@@ -41,16 +41,19 @@ host, remote checkout path, target architecture, and retry policy itself.
 
 The release runner returns success only after build/publish, installation, and
 post-install verification complete. On failure, the script preserves a run
-directory containing the commit, dependency, release, and repair logs. If
-If an offline build fails with a dependency/build-input signature, the wrapper
+directory containing the commit, dependency, release, and repair logs. If an
+offline build fails with a dependency/build-input signature, the wrapper
 automatically runs `TARGET_ARCH=<configured-arch> make seed-build-deps` on the
-configured build host and retries once. Other failures stop with their logs;
+configured build host and retries. The wrapper also recognizes the known
+`archive-release-input: unknown argument` failure caused by early
+`POSTGIS_IMAGE_REF` expansion, applies the narrow local source repair, and
+retries through the normal commit step. Other failures stop with their logs;
 the agent/operator fixes the source and reruns this same command.
 
-Retries are bounded by `retry.max_attempts` (default 3, maximum 20). Without a
-repair hook the script stops after the first failed release instead of blindly
-repeating an unchanged deployment. A repair hook must not push: the existing
-`appliance-three-repo-commit` helper owns review, commit, and push.
+Retries are bounded by three attempts in the tracked wrapper. A repair hook
+must not push: the existing `appliance-three-repo-commit` helper owns review,
+commit, and push. The loop never blindly repeats an unchanged deployment; a
+retry follows either dependency seeding or a verified deterministic repair.
 
 Do not use this skill to bypass the release skill's signed-bundle checks,
 offline policy, or real-setup guardrail. A real run requires the operator to

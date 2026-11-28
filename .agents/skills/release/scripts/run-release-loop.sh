@@ -21,15 +21,16 @@ usage: run-release-loop.sh \
 
 Run the configured workflow on the current devhost:
   1. commit and push aligned appliance-release/appliance-ctl/appliance-code
-  2. seed dependency images automatically when an offline build misses inputs
+  2. repair known deterministic packaging failures or seed dependencies
   3. run run-release-from-devhost.sh (build/publish/install/verify)
-  4. retry the release after dependency recovery
+  4. retry the release after verified recovery
 
 The three paths are the existing role configs. The wrapper derives the local
 repository, commit helper, commit message, build host, remote checkout path,
 architecture, and dependency seed command itself. In offline mode, a failed
 build that looks like a missing build input automatically seeds dependencies on
-the build host before retrying.
+the build host before retrying. A known archive-release-input argument-
+generation failure is repaired locally before the next commit/release attempt.
 
 This command never edits a remote host except through the existing release
 runner and the automatic dependency seed. Other failures stop with preserved
@@ -89,9 +90,20 @@ run_release() {
     --install-config "$INSTALL_CONFIG"
 }
 
+run_repair() {
+  local release_log=$1
+  local repair_log=$2
+  run_logged "$repair_log" bash "$REPAIR_SCRIPT" \
+    --release-log "$release_log" \
+    --repo-root "$REPO_ROOT"
+}
+
 is_seedable_failure() {
   local log_path=$1
   [[ "$BUILD_FLOW_MODE" == offline ]] || return 1
+  # This is a command-generation/source defect, not a missing dependency. Let
+  # the deterministic repair hook handle it instead of wasting a seed retry.
+  grep -Eiq 'archive-release-input: unknown argument:' "$log_path" && return 1
   grep -Eiq \
     'build-and-publish|seed-build-deps|build-cache|dependency|OCI image|image source|not found|make: \*\*|npm source' \
     "$log_path"
@@ -159,6 +171,8 @@ COMMIT_SCRIPT="$HOME/.codex/skills/appliance-three-repo-commit/scripts/three-rep
 COMMIT_MESSAGE="chore: automated appliance release"
 RELEASE_RUNNER="$RELEASE_ROOT/.agents/skills/release/scripts/run-release-from-devhost.sh"
 [[ -f "$RELEASE_RUNNER" ]] || die "release runner not found: $RELEASE_RUNNER"
+REPAIR_SCRIPT="$RELEASE_ROOT/.agents/skills/release/scripts/repair-release-failure.sh"
+[[ -x "$REPAIR_SCRIPT" ]] || die "release repair script not found or not executable: $REPAIR_SCRIPT"
 
 BUILD_HOST=$(config_get "$DEVHOST_CONFIG" "build_host.alias")
 BUILD_FLOW_MODE=$(resolve_build_flow_mode "$BUILD_PUBLISH_CONFIG")
@@ -219,6 +233,18 @@ for ((ATTEMPT=1; ATTEMPT<=MAX_ATTEMPTS; ATTEMPT++)); do
   log "attempt $ATTEMPT failed; release log=$RELEASE_LOG"
   if ((ATTEMPT == MAX_ATTEMPTS)); then
     die "release failed on final attempt; inspect $RELEASE_LOG"
+  fi
+
+  if run_repair "$RELEASE_LOG" "$ATTEMPT_DIR/repair.log"; then
+    echo "attempt=$ATTEMPT stage=repair status=applied" >>"$ATTEMPT_DIR/status"
+    log "attempt $ATTEMPT: applied deterministic source repair; retrying release"
+    continue
+  else
+    repair_status=$?
+    if ((repair_status != 3)); then
+      echo "attempt=$ATTEMPT stage=repair status=failed" >>"$ATTEMPT_DIR/status"
+      die "automatic source repair failed; see $ATTEMPT_DIR/repair.log"
+    fi
   fi
 
   if [[ "$SEED_ATTEMPTED" == false ]] && is_seedable_failure "$RELEASE_LOG"; then

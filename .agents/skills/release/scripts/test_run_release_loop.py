@@ -30,6 +30,7 @@ def run_case() -> None:
         shutil.copy2(SCRIPT, copied_script_dir / SCRIPT.name)
         shutil.copy2(SCRIPT.with_name("common.sh"), copied_script_dir / "common.sh")
         shutil.copy2(SCRIPT.with_name("config_query.py"), copied_script_dir / "config_query.py")
+        shutil.copy2(SCRIPT.with_name("repair-release-failure.sh"), copied_script_dir / "repair-release-failure.sh")
 
         state = root / "state"
         state.mkdir()

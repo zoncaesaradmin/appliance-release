@@ -101,6 +101,10 @@ def main() -> None:
         raise AssertionError("archive-release-input optional arguments are not shell-contiguous")
     if '${POSTGIS_ARCHIVE_ARG_LINES}\n  "\\${HOST_PACKAGES_ARGS[@]}"' in text:
         raise AssertionError("empty PostGIS argument block can terminate archive-release-input")
+    if 'POSTGIS_ARCHIVE_ARG_LINES+=$\'\\n  --extra-oci-image-reference "${POSTGIS_IMAGE_REF}"' in text:
+        raise AssertionError("POSTGIS image reference is expanded while generating the archive command")
+    if 'POSTGIS_ARCHIVE_ARG_LINES+=$\'\\n  --extra-oci-image-reference "\\${POSTGIS_IMAGE_REF}"' not in text:
+        raise AssertionError("POSTGIS image reference must expand inside the generated archive command")
 
     dns_pins = DNS_PINS.read_text(encoding="utf-8")
     if "UPSTREAM_IMAGE=docker.io/coredns/coredns:1.14.4" not in dns_pins:
