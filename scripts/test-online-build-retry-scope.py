@@ -89,6 +89,19 @@ def main() -> None:
     if 'lan_cache_ref coredns "v${DNS_VERSION}-${TARGET_ARCH}"' not in text:
         raise AssertionError("offline CoreDNS must remain mapped to the LAN cache")
 
+    # Optional PostGIS arguments must share the same continued shell command
+    # as host-packages and deployment topology. An empty PostGIS block must
+    # not leave a blank line that terminates archive-release-input early.
+    joined_optional_args = (
+        '${POSTGIS_ARCHIVE_ARG_LINES}  "\\${HOST_PACKAGES_ARGS[@]}" '
+        + ("\\" * 2)
+        + "\n"
+    )
+    if joined_optional_args not in text:
+        raise AssertionError("archive-release-input optional arguments are not shell-contiguous")
+    if '${POSTGIS_ARCHIVE_ARG_LINES}\n  "\\${HOST_PACKAGES_ARGS[@]}"' in text:
+        raise AssertionError("empty PostGIS argument block can terminate archive-release-input")
+
     dns_pins = DNS_PINS.read_text(encoding="utf-8")
     if "UPSTREAM_IMAGE=docker.io/coredns/coredns:1.14.4" not in dns_pins:
         raise AssertionError("CoreDNS seed and online upstream are not paired")

@@ -2631,8 +2631,7 @@ ${HOST_AGENT_IMAGE_ARCHIVE_ARG_LINES}  --blob-storage-image "\${BLOB_STORAGE_IMA
   --message-broker-image-reference "\${MESSAGE_BROKER_IMAGE_REF}" \\
   --postgres-image "\${POSTGRES_IMAGE_OUT}" \\
   --postgres-image-reference "\${POSTGRES_IMAGE_REF}" \\
-${POSTGIS_ARCHIVE_ARG_LINES}
-  "\${HOST_PACKAGES_ARGS[@]}" \\
+${POSTGIS_ARCHIVE_ARG_LINES}  "\${HOST_PACKAGES_ARGS[@]}" \\
   --k3s-version $(shell_quote "${K3S_VERSION}") \\
   --deployment-topology $(shell_quote "${DEPLOYMENT_TOPOLOGY}") \\
   --cloudflared-binary "/workspace/.run/cloudflared" \\
